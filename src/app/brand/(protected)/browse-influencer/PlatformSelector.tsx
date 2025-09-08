@@ -1,0 +1,60 @@
+// PlatformSelector.tsx
+import React from 'react';
+import { Platform } from './platform';
+import { platformTheme } from './utils/platform';
+
+interface PlatformSelectorProps {
+  selected: Platform[];                       // ← array now
+  onChange: (platforms: Platform[]) => void;  // ← returns array
+}
+
+export function PlatformSelector({ selected, onChange }: PlatformSelectorProps) {
+  const platforms: Platform[] = ['youtube', 'tiktok', 'instagram'];
+
+  const toggle = (p: Platform) => {
+    const set = new Set(selected);
+    set.has(p) ? set.delete(p) : set.add(p);
+    const next = Array.from(set);
+    // Always keep at least one selected (optional guard)
+    onChange(next.length ? next : [p]);
+  };
+
+  return (
+    <div>
+      <label className="block text-sm font-medium text-gray-700 mb-3">
+        Platform(s)
+      </label>
+      <div className="grid grid-cols-3 gap-2">
+        {platforms.map((platform) => {
+          const theme = platformTheme[platform];
+          const isSelected = selected.includes(platform);
+
+          return (
+            <button
+              key={platform}
+              type="button"
+              onClick={() => toggle(platform)}
+              className={`
+                relative flex flex-col items-center p-3 rounded-lg border transition-all
+                ${isSelected
+                  ? `border-blue-300 ${theme.color} text-white shadow-md`
+                  : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
+                }
+              `}
+              aria-pressed={isSelected}
+            >
+              <div className={`mb-1 ${isSelected ? 'text-white' : 'text-gray-600'}`}>
+                {theme.icon}
+              </div>
+              <span className="text-xs font-medium">{theme.label}</span>
+
+              {isSelected && (
+                <div className="absolute inset-0 rounded-lg ring-2 ring-blue-500 ring-offset-1" />
+              )}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
