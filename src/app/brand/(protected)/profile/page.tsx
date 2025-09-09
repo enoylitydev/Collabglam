@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
+import Select from "react-select";
 import { get, post } from "@/lib/api";
 import {
   HiUser,
@@ -9,9 +10,9 @@ import {
   HiMail,
   HiCheck,
   HiX,
-  HiPlus,
-  HiTrash,
 } from "react-icons/hi";
+
+/* ===================== Types ===================== */
 
 type SubscriptionFeature = {
   key: string;
@@ -22,11 +23,11 @@ type SubscriptionFeature = {
 type BrandData = {
   name: string;
   email: string;
-  phone: string;            // local / national number (no +code)
+  phone: string; // local / national number (no +code)
   country: string;
   countryId: string;
   callingId: string;
-  callingCode?: string;     // "+91" etc
+  callingCode?: string; // "+91" etc
   brandId: string;
   createdAt: string;
   updatedAt: string;
@@ -40,44 +41,307 @@ type BrandData = {
   walletBalance: number;
 };
 
-// Utility: format calling code + phone nicely for display
+/* ===================== Utilities ===================== */
+
 function formatPhoneDisplay(code?: string, num?: string) {
   const c = (code || "").trim();
   const n = (num || "").trim();
   if (!c && !n) return "—";
-  // Avoid double + if phone already has code
   if (n.startsWith("+")) return n;
   return `${c ? c : ""}${c && n ? " " : ""}${n}`;
 }
 
-// Normalize API payload to expected shape
 function normalizeBrand(data: any): BrandData {
   const s = data?.subscription ?? {};
+  const brand = data?.brand ?? data; // support payloads like { message, brand }
   return {
-    name: data?.name ?? "",
-    email: data?.email ?? "",
-    phone: data?.phone ?? "",
-    country: data?.country ?? "",
-    countryId: data?.countryId ?? "",
-    callingId: data?.callingId ?? "",
-    callingCode: data?.callingcode ?? data?.callingCode ?? "", // accept either
-    brandId: data?.brandId ?? "",
-    createdAt: data?.createdAt ?? "",
-    updatedAt: data?.updatedAt ?? "",
+    name: brand?.name ?? "",
+    email: brand?.email ?? "",
+    phone: brand?.phone ?? "",
+    country: brand?.country ?? "",
+    countryId: brand?.countryId ?? "",
+    callingId: brand?.callingId ?? "",
+    callingCode: brand?.callingcode ?? brand?.callingCode ?? "",
+    brandId: brand?.brandId ?? "",
+    createdAt: brand?.createdAt ?? "",
+    updatedAt: brand?.updatedAt ?? "",
     subscription: {
-      planName: s?.planName ?? data?.planName ?? "",
-      startedAt: s?.startedAt ?? data?.startedAt ?? "",
-      expiresAt: s?.expiresAt ?? data?.expiresAt ?? "",
+      planName: s?.planName ?? brand?.planName ?? "",
+      startedAt: s?.startedAt ?? brand?.startedAt ?? "",
+      expiresAt: s?.expiresAt ?? brand?.expiresAt ?? "",
       features: Array.isArray(s?.features)
         ? s.features
-        : Array.isArray(data?.features)
-          ? data.features
-          : [],
+        : Array.isArray(brand?.features)
+        ? brand.features
+        : [],
     },
-    subscriptionExpired: !!data?.subscriptionExpired,
-    walletBalance: Number.isFinite(+data?.walletBalance) ? +data.walletBalance : 0,
+    subscriptionExpired: !!brand?.subscriptionExpired,
+    walletBalance: Number.isFinite(+brand?.walletBalance)
+      ? +brand.walletBalance
+      : 0,
   };
 }
+
+function validateEmail(email: string) {
+  return /[^@\s]+@[^@\s]+\.[^@\s]+/.test(email);
+}
+
+/* ===================== Country / Calling code ===================== */
+
+interface Country {
+  _id: string;
+  countryName: string;
+  callingCode: string; // e.g. +91
+  countryCode: string; // e.g. IN
+  flag: string; // emoji or URL
+}
+
+interface CountryOption {
+  value: string;
+  label: string;
+  country: Country;
+}
+
+const buildCountryOptions = (countries: Country[]): CountryOption[] =>
+  countries.map((c) => ({
+    value: c._id, // we'll submit the _id (countryId)
+    label: `${c.flag} ${c.countryName}`,
+    country: c,
+  }));
+
+const buildCallingOptions = (countries: Country[]): CountryOption[] => {
+  const opts = countries.map((c) => ({
+    value: c._id, // we'll submit _id (callingId)
+    label: `${c.callingCode}`,
+    country: c,
+  }));
+  // Move US to top if present
+  const usIdx = opts.findIndex((o) => o.country.countryCode === "US");
+  if (usIdx > -1) {
+    const [us] = opts.splice(usIdx, 1);
+    opts.unshift(us);
+  }
+  return opts;
+};
+
+const filterByCountryName = (option: { data: CountryOption }, raw: string) => {
+  const input = raw.toLowerCase().trim();
+  const { country } = option.data;
+  return (
+    country.countryName.toLowerCase().includes(input) ||
+    country.countryCode.toLowerCase().includes(input) ||
+    country.callingCode.replace(/^\+/, "").includes(input.replace(/^\+/, ""))
+  );
+};
+
+/* ===================== Dual-OTP Email Editor ===================== */
+
+type EmailFlowState =
+  | "idle" // email unchanged
+  | "needs" // edited but codes not requested yet
+  | "codes_sent" // /brand/emailUpdateOtp completed
+  | "verifying" // submitting /brand/EmailUpdate
+  | "verified"; // success
+
+function EmailEditorDualOTP({
+  brandId,
+  originalEmail,
+  value,
+  onChange,
+  onVerified,
+  onStateChange,
+}: {
+  brandId: string;
+  originalEmail: string;
+  value: string;
+  onChange: (v: string) => void;
+  onVerified: (newEmail: string, token?: string) => void;
+  onStateChange: (s: EmailFlowState) => void;
+}) {
+  const [flow, setFlow] = useState<EmailFlowState>("idle");
+  const [oldOtp, setOldOtp] = useState("");
+  const [newOtp, setNewOtp] = useState("");
+  const [msg, setMsg] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const needs = useMemo(
+    () => value.trim().toLowerCase() !== originalEmail.trim().toLowerCase(),
+    [value, originalEmail]
+  );
+
+  useEffect(() => {
+    if (!needs) {
+      setFlow("idle");
+      setOldOtp("");
+      setNewOtp("");
+      setErr(null);
+      setMsg(null);
+      onStateChange("idle");
+    } else if (flow === "codes_sent" || flow === "verifying") {
+      onStateChange(flow);
+    } else {
+      onStateChange("needs");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [needs, flow, value, originalEmail]);
+
+  async function requestCodes() {
+    setErr(null);
+    setMsg(null);
+    if (!validateEmail(value)) {
+      setErr("Enter a valid email address.");
+      return;
+    }
+    setBusy(true);
+    try {
+      const resp = await post<{
+        message?: string;
+        oldEmail?: string;
+        newEmail?: string;
+        expiresAt?: string;
+      }>("/brand/emailUpdateOtp", { brandId, newEmail: value });
+      setFlow("codes_sent");
+      setMsg(
+        (resp && (resp.message as string)) ||
+          `OTPs sent to ${originalEmail} (current) and ${value} (new).`
+      );
+      onStateChange("codes_sent");
+    } catch (e: any) {
+      setErr(e?.message || "Failed to send codes.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function verifyAndPersist() {
+    setErr(null);
+    if (!oldOtp.trim() || !newOtp.trim()) {
+      setErr("Enter both OTPs.");
+      return;
+    }
+    setBusy(true);
+    setFlow("verifying");
+    onStateChange("verifying");
+    try {
+      const res = await post<{ email: string; token?: string; message?: string }>(
+        "/brand/EmailUpdate",
+        { brandId, newEmail: value, oldOtp: oldOtp.trim(), newOtp: newOtp.trim() }
+      );
+      const newEmail = (res as any)?.email || value;
+      const token = (res as any)?.token;
+      onVerified(newEmail, token);
+      setMsg(res?.message || "Email updated successfully.");
+      setFlow("verified");
+      onStateChange("verified");
+      setOldOtp("");
+      setNewOtp("");
+    } catch (e: any) {
+      setErr(e?.message || "Verification failed.");
+      setFlow("codes_sent");
+      onStateChange("codes_sent");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="flex items-start bg-gray-50 p-4 rounded-lg">
+      <HiMail className="text-gray-500 mr-3 mt-1" />
+      <div className="flex-1">
+        <p className="text-sm text-gray-500">Email</p>
+
+        {/* Always show editable input */}
+        <div className="relative">
+          <input
+            className="w-full text-gray-700 font-medium focus:outline-none bg-transparent pb-1"
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            placeholder="name@example.com"
+          />
+          <span className="pointer-events-none absolute left-0 right-0 bottom-0 h-[2px] rounded-full bg-gradient-to-r from-[#FFA135] to-[#FF7236]" />
+        </div>
+
+        {/* Actions for edited emails */}
+        {needs && (
+          <div className="mt-3 space-y-3">
+            {flow === "needs" && (
+              <div className="flex items-center justify-between">
+                <p className="text-sm text-gray-600">
+                  To change your email, request OTP codes.
+                </p>
+                <button
+                  onClick={requestCodes}
+                  disabled={busy || !validateEmail(value)}
+                  className="px-3 py-1.5 rounded-lg bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white hover:opacity-90 transition disabled:opacity-60"
+                >
+                  {busy ? "Sending…" : "Verify"}
+                </button>
+              </div>
+            )}
+
+            {(flow === "codes_sent" || flow === "verifying") && (
+              <div className="space-y-3">
+                <p className="text-sm text-gray-600">
+                  Enter the 6‑digit codes sent to <span className="font-semibold">{originalEmail}</span> (old) and <span className="font-semibold">{value}</span> (new).
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="relative">
+                    <input
+                      className="w-full text-gray-700 font-medium focus:outline-none bg-transparent pb-1 tracking-widest"
+                      placeholder="Old email OTP"
+                      value={oldOtp}
+                      onChange={(e) => setOldOtp(e.target.value)}
+                      inputMode="numeric"
+                      maxLength={6}
+                    />
+                    <span className="pointer-events-none absolute left-0 right-0 bottom-0 h-[2px] rounded-full bg-gradient-to-r from-[#FFA135] to-[#FF7236]" />
+                  </div>
+                  <div className="relative">
+                    <input
+                      className="w-full text-gray-700 font-medium focus:outline-none bg-transparent pb-1 tracking-widest"
+                      placeholder="New email OTP"
+                      value={newOtp}
+                      onChange={(e) => setNewOtp(e.target.value)}
+                      inputMode="numeric"
+                      maxLength={6}
+                    />
+                    <span className="pointer-events-none absolute left-0 right-0 bottom-0 h-[2px] rounded-full bg-gradient-to-r from-[#FFA135] to-[#FF7236]" />
+                  </div>
+                </div>
+                <div className="flex items-center justify-end gap-2">
+                  <button
+                    onClick={requestCodes}
+                    disabled={busy}
+                    className="px-3 py-2 rounded-lg bg-gray-200 hover:bg-gray-300 transition"
+                  >
+                    Resend Codes
+                  </button>
+                  <button
+                    onClick={verifyAndPersist}
+                    disabled={busy}
+                    className="px-4 py-2 rounded-lg bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white hover:opacity-90 transition disabled:opacity-60"
+                  >
+                    {busy ? "Verifying…" : "Verify & Update"}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {(msg || err) && (
+              <div className="mt-1">
+                {msg && <p className="text-sm text-green-600">{msg}</p>}
+                {err && <p className="text-sm text-red-600">{err}</p>}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ===================== Main Page ===================== */
 
 export default function BrandProfilePage() {
   const [brand, setBrand] = useState<BrandData | null>(null);
@@ -87,6 +351,16 @@ export default function BrandProfilePage() {
   const [error, setError] = useState<string | null>(null);
   const [isEditing, setIsEditing] = useState(false);
 
+  // Email flow state controls Save button
+  const [emailFlow, setEmailFlow] = useState<EmailFlowState>("idle");
+
+  // Countries / calling codes
+  const [countries, setCountries] = useState<Country[]>([]);
+  const countryOptions = useMemo(() => buildCountryOptions(countries), [countries]);
+  const codeOptions = useMemo(() => buildCallingOptions(countries), [countries]);
+  const [selectedCountry, setSelectedCountry] = useState<CountryOption | null>(null);
+  const [selectedCalling, setSelectedCalling] = useState<CountryOption | null>(null);
+
   useEffect(() => {
     const brandId = localStorage.getItem("brandId");
     if (!brandId) {
@@ -94,12 +368,30 @@ export default function BrandProfilePage() {
       setLoading(false);
       return;
     }
+
     (async () => {
       try {
-        const data = await get<any>(`/brand?id=${brandId}`);
-        const normalized = normalizeBrand(data);
+        const [brandRes, countryRes] = await Promise.all([
+          get<any>(`/brand?id=${brandId}`),
+          get<Country[]>("/country/getall"),
+        ]);
+        setCountries(countryRes || []);
+        const normalized = normalizeBrand(brandRes);
         setBrand(normalized);
         setForm(structuredClone(normalized));
+
+        // Pre-select dropdowns based on stored ids
+        const co = countryRes || [];
+        const countryOpt =
+          co.length && normalized.countryId
+            ? buildCountryOptions(co).find((o) => o.value === normalized.countryId) || null
+            : null;
+        const callingOpt =
+          co.length && normalized.callingId
+            ? buildCallingOptions(co).find((o) => o.value === normalized.callingId) || null
+            : null;
+        setSelectedCountry(countryOpt);
+        setSelectedCalling(callingOpt);
       } catch (e: any) {
         console.error(e);
         setError(e?.message || "Failed to load brand profile.");
@@ -109,63 +401,79 @@ export default function BrandProfilePage() {
     })();
   }, []);
 
+  // keep form.country / callingCode in sync with selections (for read-mode display)
+  useEffect(() => {
+    if (!form) return;
+    if (selectedCountry) {
+      setForm({
+        ...form,
+        countryId: selectedCountry.value,
+        country: selectedCountry.country.countryName,
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedCountry]);
+
+  useEffect(() => {
+    if (!form) return;
+    if (selectedCalling) {
+      setForm({
+        ...form,
+        callingId: selectedCalling.value,
+        callingCode: selectedCalling.country.callingCode,
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedCalling]);
+
   const onField = <K extends keyof BrandData>(key: K, value: BrandData[K]) => {
     if (!form) return;
     setForm({ ...form, [key]: value });
   };
 
-  const onSubField = <K extends keyof BrandData["subscription"]>(
-    key: K,
-    value: BrandData["subscription"][K]
-  ) => {
-    if (!form) return;
-    setForm({
-      ...form,
-      subscription: { ...form.subscription, [key]: value },
-    });
-  };
-
-  const addFeature = () => {
-    if (!form) return;
-    const features = form.subscription?.features ?? [];
-    const next: SubscriptionFeature = { key: "", limit: 0, used: 0 };
-    onSubField("features", [...features, next]);
-  };
-
-  const updateFeature = (idx: number, patch: Partial<SubscriptionFeature>) => {
-    if (!form) return;
-    const features = [...(form.subscription?.features ?? [])];
-    features[idx] = { ...features[idx], ...patch };
-    onSubField("features", features);
-  };
-
-  const removeFeature = (idx: number) => {
-    if (!form) return;
-    const features = [...(form.subscription?.features ?? [])];
-    features.splice(idx, 1);
-    onSubField("features", features);
-  };
-
   const resetEdits = () => {
-    setForm(brand ? structuredClone(brand) : null);
+    if (!brand) return;
+    const cl = structuredClone(brand);
+    setForm(cl);
     setIsEditing(false);
+    setEmailFlow("idle");
+    // reset selects
+    const countryOpt = countries.length
+      ? buildCountryOptions(countries).find((o) => o.value === cl.countryId) || null
+      : null;
+    const callingOpt = countries.length
+      ? buildCallingOptions(countries).find((o) => o.value === cl.callingId) || null
+      : null;
+    setSelectedCountry(countryOpt);
+    setSelectedCalling(callingOpt);
   };
 
   const saveProfile = async () => {
-    if (!form) return;
+    if (!form || !brand) return;
+
+    // If email flow is mid-way, block save (email must be verified first)
+    if (emailFlow !== "idle" && emailFlow !== "verified") {
+      alert("Please finish verifying the new email before saving other changes.");
+      return;
+    }
+
     setSaving(true);
     try {
-      const payload = {
-        ...form,
+      // 1) Update profile fields (name/phone/countryId/callingId)
+      const payload: any = {
         brandId: form.brandId,
-        // Ensure backend receives its original key
-        callingcode: form.callingCode ?? "",
+        name: form.name,
+        phone: form.phone,
+        countryId: form.countryId || undefined,
+        callingId: form.callingId || undefined,
       };
       const updatedRaw = await post<any>("/brand/update", payload);
       const updated = normalizeBrand(updatedRaw);
+
       setBrand(updated);
       setForm(structuredClone(updated));
       setIsEditing(false);
+      setEmailFlow("idle");
     } catch (e: any) {
       console.error(e);
       alert(e?.message || "Failed to save profile.");
@@ -174,50 +482,8 @@ export default function BrandProfilePage() {
     }
   };
 
-  // Fallbacks to render subscription fields even if API sometimes sends them top-level
-  const sub = useMemo(() => {
-    const sForm = form?.subscription ?? ({} as BrandData["subscription"]);
-    const sBrand = brand?.subscription ?? ({} as BrandData["subscription"]);
-    const formAny = form as any;
-    const brandAny = brand as any;
-    return {
-      form: {
-        planName: sForm?.planName ?? formAny?.planName ?? "",
-        startedAt: sForm?.startedAt ?? formAny?.startedAt ?? "",
-        expiresAt: sForm?.expiresAt ?? formAny?.expiresAt ?? "",
-      },
-      read: {
-        planName: sBrand?.planName ?? brandAny?.planName ?? "",
-        startedAt: sBrand?.startedAt ?? brandAny?.startedAt ?? "",
-        expiresAt: sBrand?.expiresAt ?? brandAny?.expiresAt ?? "",
-      },
-    };
-  }, [form, brand]);
-
-  const featureList = useMemo(() => {
-    const fromForm = form?.subscription?.features;
-    const fromBrand = brand?.subscription?.features;
-    if (isEditing) return Array.isArray(fromForm) ? fromForm : [];
-    return Array.isArray(fromBrand) ? fromBrand : [];
-  }, [isEditing, form?.subscription?.features, brand?.subscription?.features]);
-
   if (loading) return <Loader />;
   if (error) return <Error message={error} />;
-
-  function formatISODate(dateStr: string): string {
-    if (!dateStr) return "—";
-    const d = new Date(dateStr);
-    if (isNaN(d.getTime())) return dateStr;
-    return d.toLocaleDateString(undefined, {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-    });
-  }
-  function capitalizeFirst(value: string) {
-    if (!value) return "";
-    return value.charAt(0).toUpperCase() + value.slice(1);
-  }
 
   return (
     <section className="min-h-screen py-12">
@@ -228,7 +494,7 @@ export default function BrandProfilePage() {
           {!isEditing ? (
             <button
               onClick={() => setIsEditing(true)}
-              className="flex items-center bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white px-4 py-2 rounded-lg shadow hover:bg-pink-600 transition"
+              className="flex items-center bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white px-4 py-2 rounded-lg shadow hover:opacity-90 transition cursor-pointer"
             >
               <HiUser className="mr-2" /> Edit Profile
             </button>
@@ -252,17 +518,38 @@ export default function BrandProfilePage() {
               large
             />
 
-            {/* Contact */}
+            {/* Contact grid */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {/* Email */}
-              <IconField
-                icon={HiMail}
-                label="Email"
-                value={form?.email ?? ""}
-                readValue={brand?.email ?? ""}
-                editing={isEditing}
-                onChange={(v) => onField("email", v as any)}
-              />
+              {!isEditing ? (
+                <IconField
+                  icon={HiMail}
+                  label="Email"
+                  value={""}
+                  readValue={brand?.email ?? ""}
+                  onChange={() => {}}
+                  editing={false}
+                />
+              ) : (
+                brand && form && (
+                  <EmailEditorDualOTP
+                    brandId={brand.brandId}
+                    originalEmail={brand.email}
+                    value={form.email}
+                    onChange={(v) => onField("email", v as any)}
+                    onVerified={(newEmail, token) => {
+                      // reflect instantly in both brand + form state
+                      setBrand((b) => (b ? { ...b, email: newEmail } : b));
+                      setForm((f) => (f ? { ...f, email: newEmail } : f));
+                      setEmailFlow("verified");
+                      if (token) {
+                        localStorage.setItem("token", token);
+                      }
+                    }}
+                    onStateChange={setEmailFlow}
+                  />
+                )
+              )}
 
               {/* Phone (calling code + number) */}
               <PhoneField
@@ -271,149 +558,39 @@ export default function BrandProfilePage() {
                 code={form?.callingCode || brand?.callingCode || ""}
                 editing={isEditing}
                 onNumberChange={(v) => onField("phone", v as any)}
+                codeOptions={codeOptions}
+                selectedCalling={selectedCalling}
+                onCallingChange={(opt) => setSelectedCalling(opt as any)}
               />
 
-              {/* Country */}
-              <IconField
-                icon={HiGlobe}
-                label="Country"
-                value={form?.country ?? ""}
-                readValue={brand?.country ?? ""}
-                editing={isEditing}
-                onChange={(v) => onField("country", v as any)}
-              />
-            </div>
-          </div>
-
-          {/* (Right-side Wallet/Expiry summary removed) */}
-        </div>
-
-        {/* Subscription Block */}
-        <div className="bg-white border border-gray-200 rounded-lg p-6">
-          <div className="flex justify-between items-center mb-4">
-            <h3 className="text-lg font-semibold text-gray-800">Subscription</h3>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
-            <Field
-              label="Plan Name"
-              value={capitalizeFirst(sub.form.planName)}
-              readValue={capitalizeFirst(sub.read.planName)}
-              editing={isEditing}
-              onChange={(v) => onSubField("planName", v as any)}
-            />
-            <Field
-              label="Started At"
-              value={isEditing ? (form?.subscription?.startedAt ?? "") : formatISODate(sub.form.startedAt)}
-              readValue={formatISODate(sub.read.startedAt)}
-              editing={isEditing}
-              onChange={(v) => onSubField("startedAt", v as any)}
-              placeholder="YYYY-MM-DD"
-            />
-            <Field
-              label="Expires At"
-              value={sub.form.expiresAt}
-              readValue={sub.read.expiresAt}
-              editing={isEditing}
-              onChange={(v) => onSubField("expiresAt", v as any)}
-              placeholder="ISO string"
-            />
-          </div>
-
-          {/* Features */}
-          <div>
-            <div className="flex items-center justify-between mb-3">
-              <h4 className="font-medium text-gray-700">Features</h4>
-              {isEditing && (
-                <button
-                  onClick={addFeature}
-                  className="flex items-center px-3 py-2 bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white rounded-md hover:opacity-90 transition cursor-pointer"
-                >
-                  <HiPlus className="mr-1" /> Add Feature
-                </button>
-              )}
-            </div>
-
-            <div className="space-y-3">
-              {/* Edit mode */}
-              {isEditing &&
-                featureList.map((feat, idx) => (
-                  <div
-                    key={idx}
-                    className="grid grid-cols-12 gap-3 items-center bg-gray-50 p-3 rounded-lg"
-                  >
-                    <div className="col-span-6">
-                      <SmallField
-                        label="Key"
-                        value={feat.key}
-                        editing={true}
-                        onChange={(v) => updateFeature(idx, { key: v })}
-                        placeholder="e.g., influencer_search_quota"
-                      />
-                    </div>
-                    <div className="col-span-3">
-                      <SmallField
-                        label="Limit"
-                        type="number"
-                        value={String(feat.limit)}
-                        editing={true}
-                        onChange={(v) =>
-                          updateFeature(idx, { limit: Number.isNaN(+v) ? 0 : +v })
-                        }
-                      />
-                    </div>
-                    <div className="col-span-3">
-                      <SmallField
-                        label="Used"
-                        type="number"
-                        value={String(feat.used)}
-                        editing={true}
-                        onChange={(v) =>
-                          updateFeature(idx, { used: Number.isNaN(+v) ? 0 : +v })
-                        }
-                      />
-                    </div>
-                    <div className="col-span-12 flex justify-end">
-                      <button
-                        onClick={() => removeFeature(idx)}
-                        className="flex items-center px-3 py-2 bg-red-500 text-white rounded-md hover:opacity-90 transition"
-                      >
-                        <HiTrash className="mr-1" /> Remove
-                      </button>
-                    </div>
-                  </div>
-                ))}
-
-              {/* Read mode */}
-              {!isEditing &&
-                (featureList.length > 0 ? (
-                  <div className="space-y-2">
-                    {featureList.map((feat, i) => {
-                      const pct =
-                        feat.limit > 0 ? Math.min(100, (feat.used / feat.limit) * 100) : 0;
-                      return (
-                        <div key={i}>
-                          <div className="flex justify-between text-sm">
-                            <span className="capitalize text-gray-700">
-                              {feat.key.replace(/_/g, " ")}
-                            </span>
-                            <span className="text-gray-600">
-                              {feat.used}/{feat.limit}
-                            </span>
-                          </div>
-                          <div className="w-full bg-gray-200 rounded-full h-2">
-                            <div
-                              className="bg-[#ef2f5b] h-2 rounded-full"
-                              style={{ width: `${pct}%` }}
-                            />
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <p className="text-sm text-gray-500">No features configured.</p>
-                ))}
+              {/* Country dropdown */}
+              <div className="flex items-center bg-gray-50 p-4 rounded-lg">
+                <HiGlobe className="text-gray-500 mr-3" />
+                <div className="flex-1">
+                  <p className="text-sm text-gray-500">Country</p>
+                  {!isEditing ? (
+                    <p className="text-gray-700 font-medium">{brand?.country || "—"}</p>
+                  ) : (
+                    <Select
+                      inputId="brandCountry"
+                      options={countryOptions}
+                      placeholder="Select Country"
+                      value={selectedCountry}
+                      onChange={(opt) => setSelectedCountry(opt as CountryOption)}
+                      filterOption={filterByCountryName as any}
+                      styles={{
+                        control: (base: any) => ({
+                          ...base,
+                          backgroundColor: "#F9FAFB",
+                          borderColor: "#E5E7EB",
+                        }),
+                      }}
+                      className="mt-1"
+                      required
+                    />
+                  )}
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -432,17 +609,22 @@ export default function BrandProfilePage() {
               <button
                 onClick={saveProfile}
                 className="flex items-center px-4 py-2 bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white rounded-lg shadow hover:opacity-90 transition disabled:opacity-60"
-                disabled={saving}
+                disabled={saving || (emailFlow !== "idle" && emailFlow !== "verified")}
+                title={
+                  emailFlow !== "idle" && emailFlow !== "verified"
+                    ? "Verify the new email to enable saving"
+                    : undefined
+                }
               >
                 <HiCheck className="mr-1" /> {saving ? "Saving…" : "Save Changes"}
               </button>
             </>
           ) : (
             <>
-              <button className="px-4 py-2 bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white rounded-lg hover:bg-blue-600 transition">
+              <button className="px-4 py-2 bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white rounded-lg hover:opacity-90 transition cursor-pointer">
                 Upgrade Subscription
               </button>
-              <button className="px-4 py-2 bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white rounded-lg hover:bg-pink-600 transition">
+              <button className="px-4 py-2 bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white rounded-lg hover:opacity-90 transition cursor-pointer">
                 Cancel Subscription
               </button>
             </>
@@ -492,13 +674,17 @@ function Field({
     <div>
       <p className="text-sm text-gray-500">{label}</p>
       {editing ? (
-        <input
-          className={`w-full text-gray-700 font-medium border-b-2 border-[#ef2f5b] focus:outline-none ${large ? "text-2xl font-bold" : ""
+        <div className={`relative ${large ? "pt-1" : ""}`}>
+          <input
+            className={`w-full text-gray-700 font-medium focus:outline-none bg-transparent pb-1 ${
+              large ? "text-2xl font-bold" : ""
             }`}
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          placeholder={placeholder}
-        />
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            placeholder={placeholder}
+          />
+          <span className="pointer-events-none absolute left-0 right-0 bottom-0 h-[2px] rounded-full bg-gradient-to-r from-[#FFA135] to-[#FF7236]" />
+        </div>
       ) : (
         <p className={`${large ? "text-2xl font-bold" : "font-medium"} text-gray-800`}>
           {readValue || "—"}
@@ -537,11 +723,14 @@ function IconField({
                 {prefix}
               </span>
             ) : null}
-            <input
-              className="w-full text-gray-700 font-medium border-b-2 border-[#ef2f5b] focus:outline-none bg-transparent"
-              value={value}
-              onChange={(e) => onChange(e.target.value)}
-            />
+            <div className="relative w-full">
+              <input
+                className="w-full text-gray-700 font-medium focus:outline-none bg-transparent pb-1"
+                value={value}
+                onChange={(e) => onChange(e.target.value)}
+              />
+              <span className="pointer-events-none absolute left-0 right-0 bottom-0 h-[2px] rounded-full bg-gradient-to-r from-[#FFA135] to-[#FF7236]" />
+            </div>
           </div>
         ) : (
           <p className="text-gray-700 font-medium">{readValue || "—"}</p>
@@ -551,19 +740,24 @@ function IconField({
   );
 }
 
-/** Phone field that always shows "+code number" in read mode */
 function PhoneField({
   valueNumber,
   readValueNumber,
   code,
   editing,
   onNumberChange,
+  codeOptions,
+  selectedCalling,
+  onCallingChange,
 }: {
   valueNumber: string;
   readValueNumber: string;
   code?: string;
   editing: boolean;
   onNumberChange: (v: string) => void;
+  codeOptions: any[];
+  selectedCalling: any | null;
+  onCallingChange: (opt: any | null) => void;
 }) {
   const readText = formatPhoneDisplay(code, readValueNumber);
   return (
@@ -572,56 +766,35 @@ function PhoneField({
       <div className="flex-1">
         <p className="text-sm text-gray-500">Phone</p>
         {editing ? (
-          <div className="flex items-center gap-2">
-            {code ? (
-              <span className="px-2 py-1 rounded bg-gray-200 text-gray-700 text-sm select-none">
-                {code}
-              </span>
-            ) : null}
-            <input
-              className="w-full text-gray-700 font-medium border-b-2 border-[#ef2f5b] focus:outline-none bg-transparent"
-              value={valueNumber}
-              onChange={(e) => onNumberChange(e.target.value)}
-              placeholder="Phone number"
+          <div className="grid grid-cols-3 gap-2 items-center">
+            <Select
+              inputId="brandCalling"
+              options={codeOptions}
+              placeholder="+Code"
+              value={selectedCalling}
+              onChange={(opt) => onCallingChange(opt as any)}
+              styles={{
+                control: (base: any) => ({
+                  ...base,
+                  backgroundColor: "#F9FAFB",
+                  borderColor: "#E5E7EB",
+                }),
+              }}
             />
+            <div className="col-span-2 relative w-full">
+              <input
+                className="w-full text-gray-700 font-medium focus:outline-none bg-transparent pb-1"
+                value={valueNumber}
+                onChange={(e) => onNumberChange(e.target.value)}
+                placeholder="Phone number"
+              />
+              <span className="pointer-events-none absolute left-0 right-0 bottom-0 h-[2px] rounded-full bg-gradient-to-r from-[#FFA135] to-[#FF7236]" />
+            </div>
           </div>
         ) : (
           <p className="text-gray-700 font-medium">{readText}</p>
         )}
       </div>
-    </div>
-  );
-}
-
-function SmallField({
-  label,
-  value,
-  onChange,
-  editing,
-  type = "text",
-  placeholder,
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  editing: boolean;
-  type?: "text" | "number";
-  placeholder?: string;
-}) {
-  return (
-    <div>
-      <p className="text-xs text-gray-500 mb-1">{label}</p>
-      {editing ? (
-        <input
-          type={type}
-          className="w-full text-sm text-gray-700 font-medium border-b-2 border-[#ef2f5b] focus:outline-none bg-transparent"
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          placeholder={placeholder}
-        />
-      ) : (
-        <p className="text-sm text-gray-800">{value || "—"}</p>
-      )}
     </div>
   );
 }
