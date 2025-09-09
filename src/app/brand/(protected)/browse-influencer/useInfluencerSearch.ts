@@ -1,6 +1,6 @@
 // useInfluencerSearch.tsx
 import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
-import type { Platform } from './platform';
+import type { Platform } from './filters';
 import { FilterState, createDefaultFilters } from './filters';
 
 type Percent01 = number;
@@ -18,15 +18,9 @@ export interface NormalizedInfluencer {
 interface SearchResponse {
   results?: NormalizedInfluencer[];
   error?: string;
-
-  // EITHER page-based
   page?: number;
   totalPages?: number;
-
-  // OR cursor-based
   nextCursor?: string;
-
-  // Optional helpful fields
   total?: number;
 }
 
@@ -36,9 +30,9 @@ interface SearchState {
   results: NormalizedInfluencer[];
   rawResponse: SearchResponse | null;
   total?: number;
-  page?: number;            // current page (if page-based)
-  totalPages?: number;      // total pages (if page-based)
-  nextCursor?: string | null; // next cursor (if cursor-based)
+  page?: number;
+  totalPages?: number;
+  nextCursor?: string | null;
   hasMore: boolean;
 }
 
@@ -95,62 +89,101 @@ export function useInfluencerSearch(platforms: Platform[]) {
   }, []);
 
   const payloadDefaults = useMemo(() => ({
-    followersMin: 1_000,
-    followersMax: 1_000_000,
-    engagementRate: 0.01 as Percent01,
-    language: 'en',
-    gender: 'MALE',
-    ageMin: 18,
-    ageMax: 65,
+    followersMin: 0,
+    followersMax: 50_000_000,
+    ageMin: 13,
+    ageMax: 100,
     credibility: 0.5 as Percent01,
   }), []);
 
   const buildPayload = useCallback((options?: { page?: number; cursor?: string | null }) => {
-    const inf = filters.influencer;
-    const aud = filters.audience;
+    const inf: any = (filters as any).influencer || {};
+    const aud: any = (filters as any).audience || {};
+
+    const influencer: any = {
+      followers: {
+        min: inf.followersMin ?? payloadDefaults.followersMin,
+        max: inf.followersMax ?? payloadDefaults.followersMax,
+      },
+      age: {
+        min: inf.ageMin ?? payloadDefaults.ageMin,
+        max: inf.ageMax ?? payloadDefaults.ageMax,
+      },
+      isVerified: !!inf.isVerified,
+    };
+
+    // Optional influencer filters
+    if (typeof inf.engagementRate === 'number') {
+      influencer.engagementRate = Math.max(0, Math.min(1, inf.engagementRate as number));
+    }
+    if (inf.language) influencer.language = inf.language;
+    if (inf.gender) influencer.gender = inf.gender;
+
+    if (typeof inf.lastPostedWithinDays === 'number') {
+      influencer.lastPostedWithinDays = Math.max(0, Math.floor(inf.lastPostedWithinDays));
+    }
+
+    if (typeof inf.followerGrowthMin === 'number' || typeof inf.followerGrowthMax === 'number') {
+      influencer.followerGrowthRate = {
+        min: inf.followerGrowthMin ?? undefined,
+        max: inf.followerGrowthMax ?? undefined,
+      };
+    }
+
+    if (inf.hasContactDetails === true) {
+      influencer.hasContactDetails = [{ contactType: 'email', filterAction: 'must' as const }];
+    }
+
+    if (typeof inf.engagementsMin === 'number' || typeof inf.engagementsMax === 'number') {
+      influencer.engagements = {
+        min: inf.engagementsMin ?? undefined,
+        max: inf.engagementsMax ?? undefined,
+      };
+    }
+
+    // IG-only fields (conditionally later)
+    if (typeof inf.reelsPlaysMin === 'number' || typeof inf.reelsPlaysMax === 'number') {
+      influencer.reelsPlays = {
+        min: inf.reelsPlaysMin ?? undefined,
+        max: inf.reelsPlaysMax ?? undefined,
+      };
+    }
+    if (inf.hasSponsoredPosts === true) {
+      influencer.hasSponsoredPosts = true;
+    }
+
+    // Audience
+    const audience: any = {};
+    if (aud.language?.id) audience.language = { id: aud.language.id, weight: aud.language.weight ?? 0.2 };
+    if (aud.gender?.id) audience.gender = { id: aud.gender.id, weight: aud.gender.weight ?? 0.5 };
+    if (aud.location) audience.location = aud.location;
+    if (aud.country)  audience.country  = aud.country;
+    if (aud.ageRange) audience.age = { min: aud.ageRange.min, max: aud.ageRange.max };
+    if (typeof aud.credibility === 'number') {
+      audience.credibility = Math.max(0, Math.min(1, aud.credibility as number));
+    }
 
     const base: any = {
-      page: options?.page ?? 0, // if your API uses pages
+      page: options?.page ?? 0,
       calculationMethod: 'median',
       sort: { field: 'followers', value: 123, direction: 'desc' as const },
       filter: {
-        influencer: {
-          followers: {
-            min: inf.followersMin ?? payloadDefaults.followersMin,
-            max: inf.followersMax ?? payloadDefaults.followersMax,
-          },
-          engagementRate: inf.engagementRate ?? payloadDefaults.engagementRate,
-          language: inf.language ?? payloadDefaults.language,
-          gender: inf.gender ?? payloadDefaults.gender,
-          age: {
-            min: inf.ageMin ?? payloadDefaults.ageMin,
-            max: inf.ageMax ?? payloadDefaults.ageMax,
-          },
-          isVerified: inf.isVerified ?? false,
-          hasContactDetails: (inf as any).hasEmailMust
-            ? [{ contactType: 'email', filterAction: 'must' as const }]
-            : undefined,
-        },
-        audience: {
-          language: aud.language
-            ? { id: aud.language.id, weight: aud.language.weight }
-            : undefined,
-          gender: aud.gender
-            ? { id: aud.gender.id, weight: aud.gender.weight }
-            : undefined,
-          credibility: aud.credibility ?? payloadDefaults.credibility,
-        },
+        influencer,
+        ...(Object.keys(audience).length ? { audience } : {}),
       },
     };
 
-    // If your API uses cursor-based pagination, send it here:
-    if (options?.cursor) base.cursor = options.cursor;
+    // 🚦 Only include IG-only fields when Instagram is selected
+    if (!platforms.includes('instagram')) {
+      delete base.filter.influencer.reelsPlays;
+      delete base.filter.influencer.hasSponsoredPosts;
+    }
 
+    if (options?.cursor) base.cursor = options.cursor;
     return base;
-  }, [filters, payloadDefaults]);
+  }, [filters, payloadDefaults, platforms]);
 
   const parseServerPageInfo = (data: SearchResponse) => {
-    // Supports both page-based & cursor-based
     const page = typeof data.page === 'number' ? data.page : undefined;
     const totalPages = typeof data.totalPages === 'number' ? data.totalPages : undefined;
     const nextCursor = typeof data.nextCursor === 'string' ? data.nextCursor : undefined;
@@ -161,7 +194,6 @@ export function useInfluencerSearch(platforms: Platform[]) {
     } else if (nextCursor) {
       hasMore = true;
     }
-
     return { page, totalPages, nextCursor: nextCursor ?? null, hasMore };
   };
 
@@ -187,7 +219,7 @@ export function useInfluencerSearch(platforms: Platform[]) {
     return data;
   };
 
-  const runSearch = useCallback(async (opts?: { queryText?: string; reset?: boolean }) => {
+  const runSearch = useCallback(async (opts?: { reset?: boolean }) => {
     const { id } = startRequest();
 
     setSearchState(prev => ({
@@ -199,9 +231,6 @@ export function useInfluencerSearch(platforms: Platform[]) {
 
     try {
       const payload = buildPayload({ page: 0, cursor: null });
-      const q = opts?.queryText?.trim();
-      if (q) payload.filter.influencer.keywords = q;
-
       const data = await serverFetch(payload);
 
       const serverResults = Array.isArray(data?.results) ? data.results : [];
@@ -236,11 +265,8 @@ export function useInfluencerSearch(platforms: Platform[]) {
     setSearchState(prev => ({ ...prev, loading: true, error: undefined }));
 
     try {
-      // Decide next page/cursor
       const nextPage = typeof searchState.page === 'number' ? searchState.page + 1 : undefined;
       const payload = buildPayload({ page: nextPage, cursor: searchState.nextCursor ?? undefined });
-
-      // keep same query if you injected it earlier (optional: store last query in a ref)
 
       const data = await serverFetch(payload);
 
@@ -272,12 +298,10 @@ export function useInfluencerSearch(platforms: Platform[]) {
   }, [searchState, platforms, buildPayload]);
 
   const loadAll = useCallback(async () => {
-    // Stream pages until done; add a safety cap to avoid endless loops
-    let safety = 200; // max pages
+    let safety = 200;
     while (safety-- > 0 && !abortRef.current?.signal.aborted) {
       if (!searchState.hasMore) break;
       await loadMore();
-      // allow paint between batches
       await new Promise(r => setTimeout(r, 0));
     }
   }, [loadMore, searchState.hasMore]);
@@ -288,9 +312,9 @@ export function useInfluencerSearch(platforms: Platform[]) {
     searchState,
     filters,
     updateFilter,
-    runSearch,     // (opts?: { queryText?: string; reset?: boolean })
-    loadMore,      // call to fetch next page
-    loadAll,       // call to fetch ALL remaining pages (with safety cap)
+    runSearch,     // filters-only
+    loadMore,
+    loadAll,
     resetFilters,
     buildPayload,
   };

@@ -1,18 +1,18 @@
+// InfluencerCard.tsx
 import React from 'react';
 import { MapPin, Users, TrendingUp, CheckCircle, ExternalLink, Eye, Lock } from 'lucide-react';
-import { Platform } from './platform';
+import type { Platform } from './filters';
 import { platformTheme } from './utils/platform';
 
 interface InfluencerCardProps {
-  platform: Platform;      // fallback if influencer.platform is missing
-  influencer: any;         // normalized record from your API
+  platform: Platform;
+  influencer: any;
 }
 
 export function InfluencerCard({ platform, influencer }: InfluencerCardProps) {
   const platformKey: Platform = (influencer?.platform as Platform) || platform;
   const theme = platformTheme[platformKey];
 
-  // Normalized fields (with fallbacks)
   const username = influencer?.username || influencer?.handle || influencer?.name || 'unknown';
   const handle = username.startsWith('@') ? username : `@${username}`;
   const displayName =
@@ -24,6 +24,8 @@ export function InfluencerCard({ platform, influencer }: InfluencerCardProps) {
   const engagements =
     influencer?.engagements ?? influencer?.stats?.avgEngagements ?? influencer?.stats?.avgLikes;
   const averageViews = influencer?.averageViews ?? influencer?.stats?.avgViews;
+  const reelsPlaysAvg =
+    influencer?.reelsPlaysAvg ?? influencer?.stats?.reelsPlaysAvg; // IG-only (optional)
   const location = influencer?.location || influencer?.country || influencer?.city;
   const avatar =
     influencer?.picture || influencer?.avatar || influencer?.profilePicUrl || influencer?.thumbnail;
@@ -117,7 +119,7 @@ export function InfluencerCard({ platform, influencer }: InfluencerCardProps) {
         </div>
 
         {/* Stats */}
-        <div className={`grid ${averageViews != null ? 'grid-cols-3' : 'grid-cols-2'} gap-3 mb-4`}>
+        <div className={`grid ${averageViews != null || (platformKey === 'instagram' && reelsPlaysAvg != null) ? 'grid-cols-3' : 'grid-cols-2'} gap-3 mb-4`}>
           <div className="bg-gray-50 rounded-lg p-3">
             <div className="flex items-center justify-between">
               <div>
@@ -146,6 +148,19 @@ export function InfluencerCard({ platform, influencer }: InfluencerCardProps) {
                 <div>
                   <p className="text-xs text-gray-500 font-medium">Avg. Views</p>
                   <p className="text-lg font-bold text-gray-900">{formatNumber(averageViews)}</p>
+                </div>
+                <Eye className="w-4 h-4 text-gray-400" />
+              </div>
+            </div>
+          )}
+
+          {/* IG-only: show Reels Plays stat if present */}
+          {platformKey === 'instagram' && reelsPlaysAvg != null && (
+            <div className="bg-gray-50 rounded-lg p-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs text-gray-500 font-medium">Reels Plays</p>
+                  <p className="text-lg font-bold text-gray-900">{formatNumber(reelsPlaysAvg)}</p>
                 </div>
                 <Eye className="w-4 h-4 text-gray-400" />
               </div>

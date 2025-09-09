@@ -1,28 +1,74 @@
-import React from 'react';
-import { Platform } from './platform';
+'use client';
 
-interface AudienceFiltersProps {
-  platforms: Platform[];
-  filters: any;
+import React, { useEffect, useMemo, useState } from 'react';
+import type { AudienceFilters as AF } from './filters';
+
+interface Props {
+  filters: AF;
   updateFilter: (path: string, value: any) => void;
 }
 
-export function AudienceFilters({ platforms, filters, updateFilter }: AudienceFiltersProps) {
+type Country = {
+  countryId: number;
+  name: string;
+  title: string;
+};
 
-  const hasInstagram = platforms.includes('instagram');
+const API_URL = 'http://localhost:5000/modash/getAll';
+
+export function AudienceFilters({ filters, updateFilter }: Props) {
+  const [countries, setCountries] = useState<Country[]>([]);
+  const [loadingCountries, setLoadingCountries] = useState(false);
+  const [countriesError, setCountriesError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    (async () => {
+      try {
+        setLoadingCountries(true);
+        setCountriesError(null);
+
+        const res = await fetch(API_URL, { method: 'GET', signal: controller.signal });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data: Country[] = await res.json();
+
+        const sorted = Array.isArray(data)
+          ? [...data].sort((a, b) => a.name.localeCompare(b.name))
+          : [];
+        setCountries(sorted);
+      } catch (err: any) {
+        if (err?.name === 'AbortError') return;
+        setCountriesError(err?.message || 'Failed to load countries');
+        setCountries([]);
+        console.error('Countries fetch failed:', err);
+      } finally {
+        setLoadingCountries(false);
+      }
+    })();
+    return () => controller.abort();
+  }, []);
+
+  // select value expects a string; we store numeric countryId in filters.location
+  const selectedCountryId = useMemo(() => {
+    const v = (filters as any).location;
+    if (v == null || v === '') return '';
+    const n = Number(v);
+    return Number.isFinite(n) ? String(n) : '';
+  }, [filters]);
 
   return (
     <div className="space-y-4">
-      {/* Audience Language */}
+      {/* Audience Language (weighted) */}
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-2">
-          Audience Language
-        </label>
+        <label className="block text-sm font-medium text-gray-700 mb-2">Audience Language</label>
         <select
-          className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-          value={filters.language?.id || 'en'}
-          onChange={(e) => updateFilter('language', { id: e.target.value, weight: 0.2 })}
+          className="w-full px-3 py-2 border rounded-md text-sm"
+          value={filters.language?.id ?? ''}
+          onChange={(e) =>
+            updateFilter('language', e.target.value ? { id: e.target.value, weight: 0.2 } : undefined)
+          }
         >
+          <option value="">Any</option>
           <option value="en">English</option>
           <option value="es">Spanish</option>
           <option value="fr">French</option>
@@ -36,81 +82,108 @@ export function AudienceFilters({ platforms, filters, updateFilter }: AudienceFi
         </select>
       </div>
 
-      {/* Audience Gender */}
+      {/* Audience Location — from backend */}
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-2">
-          Audience Gender Distribution
+          Audience Location (country)
         </label>
-        <div className="space-y-3">
-          <div>
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-sm text-gray-600">Male</span>
-              <span className="text-xs text-gray-500">
-                {((filters.gender?.weight || 0.5) * 100).toFixed(0)}%
-              </span>
-            </div>
-            <input
-              type="range"
-              min="0"
-              max="1"
-              step="0.1"
-              className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer slider"
-              value={filters.gender?.weight || 0.5}
-              onChange={(e) => updateFilter('gender', { 
-                id: 'MALE', 
-                weight: parseFloat(e.target.value) 
-              })}
-            />
-          </div>
+        <select
+          className="w-full px-3 py-2 border rounded-md text-sm"
+          value={selectedCountryId}
+          onChange={(e) => updateFilter('location', e.target.value ? Number(e.target.value) : '')}
+          disabled={loadingCountries}
+        >
+          {loadingCountries && <option value="">Loading countries…</option>}
+          {countriesError && <option value="">Failed to load countries</option>}
+          {!loadingCountries && !countriesError && <option value="">Any</option>}
+
+          {!loadingCountries &&
+            !countriesError &&
+            countries.map((c) => (
+              <option key={c.countryId} value={String(c.countryId)}>
+                {c.title || c.name}
+              </option>
+            ))}
+        </select>
+        {countriesError && (
+          <p className="text-xs text-red-600 mt-1">
+            {countriesError} — the list may be empty.
+          </p>
+        )}
+      </div>
+
+      {/* Audience Age Range */}
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-2">Audience Age Range</label>
+        <div className="grid grid-cols-2 gap-3">
+          <input
+            type="number"
+            min={13}
+            max={100}
+            className="w-full px-3 py-2 border rounded-md text-sm"
+            placeholder="Min"
+            value={(filters as any).ageRange?.min ?? ''}
+            onChange={(e) =>
+              updateFilter('ageRange', {
+                min: Number(e.target.value || 13),
+                max: (filters as any).ageRange?.max ?? 100,
+              })
+            }
+          />
+          <input
+            type="number"
+            min={13}
+            max={100}
+            className="w-full px-3 py-2 border rounded-md text-sm"
+            placeholder="Max"
+            value={(filters as any).ageRange?.max ?? ''}
+            onChange={(e) =>
+              updateFilter('ageRange', {
+                min: (filters as any).ageRange?.min ?? 13,
+                max: Number(e.target.value || 100),
+              })
+            }
+          />
         </div>
       </div>
 
-      {/* Age Demographics */}
+      {/* Audience Gender (weighted) */}
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-2">
-          Primary Age Group
-        </label>
+        <label className="block text-sm font-medium text-gray-700 mb-2">Audience Gender</label>
         <select
-          className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-          value={filters.primaryAge || '18-24'}
-          onChange={(e) => updateFilter('primaryAge', e.target.value)}
+          className="w-full px-3 py-2 border rounded-md text-sm"
+          value={filters.gender?.id ?? ''}
+          onChange={(e) =>
+            updateFilter('gender', e.target.value ? { id: e.target.value, weight: 0.5 } : undefined)
+          }
         >
-          <option value="13-17">13-17</option>
-          <option value="18-24">18-24</option>
-          <option value="25-34">25-34</option>
-          <option value="35-44">35-44</option>
-          <option value="45-54">45-54</option>
-          <option value="55-64">55-64</option>
-          <option value="65+">65+</option>
+          <option value="">Any</option>
+          <option value="MALE">Male</option>
+          <option value="FEMALE">Female</option>
+          <option value="NON_BINARY">Non-binary</option>
         </select>
       </div>
 
-      {/* Credibility Score (Instagram only) */}
-      {hasInstagram && (
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Min Audience Credibility
-          </label>
-          <div className="space-y-2">
-            <input
-              type="range"
-              min="0"
-              max="1"
-              step="0.05"
-              className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
-              value={filters.credibility || 0.75}
-              onChange={(e) => updateFilter('credibility', parseFloat(e.target.value))}
-            />
-            <div className="flex justify-between text-xs text-gray-500">
-              <span>0%</span>
-              <span className="font-medium">
-                {((filters.credibility || 0.75) * 100).toFixed(0)}%
-              </span>
-              <span>100%</span>
-            </div>
-          </div>
+      {/* Credibility */}
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-2">Min Audience Credibility</label>
+        <input
+          type="range"
+          min={0}
+          max={1}
+          step={0.05}
+          className="w-full"
+          value={filters.credibility ?? 0.75}
+          onChange={(e) => updateFilter('credibility', Number(e.target.value))}
+        />
+        <div className="flex justify-between text-xs text-gray-500">
+          <span>0%</span>
+          <span className="font-medium">{(((filters.credibility ?? 0.75) * 100) | 0)}%</span>
+          <span>100%</span>
         </div>
-      )}
+      </div>
     </div>
   );
 }
+
+export default AudienceFilters;
