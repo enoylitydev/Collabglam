@@ -35,9 +35,33 @@ import {
   CardTitle,
   CardDescription,
   CardContent,
+  CardFooter,
 } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { useRouter } from "next/navigation";
+
+// --- SweetAlert2 ---
+import Swal, { SweetAlertIcon, SweetAlertOptions } from "sweetalert2";
+
+/* Tiny helpers around SweetAlert2 */
+const fire = (opts: SweetAlertOptions) =>
+  Swal.fire({
+    confirmButtonColor: "#FF7236",
+    cancelButtonColor: "#6B7280",
+    ...opts,
+  });
+
+const toast = (icon: SweetAlertIcon, title: string, text?: string) =>
+  Swal.fire({
+    toast: true,
+    position: "top-end",
+    showConfirmButton: false,
+    timer: 2500,
+    timerProgressBar: true,
+    icon,
+    title,
+    text,
+  });
 
 /* ===================== Types & Helpers ===================== */
 
@@ -214,8 +238,7 @@ const EmailEditorDualOTPRaw = ({
   const [wasVerified, setWasVerified] = useState(false);
   const [oldOtp, setOldOtp] = useState("");
   const [newOtp, setNewOtp] = useState("");
-  const [msg, setMsg] = useState<string | null>(null);
-  const [err, setErr] = useState<string | null>(null);
+  // (swal used for messages now)
   const [busy, setBusy] = useState(false);
   const [expiresAt, setExpiresAt] = useState<string | null>(null);
   const [resendIn, setResendIn] = useState(0);
@@ -237,9 +260,6 @@ const EmailEditorDualOTPRaw = ({
       setFlow("idle");
       setOldOtp("");
       setNewOtp("");
-      setErr(null);
-      setMsg(null);
-      setExpiresAt(null);
       onStateChange("idle");
     } else if (flow === "codes_sent" || flow === "verifying" || flow === "verified") {
       onStateChange(flow);
@@ -252,8 +272,6 @@ const EmailEditorDualOTPRaw = ({
   }, [needs, flow, value, originalEmail]);
 
   const requestCodes = useCallback(async () => {
-    setErr(null);
-    setMsg(null);
     if (!valueIsValid || busy || resendIn > 0) {
       if (valueIsValid) setOpen(true);
       return;
@@ -267,22 +285,21 @@ const EmailEditorDualOTPRaw = ({
         expiresAt?: string;
       }>("/brand/requestEmailUpdate", { brandId, newEmail: value.trim().toLowerCase() });
       setFlow("codes_sent");
-      setMsg(resp?.message || `OTPs sent to ${originalEmail} (current) and ${value} (new).`);
       setExpiresAt(resp?.expiresAt || null);
       setResendIn(30);
       onStateChange("codes_sent");
       setOpen(true);
+      toast("success", "Codes sent", `OTPs sent to ${originalEmail} and ${value}.`);
     } catch (e: any) {
-      setErr(e?.message || "Failed to send codes.");
+      await fire({ icon: "error", title: "Failed to send codes", text: e?.message || "Please try again." });
     } finally {
       setBusy(false);
     }
   }, [brandId, originalEmail, value, valueIsValid, busy, resendIn, onStateChange]);
 
   const verifyAndPersist = useCallback(async () => {
-    setErr(null);
     if (oldOtp.trim().length !== 6 || newOtp.trim().length !== 6) {
-      setErr("Enter both 6-digit OTPs.");
+      await fire({ icon: "warning", title: "Enter both 6-digit OTPs" });
       return;
     }
     setBusy(true);
@@ -296,17 +313,17 @@ const EmailEditorDualOTPRaw = ({
       const newEmail = (res as any)?.email || value.trim().toLowerCase();
       const token = (res as any)?.token;
       onVerified(newEmail, token);
-      setMsg(res?.message || "Email updated successfully.");
       setFlow("verified");
       onStateChange("verified");
       setOldOtp("");
       setNewOtp("");
       setWasVerified(true);
       setOpen(false);
+      await fire({ icon: "success", title: "Email updated", text: res?.message || "Email updated successfully." });
     } catch (e: any) {
-      setErr(e?.message || "Verification failed.");
       setFlow("codes_sent");
       onStateChange("codes_sent");
+      await fire({ icon: "error", title: "Verification failed", text: e?.message || "Please check the codes and try again." });
     } finally {
       setBusy(false);
     }
@@ -332,10 +349,10 @@ const EmailEditorDualOTPRaw = ({
             Email Address
           </Label>
 
-          <div className="relative">
+          <div className="w-full">
             <Input
               id={emailInputId}
-              className="pr-32"
+              className="w-full"
               value={value}
               onChange={(e) => onChange(e.target.value)}
               placeholder="name@example.com"
@@ -347,67 +364,59 @@ const EmailEditorDualOTPRaw = ({
               }}
             />
 
-            {/* Right side: Verified badge OR action button OR nothing */}
-            {wasVerified && !needs ? (
-              <div className="absolute right-2 top-1/2 -translate-y-1/2">
-                <Badge variant="secondary" className="bg-emerald-100 text-emerald-800 border border-emerald-200">
-                  <HiCheck className="w-4 h-4 mr-1" />
-                  Verified
-                </Badge>
+            {/* Verified or action row */}
+            <div className="mt-2 flex items-center justify-between gap-2 flex-wrap">
+              {/* Left: Badge or Verify button */}
+              <div className="min-w-0">
+                {wasVerified && !needs ? (
+                  <Badge
+                    variant="secondary"
+                    className="bg-emerald-100 text-emerald-800 border border-emerald-200 w-fit"
+                  >
+                    <HiCheck className="w-4 h-4 mr-1" />
+                    Verified
+                  </Badge>
+                ) : needs && valueIsValid ? (
+                  <Button
+                    onClick={requestCodes}
+                    disabled={busy}
+                    className="inline-flex items-center justify-center px-4 py-2 bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white hover:shadow-lg transition-transform duration-200 sm:hover:scale-105 disabled:opacity-60"
+                  >
+                    {flow === "codes_sent"
+                      ? resendIn > 0
+                        ? `Enter Codes (${resendIn}s)`
+                        : "Enter Codes"
+                      : busy
+                        ? "Sending…"
+                        : "Verify"}
+                  </Button>
+                ) : null}
               </div>
-            ) : needs && valueIsValid ? (
-              <Button
-                onClick={requestCodes}
-                disabled={busy}
-                className="absolute right-2 top-1/2 -translate-y-1/2 px-3"
-              >
-                {flow === "codes_sent" ? (resendIn > 0 ? `Enter Codes (${resendIn}s)` : "Enter Codes") : (busy ? "Sending…" : "Verify")}
-              </Button>
-            ) : null}
-          </div>
 
-          {(msg || err) && (
-            <div className="mt-3" aria-live="polite">
-              {msg && (
-                <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
-                  <p className="text-sm text-green-800 flex items-center gap-2">
-                    <HiCheck className="w-4 h-4" />
-                    {msg}
-                  </p>
-                </div>
-              )}
-              {err && (
-                <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
-                  <p className="text-sm text-red-800 flex items-center gap-2">
-                    <HiX className="w-4 h-4" />
-                    {err}
-                  </p>
-                </div>
+              {/* Right: Cancel button pinned to the end */}
+              {needs && flow === "needs" && (
+                <button
+                  type="button"
+                  onClick={() => onChange(originalEmail)}
+                  className="text-s text-red-500 hover:text-red-700 transition-colors ml-auto shrink-0 whitespace-nowrap"
+                >
+                  Cancel
+                </button>
               )}
             </div>
-          )}
-
-          {needs && flow === "needs" && (
-            <button
-              type="button"
-              onClick={() => onChange(originalEmail)}
-              className="mt-2 text-xs text-gray-500 hover:text-gray-700 underline transition-colors"
-            >
-              Cancel change
-            </button>
-          )}
+          </div>
 
           {/* OTP Modal */}
           <Dialog open={open} onOpenChange={setOpen}>
-            <DialogContent className="sm:max-w-lg bg-white">
+            <DialogContent className="max-w-[95vw] sm:max-w-lg bg-white">
               <DialogHeader>
                 <DialogTitle className="flex items-center gap-2">
                   <HiShieldCheck className="w-5 h-5 text-amber-600" />
                   Verify your email
                 </DialogTitle>
                 <DialogDescription>
-                  Enter the 6-digit codes sent to <strong>{originalEmail}</strong> (current) and{" "}
-                  <strong>{value}</strong> (new).
+                  Enter the 6-digit codes sent to <strong className="break-words">{originalEmail}</strong> (current) and{" "}
+                  <strong className="break-words">{value}</strong> (new).
                   {expiresAt && (
                     <span className="block mt-1 text-xs text-amber-600">
                       Expires: {formatDateTime(expiresAt)}
@@ -449,13 +458,6 @@ const EmailEditorDualOTPRaw = ({
                 </div>
               </div>
 
-              {(msg || err) && (
-                <div className="mt-3" aria-live="polite">
-                  {msg && <div className="p-2 bg-green-50 border border-green-200 rounded-md text-sm text-green-800">{msg}</div>}
-                  {err && <div className="p-2 bg-red-50 border border-red-200 rounded-md text-sm text-red-800">{err}</div>}
-                </div>
-              )}
-
               <DialogFooter className="mt-4 flex items-center justify-between sm:justify-end gap-2">
                 <Button
                   type="button"
@@ -487,7 +489,6 @@ const EmailEditorDualOTP = React.memo(EmailEditorDualOTPRaw);
 /* ===================== Main Page ===================== */
 
 export default function BrandProfilePage() {
-
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
 
@@ -520,6 +521,11 @@ export default function BrandProfilePage() {
 
   const selectStyles = useMemo(
     () => ({
+      container: (base: any) => ({
+        ...base,
+        width: "100%",
+        minWidth: 0, // allow shrinking in grid
+      }),
       control: (base: any, state: any) => ({
         ...base,
         backgroundColor: "#F9FAFB",
@@ -529,6 +535,17 @@ export default function BrandProfilePage() {
         borderRadius: "8px",
         padding: "4px",
         minHeight: "44px",
+      }),
+      valueContainer: (base: any) => ({
+        ...base,
+        overflow: "hidden",
+      }),
+      singleValue: (base: any) => ({
+        ...base,
+        maxWidth: "100%",
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+        whiteSpace: "nowrap",
       }),
       option: (base: any, state: any) => ({
         ...base,
@@ -643,39 +660,92 @@ export default function BrandProfilePage() {
     setEmailFlow("idle");
     setSelectedCountry(cl.countryId ? maps.countryById.get(cl.countryId) || null : null);
     setSelectedCalling(cl.callingId ? maps.callingById.get(cl.callingId) || null : null);
+    toast("info", "Changes discarded");
   }, [brand, maps.countryById, maps.callingById]);
 
+  const refetchBrand = useCallback(
+    async (id?: string) => {
+      const brandId =
+        id ??
+        (typeof window !== "undefined" ? localStorage.getItem("brandId") : null);
+
+      if (!brandId) return;
+
+      try {
+        const brandRes = await get<any>(`/brand?id=${brandId}`);
+        const normalized = normalizeBrand(brandRes);
+
+        // Update main state
+        setBrand(normalized);
+        setForm(deepClone(normalized));
+
+        // Keep selects in sync with refreshed data
+        const matchedCountry =
+          maps.countryById.get(normalized.countryId) ||
+          maps.co.find((o) => o.country.countryName === normalized.country) ||
+          null;
+
+        const matchedCalling =
+          maps.callingById.get(normalized.callingId) ||
+          maps.ko.find((o) => o.country.callingCode === normalized.callingCode) ||
+          null;
+
+        setSelectedCountry(matchedCountry);
+        setSelectedCalling(matchedCalling);
+      } catch (e: any) {
+        console.error(e);
+        toast("error", "Failed to refresh", "Couldn't reload brand after saving.");
+      }
+    },
+    [maps.countryById, maps.callingById, maps.co, maps.ko]
+  );
   const saveProfile = useCallback(async () => {
-    if (!form || !brand) return;
+  if (!form || !brand) return;
 
-    if (emailFlow !== "idle" && emailFlow !== "verified") {
-      alert("Please finish verifying the new email before saving other changes.");
-      return;
-    }
+  if (emailFlow !== "idle" && emailFlow !== "verified") {
+    await fire({
+      icon: "warning",
+      title: "Verify the new email first",
+      text: "Finish email verification to save.",
+    });
+    return;
+  }
 
-    setSaving(true);
-    try {
-      const payload: any = {
-        brandId: form.brandId,
-        name: form.name,
-        phone: form.phone,
-        countryId: form.countryId || undefined,
-        callingId: form.callingId || undefined,
-      };
-      const updatedRaw = await post<any>("/brand/update", payload);
-      const updated = normalizeBrand(updatedRaw);
+  setSaving(true);
+  try {
+    const payload: any = {
+      brandId: form.brandId,
+      name: form.name,
+      phone: form.phone,
+      countryId: form.countryId || undefined,
+      callingId: form.callingId || undefined,
+    };
 
-      setBrand(updated);
-      setForm(deepClone(updated));
-      setIsEditing(false);
-      setEmailFlow("idle");
-    } catch (e: any) {
-      console.error(e);
-      alert(e?.message || "Failed to save profile.");
-    } finally {
-      setSaving(false);
-    }
-  }, [brand, emailFlow, form]);
+    // Save changes
+    await post<any>("/brand/update", payload);
+
+    // Now refetch the latest brand from the source of truth
+    await refetchBrand(form.brandId);
+
+    setIsEditing(false);
+    setEmailFlow("idle");
+    await fire({ icon: "success", title: "Profile saved" });
+
+    // (Optional) If this page also has server components that should re-fetch:
+    // router.refresh();
+  } catch (e: any) {
+    console.error(e);
+    await fire({
+      icon: "error",
+      title: "Failed to save profile",
+      text: e?.message || "Please try again.",
+    });
+  } finally {
+    setSaving(false);
+  }
+}, [brand, emailFlow, form, refetchBrand]);
+
+
 
   const daysLeft = useMemo(() => {
     if (!brand?.subscription.expiresAt) return null;
@@ -699,14 +769,14 @@ export default function BrandProfilePage() {
         <Card className="mb-8 bg-white border border-gray-200 shadow-sm">
           <CardContent className="p-8">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-              <div>
+              <div className="min-w-0">
                 <h1 className="text-3xl font-bold text-gray-900 mb-2">Brand Profile</h1>
                 <p className="text-gray-600">Manage your brand information and settings</p>
               </div>
               {!isEditing && (
                 <Button
                   onClick={() => setIsEditing(true)}
-                  className="inline-flex items-center px-6 py-3 bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white font-medium rounded-xl shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200"
+                  className="w-full sm:w-auto inline-flex items-center px-6 py-3 bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white font-medium rounded-xl shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200"
                 >
                   <HiUser className="w-5 h-5 mr-2" />
                   Edit Profile
@@ -719,22 +789,24 @@ export default function BrandProfilePage() {
         {/* Profile Section */}
         <Card className="mb-8 bg-white border border-gray-200 shadow-sm">
           <CardContent className="p-8">
-            <div className="flex items-start gap-6 mb-8">
-              <div className="flex-shrink-0">
-                <div className="w-20 h-20 bg-gradient-to-r from-[#FFA135] to-[#FF7236] rounded-2xl flex items-center justify-center shadow-lg">
-                  <HiUser className="w-10 h-10 text-white" />
-                </div>
+            <div className="flex flex-col sm:flex-row items-center sm:items-start justify-center sm:justify-start gap-4 sm:gap-6 mb-8 text-center sm:text-left">
+              {/* Icon */}
+              <div className="flex-shrink-0 w-16 h-16 sm:w-20 sm:h-20 bg-gradient-to-r from-[#FFA135] to-[#FF7236] rounded-2xl flex items-center justify-center shadow-lg mx-auto sm:mx-0">
+                <HiUser className="w-8 h-8 sm:w-10 sm:h-10 text-white" />
               </div>
 
-              <div className="flex-1 min-w-0">
-                <Field
-                  label="Brand Name"
-                  value={form?.name ?? ""}
-                  readValue={brand?.name ?? ""}
-                  editing={isEditing}
-                  onChange={(v) => onField("name", v as any)}
-                  large
-                />
+              {/* Label + Field (stacked on mobile, centered) */}
+              <div className="flex-1 min-w-0 w-full max-w-xl mx-auto sm:mx-0">
+                <div className="text-center sm:text-left">
+                  <Field
+                    label="Brand Name"
+                    value={form?.name ?? ""}
+                    readValue={brand?.name ?? ""}
+                    editing={isEditing}
+                    onChange={(v) => onField("name", v as any)}
+                    large
+                  />
+                </div>
               </div>
             </div>
 
@@ -798,20 +870,50 @@ export default function BrandProfilePage() {
           </CardContent>
         </Card>
 
-        {/* Subscription & Wallet (view mode) */}
+        {/* Wallet then Subscription (view mode) */}
         {!isEditing && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-            {/* Subscription */}
+          <div className="flex flex-col gap-6 mb-8">
+            {/* Wallet FIRST — always above */}
             <Card className="bg-white border border-gray-200 shadow-sm">
               <CardHeader className="pb-4">
                 <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 bg-purple-100 rounded-xl flex items-center justify-center">
-                    <HiCreditCard className="w-6 h-6 text-purple-600" />
+                  <div className="w-12 h-12 bg-emerald-100 rounded-xl flex items-center justify-center">
+                    <HiCash className="w-6 h-6 text-emerald-600" />
                   </div>
                   <div>
-                    <CardTitle>Subscription</CardTitle>
-                    <CardDescription>Plan & usage</CardDescription>
+                    <CardTitle>Wallet</CardTitle>
+                    <CardDescription>Balance &amp; top-up</CardDescription>
                   </div>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                <p className="text-3xl font-bold text-gray-900">
+                  {brand ? (mounted ? formatUSD(brand.walletBalance || 0) : "—") : "—"}
+                </p>
+                <p className="text-sm text-gray-600">Available for use</p>
+              </CardContent>
+            </Card>
+
+            {/* Subscription SECOND — stacked below */}
+            <Card className="bg-white border border-gray-200 shadow-sm">
+              <CardHeader className="pb-4">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 bg-purple-100 rounded-xl flex items-center justify-center">
+                      <HiCreditCard className="w-6 h-6 text-purple-600" />
+                    </div>
+                    <div>
+                      <CardTitle>Subscription</CardTitle>
+                      <CardDescription>Plan &amp; usage</CardDescription>
+                    </div>
+                  </div>
+                  <Button
+                    className="w-full sm:w-auto max-w-full self-stretch sm:self-auto inline-flex items-center justify-center px-4 py-2 bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white font-medium rounded-xl shadow hover:shadow-md transition-all"
+                    onClick={() => router.push("/brand/subscriptions")}
+                  >
+                    <HiCreditCard className="w-5 h-5 mr-2" />
+                    Upgrade Subscription
+                  </Button>
                 </div>
               </CardHeader>
 
@@ -855,7 +957,6 @@ export default function BrandProfilePage() {
                   )}
                 </div>
 
-                {/* Features usage */}
                 {/* Features usage */}
                 <div className="mt-2 space-y-4">
                   {(brand?.subscription.features ?? []).map((f) => {
@@ -928,71 +1029,45 @@ export default function BrandProfilePage() {
                   })}
                 </div>
               </CardContent>
-            </Card>
 
-            {/* Wallet */}
-            <Card className="bg-white border border-gray-200 shadow-sm">
-              <CardHeader className="pb-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 bg-emerald-100 rounded-xl flex items-center justify-center">
-                    <HiCash className="w-6 h-6 text-emerald-600" />
-                  </div>
-                  <div>
-                    <CardTitle>Wallet</CardTitle>
-                    <CardDescription>Balance & top-up</CardDescription>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                <p className="text-3xl font-bold text-gray-900">
-                  {brand ? (mounted ? formatUSD(brand.walletBalance || 0) : "—") : "—"}
-                </p>
-                <p className="text-sm text-gray-600">Available for use</p>
-              </CardContent>
             </Card>
           </div>
         )}
 
         {/* Action Buttons */}
-        <Card className="bg-white border border-gray-200 shadow-sm">
-          <CardContent className="p-6">
-            <div className="flex flex-col sm:flex-row gap-4 sm:justify-end">
-              {isEditing ? (
-                <>
-                  <Button
-                    onClick={resetEdits}
-                    disabled={saving}
-                    variant="outline"
-                    className="inline-flex items-center justify-center px-6 py-3"
-                  >
-                    <HiX className="w-5 h-5 mr-2" />
-                    Cancel
-                  </Button>
-                  <Button
-                    onClick={saveProfile}
-                    disabled={saveDisabled}
-                    className="inline-flex items-center justify-center px-6 py-3 bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white font-medium rounded-xl shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 disabled:opacity-60 disabled:transform-none"
-                    title={
-                      emailFlow !== "idle" && emailFlow !== "verified"
-                        ? "Verify the new email to enable saving"
-                        : undefined
-                    }
-                  >
-                    <HiCheck className="w-5 h-5 mr-2" />
-                    {saving ? "Saving…" : "Save Changes"}
-                  </Button>
-                </>
-              ) : (
-                <>
-                  <Button className="inline-flex items-center justify-center px-6 py-3 bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white font-medium rounded-xl shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200" onClick={() => router.push("/brand/subscriptions")}>
-                    <HiCreditCard className="w-5 h-5 mr-2" />
-                    Upgrade Subscription
-                  </Button>
-                </>
-              )}
-            </div>
-          </CardContent>
-        </Card>
+        {isEditing && (
+          <Card className="bg-white border border-gray-200 shadow-sm">
+            <CardContent className="p-6">
+              <div className="flex flex-col sm:flex-row gap-4 sm:justify-end">
+                <Button
+                  type="button"
+                  onClick={resetEdits}
+                  disabled={saving}
+                  variant="outline"
+                  className="inline-flex items-center justify-center px-6 py-3"
+                >
+                  <HiX className="w-5 h-5 mr-2" />
+                  Cancel
+                </Button>
+
+                <Button
+                  type="button"
+                  onClick={saveProfile}
+                  disabled={saveDisabled}
+                  className="inline-flex items-center justify-center px-6 py-3 bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white font-medium rounded-xl shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 disabled:opacity-60 disabled:transform-none"
+                  title={
+                    emailFlow !== "idle" && emailFlow !== "verified"
+                      ? "Verify the new email to enable saving"
+                      : undefined
+                  }
+                >
+                  <HiCheck className="w-5 h-5 mr-2" />
+                  {saving ? "Saving…" : "Save Changes"}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
       </div>
     </div>
   );
@@ -1012,6 +1087,10 @@ function Loader() {
 }
 
 function Error({ message }: { message: string }) {
+  useEffect(() => {
+    fire({ icon: "error", title: "Error Loading Profile", text: message });
+  }, [message]);
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-gray-100 flex items-center justify-center">
       <div className="max-w-md mx-auto text-center bg-white p-8 rounded-2xl shadow-sm border border-gray-100">
@@ -1050,7 +1129,7 @@ const Field = React.memo(function Field({
 }) {
   const id = useId();
   return (
-    <div className="space-y-2">
+    <div className="space-y-2 min-w-0">
       <Label className="block text-sm text-gray-700" htmlFor={id}>
         {label}
       </Label>
@@ -1063,7 +1142,7 @@ const Field = React.memo(function Field({
           placeholder={placeholder}
         />
       ) : (
-        <p className={`${large ? "text-2xl font-bold" : "text-lg font-medium"} text-gray-900`}>
+        <p className={`${large ? "text-2xl font-bold" : "text-lg font-medium"} text-gray-900 break-words`}>
           {readValue || "—"}
         </p>
       )}
@@ -1090,7 +1169,7 @@ const IconField = React.memo(function IconField({
 }) {
   const id = useId();
   return (
-    <div className="bg-white border border-gray-100 p-6 rounded-xl shadow-sm hover:shadow-md transition-shadow duration-200">
+    <div className="bg-white border border-gray-100 p-6 rounded-xl shadow-sm hover:shadow-md transition-shadow duration-200 min-w-0">
       <div className="flex items-start gap-4">
         <div className="flex-shrink-0 w-10 h-10 bg-gradient-to-br from-blue-50 to-indigo-100 rounded-lg flex items-center justify-center">
           <Icon className="text-indigo-600 w-5 h-5" />
@@ -1114,7 +1193,9 @@ const IconField = React.memo(function IconField({
               />
             </div>
           ) : (
-            <p className="text-lg font-medium text-gray-900">{readValue || "—"}</p>
+            <p className="text-lg font-medium text-gray-900 break-words">
+              {readValue || "—"}
+            </p>
           )}
         </div>
       </div>
@@ -1153,7 +1234,7 @@ const PhoneField = React.memo(function PhoneField({
   const numberId = useId();
 
   return (
-    <div className="bg-white border border-gray-100 p-6 rounded-xl shadow-sm hover:shadow-md transition-shadow duration-200">
+    <div className="bg-white border border-gray-100 p-6 rounded-xl shadow-sm hover:shadow-md transition-shadow duration-200 min-w-0">
       <div className="flex items-start gap-4">
         <div className="flex-shrink-0 w-10 h-10 bg-gradient-to-br from-green-50 to-emerald-100 rounded-lg flex items-center justify-center">
           <HiPhone className="text-emerald-600 w-5 h-5" />
@@ -1163,17 +1244,20 @@ const PhoneField = React.memo(function PhoneField({
             Phone Number
           </Label>
           {editing ? (
-            <div className="grid grid-cols-3 gap-3">
-              <Select
-                inputId="brandCalling"
-                options={codeOptions}
-                placeholder="Code"
-                value={selectedCalling}
-                onChange={(opt) => onCallingChange(opt as any)}
-                styles={selectStyles}
-                menuPortalTarget={typeof document !== "undefined" ? document.body : undefined}
-              />
-              <div className="col-span-2">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 min-w-0">
+              <div className="min-w-0">
+                <Select
+                  inputId="brandCalling"
+                  options={codeOptions}
+                  placeholder="Code"
+                  value={selectedCalling}
+                  onChange={(opt) => onCallingChange(opt as any)}
+                  styles={selectStyles}
+                  classNamePrefix="rs"
+                  menuPortalTarget={typeof document !== "undefined" ? document.body : undefined}
+                />
+              </div>
+              <div className="sm:col-span-2 min-w-0">
                 <Input
                   id={numberId}
                   value={valueNumber}
@@ -1181,11 +1265,12 @@ const PhoneField = React.memo(function PhoneField({
                   placeholder="Phone number"
                   inputMode="numeric"
                   maxLength={20}
+                  className="w-full"
                 />
               </div>
             </div>
           ) : (
-            <p className="text-lg font-medium text-gray-900">{readText}</p>
+            <p className="text-lg font-medium text-gray-900 break-words">{readText}</p>
           )}
         </div>
       </div>
@@ -1209,7 +1294,7 @@ const CountryField = React.memo(function CountryField({
   selectStyles: any;
 }) {
   return (
-    <div className="bg-white border border-gray-100 p-6 rounded-xl shadow-sm hover:shadow-md transition-shadow duration-200">
+    <div className="bg-white border border-gray-100 p-6 rounded-xl shadow-sm hover:shadow-md transition-shadow duration-200 min-w-0">
       <div className="flex items-start gap-4">
         <div className="flex-shrink-0 w-10 h-10 bg-gradient-to-br from-purple-50 to-purple-100 rounded-lg flex items-center justify-center">
           <HiGlobe className="text-purple-600 w-5 h-5" />
@@ -1228,7 +1313,7 @@ const CountryField = React.memo(function CountryField({
               menuPortalTarget={typeof document !== "undefined" ? document.body : undefined}
             />
           ) : (
-            <p className="text-lg font-medium text-gray-900">{readValue || "—"}</p>
+            <p className="text-lg font-medium text-gray-900 break-words">{readValue || "—"}</p>
           )}
         </div>
       </div>
