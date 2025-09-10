@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import Select from "react-select";
 import { get, post } from "@/lib/api";
 import {
@@ -10,6 +10,10 @@ import {
   HiMail,
   HiCheck,
   HiX,
+  HiCreditCard,
+  HiCash,
+  HiCalendar,
+  HiShieldCheck,
 } from "react-icons/hi";
 
 /* ===================== Types ===================== */
@@ -42,6 +46,8 @@ type BrandData = {
 };
 
 /* ===================== Utilities ===================== */
+
+const isEmailEqual = (a = "", b = "") => a.trim().toLowerCase() === b.trim().toLowerCase();
 
 function formatPhoneDisplay(code?: string, num?: string) {
   const c = (code || "").trim();
@@ -164,11 +170,10 @@ function EmailEditorDualOTP({
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [expiresAt, setExpiresAt] = useState<string | null>(null);
 
-  const needs = useMemo(
-    () => value.trim().toLowerCase() !== originalEmail.trim().toLowerCase(),
-    [value, originalEmail]
-  );
+  const needs = useMemo(() => !isEmailEqual(value, originalEmail), [value, originalEmail]);
+  const valueIsValid = useMemo(() => validateEmail(value), [value]);
 
   useEffect(() => {
     if (!needs) {
@@ -177,22 +182,22 @@ function EmailEditorDualOTP({
       setNewOtp("");
       setErr(null);
       setMsg(null);
+      setExpiresAt(null);
       onStateChange("idle");
-    } else if (flow === "codes_sent" || flow === "verifying") {
+    } else if (flow === "codes_sent" || flow === "verifying" || flow === "verified") {
       onStateChange(flow);
     } else {
+      // Ensure UI enters the "needs" state when the email first changes
+      setFlow("needs");
       onStateChange("needs");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [needs, flow, value, originalEmail]);
 
-  async function requestCodes() {
+  const requestCodes = useCallback(async () => {
     setErr(null);
     setMsg(null);
-    if (!validateEmail(value)) {
-      setErr("Enter a valid email address.");
-      return;
-    }
+    if (!valueIsValid) return; // button is hidden/disabled otherwise
     setBusy(true);
     try {
       const resp = await post<{
@@ -200,24 +205,25 @@ function EmailEditorDualOTP({
         oldEmail?: string;
         newEmail?: string;
         expiresAt?: string;
-      }>("/brand/emailUpdateOtp", { brandId, newEmail: value });
+      }>("/brand/requestEmailUpdate", { brandId, newEmail: value.trim().toLowerCase() });
       setFlow("codes_sent");
       setMsg(
         (resp && (resp.message as string)) ||
           `OTPs sent to ${originalEmail} (current) and ${value} (new).`
       );
+      setExpiresAt(resp?.expiresAt || null);
       onStateChange("codes_sent");
     } catch (e: any) {
       setErr(e?.message || "Failed to send codes.");
     } finally {
       setBusy(false);
     }
-  }
+  }, [brandId, originalEmail, value, valueIsValid, onStateChange]);
 
-  async function verifyAndPersist() {
+  const verifyAndPersist = useCallback(async () => {
     setErr(null);
-    if (!oldOtp.trim() || !newOtp.trim()) {
-      setErr("Enter both OTPs.");
+    if (oldOtp.trim().length !== 6 || newOtp.trim().length !== 6) {
+      setErr("Enter both 6‑digit OTPs.");
       return;
     }
     setBusy(true);
@@ -226,9 +232,9 @@ function EmailEditorDualOTP({
     try {
       const res = await post<{ email: string; token?: string; message?: string }>(
         "/brand/EmailUpdate",
-        { brandId, newEmail: value, oldOtp: oldOtp.trim(), newOtp: newOtp.trim() }
+        { brandId, newEmail: value.trim().toLowerCase(), oldOtp: oldOtp.trim(), newOtp: newOtp.trim() }
       );
-      const newEmail = (res as any)?.email || value;
+      const newEmail = (res as any)?.email || value.trim().toLowerCase();
       const token = (res as any)?.token;
       onVerified(newEmail, token);
       setMsg(res?.message || "Email updated successfully.");
@@ -243,99 +249,155 @@ function EmailEditorDualOTP({
     } finally {
       setBusy(false);
     }
-  }
+  }, [brandId, value, oldOtp, newOtp, onVerified, onStateChange]);
+
+  // Restrict OTP inputs to digits only
+  const handleOtp = (setter: (v: string) => void) => (e: React.ChangeEvent<HTMLInputElement>) => {
+    const digits = e.target.value.replace(/\D/g, "").slice(0, 6);
+    setter(digits);
+  };
 
   return (
-    <div className="flex items-start bg-gray-50 p-4 rounded-lg">
-      <HiMail className="text-gray-500 mr-3 mt-1" />
-      <div className="flex-1">
-        <p className="text-sm text-gray-500">Email</p>
-
-        {/* Always show editable input */}
-        <div className="relative">
-          <input
-            className="w-full text-gray-700 font-medium focus:outline-none bg-transparent pb-1"
-            value={value}
-            onChange={(e) => onChange(e.target.value)}
-            placeholder="name@example.com"
-          />
-          <span className="pointer-events-none absolute left-0 right-0 bottom-0 h-[2px] rounded-full bg-gradient-to-r from-[#FFA135] to-[#FF7236]" />
+    <div className="relative bg-white border border-gray-100 p-6 rounded-xl shadow-sm hover:shadow-md transition-shadow duration-200">
+      <div className="flex items-start gap-4">
+        <div className="flex-shrink-0 w-10 h-10 bg-gradient-to-br from-blue-50 to-indigo-100 rounded-lg flex items-center justify-center">
+          <HiMail className="text-indigo-600 w-5 h-5" />
         </div>
+        <div className="flex-1 min-w-0">
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Email Address
+          </label>
 
-        {/* Actions for edited emails */}
-        {needs && (
-          <div className="mt-3 space-y-3">
-            {flow === "needs" && (
-              <div className="flex items-center justify-between">
-                <p className="text-sm text-gray-600">
-                  To change your email, request OTP codes.
-                </p>
-                <button
-                  onClick={requestCodes}
-                  disabled={busy || !validateEmail(value)}
-                  className="px-3 py-1.5 rounded-lg bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white hover:opacity-90 transition disabled:opacity-60"
-                >
-                  {busy ? "Sending…" : "Verify"}
-                </button>
-              </div>
-            )}
+          {/* Always show editable input */}
+          <div className="relative">
+            <input
+              className="w-full px-4 py-3 text-gray-900 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all duration-200 pr-24"
+              value={value}
+              onChange={(e) => onChange(e.target.value)}
+              placeholder="name@example.com"
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && needs && valueIsValid && flow === "needs") {
+                  requestCodes();
+                }
+              }}
+            />
 
-            {(flow === "codes_sent" || flow === "verifying") && (
-              <div className="space-y-3">
-                <p className="text-sm text-gray-600">
-                  Enter the 6‑digit codes sent to <span className="font-semibold">{originalEmail}</span> (old) and <span className="font-semibold">{value}</span> (new).
-                </p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div className="relative">
-                    <input
-                      className="w-full text-gray-700 font-medium focus:outline-none bg-transparent pb-1 tracking-widest"
-                      placeholder="Old email OTP"
-                      value={oldOtp}
-                      onChange={(e) => setOldOtp(e.target.value)}
-                      inputMode="numeric"
-                      maxLength={6}
-                    />
-                    <span className="pointer-events-none absolute left-0 right-0 bottom-0 h-[2px] rounded-full bg-gradient-to-r from-[#FFA135] to-[#FF7236]" />
-                  </div>
-                  <div className="relative">
-                    <input
-                      className="w-full text-gray-700 font-medium focus:outline-none bg-transparent pb-1 tracking-widest"
-                      placeholder="New email OTP"
-                      value={newOtp}
-                      onChange={(e) => setNewOtp(e.target.value)}
-                      inputMode="numeric"
-                      maxLength={6}
-                    />
-                    <span className="pointer-events-none absolute left-0 right-0 bottom-0 h-[2px] rounded-full bg-gradient-to-r from-[#FFA135] to-[#FF7236]" />
-                  </div>
-                </div>
-                <div className="flex items-center justify-end gap-2">
-                  <button
-                    onClick={requestCodes}
-                    disabled={busy}
-                    className="px-3 py-2 rounded-lg bg-gray-200 hover:bg-gray-300 transition"
-                  >
-                    Resend Codes
-                  </button>
-                  <button
-                    onClick={verifyAndPersist}
-                    disabled={busy}
-                    className="px-4 py-2 rounded-lg bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white hover:opacity-90 transition disabled:opacity-60"
-                  >
-                    {busy ? "Verifying…" : "Verify & Update"}
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {(msg || err) && (
-              <div className="mt-1">
-                {msg && <p className="text-sm text-green-600">{msg}</p>}
-                {err && <p className="text-sm text-red-600">{err}</p>}
-              </div>
+            {/* Inline Verify button — only shows when email actually changed */}
+            {needs && valueIsValid && (flow === "needs" || flow === "idle") && (
+              <button
+                onClick={requestCodes}
+                disabled={busy}
+                className="absolute right-2 top-1/2 -translate-y-1/2 px-3 py-1.5 rounded-md bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white text-sm font-medium hover:shadow-md transform hover:scale-105 transition-all duration-200 disabled:opacity-60 disabled:transform-none"
+                aria-label="Send verification codes"
+              >
+                {busy ? "Sending…" : "Verify"}
+              </button>
             )}
           </div>
-        )}
+
+          {/* Downstream actions only visible once codes are requested */}
+          {needs && (flow === "codes_sent" || flow === "verifying") && (
+            <div className="mt-6 p-4 bg-amber-50 border border-amber-200 rounded-lg">
+              <div className="flex items-start gap-3 mb-4">
+                <HiShieldCheck className="text-amber-600 w-5 h-5 mt-0.5 flex-shrink-0" />
+                <div>
+                  <p className="text-sm font-medium text-amber-800 mb-1">
+                    Verification Required
+                  </p>
+                  <p className="text-sm text-amber-700">
+                    Enter the 6‑digit codes sent to{" "}
+                    <span className="font-semibold">{originalEmail}</span> (current) and{" "}
+                    <span className="font-semibold">{value}</span> (new).
+                    {expiresAt && (
+                      <span className="block mt-1 text-xs text-amber-600">
+                        Expires: {new Date(expiresAt).toLocaleString()}
+                      </span>
+                    )}
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-2">
+                    Current Email OTP
+                  </label>
+                  <input
+                    className="w-full px-3 py-2 text-center text-lg font-mono tracking-widest bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                    placeholder="000000"
+                    value={oldOtp}
+                    onChange={handleOtp(setOldOtp)}
+                    inputMode="numeric"
+                    maxLength={6}
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-2">
+                    New Email OTP
+                  </label>
+                  <input
+                    className="w-full px-3 py-2 text-center text-lg font-mono tracking-widest bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                    placeholder="000000"
+                    value={newOtp}
+                    onChange={handleOtp(setNewOtp)}
+                    inputMode="numeric"
+                    maxLength={6}
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-3">
+                <button
+                  onClick={requestCodes}
+                  disabled={busy}
+                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors duration-200 disabled:opacity-60"
+                >
+                  Resend Codes
+                </button>
+                <button
+                  onClick={verifyAndPersist}
+                  disabled={busy || oldOtp.length !== 6 || newOtp.length !== 6}
+                  className="px-4 py-2 text-sm font-medium text-white bg-gradient-to-r from-[#FFA135] to-[#FF7236] rounded-lg hover:shadow-md transform hover:scale-105 transition-all duration-200 disabled:opacity-60 disabled:transform-none"
+                >
+                  {busy ? "Verifying…" : "Verify & Update"}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Feedback */}
+          {(msg || err) && (
+            <div className="mt-3" aria-live="polite">
+              {msg && (
+                <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
+                  <p className="text-sm text-green-800 flex items-center gap-2">
+                    <HiCheck className="w-4 h-4" />
+                    {msg}
+                  </p>
+                </div>
+              )}
+              {err && (
+                <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
+                  <p className="text-sm text-red-800 flex items-center gap-2">
+                    <HiX className="w-4 h-4" />
+                    {err}
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Offer quick cancel only if changed and no codes yet */}
+          {needs && flow === "needs" && (
+            <button
+              type="button"
+              onClick={() => onChange(originalEmail)}
+              className="mt-2 text-xs text-gray-500 hover:text-gray-700 underline transition-colors"
+            >
+              Cancel change
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -347,9 +409,9 @@ export default function BrandProfilePage() {
   const [brand, setBrand] = useState<BrandData | null>(null);
   const [form, setForm] = useState<BrandData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isEditing, setIsEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   // Email flow state controls Save button
   const [emailFlow, setEmailFlow] = useState<EmailFlowState>("idle");
@@ -360,6 +422,35 @@ export default function BrandProfilePage() {
   const codeOptions = useMemo(() => buildCallingOptions(countries), [countries]);
   const [selectedCountry, setSelectedCountry] = useState<CountryOption | null>(null);
   const [selectedCalling, setSelectedCalling] = useState<CountryOption | null>(null);
+
+  const selectStyles = useMemo(
+    () => ({
+      control: (base: any, state: any) => ({
+        ...base,
+        backgroundColor: "#F9FAFB",
+        borderColor: state.isFocused ? "#F97316" : "#E5E7EB",
+        boxShadow: state.isFocused ? "0 0 0 2px rgba(249, 115, 22, 0.2)" : "none",
+        "&:hover": {
+          borderColor: "#F97316",
+        },
+        borderRadius: "8px",
+        padding: "4px",
+      }),
+      option: (base: any, state: any) => ({
+        ...base,
+        backgroundColor: state.isSelected
+          ? "#FED7AA"
+          : state.isFocused
+          ? "#FFF7ED"
+          : "transparent",
+        color: state.isSelected ? "#9A3412" : "#374151",
+        "&:hover": {
+          backgroundColor: "#FFF7ED",
+        },
+      }),
+    }),
+    []
+  );
 
   useEffect(() => {
     const brandId = localStorage.getItem("brandId");
@@ -375,20 +466,21 @@ export default function BrandProfilePage() {
           get<any>(`/brand?id=${brandId}`),
           get<Country[]>("/country/getall"),
         ]);
-        setCountries(countryRes || []);
+        const countriesList = countryRes || [];
+        setCountries(countriesList);
+
         const normalized = normalizeBrand(brandRes);
         setBrand(normalized);
         setForm(structuredClone(normalized));
 
         // Pre-select dropdowns based on stored ids
-        const co = countryRes || [];
         const countryOpt =
-          co.length && normalized.countryId
-            ? buildCountryOptions(co).find((o) => o.value === normalized.countryId) || null
+          countriesList.length && normalized.countryId
+            ? buildCountryOptions(countriesList).find((o) => o.value === normalized.countryId) || null
             : null;
         const callingOpt =
-          co.length && normalized.callingId
-            ? buildCallingOptions(co).find((o) => o.value === normalized.callingId) || null
+          countriesList.length && normalized.callingId
+            ? buildCallingOptions(countriesList).find((o) => o.value === normalized.callingId) || null
             : null;
         setSelectedCountry(countryOpt);
         setSelectedCalling(callingOpt);
@@ -401,37 +493,22 @@ export default function BrandProfilePage() {
     })();
   }, []);
 
-  // keep form.country / callingCode in sync with selections (for read-mode display)
+  // keep form.country / callingCode in sync with selections (use functional updates to avoid stale data)
   useEffect(() => {
-    if (!form) return;
-    if (selectedCountry) {
-      setForm({
-        ...form,
-        countryId: selectedCountry.value,
-        country: selectedCountry.country.countryName,
-      });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (!selectedCountry) return;
+    setForm((prev) => (prev ? { ...prev, countryId: selectedCountry.value, country: selectedCountry.country.countryName } : prev));
   }, [selectedCountry]);
 
   useEffect(() => {
-    if (!form) return;
-    if (selectedCalling) {
-      setForm({
-        ...form,
-        callingId: selectedCalling.value,
-        callingCode: selectedCalling.country.callingCode,
-      });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (!selectedCalling) return;
+    setForm((prev) => (prev ? { ...prev, callingId: selectedCalling.value, callingCode: selectedCalling.country.callingCode } : prev));
   }, [selectedCalling]);
 
-  const onField = <K extends keyof BrandData>(key: K, value: BrandData[K]) => {
-    if (!form) return;
-    setForm({ ...form, [key]: value });
-  };
+  const onField = useCallback(<K extends keyof BrandData>(key: K, value: BrandData[K]) => {
+    setForm((prev) => (prev ? { ...prev, [key]: value } : prev));
+  }, []);
 
-  const resetEdits = () => {
+  const resetEdits = useCallback(() => {
     if (!brand) return;
     const cl = structuredClone(brand);
     setForm(cl);
@@ -446,9 +523,9 @@ export default function BrandProfilePage() {
       : null;
     setSelectedCountry(countryOpt);
     setSelectedCalling(callingOpt);
-  };
+  }, [brand, countries]);
 
-  const saveProfile = async () => {
+  const saveProfile = useCallback(async () => {
     if (!form || !brand) return;
 
     // If email flow is mid-way, block save (email must be verified first)
@@ -459,7 +536,7 @@ export default function BrandProfilePage() {
 
     setSaving(true);
     try {
-      // 1) Update profile fields (name/phone/countryId/callingId)
+      // Only send fields that can be updated here
       const payload: any = {
         brandId: form.brandId,
         name: form.name,
@@ -480,52 +557,68 @@ export default function BrandProfilePage() {
     } finally {
       setSaving(false);
     }
-  };
+  }, [brand, emailFlow, form]);
 
   if (loading) return <Loader />;
   if (error) return <Error message={error} />;
 
+  const saveDisabled = saving || (emailFlow !== "idle" && emailFlow !== "verified");
+
   return (
-    <section className="min-h-screen py-12">
-      <div className="max-w-5xl mx-auto bg-white p-8 rounded-xl shadow-md">
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-gray-100 py-8">
+      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Header */}
-        <div className="flex justify-between items-center mb-8">
-          <h2 className="text-2xl font-semibold text-gray-800">Brand Profile</h2>
-          {!isEditing ? (
-            <button
-              onClick={() => setIsEditing(true)}
-              className="flex items-center bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white px-4 py-2 rounded-lg shadow hover:opacity-90 transition cursor-pointer"
-            >
-              <HiUser className="mr-2" /> Edit Profile
-            </button>
-          ) : null}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8 mb-8">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900 mb-2">Brand Profile</h1>
+              <p className="text-gray-600">Manage your brand information and settings</p>
+            </div>
+            {!isEditing && (
+              <button
+                onClick={() => setIsEditing(true)}
+                className="inline-flex items-center px-6 py-3 bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white font-medium rounded-xl shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200"
+              >
+                <HiUser className="w-5 h-5 mr-2" />
+                Edit Profile
+              </button>
+            )}
+          </div>
         </div>
 
-        {/* Top Row */}
-        <div className="flex items-start gap-4 mb-8">
-          <div className="bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white rounded-full p-3">
-            <HiUser size={32} />
+        {/* Profile Section */}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8 mb-8">
+          <div className="flex items-start gap-6 mb-8">
+            <div className="flex-shrink-0">
+              <div className="w-20 h-20 bg-gradient-to-r from-[#FFA135] to-[#FF7236] rounded-2xl flex items-center justify-center shadow-lg">
+                <HiUser className="w-10 h-10 text-white" />
+              </div>
+            </div>
+            
+            <div className="flex-1 min-w-0">
+              {/* Name */}
+              <Field
+                label="Brand Name"
+                value={form?.name ?? ""}
+                readValue={brand?.name ?? ""}
+                editing={isEditing}
+                onChange={(v) => onField("name", v as any)}
+                large
+              />
+            </div>
           </div>
 
-          <div className="flex-1 space-y-4">
-            {/* Name */}
-            <Field
-              label="Name"
-              value={form?.name ?? ""}
-              readValue={brand?.name ?? ""}
-              editing={isEditing}
-              onChange={(v) => onField("name", v as any)}
-              large
-            />
-
-            {/* Contact grid */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {/* Contact Information */}
+          <div className="space-y-6">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Contact Information</h3>
+            
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {/* Email */}
               {!isEditing ? (
                 <IconField
                   icon={HiMail}
-                  label="Email"
-                  value={""}
+                  label="Email Address"
+                  value=""
                   readValue={brand?.email ?? ""}
                   onChange={() => {}}
                   editing={false}
@@ -551,7 +644,7 @@ export default function BrandProfilePage() {
                 )
               )}
 
-              {/* Phone (calling code + number) */}
+              {/* Phone */}
               <PhoneField
                 valueNumber={form?.phone ?? ""}
                 readValueNumber={brand?.phone ?? ""}
@@ -561,77 +654,121 @@ export default function BrandProfilePage() {
                 codeOptions={codeOptions}
                 selectedCalling={selectedCalling}
                 onCallingChange={(opt) => setSelectedCalling(opt as any)}
+                selectStyles={selectStyles}
               />
+            </div>
 
-              {/* Country dropdown */}
-              <div className="flex items-center bg-gray-50 p-4 rounded-lg">
-                <HiGlobe className="text-gray-500 mr-3" />
-                <div className="flex-1">
-                  <p className="text-sm text-gray-500">Country</p>
-                  {!isEditing ? (
-                    <p className="text-gray-700 font-medium">{brand?.country || "—"}</p>
-                  ) : (
-                    <Select
-                      inputId="brandCountry"
-                      options={countryOptions}
-                      placeholder="Select Country"
-                      value={selectedCountry}
-                      onChange={(opt) => setSelectedCountry(opt as CountryOption)}
-                      filterOption={filterByCountryName as any}
-                      styles={{
-                        control: (base: any) => ({
-                          ...base,
-                          backgroundColor: "#F9FAFB",
-                          borderColor: "#E5E7EB",
-                        }),
-                      }}
-                      className="mt-1"
-                      required
-                    />
+            {/* Country */}
+            <div className="max-w-md">
+              <CountryField
+                editing={isEditing}
+                readValue={brand?.country ?? ""}
+                countryOptions={countryOptions}
+                selectedCountry={selectedCountry}
+                onCountryChange={(opt) => setSelectedCountry(opt as CountryOption)}
+                selectStyles={selectStyles}
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Subscription & Wallet */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+          {/* Subscription Card */}
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+            <div className="flex items-start gap-4">
+              <div className="flex-shrink-0 w-12 h-12 bg-gradient-to-br from-purple-50 to-purple-100 rounded-xl flex items-center justify-center">
+                <HiCreditCard className="w-6 h-6 text-purple-600" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <h3 className="text-lg font-semibold text-gray-900 mb-2">Subscription</h3>
+                <p className="text-2xl font-bold text-gray-900 mb-2">
+                  {brand?.subscription.planName || "No Plan"}
+                </p>
+                <div className="space-y-1 text-sm text-gray-600">
+                  {brand?.subscription.startedAt && (
+                    <div className="flex items-center gap-2">
+                      <HiCalendar className="w-4 h-4" />
+                      <span>Started: {new Date(brand.subscription.startedAt).toLocaleDateString()}</span>
+                    </div>
+                  )}
+                  {brand?.subscription.expiresAt && (
+                    <div className="flex items-center gap-2">
+                      <HiCalendar className="w-4 h-4" />
+                      <span>
+                        Expires: {new Date(brand.subscription.expiresAt).toLocaleDateString()}
+                        {brand?.subscriptionExpired && (
+                          <span className="ml-2 px-2 py-1 bg-red-100 text-red-700 text-xs rounded-full">
+                            Expired
+                          </span>
+                        )}
+                      </span>
+                    </div>
                   )}
                 </div>
               </div>
             </div>
           </div>
+
+          {/* Wallet Card */}
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+            <div className="flex items-start gap-4">
+              <div className="flex-shrink-0 w-12 h-12 bg-gradient-to-br from-green-50 to-emerald-100 rounded-xl flex items-center justify-center">
+                <HiCash className="w-6 h-6 text-emerald-600" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <h3 className="text-lg font-semibold text-gray-900 mb-2">Wallet Balance</h3>
+                <p className="text-3xl font-bold text-gray-900">
+                  {brand ? new Intl.NumberFormat(undefined, { style: "currency", currency: "USD" }).format(brand.walletBalance || 0) : "—"}
+                </p>
+                <p className="text-sm text-gray-600 mt-1">Available for use</p>
+              </div>
+            </div>
+          </div>
         </div>
 
-        {/* Actions */}
-        <div className="mt-8 flex justify-end space-x-3">
-          {isEditing ? (
-            <>
-              <button
-                onClick={resetEdits}
-                className="flex items-center px-4 py-2 bg-gray-200 rounded-lg hover:bg-gray-300 transition"
-                disabled={saving}
-              >
-                <HiX className="mr-1" /> Cancel
-              </button>
-              <button
-                onClick={saveProfile}
-                className="flex items-center px-4 py-2 bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white rounded-lg shadow hover:opacity-90 transition disabled:opacity-60"
-                disabled={saving || (emailFlow !== "idle" && emailFlow !== "verified")}
-                title={
-                  emailFlow !== "idle" && emailFlow !== "verified"
-                    ? "Verify the new email to enable saving"
-                    : undefined
-                }
-              >
-                <HiCheck className="mr-1" /> {saving ? "Saving…" : "Save Changes"}
-              </button>
-            </>
-          ) : (
-            <>
-              <button className="px-4 py-2 bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white rounded-lg hover:opacity-90 transition cursor-pointer">
-                Upgrade Subscription
-              </button>
-              <button className="px-4 py-2 bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white rounded-lg hover:opacity-90 transition cursor-pointer">
-                Cancel Subscription
-              </button>
-            </>
-          )}
+        {/* Action Buttons */}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+          <div className="flex flex-col sm:flex-row gap-4 sm:justify-end">
+            {isEditing ? (
+              <>
+                <button
+                  onClick={resetEdits}
+                  disabled={saving}
+                  className="inline-flex items-center justify-center px-6 py-3 text-gray-700 bg-gray-100 border border-gray-300 rounded-xl hover:bg-gray-200 transition-all duration-200 disabled:opacity-60"
+                >
+                  <HiX className="w-5 h-5 mr-2" />
+                  Cancel
+                </button>
+                <button
+                  onClick={saveProfile}
+                  disabled={saveDisabled}
+                  className="inline-flex items-center justify-center px-6 py-3 bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white font-medium rounded-xl shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 disabled:opacity-60 disabled:transform-none"
+                  title={
+                    emailFlow !== "idle" && emailFlow !== "verified"
+                      ? "Verify the new email to enable saving"
+                      : undefined
+                  }
+                >
+                  <HiCheck className="w-5 h-5 mr-2" />
+                  {saving ? "Saving…" : "Save Changes"}
+                </button>
+              </>
+            ) : (
+              <>
+                <button className="inline-flex items-center justify-center px-6 py-3 bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white font-medium rounded-xl shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200">
+                  <HiCreditCard className="w-5 h-5 mr-2" />
+                  Upgrade Subscription
+                </button>
+                <button className="inline-flex items-center justify-center px-6 py-3 text-gray-700 bg-gray-100 border border-gray-300 rounded-xl hover:bg-gray-200 transition-all duration-200">
+                  Cancel Subscription
+                </button>
+              </>
+            )}
+          </div>
         </div>
       </div>
-    </section>
+    </div>
   );
 }
 
@@ -639,16 +776,31 @@ export default function BrandProfilePage() {
 
 function Loader() {
   return (
-    <div className="flex items-center justify-center h-full py-20">
-      <span className="text-gray-500">Loading profile…</span>
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-gray-100 flex items-center justify-center">
+      <div className="text-center">
+        <div className="w-12 h-12 mx-auto mb-4 border-4 border-orange-200 border-t-orange-500 rounded-full animate-spin"></div>
+        <p className="text-gray-600 font-medium">Loading profile…</p>
+      </div>
     </div>
   );
 }
 
 function Error({ message }: { message: string }) {
   return (
-    <div className="flex items-center justify-center h-full py-20">
-      <span className="text-red-500">{message}</span>
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-gray-100 flex items-center justify-center">
+      <div className="max-w-md mx-auto text-center bg-white p-8 rounded-2xl shadow-sm border border-gray-100">
+        <div className="w-16 h-16 mx-auto mb-4 bg-red-100 rounded-full flex items-center justify-center">
+          <HiX className="w-8 h-8 text-red-600" />
+        </div>
+        <h2 className="text-xl font-semibold text-gray-900 mb-2">Error Loading Profile</h2>
+        <p className="text-red-600 mb-4">{message}</p>
+        <button
+          onClick={() => window.location.reload()}
+          className="px-6 py-3 bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white font-medium rounded-xl hover:shadow-md transition-all duration-200"
+        >
+          Try Again
+        </button>
+      </div>
     </div>
   );
 }
@@ -671,22 +823,19 @@ function Field({
   large?: boolean;
 }) {
   return (
-    <div>
-      <p className="text-sm text-gray-500">{label}</p>
+    <div className="space-y-2">
+      <label className="block text-sm font-medium text-gray-700">{label}</label>
       {editing ? (
-        <div className={`relative ${large ? "pt-1" : ""}`}>
-          <input
-            className={`w-full text-gray-700 font-medium focus:outline-none bg-transparent pb-1 ${
-              large ? "text-2xl font-bold" : ""
-            }`}
-            value={value}
-            onChange={(e) => onChange(e.target.value)}
-            placeholder={placeholder}
-          />
-          <span className="pointer-events-none absolute left-0 right-0 bottom-0 h-[2px] rounded-full bg-gradient-to-r from-[#FFA135] to-[#FF7236]" />
-        </div>
+        <input
+          className={`w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all duration-200 ${
+            large ? "text-2xl font-bold" : "text-base"
+          }`}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder}
+        />
       ) : (
-        <p className={`${large ? "text-2xl font-bold" : "font-medium"} text-gray-800`}>
+        <p className={`${large ? "text-2xl font-bold" : "text-lg font-medium"} text-gray-900`}>
           {readValue || "—"}
         </p>
       )}
@@ -712,29 +861,30 @@ function IconField({
   editing: boolean;
 }) {
   return (
-    <div className="flex items-center bg-gray-50 p-4 rounded-lg">
-      <Icon className="text-gray-500 mr-3" />
-      <div className="flex-1">
-        <p className="text-sm text-gray-500">{label}</p>
-        {editing ? (
-          <div className="flex items-center gap-2">
-            {prefix ? (
-              <span className="px-2 py-1 rounded bg-gray-200 text-gray-700 text-sm select-none">
-                {prefix}
-              </span>
-            ) : null}
-            <div className="relative w-full">
+    <div className="bg-white border border-gray-100 p-6 rounded-xl shadow-sm hover:shadow-md transition-shadow duration-200">
+      <div className="flex items-start gap-4">
+        <div className="flex-shrink-0 w-10 h-10 bg-gradient-to-br from-blue-50 to-indigo-100 rounded-lg flex items-center justify-center">
+          <Icon className="text-indigo-600 w-5 h-5" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <label className="block text-sm font-medium text-gray-700 mb-2">{label}</label>
+          {editing ? (
+            <div className="flex items-center gap-2">
+              {prefix && (
+                <span className="px-3 py-2 bg-gray-100 text-gray-700 text-sm rounded-lg font-medium">
+                  {prefix}
+                </span>
+              )}
               <input
-                className="w-full text-gray-700 font-medium focus:outline-none bg-transparent pb-1"
+                className="flex-1 px-4 py-3 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all duration-200"
                 value={value}
                 onChange={(e) => onChange(e.target.value)}
               />
-              <span className="pointer-events-none absolute left-0 right-0 bottom-0 h-[2px] rounded-full bg-gradient-to-r from-[#FFA135] to-[#FF7236]" />
             </div>
-          </div>
-        ) : (
-          <p className="text-gray-700 font-medium">{readValue || "—"}</p>
-        )}
+          ) : (
+            <p className="text-lg font-medium text-gray-900">{readValue || "—"}</p>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -749,6 +899,7 @@ function PhoneField({
   codeOptions,
   selectedCalling,
   onCallingChange,
+  selectStyles,
 }: {
   valueNumber: string;
   readValueNumber: string;
@@ -758,42 +909,82 @@ function PhoneField({
   codeOptions: any[];
   selectedCalling: any | null;
   onCallingChange: (opt: any | null) => void;
+  selectStyles: any;
 }) {
   const readText = formatPhoneDisplay(code, readValueNumber);
   return (
-    <div className="flex items-center bg-gray-50 p-4 rounded-lg">
-      <HiPhone className="text-gray-500 mr-3" />
-      <div className="flex-1">
-        <p className="text-sm text-gray-500">Phone</p>
-        {editing ? (
-          <div className="grid grid-cols-3 gap-2 items-center">
-            <Select
-              inputId="brandCalling"
-              options={codeOptions}
-              placeholder="+Code"
-              value={selectedCalling}
-              onChange={(opt) => onCallingChange(opt as any)}
-              styles={{
-                control: (base: any) => ({
-                  ...base,
-                  backgroundColor: "#F9FAFB",
-                  borderColor: "#E5E7EB",
-                }),
-              }}
-            />
-            <div className="col-span-2 relative w-full">
-              <input
-                className="w-full text-gray-700 font-medium focus:outline-none bg-transparent pb-1"
-                value={valueNumber}
-                onChange={(e) => onNumberChange(e.target.value)}
-                placeholder="Phone number"
+    <div className="bg-white border border-gray-100 p-6 rounded-xl shadow-sm hover:shadow-md transition-shadow duration-200">
+      <div className="flex items-start gap-4">
+        <div className="flex-shrink-0 w-10 h-10 bg-gradient-to-br from-green-50 to-emerald-100 rounded-lg flex items-center justify-center">
+          <HiPhone className="text-emerald-600 w-5 h-5" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <label className="block text-sm font-medium text-gray-700 mb-2">Phone Number</label>
+          {editing ? (
+            <div className="grid grid-cols-3 gap-3">
+              <Select
+                inputId="brandCalling"
+                options={codeOptions}
+                placeholder="Code"
+                value={selectedCalling}
+                onChange={(opt) => onCallingChange(opt as any)}
+                styles={selectStyles}
               />
-              <span className="pointer-events-none absolute left-0 right-0 bottom-0 h-[2px] rounded-full bg-gradient-to-r from-[#FFA135] to-[#FF7236]" />
+              <div className="col-span-2">
+                <input
+                  className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all duration-200"
+                  value={valueNumber}
+                  onChange={(e) => onNumberChange(e.target.value)}
+                  placeholder="Phone number"
+                />
+              </div>
             </div>
-          </div>
-        ) : (
-          <p className="text-gray-700 font-medium">{readText}</p>
-        )}
+          ) : (
+            <p className="text-lg font-medium text-gray-900">{readText}</p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CountryField({
+  editing,
+  readValue,
+  countryOptions,
+  selectedCountry,
+  onCountryChange,
+  selectStyles,
+}: {
+  editing: boolean;
+  readValue: string;
+  countryOptions: CountryOption[];
+  selectedCountry: CountryOption | null;
+  onCountryChange: (opt: CountryOption | null) => void;
+  selectStyles: any;
+}) {
+  return (
+    <div className="bg-white border border-gray-100 p-6 rounded-xl shadow-sm hover:shadow-md transition-shadow duration-200">
+      <div className="flex items-start gap-4">
+        <div className="flex-shrink-0 w-10 h-10 bg-gradient-to-br from-purple-50 to-purple-100 rounded-lg flex items-center justify-center">
+          <HiGlobe className="text-purple-600 w-5 h-5" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <label className="block text-sm font-medium text-gray-700 mb-2">Country</label>
+          {editing ? (
+            <Select
+              inputId="brandCountry"
+              options={countryOptions}
+              placeholder="Select Country"
+              value={selectedCountry}
+              onChange={(opt) => onCountryChange(opt as CountryOption)}
+              filterOption={filterByCountryName as any}
+              styles={selectStyles}
+            />
+          ) : (
+            <p className="text-lg font-medium text-gray-900">{readValue || "—"}</p>
+          )}
+        </div>
       </div>
     </div>
   );
