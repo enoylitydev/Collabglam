@@ -374,7 +374,7 @@ function MultiSelect({ values, onChange, options, placeholder = "Choose...", max
             <SelectItem
               key={opt.value}
               value={opt.value}
-              // ❌ remove this: onPointerDown={(e) => e.preventDefault()}
+            // ❌ remove this: onPointerDown={(e) => e.preventDefault()}
             >
               <div className="flex items-center gap-2">
                 <CheckIcon className={`h-4 w-4 ${selectedSet.has(opt.value) ? "opacity-100" : "opacity-0"}`} />
@@ -768,10 +768,10 @@ export default function InfluencerProfilePage() {
           const byLabel =
             !byId && normalized.audienceAgeRange
               ? ageOpts.find(
-                  (o) =>
-                    o.label.toLowerCase() ===
-                    (normalized.audienceAgeRange || "").toLowerCase()
-                ) || null
+                (o) =>
+                  o.label.toLowerCase() ===
+                  (normalized.audienceAgeRange || "").toLowerCase()
+              ) || null
               : null;
 
           const sel = byId || byLabel || null;
@@ -784,9 +784,9 @@ export default function InfluencerProfilePage() {
           const byLabel =
             !byId && normalized.audienceRange
               ? rangeOpts.find(
-                  (o) =>
-                    o.label.toLowerCase() === (normalized.audienceRange || "").toLowerCase()
-                ) || null
+                (o) =>
+                  o.label.toLowerCase() === (normalized.audienceRange || "").toLowerCase()
+              ) || null
               : null;
           const sel = byId || byLabel || null;
           if (sel) setForm((prev) => (prev ? { ...prev, audienceId: sel.value } : prev));
@@ -802,73 +802,73 @@ export default function InfluencerProfilePage() {
   }, []);
 
   // keep form.country / callingCode in sync with selections
-useEffect(() => {
-  if (!selectedCountry) return;
-  setForm(prev => {
-    if (!prev) return prev;
-    const nextCountryId = selectedCountry.value;
-    const nextCountryName = selectedCountry.country.countryName;
-    if (prev.countryId === nextCountryId && prev.country === nextCountryName) return prev;
-    return { ...prev, countryId: nextCountryId, country: nextCountryName };
-  });
-}, [selectedCountry]);
+  useEffect(() => {
+    if (!selectedCountry) return;
+    setForm(prev => {
+      if (!prev) return prev;
+      const nextCountryId = selectedCountry.value;
+      const nextCountryName = selectedCountry.country.countryName;
+      if (prev.countryId === nextCountryId && prev.country === nextCountryName) return prev;
+      return { ...prev, countryId: nextCountryId, country: nextCountryName };
+    });
+  }, [selectedCountry]);
 
-useEffect(() => {
-  if (!selectedCalling) return;
-  setForm(prev => {
-    if (!prev) return prev;
-    const nextCallingId = selectedCalling.value;
-    const nextCallingCode = selectedCalling.country.callingCode;
-    if (prev.callingId === nextCallingId && prev.callingCode === nextCallingCode) return prev;
-    return { ...prev, callingId: nextCallingId, callingCode: nextCallingCode };
-  });
-}, [selectedCalling]);
+  useEffect(() => {
+    if (!selectedCalling) return;
+    setForm(prev => {
+      if (!prev) return prev;
+      const nextCallingId = selectedCalling.value;
+      const nextCallingCode = selectedCalling.country.callingCode;
+      if (prev.callingId === nextCallingId && prev.callingCode === nextCallingCode) return prev;
+      return { ...prev, callingId: nextCallingId, callingCode: nextCallingCode };
+    });
+  }, [selectedCalling]);
 
-useEffect(() => {
-  setForm(prev => {
-    if (!prev) return prev;
-    const next = selectedAge?.value || "";
-    if (prev.audienceAgeRangeId === next) return prev;
-    return { ...prev, audienceAgeRangeId: next };
-  });
-}, [selectedAge]);
+  useEffect(() => {
+    setForm(prev => {
+      if (!prev) return prev;
+      const next = selectedAge?.value || "";
+      if (prev.audienceAgeRangeId === next) return prev;
+      return { ...prev, audienceAgeRangeId: next };
+    });
+  }, [selectedAge]);
 
-useEffect(() => {
-  setForm(prev => {
-    if (!prev) return prev;
-    const next = selectedRange?.value || "";
-    if (prev.audienceId === next) return prev;
-    return { ...prev, audienceId: next };
-  });
-}, [selectedRange]);
+  useEffect(() => {
+    setForm(prev => {
+      if (!prev) return prev;
+      const next = selectedRange?.value || "";
+      if (prev.audienceId === next) return prev;
+      return { ...prev, audienceId: next };
+    });
+  }, [selectedRange]);
 
-useEffect(() => {
-  setForm(prev => {
-    if (!prev) return prev;
-    if (!selectedPlatform) {
-      if (!prev.platformId && !prev.platformName && !prev.manualPlatformName) return prev;
-      return { ...prev, platformId: "", platformName: "", manualPlatformName: "" };
-    }
-    const id = selectedPlatform.value;
-    const name = selectedPlatform.label;
-    if (prev.platformId === id && prev.platformName === name) return prev;
-    return { ...prev, platformId: id, platformName: name };
-  });
-}, [selectedPlatform]);
+  useEffect(() => {
+    setForm(prev => {
+      if (!prev) return prev;
+      if (!selectedPlatform) {
+        if (!prev.platformId && !prev.platformName && !prev.manualPlatformName) return prev;
+        return { ...prev, platformId: "", platformName: "", manualPlatformName: "" };
+      }
+      const id = selectedPlatform.value;
+      const name = selectedPlatform.label;
+      if (prev.platformId === id && prev.platformName === name) return prev;
+      return { ...prev, platformId: id, platformName: name };
+    });
+  }, [selectedPlatform]);
 
-// Only push categories while editing, and only if changed
-useEffect(() => {
-  if (!isEditing) return;
-  setForm(prev => {
-    if (!prev) return prev;
-    const next = selectedCategories.map(c => c.value);
-    const same = Array.isArray(prev.categories)
-      && prev.categories.length === next.length
-      && prev.categories.every((v, i) => v === next[i]);
-    if (same) return prev;
-    return { ...prev, categories: next };
-  });
-}, [selectedCategories, isEditing]);
+  // Only push categories while editing, and only if changed
+  useEffect(() => {
+    if (!isEditing) return;
+    setForm(prev => {
+      if (!prev) return prev;
+      const next = selectedCategories.map(c => c.value);
+      const same = Array.isArray(prev.categories)
+        && prev.categories.length === next.length
+        && prev.categories.every((v, i) => v === next[i]);
+      if (same) return prev;
+      return { ...prev, categories: next };
+    });
+  }, [selectedCategories, isEditing]);
 
   const onField = useCallback(<K extends keyof InfluencerData>(key: K, value: InfluencerData[K]) => {
     setForm((prev) => (prev ? { ...prev, [key]: value } : prev));
@@ -937,18 +937,18 @@ useEffect(() => {
     if (!selectedCountry && countryOptions.length) {
       setSelectedCountry(
         countryOptions.find((o) => o.value === form.countryId) ||
-          countryOptions.find(
-            (o) =>
-              o.country.countryName.toLowerCase() === (form.country || "").toLowerCase()
-          ) ||
-          null
+        countryOptions.find(
+          (o) =>
+            o.country.countryName.toLowerCase() === (form.country || "").toLowerCase()
+        ) ||
+        null
       );
     }
     if (!selectedCalling && codeOptions.length) {
       setSelectedCalling(
         codeOptions.find((o) => o.value === form.callingId) ||
-          codeOptions.find((o) => o.country.callingCode === form.callingCode) ||
-          null
+        codeOptions.find((o) => o.country.callingCode === form.callingCode) ||
+        null
       );
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1704,7 +1704,7 @@ useEffect(() => {
                     </div>
 
                     <div className="w-full sm:w-auto">
-                      <Button className="w-full gap-2">
+                      <Button className="w-full gap-2 bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-800">
                         <CreditCard className="h-5 w-5" />
                         Upgrade Subscription
                       </Button>
@@ -1714,20 +1714,32 @@ useEffect(() => {
                   {!!influencer?.subscription?.features?.length && (
                     <div className="mt-5 space-y-3">
                       {influencer.subscription.features.map((feat) => {
-                        const percent =
-                          feat.limit > 0
+                        const isUnlimited = feat.limit === 1; // 1 => Unlimited
+                        const percent = isUnlimited
+                          ? 100
+                          : feat.limit > 0
                             ? Math.min(100, Math.round((feat.used / feat.limit) * 100))
                             : 0;
+
                         return (
                           <div key={feat.key}>
                             <div className="flex justify-between text-sm mb-1">
                               <span className="capitalize break-words">
                                 {feat.key.replace(/_/g, " ")}
                               </span>
-                              <span>
-                                {feat.used}/{feat.limit}
-                              </span>
+
+                              {isUnlimited ? (
+                                <span className="inline-flex items-center gap-2">
+                                  {feat.used}/∞
+                                  <Badge className="ml-1">Unlimited</Badge>
+                                </span>
+                              ) : (
+                                <span>
+                                  {feat.used}/{feat.limit}
+                                </span>
+                              )}
                             </div>
+
                             <Progress value={percent} />
                           </div>
                         );
