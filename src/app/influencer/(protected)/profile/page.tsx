@@ -1,24 +1,47 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import Select from "react-select";
-import { get, post } from "@/lib/api"; // used for JSON + FormData endpoints
+import Swal from "sweetalert2";
+import "sweetalert2/dist/sweetalert2.min.css";
+
+import { get, post } from "@/lib/api";
+
+// shadcn/ui
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
-  HiUser,
-  HiUserGroup,
-  HiPhone,
-  HiGlobe,
-  HiMail,
-  HiCheck,
-  HiX,
-  HiCreditCard,
-  HiCalendar,
-  HiShieldCheck,
-  HiLink,
-  HiHashtag,
-  HiPencil,
-  HiPhotograph,
-} from "react-icons/hi";
+  Select as ShSelect,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+
+// lucide icons
+import {
+  User,
+  Users,
+  Phone as PhoneIcon,
+  Globe,
+  Mail,
+  Check,
+  X,
+  CreditCard,
+  Calendar,
+  ShieldCheck,
+  Link as LinkIcon,
+  Hash,
+  Pencil,
+  Image as ImageIcon,
+  Loader2,
+  Check as CheckIcon,
+} from "lucide-react";
 
 /* ===================== Types ===================== */
 
@@ -97,20 +120,60 @@ type InfluencerData = {
 };
 
 /* Reference data */
-interface Country { _id: string; countryName: string; callingCode: string; countryCode: string; flag: string; }
-interface CountryOption { value: string; label: string; country: Country; }
+interface Country {
+  _id: string;
+  countryName: string;
+  callingCode: string;
+  countryCode: string;
+  flag: string;
+}
+interface CountryOption {
+  value: string;
+  label: string;
+  country: Country;
+}
 
-interface Platform { _id: string; platformId?: string; name: string; }
-interface PlatformOption { value: string; label: string; raw: Platform; }
+interface Platform {
+  _id: string;
+  platformId?: string;
+  name: string;
+}
+interface PlatformOption {
+  value: string;
+  label: string;
+  raw: Platform;
+}
 
-interface Interest { _id: string; name: string; }
-interface InterestOption { value: string; label: string; raw: Interest; }
+interface Interest {
+  _id: string;
+  name: string;
+}
+interface InterestOption {
+  value: string;
+  label: string;
+  raw: Interest;
+}
 
-interface AudienceAgeRange { _id: string; audienceId: string; range: string; } // API uses audienceId to look up
-interface AudienceAgeOption { value: string; label: string; raw: AudienceAgeRange; }
+interface AudienceAgeRange {
+  _id: string;
+  audienceId: string;
+  range: string;
+}
+interface AudienceAgeOption {
+  value: string;
+  label: string;
+  raw: AudienceAgeRange;
+}
 
-interface AudienceRange { _id: string; range: string; }
-interface AudienceRangeOption { value: string; label: string; raw: AudienceRange; }
+interface AudienceRange {
+  _id: string;
+  range: string;
+}
+interface AudienceRangeOption {
+  value: string;
+  label: string;
+  raw: AudienceRange;
+}
 
 /* ===================== Utilities ===================== */
 const isEmailEqual = (a = "", b = "") => a.trim().toLowerCase() === b.trim().toLowerCase();
@@ -152,37 +215,50 @@ function normalizeGender(raw: any): 0 | 1 | 2 | undefined {
   const s = String(raw).trim().toLowerCase();
   if (s === "0" || s === "male" || s === "m") return 0;
   if (s === "1" || s === "female" || s === "f") return 1;
-  if (s === "2" || s === "other" || s === "non-binary" || s === "nonbinary" || s === "nb") return 2;
+  if (s === "2" || s === "other" || s === "non-binary" || s === "nonbinary" || s === "nb")
+    return 2;
 
   const n = Number(s);
   return n === 0 || n === 1 || n === 2 ? (n as 0 | 1 | 2) : undefined;
 }
 
-function validateEmail(email: string) { return /[^@\s]+@[^@\s]+\.[^@\s]+/.test(email); }
+function validateEmail(email: string) {
+  return /[^@\s]+@[^@\s]+\.[^@\s]+/.test(email);
+}
 
 /* Build options */
-const buildCountryOptions = (countries: Country[]): CountryOption[] => countries.map((c) => ({ value: c._id, label: `${c.flag} ${c.countryName}`, country: c }));
+const buildCountryOptions = (countries: Country[]): CountryOption[] =>
+  countries.map((c) => ({
+    value: c._id,
+    label: `${c.flag} ${c.countryName}`,
+    country: c,
+  }));
+
 const buildCallingOptions = (countries: Country[]): CountryOption[] => {
-  const opts = countries.map((c) => ({ value: c._id, label: `${c.callingCode}`, country: c }));
+  const opts = countries.map((c) => ({
+    value: c._id,
+    label: `${c.callingCode}`,
+    country: c,
+  }));
   const usIdx = opts.findIndex((o) => o.country.countryCode === "US");
-  if (usIdx > -1) { const [us] = opts.splice(usIdx, 1); opts.unshift(us); }
+  if (usIdx > -1) {
+    const [us] = opts.splice(usIdx, 1);
+    opts.unshift(us);
+  }
   return opts;
 };
 
-const buildPlatformOptions = (rows: Platform[]): PlatformOption[] => rows.map((p) => ({ value: p.platformId || p._id, label: p.name, raw: p }));
-const buildInterestOptions = (rows: Interest[]): InterestOption[] => rows.map((r) => ({ value: r._id, label: r.name, raw: r }));
-const buildAgeOptions = (rows: AudienceAgeRange[]): AudienceAgeOption[] => rows.map((r) => ({ value: r.audienceId, label: r.range, raw: r }));
-const buildCountOptions = (rows: AudienceRange[]): AudienceRangeOption[] => rows.map((r) => ({ value: r._id, label: r.range, raw: r }));
+const buildPlatformOptions = (rows: Platform[]): PlatformOption[] =>
+  rows.map((p) => ({ value: p.platformId || p._id, label: p.name, raw: p }));
 
-const filterByCountryName = (option: { data: CountryOption }, raw: string) => {
-  const input = raw.toLowerCase().trim();
-  const { country } = option.data;
-  return (
-    country.countryName.toLowerCase().includes(input) ||
-    country.countryCode.toLowerCase().includes(input) ||
-    country.callingCode.replace(/^\+/, "").includes(input.replace(/^\+/, ""))
-  );
-};
+const buildInterestOptions = (rows: Interest[]): InterestOption[] =>
+  rows.map((r) => ({ value: r._id, label: r.name, raw: r }));
+
+const buildAgeOptions = (rows: AudienceAgeRange[]): AudienceAgeOption[] =>
+  rows.map((r) => ({ value: r.audienceId, label: r.range, raw: r }));
+
+const buildCountOptions = (rows: AudienceRange[]): AudienceRangeOption[] =>
+  rows.map((r) => ({ value: r._id, label: r.range, raw: r }));
 
 /* Normalize influencer payloads with variants */
 function normalizeInfluencer(data: any): InfluencerData {
@@ -240,7 +316,81 @@ function normalizeInfluencer(data: any): InfluencerData {
   };
 }
 
+/* ===================== MultiSelect for Categories (Select-only, searchable) ===================== */
+
+type SimpleOption = { value: string; label: string };
+
+function MultiSelect({ values, onChange, options, placeholder = "Choose...", max = 3 }: {
+  values: SimpleOption[];
+  onChange: (opts: SimpleOption[]) => void;
+  options: SimpleOption[];
+  placeholder?: string;
+  max?: number;
+}) {
+  // remove controlled open unless you really need it
+  // const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+
+  const selectedSet = useMemo(() => new Set(values.map(v => v.value)), [values]);
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return q ? options.filter(o => o.label.toLowerCase().includes(q)) : options;
+  }, [options, query]);
+
+  const toggle = (val: string) => {
+    const opt = options.find(o => o.value === val);
+    if (!opt) return;
+    const isSelected = selectedSet.has(val);
+
+    if (isSelected) {
+      onChange(values.filter(v => v.value !== val));
+    } else {
+      if (values.length >= max) {
+        Swal.fire({ icon: "info", title: `Limit reached (${max})`, text: `You can select up to ${max} categories.` });
+        return;
+      }
+      onChange([...values, opt]);
+    }
+    // ❌ remove: setOpen(true);
+  };
+
+  const triggerLabel = values.length
+    ? values.length <= 2 ? values.map(v => v.label).join(", ") : `${values.length} selected`
+    : placeholder;
+
+  return (
+    <ShSelect /* open={open} onOpenChange={setOpen} */ value="" onValueChange={toggle}>
+      <SelectTrigger className="w-full justify-between">
+        <div className={`truncate ${values.length ? "" : "text-muted-foreground"}`}>{triggerLabel}</div>
+      </SelectTrigger>
+      <SelectContent className="bg-white overflow-auto">
+        <div className="p-2 sticky top-0 bg-white">
+          <Input placeholder="Search..." value={query} onChange={(e) => setQuery(e.target.value)} />
+        </div>
+        {filtered.length === 0 ? (
+          <div className="px-3 py-2 text-sm text-muted-foreground">No results</div>
+        ) : (
+          filtered.map(opt => (
+            <SelectItem
+              key={opt.value}
+              value={opt.value}
+              // ❌ remove this: onPointerDown={(e) => e.preventDefault()}
+            >
+              <div className="flex items-center gap-2">
+                <CheckIcon className={`h-4 w-4 ${selectedSet.has(opt.value) ? "opacity-100" : "opacity-0"}`} />
+                {opt.label}
+              </div>
+            </SelectItem>
+          ))
+        )}
+      </SelectContent>
+    </ShSelect>
+  );
+}
+
+
 /* ===================== Dual-OTP Email Editor ===================== */
+
 export type EmailFlowState = "idle" | "needs" | "codes_sent" | "verifying" | "verified";
 
 function EmailEditorDualOTP({
@@ -290,174 +440,184 @@ function EmailEditorDualOTP({
     if (!valueIsValid) return;
     setBusy(true);
     try {
-      // IMPORTANT: backend expects role: "Influencer"
-      const resp = await post<{ message?: string }>(
-        "/requestEmailUpdate",
-        { influencerId, newEmail: value.trim().toLowerCase(), role: "Influencer" }
-      );
+      const resp = await post<{ message?: string }>("/requestEmailUpdate", {
+        influencerId,
+        newEmail: value.trim().toLowerCase(),
+        role: "Influencer",
+      });
       setFlow("codes_sent");
-      setMsg(resp?.message || `OTPs sent to ${originalEmail} (current) and ${value} (new).`);
+      const m = resp?.message || `OTPs sent to ${originalEmail} (current) and ${value} (new).`;
+      setMsg(m);
       onStateChange("codes_sent");
+      await Swal.fire({ icon: "info", title: "OTPs sent", text: m });
     } catch (e: any) {
-      setErr(e?.message || "Failed to send codes.");
-    } finally { setBusy(false); }
+      const m = e?.message || "Failed to send codes.";
+      setErr(m);
+      await Swal.fire({ icon: "error", title: "Error", text: m });
+    } finally {
+      setBusy(false);
+    }
   }, [influencerId, originalEmail, value, valueIsValid, onStateChange]);
 
   const verifyAndPersist = useCallback(async () => {
     setErr(null);
     if (oldOtp.trim().length !== 6 || newOtp.trim().length !== 6) {
-      setErr("Enter both 6-digit OTPs.");
+      const m = "Enter both 6-digit OTPs.";
+      setErr(m);
+      await Swal.fire({ icon: "warning", title: "Invalid OTP", text: m });
       return;
     }
     setBusy(true);
     setFlow("verifying");
     onStateChange("verifying");
     try {
-      await post<{ message?: string }>(
-        "/verifyEmailUpdateOtp",
-        {
-          influencerId,
-          role: "Influencer",
-          oldEmailOtp: oldOtp.trim(),
-          newEmailOtp: newOtp.trim(),
-          newEmail: value.trim().toLowerCase(),
-        }
-      );
+      await post<{ message?: string }>("/verifyEmailUpdateOtp", {
+        influencerId,
+        role: "Influencer",
+        oldEmailOtp: oldOtp.trim(),
+        newEmailOtp: newOtp.trim(),
+        newEmail: value.trim().toLowerCase(),
+      });
       onVerified(value.trim().toLowerCase());
       setMsg("Email updated successfully.");
       setFlow("verified");
       onStateChange("verified");
       setOldOtp("");
       setNewOtp("");
+      await Swal.fire({
+        icon: "success",
+        title: "Email updated",
+        timer: 1200,
+        showConfirmButton: false,
+      });
     } catch (e: any) {
-      setErr(e?.message || "Verification failed.");
+      const m = e?.message || "Verification failed.";
+      setErr(m);
       setFlow("codes_sent");
       onStateChange("codes_sent");
-    } finally { setBusy(false); }
+      await Swal.fire({ icon: "error", title: "Verification failed", text: m });
+    } finally {
+      setBusy(false);
+    }
   }, [influencerId, value, oldOtp, newOtp, onVerified, onStateChange]);
 
-  const handleOtp = (setter: (v: string) => void) => (e: React.ChangeEvent<HTMLInputElement>) => {
-    const digits = e.target.value.replace(/\D/g, "").slice(0, 6);
-    setter(digits);
-  };
+  const handleOtp =
+    (setter: (v: string) => void) => (e: React.ChangeEvent<HTMLInputElement>) => {
+      const digits = e.target.value.replace(/\D/g, "").slice(0, 6);
+      setter(digits);
+    };
 
   return (
-    <div className="relative bg-white border border-gray-100 p-6 rounded-xl shadow-sm hover:shadow-md transition-shadow duration-200">
-      <div className="flex items-start gap-4">
-        <div className="flex-shrink-0 w-10 h-10 bg-gradient-to-br from-blue-50 to-indigo-100 rounded-lg flex items-center justify-center">
-          <HiMail className="text-indigo-600 w-5 h-5" />
+    <Card className="max-w-md bg-white">
+      <CardContent className="pt-6 space-y-3">
+        <Label>Email Address</Label>
+        <div className="flex gap-2">
+          <Input
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            placeholder="name@example.com"
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && needs && valueIsValid && flow === "needs") {
+                requestCodes();
+              }
+            }}
+          />
+          {needs && valueIsValid && (flow === "needs" || flow === "idle") && (
+            <Button
+              onClick={requestCodes}
+              disabled={busy}
+              className="bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-800"
+            >
+              {busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Verify
+            </Button>
+          )}
         </div>
-        <div className="flex-1 min-w-0">
-          <label className="block text-sm font-medium text-gray-700 mb-2">Email Address</label>
 
-          <div className="relative">
-            <input
-              className="w-full px-4 py-3 text-gray-900 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all duration-200 pr-24"
-              value={value}
-              onChange={(e) => onChange(e.target.value)}
-              placeholder="name@example.com"
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && needs && valueIsValid && flow === "needs") {
-                  requestCodes();
-                }
-              }}
-            />
-            {needs && valueIsValid && (flow === "needs" || flow === "idle") && (
-              <button
-                onClick={requestCodes}
-                disabled={busy}
-                className="absolute right-2 top-1/2 -translate-y-1/2 px-3 py-1.5 rounded-md bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white text-sm font-medium hover:shadow-md transform hover:scale-105 transition-all duration-200 disabled:opacity-60 disabled:transform-none"
+        {needs && (flow === "codes_sent" || flow === "verifying") && (
+          <div className="rounded-md border p-4 space-y-4 bg-amber-50/40">
+            <div className="flex items-start gap-2">
+              <ShieldCheck className="h-5 w-5 text-amber-600 mt-0.5" />
+              <div>
+                <p className="text-sm font-medium">Verification Required</p>
+                <p className="text-sm text-muted-foreground">
+                  Enter the 6-digit codes sent to{" "}
+                  <span className="font-semibold">{originalEmail}</span> (current) and{" "}
+                  <span className="font-semibold">{value}</span> (new).
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <Label className="text-xs">Current Email OTP</Label>
+                <Input
+                  className="font-mono tracking-[0.3em] text-center text-lg"
+                  placeholder="000000"
+                  value={oldOtp}
+                  onChange={handleOtp(setOldOtp)}
+                  inputMode="numeric"
+                  maxLength={6}
+                />
+              </div>
+              <div>
+                <Label className="text-xs">New Email OTP</Label>
+                <Input
+                  className="font-mono tracking-[0.3em] text-center text-lg"
+                  placeholder="000000"
+                  value={newOtp}
+                  onChange={handleOtp(setNewOtp)}
+                  inputMode="numeric"
+                  maxLength={6}
+                />
+              </div>
+            </div>
+
+            <div className="flex flex-col sm:flex-row gap-2 sm:justify-end">
+              <Button variant="outline" onClick={requestCodes} disabled={busy}>
+                Resend Codes
+              </Button>
+              <Button
+                onClick={verifyAndPersist}
+                className="bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-800"
+                disabled={busy || oldOtp.length !== 6 || newOtp.length !== 6}
               >
-                {busy ? "Sending…" : "Verify"}
-              </button>
+                {busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Verify & Update
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {(msg || err) && (
+          <div className="text-sm">
+            {msg && (
+              <div className="rounded-md border p-3 bg-green-50 text-green-800 flex items-center gap-2">
+                <Check className="h-4 w-4" />
+                {msg}
+              </div>
+            )}
+            {err && (
+              <div className="rounded-md border p-3 bg-red-50 text-red-800 flex items-center gap-2 mt-2">
+                <X className="h-4 w-4" />
+                {err}
+              </div>
             )}
           </div>
+        )}
 
-          {needs && (flow === "codes_sent" || flow === "verifying") && (
-            <div className="mt-6 p-4 bg-amber-50 border border-amber-200 rounded-lg">
-              <div className="flex items-start gap-3 mb-4">
-                <HiShieldCheck className="text-amber-600 w-5 h-5 mt-0.5 flex-shrink-0" />
-                <div>
-                  <p className="text-sm font-medium text-amber-800 mb-1">Verification Required</p>
-                  <p className="text-sm text-amber-700">
-                    Enter the 6-digit codes sent to <span className="font-semibold">{originalEmail}</span> (current) and <span className="font-semibold">{value}</span> (new).
-                  </p>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-2">Current Email OTP</label>
-                  <input
-                    className="w-full px-3 py-2 text-center text-lg font-mono tracking-widest bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-                    placeholder="000000"
-                    value={oldOtp}
-                    onChange={handleOtp(setOldOtp)}
-                    inputMode="numeric"
-                    maxLength={6}
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-2">New Email OTP</label>
-                  <input
-                    className="w-full px-3 py-2 text-center text-lg font-mono tracking-widest bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-                    placeholder="000000"
-                    value={newOtp}
-                    onChange={handleOtp(setNewOtp)}
-                    inputMode="numeric"
-                    maxLength={6}
-                  />
-                </div>
-              </div>
-
-              <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-end gap-3">
-                <button
-                  onClick={requestCodes}
-                  disabled={busy}
-                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors duration-200 disabled:opacity-60"
-                >
-                  Resend Codes
-                </button>
-                <button
-                  onClick={verifyAndPersist}
-                  disabled={busy || oldOtp.length !== 6 || newOtp.length !== 6}
-                  className="px-4 py-2 text-sm font-medium text-white bg-gradient-to-r from-[#FFA135] to-[#FF7236] rounded-lg hover:shadow-md transform hover:scale-105 transition-all duration-200 disabled:opacity-60 disabled:transform-none"
-                >
-                  {busy ? "Verifying…" : "Verify & Update"}
-                </button>
-              </div>
-            </div>
-          )}
-
-          {(msg || err) && (
-            <div className="mt-3" aria-live="polite">
-              {msg && (
-                <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
-                  <p className="text-sm text-green-800 flex items-center gap-2">
-                    <HiCheck className="w-4 h-4" />
-                    {msg}
-                  </p>
-                </div>
-              )}
-              {err && (
-                <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
-                  <p className="text-sm text-red-800 flex items-center gap-2">
-                    <HiX className="w-4 h-4" />
-                    {err}
-                  </p>
-                </div>
-              )}
-            </div>
-          )}
-
-          {needs && flow === "needs" && (
-            <button type="button" onClick={() => onChange(originalEmail)} className="mt-2 text-xs text-gray-500 hover:text-gray-700 underline transition-colors">
-              Cancel change
-            </button>
-          )}
-        </div>
-      </div>
-    </div>
+        {needs && flow === "needs" && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => onChange(originalEmail)}
+            className="text-muted-foreground underline w-fit pl-0"
+          >
+            Cancel change
+          </Button>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -494,29 +654,16 @@ export default function InfluencerProfilePage() {
   // Profile image upload
   const [profileImageFile, setProfileImageFile] = useState<File | null>(null);
 
-  const selectStyles = useMemo(
-    () => ({
-      control: (base: any, state: any) => ({
-        ...base,
-        backgroundColor: "#F9FAFB",
-        borderColor: state.isFocused ? "#F97316" : "#E5E7EB",
-        boxShadow: state.isFocused ? "0 0 0 2px rgba(249, 115, 22, 0.2)" : "none",
-        "&:hover": { borderColor: "#F97316" },
-        borderRadius: "8px",
-        padding: "4px",
-      }),
-      option: (base: any, state: any) => ({
-        ...base,
-        backgroundColor: state.isSelected ? "#FED7AA" : state.isFocused ? "#FFF7ED" : "transparent",
-        color: state.isSelected ? "#9A3412" : "#374151",
-        "&:hover": { backgroundColor: "#FFF7ED" },
-      }),
-      multiValue: (base: any) => ({ ...base, backgroundColor: "#FFE8CC" }),
-      multiValueLabel: (base: any) => ({ ...base, color: "#7C2D12" }),
-      multiValueRemove: (base: any) => ({ ...base, color: "#7C2D12", ":hover": { backgroundColor: "#F59E0B", color: "white" } }),
-    }),
-    []
-  );
+  // Show load error in Swal
+  useEffect(() => {
+    if (error) {
+      Swal.fire({
+        icon: "error",
+        title: "Error Loading Profile",
+        text: error,
+      });
+    }
+  }, [error]);
 
   useEffect(() => {
     const influencerId = localStorage.getItem("influencerId");
@@ -528,14 +675,15 @@ export default function InfluencerProfilePage() {
 
     (async () => {
       try {
-        const [infRes, countryRes, platRes, interestRes, ageRes, rangeRes] = await Promise.all([
-          get<any>(`/influencer/getbyid?id=${influencerId}`),
-          get<Country[]>("/country/getall"),
-          get<Platform[]>("/platform/getall"),
-          get<Interest[]>("/interest/getList"),
-          get<AudienceAgeRange[]>("/audienceRange/getAll"), // returns items with audienceId + range (age)
-          get<AudienceRange[]>("/audience/getlist"),
-        ]);
+        const [infRes, countryRes, platRes, interestRes, ageRes, rangeRes] =
+          await Promise.all([
+            get<any>(`/influencer/getbyid?id=${influencerId}`),
+            get<Country[]>("/country/getall"),
+            get<Platform[]>("/platform/getall"),
+            get<Interest[]>("/interest/getList"),
+            get<AudienceAgeRange[]>("/audienceRange/getAll"),
+            get<AudienceRange[]>("/audience/getlist"),
+          ]);
 
         const countriesList = countryRes || [];
         setCountries(countriesList);
@@ -559,45 +707,57 @@ export default function InfluencerProfilePage() {
 
         // Preselect based on stored ids / values
         setSelectedCountry(() => {
-          if (normalized.countryId) return countryOpts.find((o) => o.value === normalized.countryId) || null;
-          if (normalized.country) return countryOpts.find((o) => o.country.countryName.toLowerCase() === normalized.country.toLowerCase()) || null;
+          if (normalized.countryId)
+            return countryOpts.find((o) => o.value === normalized.countryId) || null;
+          if (normalized.country)
+            return (
+              countryOpts.find(
+                (o) =>
+                  o.country.countryName.toLowerCase() === normalized.country.toLowerCase()
+              ) || null
+            );
           return null;
         });
         setSelectedCalling(() => {
-          if (normalized.callingId) return callingOpts.find((o) => o.value === normalized.callingId) || null;
-          if (normalized.callingCode) return callingOpts.find((o) => o.country.callingCode === normalized.callingCode) || null;
+          if (normalized.callingId)
+            return callingOpts.find((o) => o.value === normalized.callingId) || null;
+          if (normalized.callingCode)
+            return (
+              callingOpts.find((o) => o.country.callingCode === normalized.callingCode) ||
+              null
+            );
           return null;
         });
 
         setSelectedPlatform(() => {
           if (!normalized.platformName && !normalized.platformId) return null;
-          // match by platformId (preferred) or by name fallback
           return (
             platformOpts.find((o) => o.value === normalized.platformId) ||
-            platformOpts.find((o) => o.label.toLowerCase() === (normalized.platformName || "").toLowerCase()) ||
+            platformOpts.find(
+              (o) =>
+                o.label.toLowerCase() === (normalized.platformName || "").toLowerCase()
+            ) ||
             null
           );
         });
 
         setSelectedCategories(() => {
-          // 1) Try by IDs from backend
-          const haveIds = Array.isArray(normalized.categories) && normalized.categories.length > 0;
-          let picked = [] as InterestOption[];
+          const haveIds =
+            Array.isArray(normalized.categories) && normalized.categories.length > 0;
+          let picked: InterestOption[] = [];
 
           if (haveIds) {
             const idSet = new Set(normalized.categories);
             picked = interestOpts.filter((o) => idSet.has(o.value));
           }
 
-          // 2) Fallback: match by names when only categoryName is present
           if (!picked.length && Array.isArray(normalized.categoryName) && normalized.categoryName.length) {
-            const nameSet = new Set(normalized.categoryName.map((n: string) => n.trim().toLowerCase()));
-            picked = interestOpts.filter((o) => nameSet.has(o.label.trim().toLowerCase()));
-          }
-
-          // 3) Ensure the form carries IDs (so save works)
-          if (picked.length) {
-            setForm((prev) => (prev ? { ...prev, categories: picked.map((p) => p.value) } : prev));
+            const nameSet = new Set(
+              normalized.categoryName.map((n: string) => n.trim().toLowerCase())
+            );
+            picked = interestOpts.filter((o) =>
+              nameSet.has(o.label.trim().toLowerCase())
+            );
           }
 
           return picked.slice(0, 3);
@@ -605,9 +765,14 @@ export default function InfluencerProfilePage() {
 
         setSelectedAge(() => {
           const byId = ageOpts.find((o) => o.value === normalized.audienceAgeRangeId) || null;
-          const byLabel = !byId && normalized.audienceAgeRange
-            ? ageOpts.find((o) => o.label.toLowerCase() === normalized.audienceAgeRange!.toLowerCase()) || null
-            : null;
+          const byLabel =
+            !byId && normalized.audienceAgeRange
+              ? ageOpts.find(
+                  (o) =>
+                    o.label.toLowerCase() ===
+                    (normalized.audienceAgeRange || "").toLowerCase()
+                ) || null
+              : null;
 
           const sel = byId || byLabel || null;
           if (sel) setForm((prev) => (prev ? { ...prev, audienceAgeRangeId: sel.value } : prev));
@@ -618,50 +783,92 @@ export default function InfluencerProfilePage() {
           const byId = rangeOpts.find((o) => o.value === normalized.audienceId) || null;
           const byLabel =
             !byId && normalized.audienceRange
-              ? rangeOpts.find((o) => o.label.toLowerCase() === normalized.audienceRange!.toLowerCase()) || null
+              ? rangeOpts.find(
+                  (o) =>
+                    o.label.toLowerCase() === (normalized.audienceRange || "").toLowerCase()
+                ) || null
               : null;
           const sel = byId || byLabel || null;
           if (sel) setForm((prev) => (prev ? { ...prev, audienceId: sel.value } : prev));
           return sel;
         });
-
       } catch (e: any) {
         console.error(e);
         setError(e?.message || "Failed to load influencer profile.");
-      } finally { setLoading(false); }
+      } finally {
+        setLoading(false);
+      }
     })();
   }, []);
 
   // keep form.country / callingCode in sync with selections
-  useEffect(() => {
-    if (!selectedCountry) return;
-    setForm((prev) => prev ? { ...prev, countryId: selectedCountry.value, country: selectedCountry.country.countryName } : prev);
-  }, [selectedCountry]);
+useEffect(() => {
+  if (!selectedCountry) return;
+  setForm(prev => {
+    if (!prev) return prev;
+    const nextCountryId = selectedCountry.value;
+    const nextCountryName = selectedCountry.country.countryName;
+    if (prev.countryId === nextCountryId && prev.country === nextCountryName) return prev;
+    return { ...prev, countryId: nextCountryId, country: nextCountryName };
+  });
+}, [selectedCountry]);
 
-  useEffect(() => {
-    if (!selectedCalling) return;
-    setForm((prev) => prev ? { ...prev, callingId: selectedCalling.value, callingCode: selectedCalling.country.callingCode } : prev);
-  }, [selectedCalling]);
+useEffect(() => {
+  if (!selectedCalling) return;
+  setForm(prev => {
+    if (!prev) return prev;
+    const nextCallingId = selectedCalling.value;
+    const nextCallingCode = selectedCalling.country.callingCode;
+    if (prev.callingId === nextCallingId && prev.callingCode === nextCallingCode) return prev;
+    return { ...prev, callingId: nextCallingId, callingCode: nextCallingCode };
+  });
+}, [selectedCalling]);
 
-  useEffect(() => {
+useEffect(() => {
+  setForm(prev => {
+    if (!prev) return prev;
+    const next = selectedAge?.value || "";
+    if (prev.audienceAgeRangeId === next) return prev;
+    return { ...prev, audienceAgeRangeId: next };
+  });
+}, [selectedAge]);
+
+useEffect(() => {
+  setForm(prev => {
+    if (!prev) return prev;
+    const next = selectedRange?.value || "";
+    if (prev.audienceId === next) return prev;
+    return { ...prev, audienceId: next };
+  });
+}, [selectedRange]);
+
+useEffect(() => {
+  setForm(prev => {
+    if (!prev) return prev;
     if (!selectedPlatform) {
-      setForm((prev) => prev ? { ...prev, platformId: "", platformName: "", manualPlatformName: "" } : prev);
-      return;
+      if (!prev.platformId && !prev.platformName && !prev.manualPlatformName) return prev;
+      return { ...prev, platformId: "", platformName: "", manualPlatformName: "" };
     }
-    setForm((prev) => prev ? { ...prev, platformId: selectedPlatform.value, platformName: selectedPlatform.label } : prev);
-  }, [selectedPlatform]);
+    const id = selectedPlatform.value;
+    const name = selectedPlatform.label;
+    if (prev.platformId === id && prev.platformName === name) return prev;
+    return { ...prev, platformId: id, platformName: name };
+  });
+}, [selectedPlatform]);
 
-  useEffect(() => {
-    setForm((prev) => prev ? { ...prev, categories: selectedCategories.map((c) => c.value) } : prev);
-  }, [selectedCategories]);
-
-  useEffect(() => {
-    setForm((prev) => prev ? { ...prev, audienceAgeRangeId: selectedAge?.value || "" } : prev);
-  }, [selectedAge]);
-
-  useEffect(() => {
-    setForm((prev) => prev ? { ...prev, audienceId: selectedRange?.value || "" } : prev);
-  }, [selectedRange]);
+// Only push categories while editing, and only if changed
+useEffect(() => {
+  if (!isEditing) return;
+  setForm(prev => {
+    if (!prev) return prev;
+    const next = selectedCategories.map(c => c.value);
+    const same = Array.isArray(prev.categories)
+      && prev.categories.length === next.length
+      && prev.categories.every((v, i) => v === next[i]);
+    if (same) return prev;
+    return { ...prev, categories: next };
+  });
+}, [selectedCategories, isEditing]);
 
   const onField = useCallback(<K extends keyof InfluencerData>(key: K, value: InfluencerData[K]) => {
     setForm((prev) => (prev ? { ...prev, [key]: value } : prev));
@@ -675,13 +882,27 @@ export default function InfluencerProfilePage() {
     setEmailFlow("idle");
     setProfileImageFile(null);
 
-    const countryOpt = countries.length ? buildCountryOptions(countries).find((o) => o.value === cl.countryId) || buildCountryOptions(countries).find((o) => o.country.countryName.toLowerCase() === (cl.country || "").toLowerCase()) || null : null;
-    const callingOpt = countries.length ? buildCallingOptions(countries).find((o) => o.value === cl.callingId) || buildCallingOptions(countries).find((o) => o.country.callingCode === cl.callingCode) || null : null;
+    const countryOpt =
+      countryOptions.find((o) => o.value === cl.countryId) ||
+      countryOptions.find(
+        (o) => o.country.countryName.toLowerCase() === (cl.country || "").toLowerCase()
+      ) ||
+      null;
+    const callingOpt =
+      codeOptions.find((o) => o.value === cl.callingId) ||
+      codeOptions.find((o) => o.country.callingCode === cl.callingCode) ||
+      null;
     setSelectedCountry(countryOpt);
     setSelectedCalling(callingOpt);
 
     setSelectedPlatform(() => {
-      return platforms.find((p) => p.value === cl.platformId) || platforms.find((p) => p.label.toLowerCase() === (cl.platformName || "").toLowerCase()) || null;
+      return (
+        platforms.find((p) => p.value === cl.platformId) ||
+        platforms.find(
+          (p) => p.label.toLowerCase() === (cl.platformName || "").toLowerCase()
+        ) ||
+        null
+      );
     });
     setSelectedCategories(() => {
       const ids = new Set(cl.categories || []);
@@ -689,27 +910,97 @@ export default function InfluencerProfilePage() {
     });
     setSelectedAge(() => ages.find((a) => a.value === cl.audienceAgeRangeId) || null);
     setSelectedRange(() => ranges.find((r) => r.value === cl.audienceId) || null);
-  }, [influencer, countries, platforms, interests, ages, ranges]);
+  }, [influencer, countryOptions, codeOptions, platforms, interests, ages, ranges]);
+
+  // Hydrate selections when entering edit mode (ensures chips populated)
+  useEffect(() => {
+    if (!isEditing || !form) return;
+    if (!selectedCategories.length && interests.length) {
+      const ids = new Set(form.categories || []);
+      setSelectedCategories(interests.filter((i) => ids.has(i.value)));
+    }
+    if (!selectedAge && ages.length && form.audienceAgeRangeId) {
+      setSelectedAge(ages.find((a) => a.value === form.audienceAgeRangeId) || null);
+    }
+    if (!selectedRange && ranges.length && form.audienceId) {
+      setSelectedRange(ranges.find((r) => r.value === form.audienceId) || null);
+    }
+    if (!selectedPlatform && platforms.length) {
+      const sel =
+        platforms.find((p) => p.value === form.platformId) ||
+        platforms.find(
+          (p) => p.label.toLowerCase() === (form.platformName || "").toLowerCase()
+        ) ||
+        null;
+      setSelectedPlatform(sel);
+    }
+    if (!selectedCountry && countryOptions.length) {
+      setSelectedCountry(
+        countryOptions.find((o) => o.value === form.countryId) ||
+          countryOptions.find(
+            (o) =>
+              o.country.countryName.toLowerCase() === (form.country || "").toLowerCase()
+          ) ||
+          null
+      );
+    }
+    if (!selectedCalling && codeOptions.length) {
+      setSelectedCalling(
+        codeOptions.find((o) => o.value === form.callingId) ||
+          codeOptions.find((o) => o.country.callingCode === form.callingCode) ||
+          null
+      );
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    isEditing,
+    form,
+    interests,
+    ages,
+    ranges,
+    platforms,
+    countryOptions,
+    codeOptions,
+    selectedCategories.length,
+    selectedAge,
+    selectedRange,
+    selectedPlatform,
+    selectedCountry,
+    selectedCalling,
+  ]);
 
   const saveProfile = useCallback(async () => {
     if (!form || !influencer) return;
 
-    // Block save if email change mid-flow
     if (emailFlow !== "idle" && emailFlow !== "verified") {
-      alert("Please finish verifying the new email before saving other changes.");
+      await Swal.fire({
+        icon: "warning",
+        title: "Verify your new email",
+        text: "Please finish verifying the new email before saving other changes.",
+      });
       return;
     }
 
-    // Enforce gender requirement when otpVerified === true
     const hasValidGender = form.gender === 0 || form.gender === 1 || form.gender === 2;
     if (form.otpVerified && !hasValidGender) {
-      alert("Please select your gender to continue.");
+      await Swal.fire({
+        icon: "info",
+        title: "Gender required",
+        text: "Please select your gender to continue.",
+      });
       return;
     }
 
-    // Categories validation (1–3)
-    if ((form.categories?.length || 0) < 1 || (form.categories?.length || 0) > 3) {
-      alert("Please select between 1 and 3 categories.");
+    const categoriesForSave =
+      (form.categories && form.categories.length
+        ? form.categories
+        : selectedCategories.map((c) => c.value)) || [];
+    if (categoriesForSave.length < 1 || categoriesForSave.length > 3) {
+      await Swal.fire({
+        icon: "error",
+        title: "Pick 1–3 categories",
+        text: "Please select between 1 and 3 categories.",
+      });
       return;
     }
 
@@ -718,11 +1009,9 @@ export default function InfluencerProfilePage() {
       const influencerId = localStorage.getItem("influencerId");
       if (!influencerId) throw { message: "Missing influencerId in localStorage." };
 
-      // Build multipart form for optional profile image
       const fd = new FormData();
       fd.append("influencerId", influencerId);
 
-      // Simple fields (conditionally include password)
       fd.append("name", form.name || "");
       if (form.password) fd.append("password", form.password);
       fd.append("phone", form.phone || "");
@@ -731,33 +1020,33 @@ export default function InfluencerProfilePage() {
       fd.append("profileLink", form.profileLink || "");
       fd.append("bio", form.bio || "");
 
-      // Platform (supports "Other" via manualPlatformName)
       if (form.platformId) fd.append("platformId", form.platformId);
       if (form.manualPlatformName) fd.append("manualPlatformName", form.manualPlatformName);
 
-      // Audience bifurcation
       const male = form.audienceBifurcation?.malePercentage;
       const female = form.audienceBifurcation?.femalePercentage;
       if (typeof male !== "undefined") fd.append("malePercentage", String(male));
       if (typeof female !== "undefined") fd.append("femalePercentage", String(female));
 
-      // Categories (backend expects JSON array or array-like string)
-      fd.append("categories", JSON.stringify(form.categories || []));
+      fd.append("categories", JSON.stringify(categoriesForSave));
 
-      // Audience ranges
       if (form.audienceAgeRangeId) fd.append("audienceAgeRangeId", form.audienceAgeRangeId);
       if (form.audienceId) fd.append("audienceId", form.audienceId);
 
-      // Country / Calling code
       if (form.countryId) fd.append("countryId", form.countryId);
       if (form.callingId) fd.append("callingId", form.callingId);
 
       if (profileImageFile) fd.append("profileImage", profileImageFile);
 
-      // ✅ use our axios post helper directly with FormData
       await post<{ message?: string }>("/influencer/updateProfile", fd);
 
-      // Refresh profile
+      await Swal.fire({
+        icon: "success",
+        title: "Profile updated",
+        timer: 1200,
+        showConfirmButton: false,
+      });
+
       const updatedRaw = await get<any>(`/influencer/getbyid?id=${influencerId}`);
       const updated = normalizeInfluencer(updatedRaw);
 
@@ -766,282 +1055,711 @@ export default function InfluencerProfilePage() {
       setIsEditing(false);
       setEmailFlow("idle");
       setProfileImageFile(null);
+
+      setSelectedCountry(() => {
+        const byId = countryOptions.find((o) => o.value === updated.countryId);
+        const byName =
+          !byId &&
+          countryOptions.find(
+            (o) =>
+              o.country.countryName.toLowerCase() === (updated.country || "").toLowerCase()
+          );
+        return byId || byName || null;
+      });
+      setSelectedCalling(() => {
+        const byId = codeOptions.find((o) => o.value === updated.callingId);
+        const byCode =
+          !byId && codeOptions.find((o) => o.country.callingCode === updated.callingCode);
+        return byId || byCode || null;
+      });
+      setSelectedPlatform(() => {
+        return (
+          platforms.find((p) => p.value === updated.platformId) ||
+          platforms.find(
+            (p) => p.label.toLowerCase() === (updated.platformName || "").toLowerCase()
+          ) ||
+          null
+        );
+      });
+      setSelectedAge(() => ages.find((a) => a.value === updated.audienceAgeRangeId) || null);
+      setSelectedRange(() => ranges.find((r) => r.value === updated.audienceId) || null);
+      setSelectedCategories(() => {
+        const ids = new Set(updated.categories || []);
+        return interests.filter((i) => ids.has(i.value));
+      });
     } catch (e: any) {
       console.error(e);
-      alert(e?.message || "Failed to save profile.");
-    } finally { setSaving(false); }
-  }, [influencer, emailFlow, form, profileImageFile]);
+      await Swal.fire({
+        icon: "error",
+        title: "Save failed",
+        text: e?.message || "Failed to save profile.",
+      });
+    } finally {
+      setSaving(false);
+    }
+  }, [
+    influencer,
+    emailFlow,
+    form,
+    profileImageFile,
+    selectedCategories,
+    countryOptions,
+    codeOptions,
+    platforms,
+    ages,
+    ranges,
+    interests,
+  ]);
 
   if (loading) return <Loader />;
-  if (error) return <Error message={error} />;
+  if (error) return <InlineError message={error} />;
 
   const saveDisabled = saving || (emailFlow !== "idle" && emailFlow !== "verified");
   const showManualPlatform = selectedPlatform?.label?.toLowerCase() === "other";
 
+  // Helper-to-SimpleOption for category MultiSelect
+  const toSO = (o: { value: string; label: string }) => ({ value: o.value, label: o.label });
+
   return (
     <section className="min-h-screen py-8 sm:py-12">
-      <div className="max-w-5xl mx-auto px-3 sm:px-6 lg:px-8">
+      <div className="max-w-5xl mx-auto px-3 sm:px-6 lg:px-8 space-y-6">
         {/* Header */}
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 sm:p-8 mb-6 sm:mb-8">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-            <div className="flex items-center gap-4 min-w-0">
-              <div className="w-16 h-16 sm:w-20 sm:h-20 bg-gray-100 rounded-2xl overflow-hidden flex items-center justify-center relative flex-shrink-0">
-                {form?.profileImage || influencer?.profileImage ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={form?.profileImage || influencer?.profileImage || ""} alt={influencer?.name} className="w-full h-full object-cover" />
-                ) : (
-                  <div className="w-full h-full bg-gradient-to-r from-[#FFA135] to-[#FF7236] flex items-center justify-center">
-                    <HiUser className="w-10 h-10 text-white" />
-                  </div>
-                )}
-                {isEditing && (
-                  <label className="absolute -bottom-3 left-1/2 -translate-x-1/2 bg-white border border-gray-200 shadow px-3 py-1.5 rounded-lg text-xs flex items-center gap-1 cursor-pointer">
-                    <HiPhotograph /> Upload
-                    <input
-                      type="file"
-                      accept="image/*"
-                      className="hidden"
-                      onChange={(e) => {
-                        const f = e.target.files?.[0] || null;
-                        setProfileImageFile(f);
-                        if (f) {
-                          const reader = new FileReader();
-                          reader.onload = () => setForm((prev) => prev ? { ...prev, profileImage: String(reader.result) } : prev);
-                          reader.readAsDataURL(f);
-                        }
-                      }}
+        <Card className="bg-white">
+          <CardContent className="py-6">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+              <div className="flex items-center gap-4 min-w-0">
+                <div className="relative">
+                  <Avatar className="h-20 w-20 rounded-2xl">
+                    <AvatarImage
+                      src={form?.profileImage || influencer?.profileImage || ""}
+                      alt={influencer?.name}
                     />
-                  </label>
-                )}
-              </div>
-              <div className="min-w-0">
-                <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 truncate">{influencer?.name || "—"}</h1>
-                <p className="text-gray-600 truncate">
-                  {influencer?.platformName ? `${influencer.platformName}` : "—"}
-                  {influencer?.profileLink && (
-                    <>
-                      {" • "}
-                      <a href={influencer.profileLink} className="text-[#FFBF00] underline" target="_blank" rel="noreferrer">Profile Link</a>
-                    </>
+                    <AvatarFallback className="rounded-2xl bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-800">
+                      <User className="h-8 w-8" />
+                    </AvatarFallback>
+                  </Avatar>
+                  {isEditing && (
+                    <div className="absolute -bottom-2 left-1/2 -translate-x-1/2">
+                      <label className="cursor-pointer">
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={(e) => {
+                            const f = e.target.files?.[0] || null;
+                            setProfileImageFile(f);
+                            if (f) {
+                              const reader = new FileReader();
+                              reader.onload = () =>
+                                setForm((prev) =>
+                                  prev ? { ...prev, profileImage: String(reader.result) } : prev
+                                );
+                              reader.readAsDataURL(f);
+                            }
+                          }}
+                        />
+                        <Button variant="outline" size="sm" className="gap-1 bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-800">
+                          <ImageIcon className="h-4 w-4" />
+                          Upload
+                        </Button>
+                      </label>
+                    </div>
                   )}
-                </p>
-                {influencer?.socialMedia && (
-                  <p className="text-gray-600 truncate">Handle: <span className="font-medium">{influencer.socialMedia}</span></p>
-                )}
-              </div>
-            </div>
+                </div>
 
-            {!isEditing && (
-              <button onClick={() => setIsEditing(true)} className="inline-flex items-center justify-center px-5 sm:px-6 py-3 bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-800 font-medium rounded-xl shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 cursor-pointer w-full sm:w-auto">
-                <HiPencil className="w-5 h-5 mr-2" />
-                Edit Profile
-              </button>
-            )}
-          </div>
-        </div>
+                <div className="min-w-0">
+                  <h1 className="text-2xl sm:text-3xl font-bold truncate">
+                    {influencer?.name || "—"}
+                  </h1>
+                  <p className="text-muted-foreground truncate">
+                    {influencer?.platformName ? `${influencer.platformName}` : "—"}
+                    {influencer?.profileLink && (
+                      <>
+                        {" • "}
+                        <a
+                          href={influencer.profileLink}
+                          className="text-amber-600 underline"
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          Profile Link
+                        </a>
+                      </>
+                    )}
+                  </p>
+                  {influencer?.socialMedia && (
+                    <p className="text-muted-foreground truncate">
+                      Handle: <span className="font-medium">{influencer.socialMedia}</span>
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              {!isEditing && (
+                <Button onClick={() => setIsEditing(true)} className="gap-2 bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-800">
+                  <Pencil className="h-5 w-5" />
+                  Edit Profile
+                </Button>
+              )}
+            </div>
+          </CardContent>
+        </Card>
 
         {/* Profile & Contact */}
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 sm:p-8 mb-6 sm:mb-8">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
-            {/* Name */}
-            <IconField icon={HiUser} label="Full Name" value={form?.name || ""} readValue={influencer?.name || ""} onChange={(v) => onField("name", v as any)} editing={isEditing} />
+        <Card className="bg-white">
+          <CardContent className="py-6">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              {/* Name */}
+              <FieldCard
+                icon={<User className="h-5 w-5 text-indigo-600" />}
+                label="Full Name"
+                editing={isEditing}
+              >
+                {isEditing ? (
+                  <Input
+                    value={form?.name || ""}
+                    onChange={(e) => onField("name", e.target.value as any)}
+                  />
+                ) : (
+                  <ReadText text={influencer?.name || ""} />
+                )}
+              </FieldCard>
 
-            {/* Social Handle */}
-            <IconField icon={HiHashtag} label="Social Handle" value={form?.socialMedia || ""} readValue={influencer?.socialMedia || ""} onChange={(v) => onField("socialMedia", v as any)} editing={isEditing} />
+              {/* Social Handle */}
+              <FieldCard
+                icon={<Hash className="h-5 w-5 text-indigo-600" />}
+                label="Social Handle"
+                editing={isEditing}
+              >
+                {isEditing ? (
+                  <Input
+                    value={form?.socialMedia || ""}
+                    onChange={(e) => onField("socialMedia", e.target.value as any)}
+                  />
+                ) : (
+                  <ReadText text={influencer?.socialMedia || ""} />
+                )}
+              </FieldCard>
 
-            {/* Profile Link */}
-            <IconField icon={HiLink} label="Profile Link" value={form?.profileLink || ""} readValue={influencer?.profileLink || ""} onChange={(v) => onField("profileLink", v as any)} editing={isEditing} />
+              {/* Profile Link */}
+              <FieldCard
+                icon={<LinkIcon className="h-5 w-5 text-indigo-600" />}
+                label="Profile Link"
+                editing={isEditing}
+              >
+                {isEditing ? (
+                  <Input
+                    value={form?.profileLink || ""}
+                    onChange={(e) => onField("profileLink", e.target.value as any)}
+                  />
+                ) : (
+                  <ReadText text={influencer?.profileLink || ""} />
+                )}
+              </FieldCard>
 
-            {/* Email (dual OTP when editing) */}
-            {!isEditing ? (
-              <IconField icon={HiMail} label="Email Address" value="" readValue={influencer?.email ?? ""} onChange={() => { }} editing={false} />
-            ) : (
-              influencer && form && (
-                <EmailEditorDualOTP
-                  influencerId={influencer.influencerId}
-                  originalEmail={influencer.email}
-                  value={form.email}
-                  onChange={(v) => onField("email", v as any)}
-                  onVerified={(newEmail) => {
-                    setInfluencer((b) => (b ? { ...b, email: newEmail } : b));
-                    setForm((f) => (f ? { ...f, email: newEmail } : f));
-                    setEmailFlow("verified");
-                  }}
-                  onStateChange={setEmailFlow}
-                />
-              )
-            )}
+              {/* Email (dual OTP) */}
+              {!isEditing ? (
+                <FieldCard
+                  icon={<Mail className="h-5 w-5 text-indigo-600" />}
+                  label="Email Address"
+                  editing={false}
+                >
+                  <ReadText text={influencer?.email ?? ""} />
+                </FieldCard>
+              ) : (
+                influencer &&
+                form && (
+                  <EmailEditorDualOTP
+                    influencerId={influencer.influencerId}
+                    originalEmail={influencer.email}
+                    value={form.email}
+                    onChange={(v) => onField("email", v as any)}
+                    onVerified={(newEmail) => {
+                      setInfluencer((b) => (b ? { ...b, email: newEmail } : b));
+                      setForm((f) => (f ? { ...f, email: newEmail } : f));
+                      setEmailFlow("verified");
+                    }}
+                    onStateChange={setEmailFlow}
+                  />
+                )
+              )}
 
-            {/* Phone */}
-            <PhoneField
-              valueNumber={form?.phone ?? ""}
-              readValueNumber={influencer?.phone ?? ""}
-              code={form?.callingCode || influencer?.callingCode || ""}
-              editing={isEditing}
-              onNumberChange={(v) => onField("phone", v as any)}
-              codeOptions={codeOptions}
-              selectedCalling={selectedCalling}
-              onCallingChange={(opt) => setSelectedCalling(opt as any)}
-              selectStyles={selectStyles}
-            />
+              {/* Phone */}
+              <FieldCard
+                icon={<PhoneIcon className="h-5 w-5 text-emerald-600" />}
+                label="Phone Number"
+                editing={isEditing}
+              >
+                {isEditing ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-[140px,1fr] gap-2">
+                    <div className="sm:col-span-1">
+                      <ShSelect
+                        value={selectedCalling?.value || ""}
+                        onValueChange={(v) =>
+                          setSelectedCalling(
+                            codeOptions.find((o) => o.value === v) || null
+                          )
+                        }
+                      >
+                        <SelectTrigger className="w-full">
+                          <SelectValue placeholder="Code" />
+                        </SelectTrigger>
+                        <SelectContent className="bg-white max-h-72 overflow-auto">
+                          {codeOptions.map((o) => (
+                            <SelectItem key={o.value} value={o.value}>
+                              {o.country.callingCode} ({o.country.countryName})
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </ShSelect>
+                    </div>
+                    <div className="sm:col-span-1">
+                      <Input
+                        type="tel"
+                        inputMode="tel"
+                        value={form?.phone ?? ""}
+                        onChange={(e) => onField("phone", e.target.value as any)}
+                        placeholder="Phone number"
+                      />
+                    </div>
+                  </div>
+                ) : (
 
-            {/* Country */}
-            <CountryField
-              editing={isEditing}
-              readValue={influencer?.country || influencer?.county || ""}
-              countryOptions={countryOptions}
-              selectedCountry={selectedCountry}
-              onCountryChange={(opt) => setSelectedCountry(opt as CountryOption)}
-              selectStyles={selectStyles}
-            />
+                  <ReadText
+                    text={formatPhoneDisplay(
+                      form?.callingCode || influencer?.callingCode,
+                      influencer?.phone
+                    )}
+                  />
+                )}
+              </FieldCard>
 
-            {/* Gender (required when otpVerified === true) */}
-            <GenderField editing={isEditing} value={form?.gender} readValue={genderFromCode(influencer?.gender as any)} onChange={(v) => onField("gender", v as any)} required={!!form?.otpVerified} />
+              {/* Country */}
+              <FieldCard
+                icon={<Globe className="h-5 w-5 text-purple-600" />}
+                label="Country"
+                editing={isEditing}
+              >
+                {isEditing ? (
+                  <ShSelect
+                    value={selectedCountry?.value || ""}
+                    onValueChange={(v) =>
+                      setSelectedCountry(
+                        countryOptions.find((o) => o.value === v) || null
+                      )
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select Country" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-white max-h-72 overflow-auto">
+                      {countryOptions.map((o) => (
+                        <SelectItem key={o.value} value={o.value}>
+                          {o.country.flag} {o.country.countryName}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </ShSelect>
+                ) : (
+                  <ReadText text={influencer?.country || influencer?.county || ""} />
+                )}
+              </FieldCard>
 
-            {/* Password (optional change) */}
-          </div>
-        </div>
+              {/* Gender */}
+              <FieldCard
+                icon={<User className="h-5 w-5 text-indigo-600" />}
+                label={
+                  <>
+                    Gender {form?.otpVerified && <span className="text-destructive">*</span>}
+                  </>
+                }
+                editing={isEditing}
+              >
+                {isEditing ? (
+                  <ShSelect
+                    value={form?.gender !== undefined ? String(form.gender) : ""}
+                    onValueChange={(v) => {
+                      if (v === "") onField("gender", undefined as any);
+                      else onField("gender", Number(v) as any);
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select gender" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-white">
+                      <SelectItem value="0">Male</SelectItem>
+                      <SelectItem value="1">Female</SelectItem>
+                      <SelectItem value="2">Other</SelectItem>
+                    </SelectContent>
+                  </ShSelect>
+                ) : (
+                  <ReadText text={genderFromCode(influencer?.gender as any)} />
+                )}
+              </FieldCard>
+            </div>
+          </CardContent>
+        </Card>
 
         {/* Platform & Audience */}
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 sm:p-8 mb-6 sm:mb-8">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Platform & Audience</h3>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
-            {/* Platform Select */}
-            <SelectField label="Platform" icon={HiUserGroup} options={platforms} value={selectedPlatform} onChange={(opt) => setSelectedPlatform(opt as PlatformOption)} placeholder="Select Platform" styles={selectStyles} readValue={influencer?.platformName || "—"} editing={isEditing} />
+        <Card className="bg-white">
+          <CardHeader>
+            <CardTitle className="text-lg">Platform & Audience</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              {/* Platform */}
+              <FieldCard
+                icon={<Users className="h-5 w-5 text-indigo-600" />}
+                label="Platform"
+                editing={isEditing}
+              >
+                {isEditing ? (
+                  <ShSelect
+                    value={selectedPlatform?.value || ""}
+                    onValueChange={(v) =>
+                      setSelectedPlatform(platforms.find((o) => o.value === v) || null)
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select Platform" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-white max-h-72 overflow-auto">
+                      {platforms.map((o) => (
+                        <SelectItem key={o.value} value={o.value}>
+                          {o.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </ShSelect>
+                ) : (
+                  <ReadText text={influencer?.platformName || "—"} />
+                )}
+              </FieldCard>
 
-            {/* Manual Platform (when Other) */}
-            {isEditing && showManualPlatform && (
-              <IconField icon={HiPencil} label="If Other – Enter Platform Name" value={form?.manualPlatformName || ""} readValue={form?.manualPlatformName || ""} onChange={(v) => onField("manualPlatformName", v as any)} editing={true} />
-            )}
-
-            {/* Audience Age Range (e.g., 18–24) */}
-            <SelectField label="Audience Age Range" icon={HiCalendar} options={ages} value={selectedAge} onChange={(opt) => setSelectedAge(opt as AudienceAgeOption)} placeholder="e.g., 18 – 24" styles={selectStyles} readValue={influencer?.audienceAgeRange || "—"} editing={isEditing} />
-
-            {/* Audience Range (Count) (e.g., 10k–18k) */}
-            <SelectField label="Audience Range (Count)" icon={HiCalendar} options={ranges} value={selectedRange} onChange={(opt) => setSelectedRange(opt as AudienceRangeOption)} placeholder="e.g., 10k – 18k" styles={selectStyles} readValue={influencer?.audienceRange || "—"} editing={isEditing} />
-
-            {/* Audience Gender Split */}
-            <div className="bg-white border border-gray-100 p-6 rounded-xl shadow-sm hover:shadow-md transition-shadow duration-200 lg:col-span-2">
-              <label className="block text-sm font-medium text-gray-700 mb-3">Audience Gender Split</label>
-              {isEditing ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <NumberField label="Male %" value={form?.audienceBifurcation?.malePercentage ?? 0} min={0} max={100} onChange={(v) => onField("audienceBifurcation", { ...form?.audienceBifurcation, malePercentage: v } as any)} />
-                  <NumberField label="Female %" value={form?.audienceBifurcation?.femalePercentage ?? 0} min={0} max={100} onChange={(v) => onField("audienceBifurcation", { ...form?.audienceBifurcation, femalePercentage: v } as any)} />
-                </div>
-              ) : (
-                <div>
-                  <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
-                    <div className="h-3 inline-block bg-blue-400" style={{ width: `${pct(influencer?.audienceBifurcation?.malePercentage)}%` }} title={`Male ${pct(influencer?.audienceBifurcation?.malePercentage)}%`} />
-                    <div className="h-3 inline-block bg-pink-300" style={{ width: `${pct(influencer?.audienceBifurcation?.femalePercentage)}%` }} title={`Female ${pct(influencer?.audienceBifurcation?.femalePercentage)}%`} />
-                  </div>
-                  <div className="flex justify-between text-xs text-gray-600 mt-1">
-                    <span>Male: {pct(influencer?.audienceBifurcation?.malePercentage)}%</span>
-                    <span>Female: {pct(influencer?.audienceBifurcation?.femalePercentage)}%</span>
-                  </div>
-                </div>
+              {/* Manual Platform */}
+              {isEditing && showManualPlatform && (
+                <FieldCard
+                  icon={<Pencil className="h-5 w-5 text-indigo-600" />}
+                  label="If Other – Enter Platform Name"
+                  editing={true}
+                >
+                  <Input
+                    value={form?.manualPlatformName || ""}
+                    onChange={(e) => onField("manualPlatformName", e.target.value as any)}
+                  />
+                </FieldCard>
               )}
-            </div>
 
-            {/* Categories (multi) */}
-            <div className="bg-white border border-gray-100 p-6 rounded-xl shadow-sm hover:shadow-md transition-shadow duration-200 lg:col-span-2">
-              <label className="block text-sm font-medium text-gray-700 mb-2">Categories (select 1–3)</label>
-              {isEditing ? (
-                <Select isMulti options={interests} value={selectedCategories} onChange={(opts) => setSelectedCategories((opts as InterestOption[]) || [])} styles={selectStyles} placeholder="Choose up to 3 categories" />
-              ) : influencer?.categoryName?.length ? (
-                <div className="flex flex-wrap gap-2 mt-1">
-                  {influencer.categoryName.map((c) => (
-                    <span key={c} className="px-3 py-1 text-sm bg-gray-100 text-gray-800 rounded-full">{c}</span>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-gray-600">—</p>
-              )}
+              {/* Audience Age Range */}
+              <FieldCard
+                icon={<Calendar className="h-5 w-5 text-indigo-600" />}
+                label="Audience Age Range"
+                editing={isEditing}
+              >
+                {isEditing ? (
+                  <ShSelect
+                    value={selectedAge?.value || ""}
+                    onValueChange={(v) =>
+                      setSelectedAge(ages.find((o) => o.value === v) || null)
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="e.g., 18 – 24" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-white max-h-72 overflow-auto">
+                      {ages.map((o) => (
+                        <SelectItem key={o.value} value={o.value}>
+                          {o.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </ShSelect>
+                ) : (
+                  <ReadText text={influencer?.audienceAgeRange || "—"} />
+                )}
+              </FieldCard>
+
+              {/* Audience Range (Count) */}
+              <FieldCard
+                icon={<Calendar className="h-5 w-5 text-indigo-600" />}
+                label="Audience Range (Count)"
+                editing={isEditing}
+              >
+                {isEditing ? (
+                  <ShSelect
+                    value={selectedRange?.value || ""}
+                    onValueChange={(v) =>
+                      setSelectedRange(ranges.find((o) => o.value === v) || null)
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="e.g., 10k – 18k" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-white max-h-72 overflow-auto">
+                      {ranges.map((o) => (
+                        <SelectItem key={o.value} value={o.value}>
+                          {o.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </ShSelect>
+                ) : (
+                  <ReadText text={influencer?.audienceRange || "—"} />
+                )}
+              </FieldCard>
+
+              {/* Audience Gender Split */}
+              <div className="lg:col-span-2">
+                <Card className="border">
+                  <CardContent className="pt-6">
+                    <Label>Audience Gender Split</Label>
+                    {isEditing ? (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
+                        <div>
+                          <Label className="text-xs">Male %</Label>
+                          <Input
+                            type="number"
+                            min={0}
+                            max={100}
+                            value={form?.audienceBifurcation?.malePercentage ?? 0}
+                            onChange={(e) =>
+                              onField(
+                                "audienceBifurcation",
+                                {
+                                  ...form?.audienceBifurcation,
+                                  malePercentage: Math.max(
+                                    0,
+                                    Math.min(100, Number(e.target.value))
+                                  ),
+                                } as any
+                              )
+                            }
+                          />
+                        </div>
+                        <div>
+                          <Label className="text-xs">Female %</Label>
+                          <Input
+                            type="number"
+                            min={0}
+                            max={100}
+                            value={form?.audienceBifurcation?.femalePercentage ?? 0}
+                            onChange={(e) =>
+                              onField(
+                                "audienceBifurcation",
+                                {
+                                  ...form?.audienceBifurcation,
+                                  femalePercentage: Math.max(
+                                    0,
+                                    Math.min(100, Number(e.target.value))
+                                  ),
+                                } as any
+                              )
+                            }
+                          />
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="mt-3">
+                        <div className="w-full h-3 bg-muted rounded-full overflow-hidden">
+                          <div
+                            className="h-3 inline-block bg-blue-400"
+                            style={{
+                              width: `${pct(
+                                influencer?.audienceBifurcation?.malePercentage
+                              )}%`,
+                            }}
+                            title={`Male ${pct(
+                              influencer?.audienceBifurcation?.malePercentage
+                            )}%`}
+                          />
+                          <div
+                            className="h-3 inline-block bg-pink-300"
+                            style={{
+                              width: `${pct(
+                                influencer?.audienceBifurcation?.femalePercentage
+                              )}%`,
+                            }}
+                            title={`Female ${pct(
+                              influencer?.audienceBifurcation?.femalePercentage
+                            )}%`}
+                          />
+                        </div>
+                        <div className="flex justify-between text-xs text-muted-foreground mt-1">
+                          <span>
+                            Male: {pct(influencer?.audienceBifurcation?.malePercentage)}%
+                          </span>
+                          <span>
+                            Female: {pct(influencer?.audienceBifurcation?.femalePercentage)}%
+                          </span>
+                        </div>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Categories (multi) */}
+              <div className="lg:col-span-2">
+                <Card className="border">
+                  <CardContent className="pt-6 space-y-2 bg-white">
+                    <Label>Categories (select 1–3)</Label>
+                    {isEditing ? (
+                      <>
+                        <MultiSelect
+                          values={selectedCategories.map(toSO)}
+                          onChange={(opts) =>
+                            setSelectedCategories(
+                              interests.filter((i) => opts.some((o) => o.value === i.value))
+                            )
+                          }
+                          options={interests.map(toSO)}
+                          placeholder="Choose up to 3 categories"
+                          max={3}
+                        />
+                        {!!selectedCategories.length && (
+                          <div className="flex flex-wrap gap-2 pt-1">
+                            {selectedCategories.map((c) => (
+                              <Badge key={c.value} variant="secondary">
+                                {c.label}
+                              </Badge>
+                            ))}
+                          </div>
+                        )}
+                      </>
+                    ) : influencer?.categoryName?.length ? (
+                      <div className="flex flex-wrap gap-2">
+                        {influencer.categoryName.map((c) => (
+                          <Badge key={c} variant="secondary" className="bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-800">
+                            {c}
+                          </Badge>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-muted-foreground">—</p>
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
             </div>
-          </div>
-        </div>
+          </CardContent>
+        </Card>
 
         {/* Bio */}
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 sm:p-8 mb-6 sm:mb-8">
-          <h3 className="text-lg font-semibold text-gray-900 mb-2">Bio</h3>
-          {isEditing ? (
-            <textarea className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all duration-200" rows={4} value={form?.bio || ""} onChange={(e) => onField("bio", e.target.value as any)} />
-          ) : (
-            <p className="text-gray-700 whitespace-pre-wrap break-words">{influencer?.bio || "—"}</p>
-          )}
-        </div>
+        <Card className="bg-white">
+          <CardHeader>
+            <CardTitle className="text-lg">Bio</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {isEditing ? (
+              <Textarea
+                rows={4}
+                value={form?.bio || ""}
+                onChange={(e) => onField("bio", e.target.value as any)}
+              />
+            ) : (
+              <p className="text-foreground whitespace-pre-wrap break-words">
+                {influencer?.bio || "—"}
+              </p>
+            )}
+          </CardContent>
+        </Card>
 
         {/* Subscription (read-only display) */}
         {!isEditing && (
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 sm:p-8">
-            <div className="flex items-start gap-4 flex-col sm:flex-row">
-              <div className="flex-shrink-0 w-12 h-12 bg-gradient-to-br from-purple-50 to-purple-100 rounded-xl flex items-center justify-center">
-                <HiCreditCard className="w-6 h-6 text-purple-600" />
-              </div>
+          <Card className="bg-white">
+            <CardContent className="py-6">
+              <div className="flex flex-col sm:flex-row gap-4">
+                <div className="w-12 h-12 rounded-xl bg-purple-100 flex items-center justify-center">
+                  <CreditCard className="h-6 w-6 text-purple-600" />
+                </div>
 
-              <div className="flex-1 min-w-0 w-full">
-                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                  <div className="min-w-0">
-                    <h3 className="text-lg font-semibold text-gray-900 mb-2">Subscription</h3>
-                    <p className="text-2xl font-bold text-gray-900 mb-1">{influencer?.subscription?.planName || "No Plan"}</p>
-                    <div className="space-y-1 text-sm text-gray-600">
-                      {influencer?.subscription?.startedAt && (
-                        <div className="flex items-center gap-2"><HiCalendar className="w-4 h-4" /><span>Started: {formatDate(influencer.subscription.startedAt)}</span></div>
-                      )}
-                      {influencer?.subscription?.expiresAt && (
-                        <div className="flex items-center gap-2"><HiCalendar className="w-4 h-4" /><span>Expires: {formatDate(influencer.subscription.expiresAt)}{influencer?.subscriptionExpired && (<span className="ml-2 px-2 py-1 bg-red-100 text-red-700 text-xs rounded-full">Expired</span>)}</span></div>
-                      )}
+                <div className="flex-1 min-w-0">
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                    <div className="min-w-0">
+                      <h3 className="text-lg font-semibold mb-1">Subscription</h3>
+                      <p className="text-2xl font-bold">
+                        {influencer?.subscription?.planName || "No Plan"}
+                      </p>
+                      <div className="space-y-1 text-sm text-muted-foreground mt-2">
+                        {influencer?.subscription?.startedAt && (
+                          <div className="flex items-center gap-2">
+                            <Calendar className="h-4 w-4" />
+                            <span>Started: {formatDate(influencer.subscription.startedAt)}</span>
+                          </div>
+                        )}
+                        {influencer?.subscription?.expiresAt && (
+                          <div className="flex items-center gap-2">
+                            <Calendar className="h-4 w-4" />
+                            <span>
+                              Expires: {formatDate(influencer.subscription.expiresAt)}
+                              {influencer?.subscriptionExpired && (
+                                <Badge variant="destructive" className="ml-2">
+                                  Expired
+                                </Badge>
+                              )}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="w-full sm:w-auto">
+                      <Button className="w-full gap-2">
+                        <CreditCard className="h-5 w-5" />
+                        Upgrade Subscription
+                      </Button>
                     </div>
                   </div>
 
-                  <div className="w-full sm:w-auto">
-                    <button className="w-full inline-flex items-center justify-center px-5 py-2.5 bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-800 font-medium rounded-xl shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 cursor-pointer">
-                      <HiCreditCard className="w-5 h-5 mr-2" />
-                      Upgrade Subscription
-                    </button>
-                  </div>
+                  {!!influencer?.subscription?.features?.length && (
+                    <div className="mt-5 space-y-3">
+                      {influencer.subscription.features.map((feat) => {
+                        const percent =
+                          feat.limit > 0
+                            ? Math.min(100, Math.round((feat.used / feat.limit) * 100))
+                            : 0;
+                        return (
+                          <div key={feat.key}>
+                            <div className="flex justify-between text-sm mb-1">
+                              <span className="capitalize break-words">
+                                {feat.key.replace(/_/g, " ")}
+                              </span>
+                              <span>
+                                {feat.used}/{feat.limit}
+                              </span>
+                            </div>
+                            <Progress value={percent} />
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
-
-                {influencer?.subscription?.features?.length ? (
-                  <div className="mt-5 space-y-3">
-                    {influencer.subscription.features.map((feat) => {
-                      const percent = feat.limit > 0 ? Math.min(100, Math.round((feat.used / feat.limit) * 100)) : 0;
-                      return (
-                        <div key={feat.key}>
-                          <div className="flex justify-between text-sm">
-                            <span className="capitalize text-gray-700 break-words">{feat.key.replace(/_/g, " ")}</span>
-                            <span className="text-gray-600">{feat.used}/{feat.limit}</span>
-                          </div>
-                          <div className="w-full bg-gray-200 rounded-full h-2">
-                            <div className="bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] h-2 rounded-full" style={{ width: `${percent}%` }} />
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                ) : null}
               </div>
-            </div>
-          </div>
+            </CardContent>
+          </Card>
         )}
 
         {/* Actions */}
         {isEditing && (
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 sm:p-8 mt-6">
-            <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 sm:justify-end">
-              <button onClick={resetEdits} disabled={saving} className="inline-flex items-center justify-center px-6 py-3 text-gray-700 bg-gray-100 border border-gray-300 rounded-xl hover:bg-gray-200 transition-all duration-200 disabled:opacity-60 w-full sm:w-auto">
-                <HiX className="w-5 h-5 mr-2" />
-                Cancel
-              </button>
-              <button
-                onClick={saveProfile}
-                disabled={saveDisabled}
-                className="inline-flex items-center justify-center px-6 py-3 bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-800 font-medium rounded-xl shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 disabled:opacity-60 disabled:transform-none w-full sm:w-auto"
-                title={emailFlow !== "idle" && emailFlow !== "verified" ? "Verify the new email to enable saving" : undefined}
-              >
-                <HiCheck className="w-5 h-5 mr-2" />
-                {saving ? "Saving…" : "Save Changes"}
-              </button>
-            </div>
+          <div className="flex flex-col sm:flex-row gap-3 sm:justify-end">
+            <Button variant="outline" onClick={resetEdits} disabled={saving} className="gap-2 bg-white">
+              <X className="h-5 w-5" />
+              Cancel
+            </Button>
+            <Button
+              onClick={saveProfile}
+              disabled={saveDisabled}
+              className="gap-2 bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-800"
+              title={
+                emailFlow !== "idle" && emailFlow !== "verified"
+                  ? "Verify the new email to enable saving"
+                  : undefined
+              }
+            >
+              {saving ? <Loader2 className="h-5 w-5 animate-spin" /> : <Check className="h-5 w-5" />}
+              {saving ? "Saving…" : "Save Changes"}
+            </Button>
           </div>
         )}
       </div>
@@ -1050,163 +1768,63 @@ export default function InfluencerProfilePage() {
 }
 
 /* -------- Small UI helpers -------- */
+
 function Loader() {
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-gray-100 flex items-center justify-center">
+    <div className="min-h-screen bg-gradient-to-br from-muted/30 via-background to-muted/30 flex items-center justify-center">
       <div className="text-center">
-        <div className="w-12 h-12 mx-auto mb-4 border-4 border-orange-200 border-t-orange-500 rounded-full animate-spin"></div>
-        <p className="text-gray-600 font-medium">Loading profile…</p>
+        <Loader2 className="h-10 w-10 mx-auto mb-4 animate-spin text-amber-500" />
+        <p className="text-muted-foreground font-medium">Loading profile…</p>
       </div>
     </div>
   );
 }
 
-function Error({ message }: { message: string }) {
+function InlineError({ message }: { message: string }) {
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-gray-100 flex items-center justify-center">
-      <div className="max-w-md mx-auto text-center bg-white p-8 rounded-2xl shadow-sm border border-gray-100">
-        <div className="w-16 h-16 mx-auto mb-4 bg-red-100 rounded-full flex items-center justify-center">
-          <HiX className="w-8 h-8 text-red-600" />
-        </div>
-        <h2 className="text-xl font-semibold text-gray-900 mb-2">Error Loading Profile</h2>
-        <p className="text-red-600 mb-4 break-words">{message}</p>
-        <button onClick={() => window.location.reload()} className="w-full sm:w-auto px-6 py-3 bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white font-medium rounded-xl hover:shadow-md transition-all duration-200">
-          Try Again
-        </button>
-      </div>
+    <div className="min-h-screen bg-gradient-to-br from-muted/30 via-background to-muted/30 flex items-center justify-center">
+      <Card className="max-w-md mx-auto text-center">
+        <CardContent className="py-8">
+          <div className="w-16 h-16 mx-auto mb-4 bg-red-100 rounded-full flex items-center justify-center">
+            <X className="h-8 w-8 text-red-600" />
+          </div>
+          <h2 className="text-xl font-semibold mb-2">Error Loading Profile</h2>
+          <p className="text-red-600 mb-4 break-words">{message}</p>
+          <Button onClick={() => window.location.reload()}>Try Again</Button>
+        </CardContent>
+      </Card>
     </div>
   );
 }
 
-function IconField({ icon: Icon, label, prefix, value, readValue, onChange, editing }: { icon: any; label: string; prefix?: string; value: string; readValue: string; onChange: (v: string) => void; editing: boolean; }) {
+function FieldCard({
+  icon,
+  label,
+  children,
+  editing,
+}: {
+  icon: React.ReactNode;
+  label: React.ReactNode;
+  children: React.ReactNode;
+  editing: boolean;
+}) {
   return (
-    <div className="bg-white border border-gray-100 p-6 rounded-xl shadow-sm hover:shadow-md transition-shadow duration-200">
-      <div className="flex items-start gap-4">
-        <div className="flex-shrink-0 w-10 h-10 bg-gradient-to-br from-blue-50 to-indigo-100 rounded-lg flex items-center justify-center">
-          <Icon className="text-indigo-600 w-5 h-5" />
+    <Card className="shadow-none">
+      <CardContent className="pt-6 bg-white">
+        <div className="flex items-start gap-4">
+          <div className="flex-shrink-0 w-10 h-10 rounded-lg bg-indigo-50 flex items-center justify-center">
+            {icon}
+          </div>
+          <div className="flex-1 min-w-0">
+            <Label className="mb-2 block">{label}</Label>
+            <div>{children}</div>
+          </div>
         </div>
-        <div className="flex-1 min-w-0">
-          <label className="block text-sm font-medium text-gray-700 mb-2">{label}</label>
-          {editing ? (
-            <div className="flex items-center gap-2">
-              {prefix && (<span className="px-3 py-2 bg-gray-100 text-gray-700 text-sm rounded-lg font-medium">{prefix}</span>)}
-              <input className="flex-1 min-w-0 px-4 py-3 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all duration-200" value={value} onChange={(e) => onChange(e.target.value)} />
-            </div>
-          ) : (
-            <p className="text-lg font-medium text-gray-900 break-words">{readValue || "—"}</p>
-          )}
-        </div>
-      </div>
-    </div>
+      </CardContent>
+    </Card>
   );
 }
 
-function PhoneField({ valueNumber, readValueNumber, code, editing, onNumberChange, codeOptions, selectedCalling, onCallingChange, selectStyles, }: { valueNumber: string; readValueNumber: string; code?: string; editing: boolean; onNumberChange: (v: string) => void; codeOptions: any[]; selectedCalling: any | null; onCallingChange: (opt: any | null) => void; selectStyles: any; }) {
-  const readText = formatPhoneDisplay(code, readValueNumber);
-  const visibleCode = (selectedCalling && selectedCalling.country?.callingCode) || code || "";
-  return (
-    <div className="bg-white border border-gray-100 p-6 rounded-xl shadow-sm hover:shadow-md transition-shadow duration-200">
-      <div className="flex items-start gap-4">
-        <div className="flex-shrink-0 w-10 h-10 bg-gradient-to-br from-green-50 to-emerald-100 rounded-lg flex items-center justify-center">
-          <HiPhone className="text-emerald-600 w-5 h-5" />
-        </div>
-        <div className="flex-1 min-w-0">
-          <label className="block text-sm font-medium text-gray-700 mb-2">Phone Number</label>
-          {editing ? (
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <Select inputId="influencerCalling" options={codeOptions} placeholder="Code" value={selectedCalling} onChange={(opt) => onCallingChange(opt as any)} styles={selectStyles} />
-              <div className="sm:col-span-2 relative">
-                {visibleCode && (
-                  <span className="absolute inset-y-0 left-0 pl-4 flex items-center text-gray-600 pointer-events-none select-none">{visibleCode}</span>
-                )}
-                <input
-                  type="tel"
-                  className={`w-full ${visibleCode ? "pl-16" : "pl-4"} pr-4 py-3 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all duration-200`}
-                  value={valueNumber}
-                  onChange={(e) => onNumberChange(e.target.value)}
-                  placeholder="Phone number"
-                />
-              </div>
-            </div>
-          ) : (
-            <p className="text-lg font-medium text-gray-900 break-words">{readText}</p>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function CountryField({ editing, readValue, countryOptions, selectedCountry, onCountryChange, selectStyles, }: { editing: boolean; readValue: string; countryOptions: CountryOption[]; selectedCountry: CountryOption | null; onCountryChange: (opt: CountryOption | null) => void; selectStyles: any; }) {
-  return (
-    <div className="bg-white border border-gray-100 p-6 rounded-2xl shadow-sm hover:shadow-md transition-shadow duration-200">
-      <div className="flex items-start gap-4">
-        <div className="flex-shrink-0 w-10 h-10 bg-gradient-to-br from-purple-50 to-purple-100 rounded-lg flex items-center justify-center">
-          <HiGlobe className="text-purple-600 w-5 h-5" />
-        </div>
-        <div className="flex-1 min-w-0">
-          <label className="block text-sm font-medium text-gray-700 mb-2">Country</label>
-          {editing ? (
-            <Select inputId="influencerCountry" options={countryOptions} placeholder="Select Country" value={selectedCountry} onChange={(opt) => onCountryChange(opt as CountryOption)} filterOption={filterByCountryName as any} styles={selectStyles} />
-          ) : (
-            <p className="text-lg font-medium text-gray-900 break-words">{readValue || "—"}</p>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function GenderField({ editing, value, readValue, onChange, required, }: { editing: boolean; value?: 0 | 1 | 2; readValue: string; onChange: (v: 0 | 1 | 2 | undefined) => void; required?: boolean; }) {
-  return (
-    <div className="bg-white border border-gray-100 p-6 rounded-xl shadow-sm hover:shadow-md transition-shadow duration-200">
-      <div className="flex items-start gap-4">
-        <div className="flex-shrink-0 w-10 h-10 bg-gradient-to-br from-blue-50 to-indigo-100 rounded-lg flex items-center justify-center">
-          <HiUser className="text-indigo-600 w-5 h-5" />
-        </div>
-        <div className="flex-1 min-w-0">
-          <label className="block text-sm font-medium text-gray-700 mb-2">Gender {required && <span className="text-red-500">*</span>}</label>
-          {editing ? (
-            <select className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all duration-200" value={value !== undefined ? String(value) : ""} onChange={(e) => { const v = e.target.value; if (v === "") onChange(undefined); else onChange(Number(v) as 0 | 1 | 2); }}>
-              <option value="">Select gender</option>
-              <option value="0">Male</option>
-              <option value="1">Female</option>
-              <option value="2">Other</option>
-            </select>
-          ) : (
-            <p className="text-lg font-medium text-gray-900">{readValue || "—"}</p>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function NumberField({ label, value, onChange, min = 0, max = 100 }: { label: string; value: number; onChange: (v: number) => void; min?: number; max?: number; }) {
-  return (
-    <div>
-      <label className="block text-xs font-medium text-gray-600 mb-2">{label}</label>
-      <input type="number" min={min} max={max} className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all duration-200" value={value} onChange={(e) => onChange(Math.max(min, Math.min(max, Number(e.target.value))))} />
-    </div>
-  );
-}
-
-function SelectField({ label, icon: Icon, options, value, onChange, placeholder, styles, readValue, editing, }: { label: string; icon: any; options: any[]; value: any; onChange: (opt: any) => void; placeholder?: string; styles: any; readValue?: string; editing: boolean; }) {
-  return (
-    <div className="bg-white border border-gray-100 p-6 rounded-xl shadow-sm hover:shadow-md transition-shadow duration-200">
-      <div className="flex items-start gap-4">
-        <div className="flex-shrink-0 w-10 h-10 bg-gradient-to-br from-blue-50 to-indigo-100 rounded-lg flex items-center justify-center">
-          <Icon className="text-indigo-600 w-5 h-5" />
-        </div>
-        <div className="flex-1 min-w-0">
-          <label className="block text-sm font-medium text-gray-700 mb-2">{label}</label>
-          {editing ? (
-            <Select options={options} value={value} onChange={onChange} placeholder={placeholder} styles={styles} />
-          ) : (
-            <p className="text-lg font-medium text-gray-900 break-words">{readValue || "—"}</p>
-          )}
-        </div>
-      </div>
-    </div>
-  );
+function ReadText({ text }: { text: string }) {
+  return <p className="text-lg font-medium break-words">{text || "—"}</p>;
 }
