@@ -673,7 +673,7 @@ export default function BrandProfilePage() {
 
       try {
         const brandRes = await get<any>(`/brand?id=${brandId}`);
-        const normalized = normalizeBrand(brandRes);
+        const normalized = normalizeBrand(brandRes); 
 
         // Update main state
         setBrand(normalized);
