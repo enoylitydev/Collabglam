@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import Select from "react-select";
-import { get, post } from "@/lib/api"; // used for JSON endpoints
+import { get, post } from "@/lib/api"; // used for JSON + FormData endpoints
 import {
   HiUser,
   HiUserGroup,
@@ -18,7 +18,6 @@ import {
   HiHashtag,
   HiPencil,
   HiPhotograph,
-  HiLockClosed,
 } from "react-icons/hi";
 
 /* ===================== Types ===================== */
@@ -144,7 +143,18 @@ function pct(val?: number) {
 }
 
 function normalizeGender(raw: any): 0 | 1 | 2 | undefined {
-  const n = Number(raw);
+  if (raw === null || typeof raw === "undefined" || raw === "") return undefined;
+
+  if (typeof raw === "number") {
+    return raw === 0 || raw === 1 || raw === 2 ? (raw as 0 | 1 | 2) : undefined;
+  }
+
+  const s = String(raw).trim().toLowerCase();
+  if (s === "0" || s === "male" || s === "m") return 0;
+  if (s === "1" || s === "female" || s === "f") return 1;
+  if (s === "2" || s === "other" || s === "non-binary" || s === "nonbinary" || s === "nb") return 2;
+
+  const n = Number(s);
   return n === 0 || n === 1 || n === 2 ? (n as 0 | 1 | 2) : undefined;
 }
 
@@ -231,7 +241,7 @@ function normalizeInfluencer(data: any): InfluencerData {
 }
 
 /* ===================== Dual-OTP Email Editor ===================== */
-type EmailFlowState = "idle" | "needs" | "codes_sent" | "verifying" | "verified";
+export type EmailFlowState = "idle" | "needs" | "codes_sent" | "verifying" | "verified";
 
 function EmailEditorDualOTP({
   influencerId,
@@ -400,7 +410,7 @@ function EmailEditorDualOTP({
                 </div>
               </div>
 
-              <div className="flex items-center justify-end gap-3">
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-end gap-3">
                 <button
                   onClick={requestCodes}
                   disabled={busy}
@@ -523,8 +533,8 @@ export default function InfluencerProfilePage() {
           get<Country[]>("/country/getall"),
           get<Platform[]>("/platform/getall"),
           get<Interest[]>("/interest/getList"),
-          get<AudienceAgeRange[]>("/audience/getlist"), // returns items with audienceId + range
-          get<AudienceRange[]>("/audienceRange/getAll"),
+          get<AudienceAgeRange[]>("/audienceRange/getAll"), // returns items with audienceId + range (age)
+          get<AudienceRange[]>("/audience/getlist"),
         ]);
 
         const countriesList = countryRes || [];
@@ -570,28 +580,51 @@ export default function InfluencerProfilePage() {
         });
 
         setSelectedCategories(() => {
-          if (!normalized.categories?.length) return [];
-          const idSet = new Set(normalized.categories);
-          return interestOpts.filter((o) => idSet.has(o.value)).slice(0, 3);
+          // 1) Try by IDs from backend
+          const haveIds = Array.isArray(normalized.categories) && normalized.categories.length > 0;
+          let picked = [] as InterestOption[];
+
+          if (haveIds) {
+            const idSet = new Set(normalized.categories);
+            picked = interestOpts.filter((o) => idSet.has(o.value));
+          }
+
+          // 2) Fallback: match by names when only categoryName is present
+          if (!picked.length && Array.isArray(normalized.categoryName) && normalized.categoryName.length) {
+            const nameSet = new Set(normalized.categoryName.map((n: string) => n.trim().toLowerCase()));
+            picked = interestOpts.filter((o) => nameSet.has(o.label.trim().toLowerCase()));
+          }
+
+          // 3) Ensure the form carries IDs (so save works)
+          if (picked.length) {
+            setForm((prev) => (prev ? { ...prev, categories: picked.map((p) => p.value) } : prev));
+          }
+
+          return picked.slice(0, 3);
         });
 
         setSelectedAge(() => {
-          if (!normalized.audienceAgeRangeId && !normalized.audienceAgeRange) return null;
-          return (
-            ageOpts.find((o) => o.value === normalized.audienceAgeRangeId) ||
-            ageOpts.find((o) => o.label.toLowerCase() === (normalized.audienceAgeRange || "").toLowerCase()) ||
-            null
-          );
+          const byId = ageOpts.find((o) => o.value === normalized.audienceAgeRangeId) || null;
+          const byLabel = !byId && normalized.audienceAgeRange
+            ? ageOpts.find((o) => o.label.toLowerCase() === normalized.audienceAgeRange!.toLowerCase()) || null
+            : null;
+
+          const sel = byId || byLabel || null;
+          if (sel) setForm((prev) => (prev ? { ...prev, audienceAgeRangeId: sel.value } : prev));
+          return sel;
         });
 
         setSelectedRange(() => {
-          if (!normalized.audienceId && !normalized.audienceRange) return null;
-          return (
-            rangeOpts.find((o) => o.value === normalized.audienceId) ||
-            rangeOpts.find((o) => o.label.toLowerCase() === (normalized.audienceRange || "").toLowerCase()) ||
-            null
-          );
+          const byId = rangeOpts.find((o) => o.value === normalized.audienceId) || null;
+          const byLabel =
+            !byId && normalized.audienceRange
+              ? rangeOpts.find((o) => o.label.toLowerCase() === normalized.audienceRange!.toLowerCase()) || null
+              : null;
+          const sel = byId || byLabel || null;
+          if (sel) setForm((prev) => (prev ? { ...prev, audienceId: sel.value } : prev));
+          return sel;
         });
+
       } catch (e: any) {
         console.error(e);
         setError(e?.message || "Failed to load influencer profile.");
@@ -721,20 +754,10 @@ export default function InfluencerProfilePage() {
 
       if (profileImageFile) fd.append("profileImage", profileImageFile);
 
-      // Use raw fetch for multipart (your post() likely sets JSON headers)
-      const token = localStorage.getItem("token");
-      const resp =  await post<any>("/influencer/updateProfile", {
-        method: "POST",
-        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-        body: fd,
-      });
+      // ✅ use our axios post helper directly with FormData
+      await post<{ message?: string }>("/influencer/updateProfile", fd);
 
-      if (!resp.ok) {
-        const errJson = await resp.json().catch(() => ({}));
-        throw Error(errJson?.message || `Failed to save profile (${resp.status})`);
-      }
-
-      // Optionally fetch the latest profile again to reflect normalized values
+      // Refresh profile
       const updatedRaw = await get<any>(`/influencer/getbyid?id=${influencerId}`);
       const updated = normalizeInfluencer(updatedRaw);
 
@@ -756,14 +779,15 @@ export default function InfluencerProfilePage() {
   const showManualPlatform = selectedPlatform?.label?.toLowerCase() === "other";
 
   return (
-    <section className="min-h-screen py-12">
-      <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
+    <section className="min-h-screen py-8 sm:py-12">
+      <div className="max-w-5xl mx-auto px-3 sm:px-6 lg:px-8">
         {/* Header */}
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8 mb-8">
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 sm:p-8 mb-6 sm:mb-8">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-            <div className="flex items-center gap-4">
-              <div className="w-20 h-20 bg-gray-100 rounded-2xl overflow-hidden flex items-center justify-center relative">
+            <div className="flex items-center gap-4 min-w-0">
+              <div className="w-16 h-16 sm:w-20 sm:h-20 bg-gray-100 rounded-2xl overflow-hidden flex items-center justify-center relative flex-shrink-0">
                 {form?.profileImage || influencer?.profileImage ? (
+                  // eslint-disable-next-line @next/next/no-img-element
                   <img src={form?.profileImage || influencer?.profileImage || ""} alt={influencer?.name} className="w-full h-full object-cover" />
                 ) : (
                   <div className="w-full h-full bg-gradient-to-r from-[#FFA135] to-[#FF7236] flex items-center justify-center">
@@ -790,9 +814,9 @@ export default function InfluencerProfilePage() {
                   </label>
                 )}
               </div>
-              <div>
-                <h1 className="text-3xl font-bold text-gray-900">{influencer?.name || "—"}</h1>
-                <p className="text-gray-600">
+              <div className="min-w-0">
+                <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 truncate">{influencer?.name || "—"}</h1>
+                <p className="text-gray-600 truncate">
                   {influencer?.platformName ? `${influencer.platformName}` : "—"}
                   {influencer?.profileLink && (
                     <>
@@ -802,13 +826,13 @@ export default function InfluencerProfilePage() {
                   )}
                 </p>
                 {influencer?.socialMedia && (
-                  <p className="text-gray-600">Handle: <span className="font-medium">{influencer.socialMedia}</span></p>
+                  <p className="text-gray-600 truncate">Handle: <span className="font-medium">{influencer.socialMedia}</span></p>
                 )}
               </div>
             </div>
 
             {!isEditing && (
-              <button onClick={() => setIsEditing(true)} className="inline-flex items-center px-6 py-3 bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-800 font-medium rounded-xl shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 cursor-pointer">
+              <button onClick={() => setIsEditing(true)} className="inline-flex items-center justify-center px-5 sm:px-6 py-3 bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-800 font-medium rounded-xl shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 cursor-pointer w-full sm:w-auto">
                 <HiPencil className="w-5 h-5 mr-2" />
                 Edit Profile
               </button>
@@ -817,8 +841,8 @@ export default function InfluencerProfilePage() {
         </div>
 
         {/* Profile & Contact */}
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8 mb-8">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 sm:p-8 mb-6 sm:mb-8">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
             {/* Name */}
             <IconField icon={HiUser} label="Full Name" value={form?.name || ""} readValue={influencer?.name || ""} onChange={(v) => onField("name", v as any)} editing={isEditing} />
 
@@ -830,7 +854,7 @@ export default function InfluencerProfilePage() {
 
             {/* Email (dual OTP when editing) */}
             {!isEditing ? (
-              <IconField icon={HiMail} label="Email Address" value="" readValue={influencer?.email ?? ""} onChange={() => {}} editing={false} />
+              <IconField icon={HiMail} label="Email Address" value="" readValue={influencer?.email ?? ""} onChange={() => { }} editing={false} />
             ) : (
               influencer && form && (
                 <EmailEditorDualOTP
@@ -875,14 +899,13 @@ export default function InfluencerProfilePage() {
             <GenderField editing={isEditing} value={form?.gender} readValue={genderFromCode(influencer?.gender as any)} onChange={(v) => onField("gender", v as any)} required={!!form?.otpVerified} />
 
             {/* Password (optional change) */}
-            
           </div>
         </div>
 
         {/* Platform & Audience */}
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8 mb-8">
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 sm:p-8 mb-6 sm:mb-8">
           <h3 className="text-lg font-semibold text-gray-900 mb-4">Platform & Audience</h3>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
             {/* Platform Select */}
             <SelectField label="Platform" icon={HiUserGroup} options={platforms} value={selectedPlatform} onChange={(opt) => setSelectedPlatform(opt as PlatformOption)} placeholder="Select Platform" styles={selectStyles} readValue={influencer?.platformName || "—"} editing={isEditing} />
 
@@ -891,11 +914,11 @@ export default function InfluencerProfilePage() {
               <IconField icon={HiPencil} label="If Other – Enter Platform Name" value={form?.manualPlatformName || ""} readValue={form?.manualPlatformName || ""} onChange={(v) => onField("manualPlatformName", v as any)} editing={true} />
             )}
 
-            {/* Audience Age Range */}
-            <SelectField label="Audience Range" icon={HiCalendar} options={ages} value={selectedAge} onChange={(opt) => setSelectedAge(opt as AudienceAgeOption)} placeholder="e.g., 10k-18k" styles={selectStyles} readValue={influencer?.audienceAgeRange || "—"} editing={isEditing} />
+            {/* Audience Age Range (e.g., 18–24) */}
+            <SelectField label="Audience Age Range" icon={HiCalendar} options={ages} value={selectedAge} onChange={(opt) => setSelectedAge(opt as AudienceAgeOption)} placeholder="e.g., 18 – 24" styles={selectStyles} readValue={influencer?.audienceAgeRange || "—"} editing={isEditing} />
 
-            {/* Audience Count Range */}
-            <SelectField label="Audience Age Range" icon={HiCalendar} options={ranges} value={selectedRange} onChange={(opt) => setSelectedRange(opt as AudienceRangeOption)} placeholder="e.g., 18 - 24" styles={selectStyles} readValue={influencer?.audienceRange || "—"} editing={isEditing} />
+            {/* Audience Range (Count) (e.g., 10k–18k) */}
+            <SelectField label="Audience Range (Count)" icon={HiCalendar} options={ranges} value={selectedRange} onChange={(opt) => setSelectedRange(opt as AudienceRangeOption)} placeholder="e.g., 10k – 18k" styles={selectStyles} readValue={influencer?.audienceRange || "—"} editing={isEditing} />
 
             {/* Audience Gender Split */}
             <div className="bg-white border border-gray-100 p-6 rounded-xl shadow-sm hover:shadow-md transition-shadow duration-200 lg:col-span-2">
@@ -938,25 +961,25 @@ export default function InfluencerProfilePage() {
         </div>
 
         {/* Bio */}
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 mb-8">
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 sm:p-8 mb-6 sm:mb-8">
           <h3 className="text-lg font-semibold text-gray-900 mb-2">Bio</h3>
           {isEditing ? (
             <textarea className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all duration-200" rows={4} value={form?.bio || ""} onChange={(e) => onField("bio", e.target.value as any)} />
           ) : (
-            <p className="text-gray-700 whitespace-pre-wrap">{influencer?.bio || "—"}</p>
+            <p className="text-gray-700 whitespace-pre-wrap break-words">{influencer?.bio || "—"}</p>
           )}
         </div>
 
         {/* Subscription (read-only display) */}
         {!isEditing && (
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-            <div className="flex items-start gap-4">
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 sm:p-8">
+            <div className="flex items-start gap-4 flex-col sm:flex-row">
               <div className="flex-shrink-0 w-12 h-12 bg-gradient-to-br from-purple-50 to-purple-100 rounded-xl flex items-center justify-center">
                 <HiCreditCard className="w-6 h-6 text-purple-600" />
               </div>
 
-              <div className="flex-1 min-w-0">
-                <div className="flex items-start justify-between gap-4">
+              <div className="flex-1 min-w-0 w-full">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                   <div className="min-w-0">
                     <h3 className="text-lg font-semibold text-gray-900 mb-2">Subscription</h3>
                     <p className="text-2xl font-bold text-gray-900 mb-1">{influencer?.subscription?.planName || "No Plan"}</p>
@@ -970,8 +993,8 @@ export default function InfluencerProfilePage() {
                     </div>
                   </div>
 
-                  <div className="flex-shrink-0">
-                    <button className="inline-flex items-center px-5 py-2.5 bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-800 font-medium rounded-xl shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 cursor-pointer">
+                  <div className="w-full sm:w-auto">
+                    <button className="w-full inline-flex items-center justify-center px-5 py-2.5 bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-800 font-medium rounded-xl shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 cursor-pointer">
                       <HiCreditCard className="w-5 h-5 mr-2" />
                       Upgrade Subscription
                     </button>
@@ -985,7 +1008,7 @@ export default function InfluencerProfilePage() {
                       return (
                         <div key={feat.key}>
                           <div className="flex justify-between text-sm">
-                            <span className="capitalize text-gray-700">{feat.key.replace(/_/g, " ")}</span>
+                            <span className="capitalize text-gray-700 break-words">{feat.key.replace(/_/g, " ")}</span>
                             <span className="text-gray-600">{feat.used}/{feat.limit}</span>
                           </div>
                           <div className="w-full bg-gray-200 rounded-full h-2">
@@ -1003,16 +1026,16 @@ export default function InfluencerProfilePage() {
 
         {/* Actions */}
         {isEditing && (
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 mt-8">
-            <div className="flex flex-col sm:flex-row gap-4 sm:justify-end">
-              <button onClick={resetEdits} disabled={saving} className="inline-flex items-center justify-center px-6 py-3 text-gray-700 bg-gray-100 border border-gray-300 rounded-xl hover:bg-gray-200 transition-all duration-200 disabled:opacity-60">
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 sm:p-8 mt-6">
+            <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 sm:justify-end">
+              <button onClick={resetEdits} disabled={saving} className="inline-flex items-center justify-center px-6 py-3 text-gray-700 bg-gray-100 border border-gray-300 rounded-xl hover:bg-gray-200 transition-all duration-200 disabled:opacity-60 w-full sm:w-auto">
                 <HiX className="w-5 h-5 mr-2" />
                 Cancel
               </button>
               <button
                 onClick={saveProfile}
                 disabled={saveDisabled}
-                className="inline-flex items-center justify-center px-6 py-3 bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-800 font-medium rounded-xl shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 disabled:opacity-60 disabled:transform-none"
+                className="inline-flex items-center justify-center px-6 py-3 bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-800 font-medium rounded-xl shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 disabled:opacity-60 disabled:transform-none w-full sm:w-auto"
                 title={emailFlow !== "idle" && emailFlow !== "verified" ? "Verify the new email to enable saving" : undefined}
               >
                 <HiCheck className="w-5 h-5 mr-2" />
@@ -1027,16 +1050,6 @@ export default function InfluencerProfilePage() {
 }
 
 /* -------- Small UI helpers -------- */
-function InfoChip({ label, value }: { label: string; value?: string | number | boolean | null }) {
-  const text = value === null || typeof value === "undefined" || value === "" ? "—" : String(value);
-  return (
-    <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
-      <p className="text-xs text-gray-500">{label}</p>
-      <p className="text-gray-900 font-medium">{text}</p>
-    </div>
-  );
-}
-
 function Loader() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-gray-100 flex items-center justify-center">
@@ -1056,8 +1069,8 @@ function Error({ message }: { message: string }) {
           <HiX className="w-8 h-8 text-red-600" />
         </div>
         <h2 className="text-xl font-semibold text-gray-900 mb-2">Error Loading Profile</h2>
-        <p className="text-red-600 mb-4">{message}</p>
-        <button onClick={() => window.location.reload()} className="px-6 py-3 bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white font-medium rounded-xl hover:shadow-md transition-all duration-200">
+        <p className="text-red-600 mb-4 break-words">{message}</p>
+        <button onClick={() => window.location.reload()} className="w-full sm:w-auto px-6 py-3 bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white font-medium rounded-xl hover:shadow-md transition-all duration-200">
           Try Again
         </button>
       </div>
@@ -1077,18 +1090,16 @@ function IconField({ icon: Icon, label, prefix, value, readValue, onChange, edit
           {editing ? (
             <div className="flex items-center gap-2">
               {prefix && (<span className="px-3 py-2 bg-gray-100 text-gray-700 text-sm rounded-lg font-medium">{prefix}</span>)}
-              <input className="flex-1 px-4 py-3 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all duration-200" value={value} onChange={(e) => onChange(e.target.value)} />
+              <input className="flex-1 min-w-0 px-4 py-3 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all duration-200" value={value} onChange={(e) => onChange(e.target.value)} />
             </div>
           ) : (
-            <p className="text-lg font-medium text-gray-900">{readValue || "—"}</p>
+            <p className="text-lg font-medium text-gray-900 break-words">{readValue || "—"}</p>
           )}
         </div>
       </div>
     </div>
   );
 }
-
-
 
 function PhoneField({ valueNumber, readValueNumber, code, editing, onNumberChange, codeOptions, selectedCalling, onCallingChange, selectStyles, }: { valueNumber: string; readValueNumber: string; code?: string; editing: boolean; onNumberChange: (v: string) => void; codeOptions: any[]; selectedCalling: any | null; onCallingChange: (opt: any | null) => void; selectStyles: any; }) {
   const readText = formatPhoneDisplay(code, readValueNumber);
@@ -1102,15 +1113,23 @@ function PhoneField({ valueNumber, readValueNumber, code, editing, onNumberChang
         <div className="flex-1 min-w-0">
           <label className="block text-sm font-medium text-gray-700 mb-2">Phone Number</label>
           {editing ? (
-            <div className="grid grid-cols-3 gap-">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <Select inputId="influencerCalling" options={codeOptions} placeholder="Code" value={selectedCalling} onChange={(opt) => onCallingChange(opt as any)} styles={selectStyles} />
-              <div className="col-span-2 relative">
-                
-                <input type="tel" className={`w-full ${visibleCode ? "pl-16" : "pl-4"} pr-4 py-3 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all duration-200`} value={valueNumber} onChange={(e) => onNumberChange(e.target.value)} placeholder="Phone number" />
+              <div className="sm:col-span-2 relative">
+                {visibleCode && (
+                  <span className="absolute inset-y-0 left-0 pl-4 flex items-center text-gray-600 pointer-events-none select-none">{visibleCode}</span>
+                )}
+                <input
+                  type="tel"
+                  className={`w-full ${visibleCode ? "pl-16" : "pl-4"} pr-4 py-3 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all duration-200`}
+                  value={valueNumber}
+                  onChange={(e) => onNumberChange(e.target.value)}
+                  placeholder="Phone number"
+                />
               </div>
             </div>
           ) : (
-            <p className="text-lg font-medium text-gray-900">{readText}</p>
+            <p className="text-lg font-medium text-gray-900 break-words">{readText}</p>
           )}
         </div>
       </div>
@@ -1130,7 +1149,7 @@ function CountryField({ editing, readValue, countryOptions, selectedCountry, onC
           {editing ? (
             <Select inputId="influencerCountry" options={countryOptions} placeholder="Select Country" value={selectedCountry} onChange={(opt) => onCountryChange(opt as CountryOption)} filterOption={filterByCountryName as any} styles={selectStyles} />
           ) : (
-            <p className="text-lg font-medium text-gray-900">{readValue || "—"}</p>
+            <p className="text-lg font-medium text-gray-900 break-words">{readValue || "—"}</p>
           )}
         </div>
       </div>
@@ -1184,7 +1203,7 @@ function SelectField({ label, icon: Icon, options, value, onChange, placeholder,
           {editing ? (
             <Select options={options} value={value} onChange={onChange} placeholder={placeholder} styles={styles} />
           ) : (
-            <p className="text-lg font-medium text-gray-900">{readValue || "—"}</p>
+            <p className="text-lg font-medium text-gray-900 break-words">{readValue || "—"}</p>
           )}
         </div>
       </div>
