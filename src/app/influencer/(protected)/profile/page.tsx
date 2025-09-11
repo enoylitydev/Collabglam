@@ -446,7 +446,7 @@ function EmailEditorDualOTP({
     if (!valueIsValid) return;
     setBusy(true);
     try {
-      const resp = await post<{ message?: string }>("/requestEmailUpdate", {
+      const resp = await post<{ message?: string }>("/influencer/requestEmailUpdate", {
         influencerId,
         newEmail: value.trim().toLowerCase(),
         role: "Influencer",
@@ -477,7 +477,7 @@ function EmailEditorDualOTP({
     setFlow("verifying");
     onStateChange("verifying");
     try {
-      await post<{ message?: string }>("/verifyEmailUpdateOtp", {
+      await post<{ message?: string }>("/influencer/verifyEmailUpdateOtp", {
         influencerId,
         role: "Influencer",
         oldEmailOtp: oldOtp.trim(),
