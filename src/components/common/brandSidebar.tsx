@@ -1,4 +1,3 @@
-// components/BrandSidebar.tsx
 'use client';
 
 import React from 'react';
@@ -46,8 +45,7 @@ export default function BrandSidebar({ isOpen, onClose }: BrandSidebarProps) {
   const renderLinks = () =>
     menuItems.map((item) => {
       const isActive = pathname.startsWith(item.href);
-      const base =
-        'flex items-center py-3 px-4 rounded-md transition-all duration-200';
+      const base = 'flex items-center py-3 px-4 rounded-md transition-all duration-200';
       const active = isActive
         ? 'bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white'
         : 'text-gray-800 hover:bg-gradient-to-r hover:from-[#FFA135] hover:to-[#FF7236] hover:text-white';
@@ -62,9 +60,7 @@ export default function BrandSidebar({ isOpen, onClose }: BrandSidebarProps) {
           >
             <item.icon
               size={20}
-              className={`flex-shrink-0 ${
-                isActive ? 'text-white' : 'text-gray-400 group-hover:text-white'
-              }`}
+              className={`flex-shrink-0 ${isActive ? 'text-white' : 'text-gray-400 group-hover:text-white'}`}
             />
             {!collapsed && <span className="ml-3 text-md font-medium">{item.name}</span>}
           </Link>
@@ -74,16 +70,16 @@ export default function BrandSidebar({ isOpen, onClose }: BrandSidebarProps) {
 
   const sidebarContent = (
     <div
-      className={`
+      className="
         flex flex-col h-full bg-white text-gray-800 shadow-lg
-        ${collapsed ? 'w-16' : 'w-84'}
         transition-[width] duration-300 ease-in-out
-      `}
+      "
+      style={{ width: 'var(--brand-sidebar-w)' }} // 64px or 336px from provider
     >
       {/* Header */}
       <div className="flex items-center justify-between h-16 px-4 border-b border-gray-200">
         <button
-          onClick={() => setCollapsed(!collapsed)}
+          onClick={() => setCollapsed(!collapsed)} // manual override
           className="p-2 rounded-md hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#FFA135]"
           title={collapsed ? 'Expand Sidebar' : 'Collapse Sidebar'}
         >

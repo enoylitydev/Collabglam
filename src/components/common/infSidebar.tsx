@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
@@ -39,9 +39,40 @@ interface InfluencerSidebarProps {
 }
 
 export default function InfluencerSidebar({ isOpen, onClose }: InfluencerSidebarProps) {
-  const [collapsed, setCollapsed] = useState(false);
+  // Auto behavior
+  const [autoCollapsed, setAutoCollapsed] = useState(false);
+  // Manual override: null = follow auto; true/false = user override
+  const [userCollapsed, setUserCollapsed] = useState<boolean | null>(null);
+
   const pathname = usePathname();
   const router = useRouter();
+
+  // Collapse thresholds (hysteresis to avoid flicker)
+  const COLLAPSE_AT = 1280; // collapse below this width
+  const EXPAND_AT = 1440;   // expand above this width
+
+  useEffect(() => {
+    const onResize = () => {
+      const w = window.innerWidth;
+      setAutoCollapsed(prev => {
+        if (w < COLLAPSE_AT) return true;
+        if (w > EXPAND_AT) return false;
+        return prev;
+      });
+    };
+    onResize(); // set initial
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  // Effective state: manual override wins; otherwise follow auto
+  const isCollapsed = (userCollapsed ?? autoCollapsed) === true;
+
+  const handleToggle = () => {
+    // If we’re following auto (null), flip relative to auto state.
+    // If user already overrode, just flip that.
+    setUserCollapsed(prev => (prev === null ? !autoCollapsed : !prev));
+  };
 
   const handleLogout = () => {
     localStorage.removeItem("token");
@@ -61,14 +92,11 @@ export default function InfluencerSidebar({ isOpen, onClose }: InfluencerSidebar
           <Link
             href={item.href}
             className={`${base} ${active}`}
-            title={collapsed ? item.name : undefined}
+            title={isCollapsed ? item.name : undefined}
             onClick={onClose}
           >
-            <item.icon
-              size={20}
-              className={`flex-shrink-0`}
-            />
-            {!collapsed && <span className="ml-3 text-md font-medium">{item.name}</span>}
+            <item.icon size={20} className="flex-shrink-0" />
+            {!isCollapsed && <span className="ml-3 text-md font-medium">{item.name}</span>}
           </Link>
         </li>
       );
@@ -76,26 +104,25 @@ export default function InfluencerSidebar({ isOpen, onClose }: InfluencerSidebar
 
   const sidebarContent = (
     <div
-      className={
-        `
+      className={`
         flex flex-col h-full bg-white text-gray-800 shadow-lg
-        ${collapsed ? "w-16" : "w-74"}
-        transition-width duration-300 ease-in-out
-      `
-      }
+        ${isCollapsed ? "w-16" : "w-74"}
+        transition-[width] duration-300 ease-in-out
+      `}
     >
       {/* Header */}
-      <div className="flex items-center h-16 px-4 border-b border-gray-200 ">
+      <div className="flex items-center h-16 px-4 border-b border-gray-200">
         <button
-          onClick={() => setCollapsed((p) => !p)}
+          onClick={handleToggle}
           className="p-2 rounded-md hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#FFA135]"
-          title={collapsed ? "Expand Sidebar" : "Collapse Sidebar"}
+          title={isCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
         >
           <HiMenu size={24} className="text-gray-800" />
         </button>
-        <Link href="/influencer/dashboard" className="flex items-center space-x-2">
+
+        <Link href="/influencer/dashboard" className="flex items-center space-x-2 ml-2">
           <img src="/logo.png" alt="CollabGlam logo" className="h-10 w-auto" />
-          {!collapsed && <span className="text-2xl font-semibold text-gray-900">CollabGlam</span>}
+          {!isCollapsed && <span className="text-2xl font-semibold text-gray-900">CollabGlam</span>}
         </Link>
       </div>
 
@@ -108,16 +135,15 @@ export default function InfluencerSidebar({ isOpen, onClose }: InfluencerSidebar
       <div className="border-t border-gray-200 p-4">
         <button
           onClick={handleLogout}
-          className={
-            `
+          className="
             w-full flex items-center py-2 px-4 rounded-md
-            text-gray-800 hover:bg-gradient-to-r hover:from-[#FFBF00] hover:to-[#FFDB58] 
+            text-gray-800 hover:bg-gradient-to-r hover:from-[#FFBF00] hover:to-[#FFDB58]
             transition-colors duration-200
-          `}
-          title={collapsed ? "Logout" : undefined}
+          "
+          title={isCollapsed ? "Logout" : undefined}
         >
           <HiLogout size={20} className="flex-shrink-0" />
-          {!collapsed && <span className="ml-3 text-md font-medium">Logout</span>}
+          {!isCollapsed && <span className="ml-3 text-md font-medium">Logout</span>}
         </button>
       </div>
     </div>
@@ -166,7 +192,7 @@ export default function InfluencerSidebar({ isOpen, onClose }: InfluencerSidebar
                   handleLogout();
                   onClose();
                 }}
-                className="w-full flex items-center py-2 px-4 rounded-md text-gray-800 hover:bg-gradient-to-r hover:from-[#FFBF00] hover:to-[#FFDB58]  transition-colors duration-200"
+                className="w-full flex items-center py-2 px-4 rounded-md text-gray-800 hover:bg-gradient-to-r hover:from-[#FFBF00] hover:to-[#FFDB58] transition-colors duration-200"
               >
                 <HiLogout size={20} className="flex-shrink-0" />
                 <span className="ml-3 text-md font-medium">Logout</span>
