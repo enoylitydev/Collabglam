@@ -856,7 +856,6 @@ export default function BrandProfilePage() {
                 </div>
 
                 {/* Features usage */}
-                {/* Features usage */}
                 <div className="mt-2 space-y-4">
                   {(brand?.subscription.features ?? []).map((f) => {
                     const isManager = f.key === "dedicated_manager_support";

@@ -22,7 +22,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-
+import { useRouter } from "next/navigation";
 // lucide icons
 import {
   User,
@@ -198,6 +198,12 @@ function genderFromCode(code?: number) {
   if (code === 1) return "Female";
   if (code === 2) return "Other";
   return "—";
+}
+
+function titleizeFeatureKey(key: string) {
+  return key
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (m) => m.toUpperCase());
 }
 
 function pct(val?: number) {
@@ -623,6 +629,8 @@ function EmailEditorDualOTP({
 
 /* ===================== Main Page ===================== */
 export default function InfluencerProfilePage() {
+  const router = useRouter();
+
   const [influencer, setInfluencer] = useState<InfluencerData | null>(null);
   const [form, setForm] = useState<InfluencerData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -1678,7 +1686,9 @@ export default function InfluencerProfilePage() {
                     <div className="min-w-0">
                       <h3 className="text-lg font-semibold mb-1">Subscription</h3>
                       <p className="text-2xl font-bold">
-                        {influencer?.subscription?.planName || "No Plan"}
+                        {influencer?.subscription?.planName
+                          ? influencer.subscription.planName.replace(/^./u, c => c.toLocaleUpperCase())
+                          : "No Plan"}
                       </p>
                       <div className="space-y-1 text-sm text-muted-foreground mt-2">
                         {influencer?.subscription?.startedAt && (
@@ -1704,7 +1714,7 @@ export default function InfluencerProfilePage() {
                     </div>
 
                     <div className="w-full sm:w-auto">
-                      <Button className="w-full gap-2 bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-800">
+                      <Button className="w-full gap-2 bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-800" onClick={() => router.push('/influencer/subscriptions')}>
                         <CreditCard className="h-5 w-5" />
                         Upgrade Subscription
                       </Button>
@@ -1712,35 +1722,84 @@ export default function InfluencerProfilePage() {
                   </div>
 
                   {!!influencer?.subscription?.features?.length && (
-                    <div className="mt-5 space-y-3">
-                      {influencer.subscription.features.map((feat) => {
-                        const isUnlimited = feat.limit === 1; // 1 => Unlimited
-                        const percent = isUnlimited
-                          ? 100
-                          : feat.limit > 0
-                            ? Math.min(100, Math.round((feat.used / feat.limit) * 100))
-                            : 0;
+                    <div className="mt-5 space-y-4">
+                      {influencer.subscription.features.map((f) => {
+                        const isManager = f.key === "dedicated_manager_support";
+
+                        // Normalize numbers
+                        const rawLimit = Number.isFinite(f.limit) ? f.limit : 0;
+                        const limit = Math.max(0, rawLimit);
+                        const used = Math.max(0, Number.isFinite(f.used) ? f.used : 0);
+
+                        // Unlimited rule: treat 1 OR 0 as unlimited (per your requirement)
+                        const unlimited = limit <= 1;
+
+                        const label = isManager ? "Dedicated Manager Support" : titleizeFeatureKey(f.key);
+
+                        if (isManager) {
+                          // Special “availability” row (no bar)
+                          const status = unlimited ? "Unlimited" : limit >= 1 ? "Available" : "Not Included";
+                          const ok = unlimited || limit >= 1;
+
+                          return (
+                            <div key={f.key} className="flex items-center justify-between">
+                              <div className="flex items-center gap-2 text-sm">
+                                {ok ? <Check className="w-4 h-4 text-emerald-600" /> : <X className="w-4 h-4 text-gray-400" />}
+                                <span className="text-gray-800">{label}</span>
+                              </div>
+                              <span
+                                className={`text-xs px-2 py-1 rounded-md border ${unlimited
+                                  ? "bg-blue-100 text-blue-700 border-blue-200"
+                                  : ok
+                                    ? "bg-emerald-100 text-emerald-800 border-emerald-200"
+                                    : "bg-gray-100 text-gray-700 border-gray-200"
+                                  }`}
+                              >
+                                {status}
+                              </span>
+                            </div>
+                          );
+                        }
+
+                        // Quota-like features (show progress bar)
+                        const pct = unlimited ? 100 : limit > 0 ? Math.min(100, Math.round((used / limit) * 100)) : 0;
+
+                        // Color the inner indicator via `[&>div]` which targets Progress's indicator element
+                        const barColorClass = unlimited
+                          ? "[&>div]:bg-blue-500"
+                          : used >= limit
+                            ? "[&>div]:bg-red-500"
+                            : pct >= 80
+                              ? "[&>div]:bg-orange-500"
+                              : "[&>div]:bg-emerald-500";
 
                         return (
-                          <div key={feat.key}>
-                            <div className="flex justify-between text-sm mb-1">
-                              <span className="capitalize break-words">
-                                {feat.key.replace(/_/g, " ")}
+                          <div key={f.key} className="group">
+                            <div className="flex items-center justify-between mb-1 text-sm">
+                              <span className="text-gray-800">{label}</span>
+                              <span className="text-gray-500 tabular-nums">
+                                {used} / {unlimited ? "∞" : limit}
                               </span>
-
-                              {isUnlimited ? (
-                                <span className="inline-flex items-center gap-2">
-                                  {feat.used}/∞
-                                  <Badge className="ml-1">Unlimited</Badge>
-                                </span>
-                              ) : (
-                                <span>
-                                  {feat.used}/{feat.limit}
-                                </span>
-                              )}
                             </div>
 
-                            <Progress value={percent} />
+                            <Progress
+                              value={pct}
+                              className={`h-2 rounded-full bg-gray-100 ${barColorClass}`}
+                              aria-label={`${label} usage: ${used} of ${unlimited ? "unlimited" : limit}`}
+                            />
+
+                            <div className="mt-1 flex items-center justify-between text-xs text-gray-500">
+                              <span className="tabular-nums">{unlimited ? "∞" : `${pct}%`}</span>
+                              {unlimited ? (
+                                <span className="tabular-nums flex items-center gap-1">
+                                  <span className="px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200">
+                                    Unlimited
+                                  </span>
+                                </span>
+                              ) : (
+                                <span className="tabular-nums">{Math.max(0, limit - used)} left</span>
+                              )}
+                            </div>
                           </div>
                         );
                       })}
