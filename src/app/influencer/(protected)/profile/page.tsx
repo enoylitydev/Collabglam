@@ -22,7 +22,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-
+import { useRouter } from "next/navigation";
 // lucide icons
 import {
   User,
@@ -200,6 +200,12 @@ function genderFromCode(code?: number) {
   return "—";
 }
 
+function titleizeFeatureKey(key: string) {
+  return key
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (m) => m.toUpperCase());
+}
+
 function pct(val?: number) {
   const v = Number.isFinite(val as any) ? (val as number) : 0;
   return Math.max(0, Math.min(100, Math.round(v)));
@@ -374,7 +380,7 @@ function MultiSelect({ values, onChange, options, placeholder = "Choose...", max
             <SelectItem
               key={opt.value}
               value={opt.value}
-              // ❌ remove this: onPointerDown={(e) => e.preventDefault()}
+            // ❌ remove this: onPointerDown={(e) => e.preventDefault()}
             >
               <div className="flex items-center gap-2">
                 <CheckIcon className={`h-4 w-4 ${selectedSet.has(opt.value) ? "opacity-100" : "opacity-0"}`} />
@@ -623,6 +629,8 @@ function EmailEditorDualOTP({
 
 /* ===================== Main Page ===================== */
 export default function InfluencerProfilePage() {
+  const router = useRouter();
+
   const [influencer, setInfluencer] = useState<InfluencerData | null>(null);
   const [form, setForm] = useState<InfluencerData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -768,10 +776,10 @@ export default function InfluencerProfilePage() {
           const byLabel =
             !byId && normalized.audienceAgeRange
               ? ageOpts.find(
-                  (o) =>
-                    o.label.toLowerCase() ===
-                    (normalized.audienceAgeRange || "").toLowerCase()
-                ) || null
+                (o) =>
+                  o.label.toLowerCase() ===
+                  (normalized.audienceAgeRange || "").toLowerCase()
+              ) || null
               : null;
 
           const sel = byId || byLabel || null;
@@ -784,9 +792,9 @@ export default function InfluencerProfilePage() {
           const byLabel =
             !byId && normalized.audienceRange
               ? rangeOpts.find(
-                  (o) =>
-                    o.label.toLowerCase() === (normalized.audienceRange || "").toLowerCase()
-                ) || null
+                (o) =>
+                  o.label.toLowerCase() === (normalized.audienceRange || "").toLowerCase()
+              ) || null
               : null;
           const sel = byId || byLabel || null;
           if (sel) setForm((prev) => (prev ? { ...prev, audienceId: sel.value } : prev));
@@ -802,73 +810,73 @@ export default function InfluencerProfilePage() {
   }, []);
 
   // keep form.country / callingCode in sync with selections
-useEffect(() => {
-  if (!selectedCountry) return;
-  setForm(prev => {
-    if (!prev) return prev;
-    const nextCountryId = selectedCountry.value;
-    const nextCountryName = selectedCountry.country.countryName;
-    if (prev.countryId === nextCountryId && prev.country === nextCountryName) return prev;
-    return { ...prev, countryId: nextCountryId, country: nextCountryName };
-  });
-}, [selectedCountry]);
+  useEffect(() => {
+    if (!selectedCountry) return;
+    setForm(prev => {
+      if (!prev) return prev;
+      const nextCountryId = selectedCountry.value;
+      const nextCountryName = selectedCountry.country.countryName;
+      if (prev.countryId === nextCountryId && prev.country === nextCountryName) return prev;
+      return { ...prev, countryId: nextCountryId, country: nextCountryName };
+    });
+  }, [selectedCountry]);
 
-useEffect(() => {
-  if (!selectedCalling) return;
-  setForm(prev => {
-    if (!prev) return prev;
-    const nextCallingId = selectedCalling.value;
-    const nextCallingCode = selectedCalling.country.callingCode;
-    if (prev.callingId === nextCallingId && prev.callingCode === nextCallingCode) return prev;
-    return { ...prev, callingId: nextCallingId, callingCode: nextCallingCode };
-  });
-}, [selectedCalling]);
+  useEffect(() => {
+    if (!selectedCalling) return;
+    setForm(prev => {
+      if (!prev) return prev;
+      const nextCallingId = selectedCalling.value;
+      const nextCallingCode = selectedCalling.country.callingCode;
+      if (prev.callingId === nextCallingId && prev.callingCode === nextCallingCode) return prev;
+      return { ...prev, callingId: nextCallingId, callingCode: nextCallingCode };
+    });
+  }, [selectedCalling]);
 
-useEffect(() => {
-  setForm(prev => {
-    if (!prev) return prev;
-    const next = selectedAge?.value || "";
-    if (prev.audienceAgeRangeId === next) return prev;
-    return { ...prev, audienceAgeRangeId: next };
-  });
-}, [selectedAge]);
+  useEffect(() => {
+    setForm(prev => {
+      if (!prev) return prev;
+      const next = selectedAge?.value || "";
+      if (prev.audienceAgeRangeId === next) return prev;
+      return { ...prev, audienceAgeRangeId: next };
+    });
+  }, [selectedAge]);
 
-useEffect(() => {
-  setForm(prev => {
-    if (!prev) return prev;
-    const next = selectedRange?.value || "";
-    if (prev.audienceId === next) return prev;
-    return { ...prev, audienceId: next };
-  });
-}, [selectedRange]);
+  useEffect(() => {
+    setForm(prev => {
+      if (!prev) return prev;
+      const next = selectedRange?.value || "";
+      if (prev.audienceId === next) return prev;
+      return { ...prev, audienceId: next };
+    });
+  }, [selectedRange]);
 
-useEffect(() => {
-  setForm(prev => {
-    if (!prev) return prev;
-    if (!selectedPlatform) {
-      if (!prev.platformId && !prev.platformName && !prev.manualPlatformName) return prev;
-      return { ...prev, platformId: "", platformName: "", manualPlatformName: "" };
-    }
-    const id = selectedPlatform.value;
-    const name = selectedPlatform.label;
-    if (prev.platformId === id && prev.platformName === name) return prev;
-    return { ...prev, platformId: id, platformName: name };
-  });
-}, [selectedPlatform]);
+  useEffect(() => {
+    setForm(prev => {
+      if (!prev) return prev;
+      if (!selectedPlatform) {
+        if (!prev.platformId && !prev.platformName && !prev.manualPlatformName) return prev;
+        return { ...prev, platformId: "", platformName: "", manualPlatformName: "" };
+      }
+      const id = selectedPlatform.value;
+      const name = selectedPlatform.label;
+      if (prev.platformId === id && prev.platformName === name) return prev;
+      return { ...prev, platformId: id, platformName: name };
+    });
+  }, [selectedPlatform]);
 
-// Only push categories while editing, and only if changed
-useEffect(() => {
-  if (!isEditing) return;
-  setForm(prev => {
-    if (!prev) return prev;
-    const next = selectedCategories.map(c => c.value);
-    const same = Array.isArray(prev.categories)
-      && prev.categories.length === next.length
-      && prev.categories.every((v, i) => v === next[i]);
-    if (same) return prev;
-    return { ...prev, categories: next };
-  });
-}, [selectedCategories, isEditing]);
+  // Only push categories while editing, and only if changed
+  useEffect(() => {
+    if (!isEditing) return;
+    setForm(prev => {
+      if (!prev) return prev;
+      const next = selectedCategories.map(c => c.value);
+      const same = Array.isArray(prev.categories)
+        && prev.categories.length === next.length
+        && prev.categories.every((v, i) => v === next[i]);
+      if (same) return prev;
+      return { ...prev, categories: next };
+    });
+  }, [selectedCategories, isEditing]);
 
   const onField = useCallback(<K extends keyof InfluencerData>(key: K, value: InfluencerData[K]) => {
     setForm((prev) => (prev ? { ...prev, [key]: value } : prev));
@@ -937,18 +945,18 @@ useEffect(() => {
     if (!selectedCountry && countryOptions.length) {
       setSelectedCountry(
         countryOptions.find((o) => o.value === form.countryId) ||
-          countryOptions.find(
-            (o) =>
-              o.country.countryName.toLowerCase() === (form.country || "").toLowerCase()
-          ) ||
-          null
+        countryOptions.find(
+          (o) =>
+            o.country.countryName.toLowerCase() === (form.country || "").toLowerCase()
+        ) ||
+        null
       );
     }
     if (!selectedCalling && codeOptions.length) {
       setSelectedCalling(
         codeOptions.find((o) => o.value === form.callingId) ||
-          codeOptions.find((o) => o.country.callingCode === form.callingCode) ||
-          null
+        codeOptions.find((o) => o.country.callingCode === form.callingCode) ||
+        null
       );
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1678,7 +1686,9 @@ useEffect(() => {
                     <div className="min-w-0">
                       <h3 className="text-lg font-semibold mb-1">Subscription</h3>
                       <p className="text-2xl font-bold">
-                        {influencer?.subscription?.planName || "No Plan"}
+                        {influencer?.subscription?.planName
+                          ? influencer.subscription.planName.replace(/^./u, c => c.toLocaleUpperCase())
+                          : "No Plan"}
                       </p>
                       <div className="space-y-1 text-sm text-muted-foreground mt-2">
                         {influencer?.subscription?.startedAt && (
@@ -1704,7 +1714,7 @@ useEffect(() => {
                     </div>
 
                     <div className="w-full sm:w-auto">
-                      <Button className="w-full gap-2">
+                      <Button className="w-full gap-2 bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-800" onClick={() => router.push('/influencer/subscriptions')}>
                         <CreditCard className="h-5 w-5" />
                         Upgrade Subscription
                       </Button>
@@ -1712,23 +1722,84 @@ useEffect(() => {
                   </div>
 
                   {!!influencer?.subscription?.features?.length && (
-                    <div className="mt-5 space-y-3">
-                      {influencer.subscription.features.map((feat) => {
-                        const percent =
-                          feat.limit > 0
-                            ? Math.min(100, Math.round((feat.used / feat.limit) * 100))
-                            : 0;
-                        return (
-                          <div key={feat.key}>
-                            <div className="flex justify-between text-sm mb-1">
-                              <span className="capitalize break-words">
-                                {feat.key.replace(/_/g, " ")}
-                              </span>
-                              <span>
-                                {feat.used}/{feat.limit}
+                    <div className="mt-5 space-y-4">
+                      {influencer.subscription.features.map((f) => {
+                        const isManager = f.key === "dedicated_manager_support";
+
+                        // Normalize numbers
+                        const rawLimit = Number.isFinite(f.limit) ? f.limit : 0;
+                        const limit = Math.max(0, rawLimit);
+                        const used = Math.max(0, Number.isFinite(f.used) ? f.used : 0);
+
+                        // Unlimited rule: treat 1 OR 0 as unlimited (per your requirement)
+                        const unlimited = limit <= 1;
+
+                        const label = isManager ? "Dedicated Manager Support" : titleizeFeatureKey(f.key);
+
+                        if (isManager) {
+                          // Special “availability” row (no bar)
+                          const status = unlimited ? "Unlimited" : limit >= 1 ? "Available" : "Not Included";
+                          const ok = unlimited || limit >= 1;
+
+                          return (
+                            <div key={f.key} className="flex items-center justify-between">
+                              <div className="flex items-center gap-2 text-sm">
+                                {ok ? <Check className="w-4 h-4 text-emerald-600" /> : <X className="w-4 h-4 text-gray-400" />}
+                                <span className="text-gray-800">{label}</span>
+                              </div>
+                              <span
+                                className={`text-xs px-2 py-1 rounded-md border ${unlimited
+                                  ? "bg-blue-100 text-blue-700 border-blue-200"
+                                  : ok
+                                    ? "bg-emerald-100 text-emerald-800 border-emerald-200"
+                                    : "bg-gray-100 text-gray-700 border-gray-200"
+                                  }`}
+                              >
+                                {status}
                               </span>
                             </div>
-                            <Progress value={percent} />
+                          );
+                        }
+
+                        // Quota-like features (show progress bar)
+                        const pct = unlimited ? 100 : limit > 0 ? Math.min(100, Math.round((used / limit) * 100)) : 0;
+
+                        // Color the inner indicator via `[&>div]` which targets Progress's indicator element
+                        const barColorClass = unlimited
+                          ? "[&>div]:bg-blue-500"
+                          : used >= limit
+                            ? "[&>div]:bg-red-500"
+                            : pct >= 80
+                              ? "[&>div]:bg-orange-500"
+                              : "[&>div]:bg-emerald-500";
+
+                        return (
+                          <div key={f.key} className="group">
+                            <div className="flex items-center justify-between mb-1 text-sm">
+                              <span className="text-gray-800">{label}</span>
+                              <span className="text-gray-500 tabular-nums">
+                                {used} / {unlimited ? "∞" : limit}
+                              </span>
+                            </div>
+
+                            <Progress
+                              value={pct}
+                              className={`h-2 rounded-full bg-gray-100 ${barColorClass}`}
+                              aria-label={`${label} usage: ${used} of ${unlimited ? "unlimited" : limit}`}
+                            />
+
+                            <div className="mt-1 flex items-center justify-between text-xs text-gray-500">
+                              <span className="tabular-nums">{unlimited ? "∞" : `${pct}%`}</span>
+                              {unlimited ? (
+                                <span className="tabular-nums flex items-center gap-1">
+                                  <span className="px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200">
+                                    Unlimited
+                                  </span>
+                                </span>
+                              ) : (
+                                <span className="tabular-nums">{Math.max(0, limit - used)} left</span>
+                              )}
+                            </div>
                           </div>
                         );
                       })}
