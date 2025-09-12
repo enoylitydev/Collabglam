@@ -364,7 +364,7 @@ export default function ChatWindow({ params }: { params: { roomId: string } }) {
 
                     {isMe && (
                       <Avatar className="h-8 w-8 ml-2 border-2 border-[#FFBF00]">
-                        <AvatarFallback>I</AvatarFallback>
+                        <AvatarFallback className="text-xs">Me</AvatarFallback>
                       </Avatar>
                     )}
                   </div>
