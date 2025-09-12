@@ -16,19 +16,43 @@ import {
 import { post } from "@/lib/api";
 
 type Message = {
-  messageId: string;        // from server
+  messageId: string;        // from server (may be empty for optimistic)
   clientId?: string;        // local temp id
   senderId: string;
-  text: string;
-  timestamp: string;
+  text: string;             // may arrive undefined/null -> we sanitize
+  timestamp: string;        // ISO string
   replyTo?: { text: string; idx: number } | null;
 };
 
 const CHAR_LIMIT = 2000;
 const SCROLL_THRESHOLD = 50;
 
+// ---- helpers to keep things safe ----
+const asString = (v: any, d = ""): string =>
+  typeof v === "string" ? v : v == null ? d : String(v);
+
+const asISOTime = (v: any): string => {
+  const s = asString(v, "");
+  const dt = new Date(s);
+  return isNaN(dt.getTime()) ? new Date().toISOString() : s;
+};
+
+const sanitizeMessage = (m: Partial<Message>): Message => {
+  const text = asString(m.text, "");
+  return {
+    messageId: asString(m.messageId, ""), // may be "", that's fine for optimistic
+    clientId: m.clientId ? asString(m.clientId) : undefined,
+    senderId: asString(m.senderId, ""),
+    text,
+    timestamp: asISOTime(m.timestamp),
+    replyTo: m.replyTo
+      ? { text: asString(m.replyTo.text, ""), idx: Number(m.replyTo.idx ?? 0) }
+      : null,
+  };
+};
+
 const msgKey = (m: Pick<Message, "senderId" | "timestamp" | "text" | "messageId">) =>
-  m.messageId || `${m.senderId}__${m.timestamp}__${m.text}`;
+  m.messageId || `${asString(m.senderId)}__${asString(m.timestamp)}__${asString(m.text)}`;
 
 export default function ChatWindow({ params }: { params: { roomId: string } }) {
   const { roomId } = params;
@@ -53,8 +77,7 @@ export default function ChatWindow({ params }: { params: { roomId: string } }) {
   const wsMadeRef = useRef(false); // StrictMode guard
   const historyLoadedRef = useRef(false); // StrictMode guard
 
-  // helpers --------------------------------------------------
-
+  // scrolling ------------------------------------------------
   const isNearBottom = (el: HTMLDivElement) =>
     el.scrollHeight - el.scrollTop - el.clientHeight < SCROLL_THRESHOLD;
 
@@ -71,13 +94,16 @@ export default function ChatWindow({ params }: { params: { roomId: string } }) {
     setShowScrollDown(!isNearBottom(el));
   };
 
-  const upsertMessage = useCallback((incoming: Message) => {
+  // message upsert ------------------------------------------
+  const upsertMessage = useCallback((incomingRaw: Message) => {
+    const incoming = sanitizeMessage(incomingRaw);
+
     setMessages((prev) => {
       const incomingHash = msgKey(incoming);
-      // 1) by messageId/hash
+      // already have this exact message?
       if (prev.some((m) => msgKey(m) === incomingHash)) return prev;
 
-      // 2) if our optimistic exists (no clientId from server) try hash match
+      // resolve optimistic (no clientId from server) by naive match
       if (!incoming.clientId) {
         const tempIdx = prev.findIndex(
           (m) =>
@@ -98,7 +124,6 @@ export default function ChatWindow({ params }: { params: { roomId: string } }) {
   }, []);
 
   // data loading --------------------------------------------
-
   useEffect(() => {
     if (mountedRef.current) return;
     mountedRef.current = true;
@@ -106,9 +131,9 @@ export default function ChatWindow({ params }: { params: { roomId: string } }) {
     if (!brandId) return;
     post<{ rooms: any[] }>("/chat/rooms", { userId: brandId })
       .then(({ rooms }) => {
-        const room = rooms.find((r) => r.roomId === roomId);
-        const other = room?.participants.find((p: any) => p.userId !== brandId);
-        if (other) setPartnerName(other.name);
+        const room = rooms?.find((r) => r.roomId === roomId);
+        const other = room?.participants?.find((p: any) => p.userId !== brandId);
+        if (other?.name) setPartnerName(asString(other.name, "Chat"));
       })
       .catch(() => setError("Unable to load conversation info."));
   }, [roomId, brandId]);
@@ -117,8 +142,11 @@ export default function ChatWindow({ params }: { params: { roomId: string } }) {
     if (historyLoadedRef.current) return;
     historyLoadedRef.current = true;
 
-    post<{ messages: Message[] }>("/chat/history", { roomId, limit: 100 })
-      .then(({ messages: msgs }) => setMessages(msgs || []))
+    post<{ messages: Partial<Message>[] }>("/chat/history", { roomId, limit: 100 })
+      .then(({ messages: msgs }) => {
+        const safe = (msgs || []).map(sanitizeMessage);
+        setMessages(safe);
+      })
       .catch(() => setError("Failed to load messages."))
       .finally(() => {
         setLoading(false);
@@ -129,7 +157,6 @@ export default function ChatWindow({ params }: { params: { roomId: string } }) {
   useEffect(loadHistory, [loadHistory]);
 
   // websocket ------------------------------------------------
-
   useEffect(() => {
     if (wsMadeRef.current) return;
     wsMadeRef.current = true;
@@ -144,7 +171,7 @@ export default function ChatWindow({ params }: { params: { roomId: string } }) {
       try {
         const data = JSON.parse(evt.data);
         if (data.type === "chatMessage" && data.roomId === roomId) {
-          const serverMsg: Message = data.message;
+          const serverMsg: Message = sanitizeMessage(data.message);
           // if server echoed a clientId we sent, attach it
           const hash = msgKey(serverMsg);
           const clientId = optimisticMap.current[hash];
@@ -155,32 +182,34 @@ export default function ChatWindow({ params }: { params: { roomId: string } }) {
           if (el && isNearBottom(el)) scrollToBottom();
         }
       } catch {
+        // ignore malformed events
       }
     };
 
-    ws.onerror = () => {console.log(error);
-     setError("WebSocket error");}
+    ws.onerror = (evt) => {
+      console.error("WebSocket error", evt);
+      setError("WebSocket error");
+    };
 
     return () => ws.close();
   }, [roomId, upsertMessage, scrollToBottom]);
 
   // send msg -------------------------------------------------
-
   const sendMessage = async () => {
     if (!input.trim() || !brandId) return;
 
-    const text = input.trim();
+    const text = asString(input.trim(), "");
     const now = new Date().toISOString();
     const clientId = `tmp-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 
-    const optimistic: Message = {
+    const optimistic = sanitizeMessage({
       messageId: "",
       clientId,
       senderId: brandId,
       text,
       timestamp: now,
-      replyTo: replyTo ? { ...replyTo } : null,
-    };
+      replyTo: replyTo ? { ...replyTo, text: asString(replyTo.text, "") } : null,
+    });
 
     const hash = msgKey(optimistic);
     optimisticMap.current[hash] = clientId;
@@ -200,14 +229,14 @@ export default function ChatWindow({ params }: { params: { roomId: string } }) {
 
     const sendViaRest = async () => {
       try {
-        const { message } = await post<{ message: Message }>("/chat/message", {
+        const { message } = await post<{ message: Partial<Message> }>("/chat/message", {
           roomId,
           senderId: brandId,
           text,
           replyTo: replyTo?.text ?? null,
           clientId,
         });
-        upsertMessage(message);
+        upsertMessage(sanitizeMessage(message));
       } catch {
         setError("Failed to send message");
         setMessages((prev) => prev.filter((m) => m.clientId !== clientId));
@@ -229,6 +258,7 @@ export default function ChatWindow({ params }: { params: { roomId: string } }) {
     setExpanded((e) => ({ ...e, [idx]: !e[idx] }));
 
   // jsx ------------------------------------------------------
+  const partnerInitial = (partnerName?.charAt(0) || "?").toUpperCase();
 
   return (
     <Card className="relative flex h-screen flex-col min-h-0">
@@ -239,9 +269,9 @@ export default function ChatWindow({ params }: { params: { roomId: string } }) {
         </Button>
         <div className="flex items-center space-x-3">
           <Avatar className="h-10 w-10 border-2 border-white">
-            <AvatarFallback>{partnerName.charAt(0)}</AvatarFallback>
+            <AvatarFallback>{partnerInitial}</AvatarFallback>
           </Avatar>
-          <h3 className="text-xl font-semibold">{partnerName}</h3>
+          <h3 className="text-xl font-semibold">{partnerName || "Chat"}</h3>
         </div>
         <div style={{ width: 64 }} />
       </CardHeader>
@@ -260,32 +290,38 @@ export default function ChatWindow({ params }: { params: { roomId: string } }) {
               className="h-full overflow-y-auto px-6 py-4 pr-2 space-y-4 pb-4"
               onScroll={onScroll}
             >
-              {messages.map((msg, idx) => {
+              {messages.map((raw, idx) => {
+                const msg = sanitizeMessage(raw);
                 const isMe = msg.senderId === brandId;
-                const time = new Date(msg.timestamp).toLocaleTimeString([], {
+
+                const time = new Date(asISOTime(msg.timestamp)).toLocaleTimeString([], {
                   hour: "2-digit",
                   minute: "2-digit",
                 });
-                const tooLong = msg.text.length > CHAR_LIMIT;
-                const text = !tooLong || expanded[idx]
-                  ? msg.text
-                  : msg.text.slice(0, CHAR_LIMIT) + "...";
+
+                const fullText = asString(msg.text, "");
+                const tooLong = fullText.length > CHAR_LIMIT;
+                const shownText = !tooLong || expanded[idx]
+                  ? fullText
+                  : fullText.slice(0, CHAR_LIMIT) + "...";
+
+                const quote = asString(msg.replyTo?.text, "");
 
                 return (
                   <div
-                    key={msg.messageId || msg.clientId}
+                    key={msg.messageId || msg.clientId || `${idx}-${time}`}
                     className={`group flex ${isMe ? "justify-end" : "justify-start"}`}
                   >
                     {!isMe && (
                       <Avatar className="h-8 w-8 mr-2">
-                        <AvatarFallback>{partnerName.charAt(0)}</AvatarFallback>
+                        <AvatarFallback>{partnerInitial}</AvatarFallback>
                       </Avatar>
                     )}
 
                     <div className="max-w-lg">
-                      {msg.replyTo && (
+                      {quote && (
                         <div className="border-l-2 border-gray-300 pl-3 mb-1 text-xs italic text-gray-600">
-                          {msg.replyTo.text}
+                          {quote}
                         </div>
                       )}
 
@@ -296,11 +332,13 @@ export default function ChatWindow({ params }: { params: { roomId: string } }) {
                             : "bg-gray-100 text-gray-800"
                         }`}
                       >
-                        <p className="whitespace-pre-wrap">{text}</p>
+                        <p className="whitespace-pre-wrap">{shownText}</p>
                         {tooLong && (
                           <button
                             onClick={() => toggleExpand(idx)}
-                            className="mt-1 text-sm font-medium text-gray-800 hover:underline"
+                            className={`mt-1 text-sm font-medium ${
+                              isMe ? "text-white/90 hover:text-white" : "text-gray-800 hover:underline"
+                            }`}
                           >
                             {expanded[idx] ? "Show less" : "Read more"}
                           </button>
@@ -317,7 +355,7 @@ export default function ChatWindow({ params }: { params: { roomId: string } }) {
                     </div>
 
                     <button
-                      onClick={() => setReplyTo({ text: msg.text, idx })}
+                      onClick={() => setReplyTo({ text: fullText, idx })}
                       className="opacity-0 group-hover:opacity-100 ml-2 self-start text-gray-500 hover:text-gray-700"
                       title="Reply"
                     >
@@ -354,11 +392,12 @@ export default function ChatWindow({ params }: { params: { roomId: string } }) {
             {replyTo && (
               <div className="mb-2 flex justify-between items-center bg-white px-4 py-2 rounded-lg shadow-sm">
                 <span className="text-sm italic text-gray-600">
-                  Replying to: {replyTo.text.slice(0, 100)}
+                  Replying to: {asString(replyTo.text, "").slice(0, 100)}
                 </span>
                 <button
                   onClick={() => setReplyTo(null)}
                   className="text-gray-500 hover:text-gray-700"
+                  title="Cancel reply"
                 >
                   <HiX className="h-5 w-5" />
                 </button>
@@ -385,6 +424,7 @@ export default function ChatWindow({ params }: { params: { roomId: string } }) {
                 className="bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white hover:opacity-90"
                 disabled={!input.trim()}
                 onClick={sendMessage}
+                title="Send"
               >
                 <HiPaperAirplane className="h-5 w-5 rotate-90" />
               </Button>
