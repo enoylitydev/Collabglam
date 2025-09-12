@@ -16,18 +16,17 @@ import {
 import { post } from "@/lib/api";
 
 type Message = {
-  messageId: string;        // from server (may be empty for optimistic)
-  clientId?: string;        // local temp id
+  messageId: string;        // from server
+  clientId?: string;
   senderId: string;
-  text: string;             // may arrive undefined/null -> we sanitize
-  timestamp: string;        // ISO string
+  text: string;
+  timestamp: string;        // ISO
   replyTo?: { text: string; idx: number } | null;
 };
 
 const CHAR_LIMIT = 2000;
-const SCROLL_THRESHOLD = 50;
 
-// ---- helpers to keep things safe ----
+// ---- safety helpers ----
 const asString = (v: any, d = ""): string =>
   typeof v === "string" ? v : v == null ? d : String(v);
 
@@ -37,19 +36,16 @@ const asISOTime = (v: any): string => {
   return isNaN(dt.getTime()) ? new Date().toISOString() : s;
 };
 
-const sanitizeMessage = (m: Partial<Message>): Message => {
-  const text = asString(m.text, "");
-  return {
-    messageId: asString(m.messageId, ""), // may be "", that's fine for optimistic
-    clientId: m.clientId ? asString(m.clientId) : undefined,
-    senderId: asString(m.senderId, ""),
-    text,
-    timestamp: asISOTime(m.timestamp),
-    replyTo: m.replyTo
-      ? { text: asString(m.replyTo.text, ""), idx: Number(m.replyTo.idx ?? 0) }
-      : null,
-  };
-};
+const sanitizeMessage = (m: Partial<Message>): Message => ({
+  messageId: asString(m.messageId, ""),
+  clientId: m.clientId ? asString(m.clientId) : undefined,
+  senderId: asString(m.senderId, ""),
+  text: asString(m.text, ""),
+  timestamp: asISOTime(m.timestamp),
+  replyTo: m.replyTo
+    ? { text: asString(m.replyTo.text, ""), idx: Number(m.replyTo.idx ?? 0) }
+    : null,
+});
 
 const msgKey = (m: Pick<Message, "senderId" | "timestamp" | "text" | "messageId">) =>
   m.messageId || `${asString(m.senderId)}__${asString(m.timestamp)}__${asString(m.text)}`;
@@ -71,59 +67,53 @@ export default function ChatWindow({ params }: { params: { roomId: string } }) {
 
   // refs
   const scrollWrapRef = useRef<HTMLDivElement>(null);
+  const bottomSentinelRef = useRef<HTMLDivElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
-  const optimisticMap = useRef<Record<string, string>>({}); // hash -> clientId
-  const mountedRef = useRef(false); // StrictMode guard
-  const wsMadeRef = useRef(false); // StrictMode guard
-  const historyLoadedRef = useRef(false); // StrictMode guard
+  const mountedRef = useRef(false);
+  const wsMadeRef = useRef(false);
+  const historyLoadedRef = useRef(false);
 
   // scrolling ------------------------------------------------
-  const isNearBottom = (el: HTMLDivElement) =>
-    el.scrollHeight - el.scrollTop - el.clientHeight < SCROLL_THRESHOLD;
-
-  const scrollToBottom = useCallback((smooth = true) => {
+  const jumpToBottom = useCallback(() => {
     const el = scrollWrapRef.current;
     if (!el) return;
-    el.scrollTo({ top: el.scrollHeight, behavior: smooth ? "smooth" : "auto" });
+    // Jump (no smooth) to avoid mid-animation "not at bottom" state
+    el.scrollTop = el.scrollHeight;
     setShowScrollDown(false);
   }, []);
 
-  const onScroll = () => {
-    const el = scrollWrapRef.current;
-    if (!el) return;
-    setShowScrollDown(!isNearBottom(el));
-  };
-
-  // message upsert ------------------------------------------
+  // message upsert (server-only) -----------------------------
   const upsertMessage = useCallback((incomingRaw: Message) => {
     const incoming = sanitizeMessage(incomingRaw);
-
     setMessages((prev) => {
-      const incomingHash = msgKey(incoming);
-      // already have this exact message?
-      if (prev.some((m) => msgKey(m) === incomingHash)) return prev;
-
-      // resolve optimistic (no clientId from server) by naive match
-      if (!incoming.clientId) {
-        const tempIdx = prev.findIndex(
-          (m) =>
-            !m.messageId &&
-            m.senderId === incoming.senderId &&
-            m.text === incoming.text &&
-            m.timestamp === incoming.timestamp
-        );
-        if (tempIdx !== -1) {
-          const next = [...prev];
-          next[tempIdx] = { ...incoming };
-          return next;
-        }
-      }
-
+      const key = msgKey(incoming);
+      if (prev.some((m) => msgKey(m) === key)) return prev;
       return [...prev, incoming];
     });
   }, []);
 
-  // data loading --------------------------------------------
+  // observe bottom visibility -> toggles the chip -----------
+  useEffect(() => {
+    const root = scrollWrapRef.current;
+    const target = bottomSentinelRef.current;
+    if (!root || !target) return;
+
+    const io = new IntersectionObserver(
+      ([entry]) => {
+        // If the bottom is visible, hide the chip
+        setShowScrollDown(!entry.isIntersecting);
+      },
+      {
+        root,
+        threshold: 1.0,
+      }
+    );
+
+    io.observe(target);
+    return () => io.disconnect();
+  }, [scrollWrapRef.current, bottomSentinelRef.current]);
+
+  // initial: load convo meta --------------------------------
   useEffect(() => {
     if (mountedRef.current) return;
     mountedRef.current = true;
@@ -138,25 +128,24 @@ export default function ChatWindow({ params }: { params: { roomId: string } }) {
       .catch(() => setError("Unable to load conversation info."));
   }, [roomId, brandId]);
 
+  // history --------------------------------------------------
   const loadHistory = useCallback(() => {
     if (historyLoadedRef.current) return;
     historyLoadedRef.current = true;
 
     post<{ messages: Partial<Message>[] }>("/chat/history", { roomId, limit: 100 })
-      .then(({ messages: msgs }) => {
-        const safe = (msgs || []).map(sanitizeMessage);
-        setMessages(safe);
-      })
+      .then(({ messages: msgs }) => setMessages((msgs || []).map(sanitizeMessage)))
       .catch(() => setError("Failed to load messages."))
       .finally(() => {
         setLoading(false);
-        requestAnimationFrame(() => scrollToBottom(false));
+        // Jump to bottom after first render
+        requestAnimationFrame(() => jumpToBottom());
       });
-  }, [roomId, scrollToBottom]);
+  }, [roomId, jumpToBottom]);
 
   useEffect(loadHistory, [loadHistory]);
 
-  // websocket ------------------------------------------------
+  // websocket: only accept server-broadcast messages --------
   useEffect(() => {
     if (wsMadeRef.current) return;
     wsMadeRef.current = true;
@@ -171,18 +160,13 @@ export default function ChatWindow({ params }: { params: { roomId: string } }) {
       try {
         const data = JSON.parse(evt.data);
         if (data.type === "chatMessage" && data.roomId === roomId) {
-          const serverMsg: Message = sanitizeMessage(data.message);
-          // if server echoed a clientId we sent, attach it
-          const hash = msgKey(serverMsg);
-          const clientId = optimisticMap.current[hash];
-          if (clientId) serverMsg.clientId = clientId;
-          upsertMessage(serverMsg);
-
-          const el = scrollWrapRef.current;
-          if (el && isNearBottom(el)) scrollToBottom();
+          upsertMessage(sanitizeMessage(data.message));
+          // If user is at/near bottom (sentinel will flip shortly), keep them pinned
+          // Jump (no smooth) to avoid transient chip
+          requestAnimationFrame(() => jumpToBottom());
         }
       } catch {
-        // ignore malformed events
+        // ignore malformed
       }
     };
 
@@ -192,30 +176,15 @@ export default function ChatWindow({ params }: { params: { roomId: string } }) {
     };
 
     return () => ws.close();
-  }, [roomId, upsertMessage, scrollToBottom]);
+  }, [roomId, upsertMessage, jumpToBottom]);
 
-  // send msg -------------------------------------------------
+  // SEND: no optimistic render; rely on SERVER message only --
   const sendMessage = async () => {
     if (!input.trim() || !brandId) return;
 
     const text = asString(input.trim(), "");
     const now = new Date().toISOString();
     const clientId = `tmp-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-
-    const optimistic = sanitizeMessage({
-      messageId: "",
-      clientId,
-      senderId: brandId,
-      text,
-      timestamp: now,
-      replyTo: replyTo ? { ...replyTo, text: asString(replyTo.text, "") } : null,
-    });
-
-    const hash = msgKey(optimistic);
-    optimisticMap.current[hash] = clientId;
-
-    setMessages((prev) => [...prev, optimistic]);
-    requestAnimationFrame(() => scrollToBottom());
 
     const packet = {
       type: "sendChatMessage",
@@ -236,16 +205,18 @@ export default function ChatWindow({ params }: { params: { roomId: string } }) {
           replyTo: replyTo?.text ?? null,
           clientId,
         });
+        // Only the server’s message; then pin to bottom w/o flicker
         upsertMessage(sanitizeMessage(message));
+        requestAnimationFrame(() => jumpToBottom());
       } catch {
         setError("Failed to send message");
-        setMessages((prev) => prev.filter((m) => m.clientId !== clientId));
-        delete optimisticMap.current[hash];
       }
     };
 
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify(packet));
+      // Immediately jump to bottom so chip hides while we wait for echo
+      requestAnimationFrame(() => jumpToBottom());
     } else {
       await sendViaRest();
     }
@@ -257,7 +228,6 @@ export default function ChatWindow({ params }: { params: { roomId: string } }) {
   const toggleExpand = (idx: number) =>
     setExpanded((e) => ({ ...e, [idx]: !e[idx] }));
 
-  // jsx ------------------------------------------------------
   const partnerInitial = (partnerName?.charAt(0) || "?").toUpperCase();
 
   return (
@@ -288,7 +258,6 @@ export default function ChatWindow({ params }: { params: { roomId: string } }) {
             <div
               ref={scrollWrapRef}
               className="h-full overflow-y-auto px-6 py-4 pr-2 space-y-4 pb-4"
-              onScroll={onScroll}
             >
               {messages.map((raw, idx) => {
                 const msg = sanitizeMessage(raw);
@@ -301,9 +270,10 @@ export default function ChatWindow({ params }: { params: { roomId: string } }) {
 
                 const fullText = asString(msg.text, "");
                 const tooLong = fullText.length > CHAR_LIMIT;
-                const shownText = !tooLong || expanded[idx]
-                  ? fullText
-                  : fullText.slice(0, CHAR_LIMIT) + "...";
+                const shownText =
+                  !tooLong || expanded[idx]
+                    ? fullText
+                    : fullText.slice(0, CHAR_LIMIT) + "...";
 
                 const quote = asString(msg.replyTo?.text, "");
 
@@ -337,7 +307,9 @@ export default function ChatWindow({ params }: { params: { roomId: string } }) {
                           <button
                             onClick={() => toggleExpand(idx)}
                             className={`mt-1 text-sm font-medium ${
-                              isMe ? "text-white/90 hover:text-white" : "text-gray-800 hover:underline"
+                              isMe
+                                ? "text-white/90 hover:text-white"
+                                : "text-gray-800 hover:underline"
                             }`}
                           >
                             {expanded[idx] ? "Show less" : "Read more"}
@@ -370,6 +342,8 @@ export default function ChatWindow({ params }: { params: { roomId: string } }) {
                   </div>
                 );
               })}
+              {/* Sentinel that marks the bottom of the list */}
+              <div ref={bottomSentinelRef} className="h-0 w-full" />
             </div>
           )}
 
@@ -379,7 +353,8 @@ export default function ChatWindow({ params }: { params: { roomId: string } }) {
               variant="outline"
               size="icon"
               className="absolute bottom-4 right-6 bg-white hover:bg-gray-100 text-gray-800"
-              onClick={() => scrollToBottom()}
+              onClick={() => jumpToBottom()}
+              title="Back to bottom"
             >
               <HiArrowDown className="h-6 w-6" />
             </Button>
