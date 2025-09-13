@@ -1,4 +1,3 @@
-// components/BrandSidebar.tsx
 'use client';
 
 import React from 'react';
@@ -71,19 +70,17 @@ export default function BrandSidebar({ isOpen, onClose }: BrandSidebarProps) {
     });
 
   const sidebarContent = (
-    <aside
-      className={`
+    <div
+      className="
         flex flex-col h-full bg-white text-gray-800 shadow-lg
-        ${collapsed ? 'w-16' : 'w-80 xl:w-96 2xl:w-[16rem]'}
-        border-r border-gray-200
         transition-[width] duration-300 ease-in-out
-      `}
-      aria-label="Brand sidebar"
+      "
+      style={{ width: 'var(--brand-sidebar-w)' }} // 64px or 336px from provider
     >
       {/* Header */}
       <div className="flex items-center justify-between h-16 px-4 border-b border-gray-200">
         <button
-          onClick={() => setCollapsed(!collapsed)}
+          onClick={() => setCollapsed(!collapsed)} // manual override
           className="p-2 rounded-md hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#FFA135]"
           title={collapsed ? 'Expand Sidebar' : 'Collapse Sidebar'}
           aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}

@@ -15,6 +15,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import Swal from "sweetalert2";
 import MilestoneHistoryCard from "@/components/common/milestoneCard";
+import { useRouter } from "next/navigation";
 
 // ── toast helper ─────────────────────────────────────────────────────
 const toast = (opts: { icon: "success" | "error" | "info"; title: string; text?: string }) =>
@@ -57,7 +58,7 @@ interface CampaignsResponse {
 export default function MyCampaignsPage() {
   /* Shared */
   const [search] = useState("");
-
+  const router = useRouter();
   /* Active campaigns state */
   const [activeCampaigns, setActiveCampaigns] = useState<Campaign[]>([]);
   const [activeLoading, setActiveLoading] = useState(true);
@@ -416,9 +417,9 @@ export default function MyCampaignsPage() {
                     <Button
                       variant="outline"
                       className="bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-800"
-                      onClick={() => handleViewContract(c)}
+                      onClick={() => router.push(`/influencer/my-campaign/view-campaign?id=${c.id}`)}
                     >
-                      View Contract
+                      View Campaign
                     </Button>
                   )}
 
