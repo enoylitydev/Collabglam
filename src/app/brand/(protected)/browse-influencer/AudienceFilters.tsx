@@ -1,11 +1,13 @@
+// AudienceFilters.tsx
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
-import type { AudienceFilters as AF } from './filters';
+import type { AudienceFilters as AF, Platform } from './filters';
 
 interface Props {
   filters: AF;
   updateFilter: (path: string, value: any) => void;
+  platforms?: Platform[]; // <-- NEW
 }
 
 type Country = {
@@ -16,10 +18,13 @@ type Country = {
 
 const API_URL = 'http://localhost:5000/modash/getAll';
 
-export function AudienceFilters({ filters, updateFilter }: Props) {
+export function AudienceFilters({ filters, updateFilter, platforms }: Props) {
   const [countries, setCountries] = useState<Country[]>([]);
   const [loadingCountries, setLoadingCountries] = useState(false);
   const [countriesError, setCountriesError] = useState<string | null>(null);
+
+  // 🔑 Show credibility only if Instagram is among the selected platforms
+  const hasInstagram = (platforms ?? []).includes('instagram');
 
   useEffect(() => {
     const controller = new AbortController();
@@ -48,7 +53,6 @@ export function AudienceFilters({ filters, updateFilter }: Props) {
     return () => controller.abort();
   }, []);
 
-  // select value expects a string; we store numeric countryId in filters.location
   const selectedCountryId = useMemo(() => {
     const v = (filters as any).location;
     if (v == null || v === '') return '';
@@ -164,24 +168,26 @@ export function AudienceFilters({ filters, updateFilter }: Props) {
         </select>
       </div>
 
-      {/* Credibility */}
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-2">Min Audience Credibility</label>
-        <input
-          type="range"
-          min={0}
-          max={1}
-          step={0.05}
-          className="w-full"
-          value={filters.credibility ?? 0.75}
-          onChange={(e) => updateFilter('credibility', Number(e.target.value))}
-        />
-        <div className="flex justify-between text-xs text-gray-500">
-          <span>0%</span>
-          <span className="font-medium">{(((filters.credibility ?? 0.75) * 100) | 0)}%</span>
-          <span>100%</span>
+      {/* Audience Credibility — IG only */}
+      {hasInstagram && (
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">Min Audience Credibility</label>
+          <input
+            type="range"
+            min={0}
+            max={1}
+            step={0.05}
+            className="w-full"
+            value={filters.credibility ?? 0.75}
+            onChange={(e) => updateFilter('credibility', Number(e.target.value))}
+          />
+          <div className="flex justify-between text-xs text-gray-500">
+            <span>0%</span>
+            <span className="font-medium">{(((filters.credibility ?? 0.75) * 100) | 0)}%</span>
+            <span>100%</span>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

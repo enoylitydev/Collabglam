@@ -100,6 +100,10 @@ export function useInfluencerSearch(platforms: Platform[]) {
     const inf: any = (filters as any).influencer || {};
     const aud: any = (filters as any).audience || {};
 
+    const hasIG = platforms.includes('instagram');
+    const hasTT = platforms.includes('tiktok');
+    const hasYT = platforms.includes('youtube');
+
     const influencer: any = {
       followers: {
         min: inf.followersMin ?? payloadDefaults.followersMin,
@@ -112,23 +116,36 @@ export function useInfluencerSearch(platforms: Platform[]) {
       isVerified: !!inf.isVerified,
     };
 
-    // Optional influencer filters
+    // Common & optional influencer filters
     if (typeof inf.engagementRate === 'number') {
-      influencer.engagementRate = Math.max(0, Math.min(1, inf.engagementRate as number));
+      influencer.engagementRate = Math.max(0, Math.min(1, inf.engagementRate));
     }
     if (inf.language) influencer.language = inf.language;
     if (inf.gender) influencer.gender = inf.gender;
 
+    // Use 'lastposted' to match the Modash examples
     if (typeof inf.lastPostedWithinDays === 'number') {
-      influencer.lastPostedWithinDays = Math.max(0, Math.floor(inf.lastPostedWithinDays));
+      influencer.lastposted = Math.max(0, Math.floor(inf.lastPostedWithinDays));
+    } else if (typeof inf.lastposted === 'number') {
+      influencer.lastposted = Math.max(0, Math.floor(inf.lastposted));
     }
 
-    if (typeof inf.followerGrowthMin === 'number' || typeof inf.followerGrowthMax === 'number') {
-      influencer.followerGrowthRate = {
-        min: inf.followerGrowthMin ?? undefined,
-        max: inf.followerGrowthMax ?? undefined,
+    // Followers growth rate (percent → fraction)
+    if (typeof inf.followersGrowthRatePct === 'number') {
+      influencer.followersGrowthRate = {
+        interval: 'i6months',
+        value: inf.followersGrowthRatePct / 100,
+        operator: 'gt'
+      };
+    } else if (typeof inf.followerGrowthMin === 'number' || typeof inf.followerGrowthMax === 'number') {
+      influencer.followersGrowthRate = {
+        min: inf.followerGrowthMin,
+        max: inf.followerGrowthMax
       };
     }
+
+    if (typeof inf.bio === 'string' && inf.bio.trim()) influencer.bio = inf.bio.trim();
+    if (typeof inf.keywords === 'string' && inf.keywords.trim()) influencer.keywords = inf.keywords.trim();
 
     if (inf.hasContactDetails === true) {
       influencer.hasContactDetails = [{ contactType: 'email', filterAction: 'must' as const }];
@@ -136,31 +153,145 @@ export function useInfluencerSearch(platforms: Platform[]) {
 
     if (typeof inf.engagementsMin === 'number' || typeof inf.engagementsMax === 'number') {
       influencer.engagements = {
-        min: inf.engagementsMin ?? undefined,
-        max: inf.engagementsMax ?? undefined,
+        ...(inf.engagementsMin != null ? { min: inf.engagementsMin } : {}),
+        ...(inf.engagementsMax != null ? { max: inf.engagementsMax } : {}),
       };
     }
 
-    // IG-only fields (conditionally later)
-    if (typeof inf.reelsPlaysMin === 'number' || typeof inf.reelsPlaysMax === 'number') {
+    // relevance / audienceRelevance / filterOperations passthrough
+    if (Array.isArray(inf.relevance) && inf.relevance.length) {
+      influencer.relevance = inf.relevance;
+    }
+    if (Array.isArray(inf.audienceRelevance) && inf.audienceRelevance.length) {
+      influencer.audienceRelevance = inf.audienceRelevance;
+    }
+    if (Array.isArray(inf.filterOperations) && inf.filterOperations.length) {
+      influencer.filterOperations = inf.filterOperations;
+    }
+
+    // ---------- Common "Video Plays / Views" control ----------
+    const setViews = (min?: number, max?: number) => {
+      if (min == null && max == null) return;
+      influencer.views = {
+        ...(min != null ? { min } : {}),
+        ...(max != null ? { max } : {}),
+      };
+    };
+    const setReels = (min?: number, max?: number) => {
+      if (min == null && max == null) return;
       influencer.reelsPlays = {
-        min: inf.reelsPlaysMin ?? undefined,
-        max: inf.reelsPlaysMax ?? undefined,
+        ...(min != null ? { min } : {}),
+        ...(max != null ? { max } : {}),
       };
-    }
-    if (inf.hasSponsoredPosts === true) {
-      influencer.hasSponsoredPosts = true;
+    };
+
+    // If user filled the common control, map it:
+    if (inf.videoPlaysMin != null || inf.videoPlaysMax != null) {
+      if (hasIG) setReels(inf.videoPlaysMin, inf.videoPlaysMax);
+      if (hasTT || hasYT) setViews(inf.videoPlaysMin, inf.videoPlaysMax);
     }
 
-    // Audience
+    // ---------- Platform-specific overrides ----------
+    // IG override for Reels Plays
+    if (hasIG && (inf.reelsPlaysMin != null || inf.reelsPlaysMax != null)) {
+      setReels(inf.reelsPlaysMin, inf.reelsPlaysMax);
+    }
+
+    // TT/YT: combine per-platform views into one "views" range
+    const ttMin = hasTT ? inf.ttViewsMin : undefined;
+    const ttMax = hasTT ? inf.ttViewsMax : undefined;
+    const ytMin = hasYT ? inf.ytViewsMin : undefined;
+    const ytMax = hasYT ? inf.ytViewsMax : undefined;
+    const anyTT = ttMin != null || ttMax != null;
+    const anyYT = ytMin != null || ytMax != null;
+    if (anyTT || anyYT) {
+      const mins = [ttMin, ytMin].filter((v) => typeof v === 'number') as number[];
+      const maxs = [ttMax, ytMax].filter((v) => typeof v === 'number') as number[];
+      const min = mins.length ? Math.max(...mins) : undefined;
+      const max = maxs.length ? Math.min(...maxs) : undefined;
+      setViews(min, max);
+    }
+
+    // IG-only extras
+    if (hasIG) {
+      if (typeof inf.hasSponsoredPosts === 'boolean') influencer.hasSponsoredPosts = inf.hasSponsoredPosts;
+      if (typeof inf.hasYouTube === 'boolean') influencer.hasYouTube = inf.hasYouTube;
+      if (Array.isArray(inf.accountTypes) && inf.accountTypes.length) influencer.accountTypes = inf.accountTypes;
+      if (Array.isArray(inf.brands) && inf.brands.length) influencer.brands = inf.brands;
+      if (Array.isArray(inf.interests) && inf.interests.length) influencer.interests = inf.interests;
+    }
+
+    // TT-only extras
+    if (hasTT) {
+      if (typeof inf.likesGrowthRatePct === 'number') {
+        influencer.likesGrowthRate = { interval: 'i1month', value: inf.likesGrowthRatePct / 100, operator: 'gt' };
+      }
+      if (inf.sharesMin != null || inf.sharesMax != null) {
+        influencer.shares = {
+          ...(inf.sharesMin != null ? { min: inf.sharesMin } : {}),
+          ...(inf.sharesMax != null ? { max: inf.sharesMax } : {}),
+        };
+      }
+      if (inf.savesMin != null || inf.savesMax != null) {
+        influencer.saves = {
+          ...(inf.savesMin != null ? { min: inf.savesMin } : {}),
+          ...(inf.savesMax != null ? { max: inf.savesMax } : {}),
+        };
+      }
+    }
+
+    // YT-only extras
+    if (hasYT) {
+      if (inf.isOfficialArtist === true) influencer.isOfficialArtist = true;
+      if (typeof inf.viewsGrowthRatePct === 'number') {
+        influencer.viewsGrowthRate = { interval: 'i1month', value: inf.viewsGrowthRatePct / 100, operator: 'gt' };
+      }
+    }
+
+    // IG + TT only: textTags
+    if ((hasIG || hasTT) && Array.isArray(inf.textTags) && inf.textTags.length) {
+      influencer.textTags = inf.textTags; // [{type:'hashtag'|'mention', value: string}]
+    }
+
+    // ---------- Audience ----------
     const audience: any = {};
+
+    // location: accept number | number[] | {id, weight}[]
+    if (Array.isArray(aud.location)) {
+      if (typeof aud.location[0] === 'number') {
+        audience.location = aud.location.map((id: number) => ({ id, weight: 0.2 }));
+      } else {
+        audience.location = aud.location; // already weighted
+      }
+    } else if (typeof aud.location === 'number') {
+      audience.location = [{ id: aud.location, weight: 0.2 }];
+    }
+
     if (aud.language?.id) audience.language = { id: aud.language.id, weight: aud.language.weight ?? 0.2 };
     if (aud.gender?.id) audience.gender = { id: aud.gender.id, weight: aud.gender.weight ?? 0.5 };
-    if (aud.location) audience.location = aud.location;
-    if (aud.country)  audience.country  = aud.country;
-    if (aud.ageRange) audience.age = { min: aud.ageRange.min, max: aud.ageRange.max };
-    if (typeof aud.credibility === 'number') {
-      audience.credibility = Math.max(0, Math.min(1, aud.credibility as number));
+
+    // age list (weighted buckets) OR a simple range
+    if (Array.isArray(aud.age) && aud.age.length) {
+      audience.age = aud.age; // e.g. [{id:'18-24', weight:0.3}, ...]
+    }
+    if (aud.ageRange?.min != null && aud.ageRange?.max != null) {
+      audience.ageRange = {
+        min: String(aud.ageRange.min),
+        max: String(aud.ageRange.max),
+        weight: 0.3
+      };
+    }
+
+    // IG-only audience extras
+    if (hasIG) {
+      if (Array.isArray(aud.interests) && aud.interests.length) {
+        audience.interests = aud.interests.map((x: any) =>
+          typeof x === 'number' ? ({ id: x, weight: 0.2 }) : x
+        );
+      }
+      if (typeof aud.credibility === 'number') {
+        audience.credibility = Math.max(0, Math.min(1, aud.credibility));
+      }
     }
 
     const base: any = {
@@ -173,10 +304,41 @@ export function useInfluencerSearch(platforms: Platform[]) {
       },
     };
 
-    // 🚦 Only include IG-only fields when Instagram is selected
-    if (!platforms.includes('instagram')) {
+    // Strip IG-only fields if IG not selected
+    if (!hasIG) {
       delete base.filter.influencer.reelsPlays;
       delete base.filter.influencer.hasSponsoredPosts;
+      delete base.filter.influencer.hasYouTube;
+      delete base.filter.influencer.accountTypes;
+      delete base.filter.influencer.brands;
+      delete base.filter.influencer.interests;
+      if (base.filter.audience) {
+        delete base.filter.audience?.interests;
+        delete base.filter.audience?.credibility; // 🔒 ensure credibility is Instagram-only
+      }
+    }
+
+    // Strip TT-only extras if TT not selected
+    if (!hasTT) {
+      delete base.filter.influencer.likesGrowthRate;
+      delete base.filter.influencer.shares;
+      delete base.filter.influencer.saves;
+    }
+
+    // Strip YT-only extras if YT not selected
+    if (!hasYT) {
+      delete base.filter.influencer.isOfficialArtist;
+      delete base.filter.influencer.viewsGrowthRate;
+    }
+
+    // No TT/YT → remove views
+    if (!(hasTT || hasYT)) {
+      delete base.filter.influencer.views;
+    }
+
+    // YT-only case → remove textTags
+    if (hasYT && !(hasIG || hasTT)) {
+      delete base.filter.influencer.textTags;
     }
 
     if (options?.cursor) base.cursor = options.cursor;
