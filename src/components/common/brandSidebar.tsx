@@ -57,7 +57,6 @@ export default function BrandSidebar({ isOpen, onClose }: BrandSidebarProps) {
             className={`${base} ${active}`}
             title={collapsed ? item.name : undefined}
             onClick={onClose}
-            aria-current={isActive ? 'page' : undefined}
           >
             <item.icon
               size={20}
@@ -83,25 +82,21 @@ export default function BrandSidebar({ isOpen, onClose }: BrandSidebarProps) {
           onClick={() => setCollapsed(!collapsed)} // manual override
           className="p-2 rounded-md hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#FFA135]"
           title={collapsed ? 'Expand Sidebar' : 'Collapse Sidebar'}
-          aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
         >
           <HiMenu size={24} className="text-gray-800" />
         </button>
         <Link href="/brand/dashboard" className="flex items-center space-x-2">
           <img src="/logo.png" alt="Collabglam logo" className="h-10 w-auto" />
           {!collapsed && (
-            <span className="hidden xl:inline text-2xl font-semibold text-gray-900">
-              CollabGlam Brand
-            </span>
+            <span className="text-2xl font-semibold text-gray-900">CollabGlam Brand</span>
           )}
         </Link>
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 overflow-y-auto mt-4 pr-1" aria-label="Primary">
+      <nav className="flex-1 overflow-y-auto mt-4">
         <ul className="flex flex-col space-y-1 px-1">{renderLinks()}</ul>
       </nav>
-
       {/* Logout */}
       <div className="border-t border-gray-200 p-4">
         <button
@@ -113,41 +108,37 @@ export default function BrandSidebar({ isOpen, onClose }: BrandSidebarProps) {
           {!collapsed && <span className="ml-3 text-md font-medium">Logout</span>}
         </button>
       </div>
-    </aside>
+    </div>
   );
 
   return (
     <>
-      {/* Desktop (lg+) */}
-      <div className="hidden lg:flex">{sidebarContent}</div>
+      {/* Desktop */}
+      <div className="hidden md:flex">{sidebarContent}</div>
 
       {/* Mobile overlay */}
       {isOpen && (
         <div className="fixed inset-0 z-40 flex">
-          <div
-            className="fixed inset-0 bg-black/40 backdrop-blur-sm"
-            onClick={onClose}
-            aria-hidden="true"
-          />
-          <div className="relative flex flex-col h-full bg-white text-gray-800 w-64 sm:w-72 border-r border-gray-200">
+          {/* Backdrop */}
+          <div className="fixed inset-0 bg-black bg-opacity-40 backdrop-blur-sm" onClick={onClose} />
+
+          {/* Sidebar panel */}
+          <div className="relative flex flex-col h-full bg-white text-gray-800 w-64">
             <div className="flex items-center justify-between h-16 px-4 border-b border-gray-200">
-              <Link href="/brand/dashboard" className="flex items-center space-x-2" onClick={onClose}>
+              <Link href="/brand/dashboard" className="flex items-center space-x-2">
                 <img src="/logo.png" alt="Collabglam logo" className="h-8 w-auto" />
-                <span className="hidden md:inline text-xl font-semibold text-gray-900">
-                  Brand Portal
-                </span>
+                <span className="text-xl font-semibold text-gray-900">Brand Portal</span>
               </Link>
               <button
                 onClick={onClose}
                 className="p-2 rounded-md hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#FFA135]"
                 title="Close Sidebar"
-                aria-label="Close sidebar"
               >
                 <HiX size={24} className="text-gray-800" />
               </button>
             </div>
 
-            <nav className="flex-1 overflow-y-auto mt-4 pr-1" aria-label="Mobile primary">
+            <nav className="flex-1 overflow-y-auto mt-4">
               <ul className="flex flex-col space-y-1 px-1">{renderLinks()}</ul>
             </nav>
 
