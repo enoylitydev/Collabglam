@@ -136,7 +136,7 @@ const Hero = () => {
         </div>
 
         {/* Stats */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8 pt-16 mt-16 border-t border-gray-200">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8 pt-16 mt-16 mb-16 border-t border-gray-200">
 
           {/* Active Creators */}
           <div className="bg-white p-6 rounded-2xl shadow-md text-center transform transition-all hover:scale-105">
