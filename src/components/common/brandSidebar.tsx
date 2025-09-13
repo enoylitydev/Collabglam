@@ -46,8 +46,7 @@ export default function BrandSidebar({ isOpen, onClose }: BrandSidebarProps) {
   const renderLinks = () =>
     menuItems.map((item) => {
       const isActive = pathname.startsWith(item.href);
-      const base =
-        'flex items-center py-3 px-4 rounded-md transition-all duration-200';
+      const base = 'flex items-center py-3 px-4 rounded-md transition-all duration-200';
       const active = isActive
         ? 'bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white'
         : 'text-gray-800 hover:bg-gradient-to-r hover:from-[#FFA135] hover:to-[#FF7236] hover:text-white';
@@ -59,12 +58,11 @@ export default function BrandSidebar({ isOpen, onClose }: BrandSidebarProps) {
             className={`${base} ${active}`}
             title={collapsed ? item.name : undefined}
             onClick={onClose}
+            aria-current={isActive ? 'page' : undefined}
           >
             <item.icon
               size={20}
-              className={`flex-shrink-0 ${
-                isActive ? 'text-white' : 'text-gray-400 group-hover:text-white'
-              }`}
+              className={`flex-shrink-0 ${isActive ? 'text-white' : 'text-gray-400 group-hover:text-white'}`}
             />
             {!collapsed && <span className="ml-3 text-md font-medium">{item.name}</span>}
           </Link>
@@ -73,12 +71,14 @@ export default function BrandSidebar({ isOpen, onClose }: BrandSidebarProps) {
     });
 
   const sidebarContent = (
-    <div
+    <aside
       className={`
         flex flex-col h-full bg-white text-gray-800 shadow-lg
-        ${collapsed ? 'w-16' : 'w-84'}
+        ${collapsed ? 'w-16' : 'w-80 xl:w-96 2xl:w-[16rem]'}
+        border-r border-gray-200
         transition-[width] duration-300 ease-in-out
       `}
+      aria-label="Brand sidebar"
     >
       {/* Header */}
       <div className="flex items-center justify-between h-16 px-4 border-b border-gray-200">
@@ -86,19 +86,22 @@ export default function BrandSidebar({ isOpen, onClose }: BrandSidebarProps) {
           onClick={() => setCollapsed(!collapsed)}
           className="p-2 rounded-md hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#FFA135]"
           title={collapsed ? 'Expand Sidebar' : 'Collapse Sidebar'}
+          aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
         >
           <HiMenu size={24} className="text-gray-800" />
         </button>
         <Link href="/brand/dashboard" className="flex items-center space-x-2">
           <img src="/logo.png" alt="Collabglam logo" className="h-10 w-auto" />
           {!collapsed && (
-            <span className="text-2xl font-semibold text-gray-900">CollabGlam Brand</span>
+            <span className="hidden xl:inline text-2xl font-semibold text-gray-900">
+              CollabGlam Brand
+            </span>
           )}
         </Link>
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 overflow-y-auto mt-4">
+      <nav className="flex-1 overflow-y-auto mt-4 pr-1" aria-label="Primary">
         <ul className="flex flex-col space-y-1 px-1">{renderLinks()}</ul>
       </nav>
 
@@ -113,37 +116,41 @@ export default function BrandSidebar({ isOpen, onClose }: BrandSidebarProps) {
           {!collapsed && <span className="ml-3 text-md font-medium">Logout</span>}
         </button>
       </div>
-    </div>
+    </aside>
   );
 
   return (
     <>
-      {/* Desktop */}
-      <div className="hidden md:flex">{sidebarContent}</div>
+      {/* Desktop (lg+) */}
+      <div className="hidden lg:flex">{sidebarContent}</div>
 
       {/* Mobile overlay */}
       {isOpen && (
         <div className="fixed inset-0 z-40 flex">
-          {/* Backdrop */}
-          <div className="fixed inset-0 bg-black bg-opacity-40 backdrop-blur-sm" onClick={onClose} />
-
-          {/* Sidebar panel */}
-          <div className="relative flex flex-col h-full bg-white text-gray-800 w-64">
+          <div
+            className="fixed inset-0 bg-black/40 backdrop-blur-sm"
+            onClick={onClose}
+            aria-hidden="true"
+          />
+          <div className="relative flex flex-col h-full bg-white text-gray-800 w-64 sm:w-72 border-r border-gray-200">
             <div className="flex items-center justify-between h-16 px-4 border-b border-gray-200">
-              <Link href="/brand/dashboard" className="flex items-center space-x-2">
+              <Link href="/brand/dashboard" className="flex items-center space-x-2" onClick={onClose}>
                 <img src="/logo.png" alt="Collabglam logo" className="h-8 w-auto" />
-                <span className="text-xl font-semibold text-gray-900">Brand Portal</span>
+                <span className="hidden md:inline text-xl font-semibold text-gray-900">
+                  Brand Portal
+                </span>
               </Link>
               <button
                 onClick={onClose}
                 className="p-2 rounded-md hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#FFA135]"
                 title="Close Sidebar"
+                aria-label="Close sidebar"
               >
                 <HiX size={24} className="text-gray-800" />
               </button>
             </div>
 
-            <nav className="flex-1 overflow-y-auto mt-4">
+            <nav className="flex-1 overflow-y-auto mt-4 pr-1" aria-label="Mobile primary">
               <ul className="flex flex-col space-y-1 px-1">{renderLinks()}</ul>
             </nav>
 

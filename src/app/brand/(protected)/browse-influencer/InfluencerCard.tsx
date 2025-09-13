@@ -1,8 +1,8 @@
-// InfluencerCard.tsx
-import React from 'react';
-import { MapPin, Users, TrendingUp, CheckCircle, ExternalLink, Eye, Lock } from 'lucide-react';
-import type { Platform } from './filters';
-import { platformTheme } from './utils/platform';
+// src/app/brand/(protected)/browse-influencer/InfluencerCard.tsx
+import React from "react";
+import { MapPin, Users, CheckCircle, ExternalLink, Lock } from "lucide-react";
+import type { Platform } from "./filters";
+import { platformTheme } from "./utils/platform";
 
 interface InfluencerCardProps {
   platform: Platform;
@@ -13,65 +13,90 @@ export function InfluencerCard({ platform, influencer }: InfluencerCardProps) {
   const platformKey: Platform = (influencer?.platform as Platform) || platform;
   const theme = platformTheme[platformKey];
 
-  const username = influencer?.username || influencer?.handle || influencer?.name || 'unknown';
-  const handle = username.startsWith('@') ? username : `@${username}`;
+  const username =
+    influencer?.username || influencer?.handle || influencer?.name || "unknown";
+  const handle = username.startsWith("@") ? username : `@${username}`;
   const displayName =
-    influencer?.fullname || influencer?.fullName || influencer?.name || username || 'Unknown Creator';
+    influencer?.fullname ||
+    influencer?.fullName ||
+    influencer?.name ||
+    username ||
+    "Unknown Creator";
+
   const followers =
-    influencer?.followers ?? influencer?.followerCount ?? influencer?.stats?.followers ?? 0;
+    influencer?.followers ??
+    influencer?.followerCount ??
+    influencer?.stats?.followers ??
+    0;
+
   const engagementRate =
-    influencer?.engagementRate ?? influencer?.stats?.engagementRate ?? 0; // 0..1
+    influencer?.engagementRate ?? influencer?.stats?.engagementRate ?? 0;
+
   const engagements =
-    influencer?.engagements ?? influencer?.stats?.avgEngagements ?? influencer?.stats?.avgLikes;
+    influencer?.engagements ??
+    influencer?.stats?.avgEngagements ??
+    influencer?.stats?.avgLikes;
+
   const averageViews = influencer?.averageViews ?? influencer?.stats?.avgViews;
-  const reelsPlaysAvg =
-    influencer?.reelsPlaysAvg ?? influencer?.stats?.reelsPlaysAvg; // IG-only (optional)
   const location = influencer?.location || influencer?.country || influencer?.city;
   const avatar =
-    influencer?.picture || influencer?.avatar || influencer?.profilePicUrl || influencer?.thumbnail;
+    influencer?.picture ||
+    influencer?.avatar ||
+    influencer?.profilePicUrl ||
+    influencer?.thumbnail;
+
   const isVerified = Boolean(influencer?.isVerified || influencer?.verified);
   const isPrivate = Boolean(influencer?.isPrivate);
-  const profileUrl = influencer?.url || '#';
-  const bio = influencer?.bio || influencer?.description || '';
+  const profileUrl = influencer?.url || "#";
+  const bio = influencer?.bio || influencer?.description || "";
 
   const formatNumber = (num?: number) => {
-    if (num == null) return '—';
+    if (num == null) return "—";
     if (num >= 1_000_000) return `${(num / 1_000_000).toFixed(1)}M`;
     if (num >= 1_000) return `${(num / 1_000).toFixed(1)}K`;
     return num.toLocaleString();
   };
 
-  const formatRate = (rate?: number) => {
-    if (rate == null) return '—';
-    return `${(rate * 100).toFixed(2)}%`;
-  };
+  const formatRate = (rate?: number) =>
+    rate == null ? "—" : `${(rate * 100).toFixed(2)}%`;
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 hover:shadow-lg transition-all duration-200 overflow-hidden group">
-      {/* Platform/Header */}
+    <div className="w-full h-full bg-white rounded-2xl border border-gray-200 hover:shadow-lg transition-all duration-200 overflow-hidden group flex flex-col">
+      {/* Header */}
       <a
         href={profileUrl}
         target="_blank"
         rel="noopener noreferrer"
-        className={`${theme.color} p-4 text-white relative block focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-white/70`}
+        className={`${theme.color} px-4 py-3 sm:px-5 sm:py-3 text-white relative block focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-white/70`}
       >
         <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center gap-2 min-w-0">
             <div className="w-6 h-6 bg-white/20 rounded-md flex items-center justify-center">
               {theme.icon}
             </div>
-            <span className="font-medium text-sm">{theme.label}</span>
+            {/* smaller, lighter */}
+            <span className="font-medium text-[13px] sm:text-sm truncate">
+              {theme.label}
+            </span>
           </div>
 
-          <div className="flex items-center space-x-1">
+          <div className="flex items-center gap-1">
             {isPrivate && (
-              <span className="flex items-center bg-white/20 px-2 py-1 rounded-full text-xs font-medium">
+              <span
+                className="flex items-center bg-white/20 px-2 py-0.5 rounded-full text-[10px] sm:text-[11px] font-medium"
+                aria-label="Private account"
+                title="Private account"
+              >
                 <Lock className="w-3 h-3 mr-1" />
                 Private
               </span>
             )}
             {isVerified && (
-              <span className="flex items-center bg-white/20 px-2 py-1 rounded-full text-xs font-medium">
+              <span
+                className="flex items-center bg-white/20 px-2 py-0.5 rounded-full text-[10px] sm:text-[11px] font-medium"
+                aria-label="Verified account"
+                title="Verified account"
+              >
                 <CheckCircle className="w-3 h-3 mr-1" />
                 Verified
               </span>
@@ -82,90 +107,75 @@ export function InfluencerCard({ platform, influencer }: InfluencerCardProps) {
       </a>
 
       {/* Body */}
-      <div className="p-6">
-        {/* Top row: avatar + name/handle + location */}
-        <div className="flex items-start space-x-3 mb-4">
-          <div className="flex-shrink-0">
-            {avatar ? (
-              <img
-                src={avatar}
-                alt={`${displayName} avatar`}
-                className="w-12 h-12 rounded-full object-cover border-2 border-gray-200"
-                onError={(e) => {
-                  (e.target as HTMLImageElement).src =
-                    'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48Y2lyY2xlIGN4PSIyMCIgY3k9IjIwIiByPSIyMCIgZmlsbD0iI0YzRjRGNiIvPjxzdmcgd2lkdGg9IjE2IiBoZWlnaHQ9IjE2IiB2aWV3Qm94PSIwIDAgMTYgMTYiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PHBhdGggZD0iTTggOEMxMC4yMDkxIDggMTIgNi4yMDkxNCAxMiA0QzEyIDEuNzkwODYgMTAuMjA5MSAwIDggMEM1Ljc5MDg2IDAgNCAxLjc5MDg2IDQgNEM0IDYuMjA5MTQgNS43OTA4NiA4IDggOFoiIGZpbGw9IiM5Q0EzQUYiLz48cGF0aCBkPSJNOCAxMEM1LjIzOTM1IDEwIDIuOTY0NjQgMTAuOTUwNyAxLjQ2ODgzIDEyLjYxOTJDMCAxMy42ODk3IDEuMjc2NzcgMTUgMi42MTEwNyAxNUgxMy4zODg5QzE0LjcyMzIgMTUgMTUuNDYzIDEzLjY4OTcgMTQuNTMxMiAxMi42MTkyQzEzLjAzNTQgMTAuOTUwNyAxMC43NjA2IDEwIDggMTBaIiBmaWxsPSIjOUNBM0FGIi8+PC9zdmc+PC9zdmc+';
-                }}
-              />
-            ) : (
-              <div className="w-12 h-12 bg-gray-200 rounded-full flex items-center justify-center">
-                <Users className="w-6 h-6 text-gray-400" />
-              </div>
-            )}
-          </div>
+      <div className="p-4 sm:p-5 flex-1 flex flex-col">
+        {/* Avatar + name */}
+        <div className="flex items-center gap-3 sm:gap-4 mb-4 sm:mb-5">
+          {avatar ? (
+            <img
+              src={avatar}
+              loading="lazy"
+              alt={`${displayName} avatar`}
+              className="w-12 h-12 sm:w-14 sm:h-14 rounded-full object-cover border-2 border-gray-200"
+              onError={(e) => {
+                (e.target as HTMLImageElement).src =
+                  'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48Y2lyY2xlIGN4PSIyMCIgY3k9IjIwIiByPSIyMCIgZmlsbD0iI0YzRjRGNiIvPjwvc3ZnPg==';
+              }}
+            />
+          ) : (
+            <div className="w-12 h-12 sm:w-14 sm:h-14 bg-gray-200 rounded-full flex items-center justify-center">
+              <Users className="w-6 h-6 text-gray-400" />
+            </div>
+          )}
 
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-1">
-              <h3 className="font-semibold text-gray-900 truncate text-sm">{displayName}</h3>
-            </div>
-            <p className="text-xs text-gray-500 truncate">{handle}</p>
+            {/* smaller + lighter */}
+            <h3 className="font-semibold text-gray-900 text-sm sm:text-[15px] md:text-base truncate">
+              {displayName}
+            </h3>
+            <p className="text-gray-600 text-[11px] sm:text-xs md:text-sm truncate">
+              {handle}
+            </p>
+
             {location && (
-              <div className="flex items-center mt-1 text-xs text-gray-500">
+              <div className="flex items-center mt-1 text-[10px] sm:text-xs md:text-[13px] text-gray-500 min-w-0">
                 <MapPin className="w-3 h-3 mr-1 flex-shrink-0" />
                 <span className="truncate">{location}</span>
               </div>
             )}
-            {bio && <p className="text-xs text-gray-600 mt-2 line-clamp-2">{bio}</p>}
+
+            {bio && (
+              <p className="text-[11px] sm:text-xs text-gray-600 mt-2 line-clamp-2">
+                {bio}
+              </p>
+            )}
           </div>
         </div>
 
-        {/* Stats */}
-        <div className={`grid ${averageViews != null || (platformKey === 'instagram' && reelsPlaysAvg != null) ? 'grid-cols-3' : 'grid-cols-2'} gap-3 mb-4`}>
-          <div className="bg-gray-50 rounded-lg p-3">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs text-gray-500 font-medium">Followers</p>
-                <p className="text-lg font-bold text-gray-900">{formatNumber(followers)}</p>
-              </div>
-              <Users className="w-4 h-4 text-gray-400" />
+        {/* Metrics (smaller numbers + normal labels) */}
+        <div className="grid grid-cols-3 gap-2 sm:gap-4 text-center mb-4 sm:mb-5">
+          <div className="min-w-0">
+            <div className="font-semibold text-gray-900 leading-none whitespace-nowrap tracking-tight text-sm sm:text-base md:text-lg">
+              {formatNumber(followers)}
             </div>
+            <div className="mt-1 text-[10px] sm:text-xs text-gray-500">Followers</div>
           </div>
 
-          <div className="bg-gray-50 rounded-lg p-3">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs text-gray-500 font-medium">Engagement</p>
-                <p className="text-lg font-bold text-gray-900" title={`${formatNumber(engagements)} engagements`}>
-                  {formatRate(engagementRate)}
-                </p>
-              </div>
-              <TrendingUp className="w-4 h-4 text-gray-400" />
+          <div className="min-w-0">
+            <div
+              className="font-semibold text-gray-900 leading-none whitespace-nowrap tracking-tight text-sm sm:text-base md:text-lg"
+              title={`${formatNumber(engagements)} engagements`}
+            >
+              {formatRate(engagementRate)}
             </div>
+            <div className="mt-1 text-[10px] sm:text-xs text-gray-500">Engagement</div>
           </div>
 
-          {averageViews != null && (
-            <div className="bg-gray-50 rounded-lg p-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs text-gray-500 font-medium">Avg. Views</p>
-                  <p className="text-lg font-bold text-gray-900">{formatNumber(averageViews)}</p>
-                </div>
-                <Eye className="w-4 h-4 text-gray-400" />
-              </div>
+          <div className="min-w-0">
+            <div className="font-semibold text-gray-900 leading-none whitespace-nowrap tracking-tight text-sm sm:text-base md:text-lg">
+              {averageViews == null ? "—" : formatNumber(averageViews)}
             </div>
-          )}
-
-          {/* IG-only: show Reels Plays stat if present */}
-          {platformKey === 'instagram' && reelsPlaysAvg != null && (
-            <div className="bg-gray-50 rounded-lg p-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs text-gray-500 font-medium">Reels Plays</p>
-                  <p className="text-lg font-bold text-gray-900">{formatNumber(reelsPlaysAvg)}</p>
-                </div>
-                <Eye className="w-4 h-4 text-gray-400" />
-              </div>
-            </div>
-          )}
+            <div className="mt-1 text-[10px] sm:text-xs text-gray-500">Avg. Views</div>
+          </div>
         </div>
 
         {/* CTA */}
@@ -173,10 +183,10 @@ export function InfluencerCard({ platform, influencer }: InfluencerCardProps) {
           href={profileUrl}
           target="_blank"
           rel="noopener noreferrer"
-          className="w-full inline-flex items-center justify-center px-4 py-2 bg-gray-900 text-white text-sm font-medium rounded-lg hover:bg-gray-800 transition-colors group"
+          className="mt-auto w-full inline-flex items-center justify-center px-4 py-2 sm:py-2.5 bg-gray-900 text-white text-sm sm:text-[15px] font-medium rounded-lg hover:bg-gray-800 transition-colors group"
         >
           View Profile
-          <ExternalLink className="w-3 h-3 ml-2 group-hover:translate-x-0.5 transition-transform" />
+          <ExternalLink className="w-4 h-4 ml-2 group-hover:translate-x-0.5 transition-transform" />
         </a>
       </div>
     </div>
