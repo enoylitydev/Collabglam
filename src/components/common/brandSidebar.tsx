@@ -113,7 +113,7 @@ export default function BrandSidebar({ isOpen, onClose }: BrandSidebarProps) {
           {!collapsed && <span className="ml-3 text-md font-medium">Logout</span>}
         </button>
       </div>
-    </aside>
+    </div>
   );
 
   return (
