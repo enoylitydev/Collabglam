@@ -185,8 +185,7 @@ export function InfluencerCard({ platform, influencer }: InfluencerCardProps) {
           rel="noopener noreferrer"
           className="mt-auto w-full inline-flex items-center justify-center px-4 py-2 sm:py-2.5 bg-gray-900 text-white text-sm sm:text-[15px] font-medium rounded-lg hover:bg-gray-800 transition-colors group"
         >
-          View Profile
-          <ExternalLink className="w-4 h-4 ml-2 group-hover:translate-x-0.5 transition-transform" />
+          View Details
         </a>
       </div>
     </div>
