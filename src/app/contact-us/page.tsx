@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import Link from "next/link";
+import Header from "@/components/common/Header";
 import Footer from "@/components/common/Footer";
 import { FloatingLabelInput } from "@/components/common/FloatingLabelInput";
 import { Button } from "@/components/ui/button";
@@ -21,9 +21,7 @@ export default function ContactUs() {
 
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
-  ) => {
-    setForm({ ...form, [e.target.name]: e.target.value });
-  };
+  ) => setForm({ ...form, [e.target.name]: e.target.value });
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -38,45 +36,28 @@ export default function ContactUs() {
     } catch (err: any) {
       console.error(err);
       setError(
-        err?.response?.data?.error ||
-        "Something went wrong. Please try again later."
+        err?.response?.data?.error || "Something went wrong. Please try again later."
       );
     } finally {
       setLoading(false);
     }
   };
 
-  // Pink & Yellow theme
-  const PRIMARY = '#ef2f5b';
-
   return (
-    <div className="flex flex-col min-h-screen" style={{ backgroundColor: 'rgba(239,47,91,0.05)' }}>
-      {/* Fixed Header */}
-      <header className="fixed top-0 left-0 right-0 bg-white shadow-sm z-50">
-        <div className="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between">
-          <Link href="/" className="flex items-center gap-2">
-            <img
-              src="/logo.png"
-              alt="Collabglam Logo"
-              className="h-8 w-auto"
-            />
-            <span className="text-xl font-bold text-gray-800">
-              Collabglam
-            </span>
-          </Link>
-        </div>
-      </header>
+    <div className="flex flex-col min-h-screen bg-white text-black">
+      {/* Site Header */}
+      <Header />
 
-      {/* Spacer */}
-      <div className="h-16" aria-hidden />
+      {/* Spacer to push below header / success-stories section */}
+      <div className="h-16 md:h-24" aria-hidden />
 
       {/* Title Section */}
-      <section className="bg-white text-center px-6 py-8">
+      <section className="bg-white text-center px-6 pt-2 pb-8">
         <div className="max-w-7xl mx-auto">
-          <h1 className="text-3xl font-bold" style={{ color: PRIMARY }}>
+          <h1 className="text-3xl font-bold bg-gradient-to-r from-[#FFA135] to-[#FF7236] bg-clip-text text-transparent">
             Contact Us
           </h1>
-          <p className="mt-1" style={{ color: 'rgba(239,47,91,0.5)' }}>
+          <p className="mt-1">
             We’d love to hear from you—drop us a line below.
           </p>
         </div>
@@ -85,15 +66,9 @@ export default function ContactUs() {
       {/* Main Content */}
       <main className="flex-1 overflow-auto px-6 py-12">
         <div className="max-w-3xl mx-auto space-y-8">
-
           {/* Contact Form */}
-          <form
-            onSubmit={handleSubmit}
-            className="bg-white rounded-lg shadow p-6 space-y-6"
-          >
-            <h2 className="text-2xl font-semibold" style={{ color: PRIMARY }}>
-              Send Us a Message
-            </h2>
+          <form onSubmit={handleSubmit} className="bg-white rounded-lg shadow p-6 space-y-6">
+            <h2 className="text-2xl font-semibold">Send Us a Message</h2>
 
             {error && (
               <Alert variant="destructive">
@@ -145,9 +120,7 @@ export default function ContactUs() {
             />
 
             <div>
-              <label htmlFor="message" className="block text-gray-700 mb-1">
-                Message
-              </label>
+              <label htmlFor="message" className="block mb-1">Message</label>
               <textarea
                 id="message"
                 name="message"
@@ -157,14 +130,21 @@ export default function ContactUs() {
                 value={form.message}
                 onChange={handleChange}
                 disabled={loading}
-                className="peer block w-full border-2 rounded-md bg-white px-3 py-2 text-gray-900 focus:border-pink-600 focus:outline-none focus:ring-0 transition"
+                className="peer block w-full border-2 rounded-md bg-white px-3 py-2 text-black focus:border-black focus:outline-none focus:ring-0 transition"
               />
             </div>
 
+            {/* Gradient button */}
             <Button
               type="submit"
               disabled={loading}
-              className="px-6 py-2 rounded bg-[#ef2f5b] text-white font-medium transition hover:bg-[#d92a54] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#ffd166] disabled:opacity-50 cursor-pointer rounded-md"
+              className="
+                px-6 py-2 rounded-md font-medium text-white
+                bg-gradient-to-r from-[#FFA135] to-[#FF7236]
+                hover:opacity-90
+                focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-black
+                disabled:opacity-50
+              "
             >
               {loading ? "Sending…" : "Send Message"}
             </Button>
@@ -172,16 +152,10 @@ export default function ContactUs() {
 
           {/* Contact Details */}
           <div className="bg-white rounded-lg shadow p-6">
-            <h2 className="text-2xl font-semibold mb-4" style={{ color: PRIMARY }}>
-              Get in Touch
-            </h2>
+            <h2 className="text-2xl font-semibold mb-4">Get in Touch</h2>
             <p className="mb-2">
               <strong>Email:</strong>{" "}
-              <a
-                href="mailto:care@collabglam.com"
-                style={{ color: PRIMARY }}
-                className="hover:underline"
-              >
+              <a href="mailto:care@collabglam.com" className="hover:underline">
                 care@collabglam.com
               </a>
             </p>
