@@ -19,6 +19,28 @@ export default function ContactUs() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
 
+  // Same gradient + hover as About box
+  const TITLE_BOX =
+    "bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white " +
+    "inline-block rounded-2xl px-8 py-5 shadow " +
+    "transition-all duration-300 transform " +
+    "hover:shadow-2xl hover:scale-[1.03] hover:saturate-125 " +
+    "outline-none focus:ring-0 focus-visible:ring-0";
+
+  // Reusable gradient border wrapper (used for cards)
+  const GradientBorder: React.FC<{ children: React.ReactNode; className?: string }> = ({
+    children,
+    className = "",
+  }) => (
+    <div className="relative group">
+      <div className="p-[2px] rounded-2xl bg-gradient-to-r from-[#FFA135] to-[#FF7236] transition-transform duration-300 group-hover:scale-[1.01]">
+        <div className={`rounded-2xl bg-white p-6 shadow ${className}`}>
+          {children}
+        </div>
+      </div>
+    </div>
+  );
+
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
   ) => setForm({ ...form, [e.target.name]: e.target.value });
@@ -48,37 +70,36 @@ export default function ContactUs() {
       {/* Site Header */}
       <Header />
 
-      {/* Spacer to push below header / success-stories section */}
+      {/* Spacer below header */}
       <div className="h-16 md:h-24" aria-hidden />
 
-      {/* Title Section */}
+      {/* Title Section — gradient pill centered (same hover) */}
       <section className="bg-white text-center px-6 pt-2 pb-8">
         <div className="max-w-7xl mx-auto">
-          <h1 className="text-3xl font-bold bg-gradient-to-r from-[#FFA135] to-[#FF7236] bg-clip-text text-transparent">
-            Contact Us
-          </h1>
-          <p className="mt-1">
-            We’d love to hear from you—drop us a line below.
-          </p>
+          <div className={TITLE_BOX}>
+            <h1 className="text-3xl font-bold leading-tight">Contact Us</h1>
+            <p className="mt-1 text-base/6 opacity-95">
+              We’d love to hear from you—drop us a line below.
+            </p>
+          </div>
         </div>
       </section>
 
       {/* Main Content */}
       <main className="flex-1 overflow-auto px-6 py-12">
         <div className="max-w-3xl mx-auto space-y-8">
-          {/* Contact Form */}
-          <form onSubmit={handleSubmit} className="bg-white rounded-lg shadow p-6 space-y-6">
-            <h2 className="text-2xl font-semibold">Send Us a Message</h2>
+          {/* Contact Form — with matching gradient border card */}
+          <GradientBorder>
+            
 
             {error && (
-              <Alert variant="destructive">
+              <Alert variant="destructive" className="mb-4">
                 <AlertTitle>Error</AlertTitle>
                 <AlertDescription>{error}</AlertDescription>
               </Alert>
             )}
-
             {success && (
-              <Alert>
+              <Alert className="mb-4">
                 <AlertTitle>Sent!</AlertTitle>
                 <AlertDescription>
                   Thank you for reaching out. We’ll be in touch soon.
@@ -86,73 +107,91 @@ export default function ContactUs() {
               </Alert>
             )}
 
-            <FloatingLabelInput
-              id="name"
-              name="name"
-              type="text"
-              label="Name"
-              value={form.name}
-              onChange={handleChange}
-              disabled={loading}
-              required
-            />
-
-            <FloatingLabelInput
-              id="email"
-              name="email"
-              type="email"
-              label="Email"
-              value={form.email}
-              onChange={handleChange}
-              disabled={loading}
-              required
-            />
-
-            <FloatingLabelInput
-              id="subject"
-              name="subject"
-              type="text"
-              label="Subject"
-              value={form.subject}
-              onChange={handleChange}
-              disabled={loading}
-              required
-            />
-
-            <div>
-              <label htmlFor="message" className="block mb-1">Message</label>
-              <textarea
-                id="message"
-                name="message"
-                rows={5}
-                required
-                placeholder=" "
-                value={form.message}
+            <form onSubmit={handleSubmit} className="space-y-6">
+              <FloatingLabelInput
+                id="name"
+                name="name"
+                type="text"
+                label="Name"
+                value={form.name}
                 onChange={handleChange}
                 disabled={loading}
-                className="peer block w-full border-2 rounded-md bg-white px-3 py-2 text-black focus:border-black focus:outline-none focus:ring-0 transition"
+                required
               />
+
+              <FloatingLabelInput
+                id="email"
+                name="email"
+                type="email"
+                label="Email"
+                value={form.email}
+                onChange={handleChange}
+                disabled={loading}
+                required
+              />
+
+              <FloatingLabelInput
+                id="subject"
+                name="subject"
+                type="text"
+                label="Subject"
+                value={form.subject}
+                onChange={handleChange}
+                disabled={loading}
+                required
+              />
+
+              {/* MESSAGE — gradient border on focus (matches inputs) */}
+              <div className="space-y-1">
+                <label htmlFor="message" className="block">Message</label>
+                {/* wrapper shows gradient border only when textarea is focused */}
+                <div className="
+                  rounded-md p-[2px] transition-colors
+                  bg-transparent
+                  focus-within:bg-gradient-to-r focus-within:from-[#FFA135] focus-within:to-[#FF7236]
+                ">
+                  <textarea
+                    id="message"
+                    name="message"
+                    rows={5}
+                    required
+                    placeholder=" "
+                    value={form.message}
+                    onChange={handleChange}
+                    disabled={loading}
+                    className="
+                      block w-full rounded-md bg-white px-3 py-2 text-black
+                      border-2 border-gray-200
+                      focus:border-transparent focus:outline-none focus:ring-0
+                      transition
+                    "
+                  />
+                </div>
+              </div>
+
+              {/* Gradient button — site palette */}
+              <Button
+                type="submit"
+                disabled={loading}
+                className="
+                  px-6 py-2 rounded-md font-medium text-white
+                  bg-gradient-to-r from-[#FFA135] to-[#FF7236]
+                  transition-all duration-200 hover:opacity-90 active:opacity-95
+                  focus:outline-none focus:ring-0 focus-visible:ring-0
+                  disabled:opacity-50
+                "
+              >
+                {loading ? "Sending…" : "Send Message"}
+              </Button>
+            </form>
+          </GradientBorder>
+
+          {/* Contact Details — Gradient Border Card */}
+          <GradientBorder>
+            <div className="inline-block rounded-full px-4 py-1 text-sm font-semibold text-white bg-gradient-to-r from-[#FFA135] to-[#FF7236] mb-4">
+              Get in Touch
             </div>
 
-            {/* Gradient button */}
-            <Button
-              type="submit"
-              disabled={loading}
-              className="
-                px-6 py-2 rounded-md font-medium text-white
-                bg-gradient-to-r from-[#FFA135] to-[#FF7236]
-                hover:opacity-90
-                focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-black
-                disabled:opacity-50
-              "
-            >
-              {loading ? "Sending…" : "Send Message"}
-            </Button>
-          </form>
-
-          {/* Contact Details */}
-          <div className="bg-white rounded-lg shadow p-6">
-            <h2 className="text-2xl font-semibold mb-4">Get in Touch</h2>
             <p className="mb-2">
               <strong>Email:</strong>{" "}
               <a href="mailto:care@collabglam.com" className="hover:underline">
@@ -170,7 +209,7 @@ export default function ContactUs() {
               <br />
               USA
             </p>
-          </div>
+          </GradientBorder>
         </div>
       </main>
 

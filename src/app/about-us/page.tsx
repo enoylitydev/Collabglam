@@ -15,13 +15,20 @@ export default function AboutPage() {
   const router = useRouter();
   const [isLoggedIn, setIsLoggedIn] = useState(false);
 
-  // ---- Gradient helpers (your exact classes) ----
+  // ---- Gradient helpers (yours) ----
   const GRADIENT_SOLID =
     'bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white';
   const GRADIENT_HOVER =
     'text-gray-800 hover:bg-gradient-to-r hover:from-[#FFA135] hover:to-[#FF7236] hover:text-white';
   const btnClasses = (primary = false) => (primary ? GRADIENT_SOLID : GRADIENT_HOVER);
-  // -----------------------------------------------
+
+  // Always-on gradient + hover polish for the About box (NO ring/outline)
+  const ABOUT_BOX =
+    'bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white ' +
+    'inline-block rounded-2xl px-8 py-5 shadow ' +
+    'transition-all duration-300 transform ' +
+    'hover:shadow-2xl hover:scale-[1.03] hover:saturate-125 ' +
+    'outline-none focus:ring-0 focus-visible:ring-0';
 
   useEffect(() => {
     const token = localStorage.getItem('token');
@@ -37,15 +44,15 @@ export default function AboutPage() {
       {/* Spacer (only needed if Header is sticky/fixed) */}
       <div className="h-16 md:h-20" aria-hidden />
 
-      {/* Page Header — gradient TEXT on white */}
-      <header className="px-4 py-8 bg-white border-b border-gray-100">
+      {/* Top header row — centered on the line; gradient always visible + hover; no red line */}
+      <header className="px-4 pt-8 pb-6 bg-white border-b border-gray-100">
         <div className="container mx-auto text-center">
-          <h1 className="text-4xl font-extrabold bg-gradient-to-r from-[#FFA135] to-[#FF7236] bg-clip-text text-transparent">
-            About CollabGlam
-          </h1>
-          <p className="mt-2 text-gray-700">
-            Easiest way to connect brand and influencer
-          </p>
+          <div className={ABOUT_BOX}>
+            <h1 className="text-4xl font-extrabold leading-tight">About CollabGlam</h1>
+            <p className="mt-1 text-base/6 opacity-95">
+              Easiest way to connect brand and influencer
+            </p>
+          </div>
         </div>
       </header>
 
@@ -116,4 +123,3 @@ export default function AboutPage() {
     </div>
   );
 }
- 
