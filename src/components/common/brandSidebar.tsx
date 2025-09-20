@@ -97,7 +97,6 @@ export default function BrandSidebar({ isOpen, onClose }: BrandSidebarProps) {
       <nav className="flex-1 overflow-y-auto mt-4">
         <ul className="flex flex-col space-y-1 px-1">{renderLinks()}</ul>
       </nav>
-
       {/* Logout */}
       <div className="border-t border-gray-200 p-4">
         <button
