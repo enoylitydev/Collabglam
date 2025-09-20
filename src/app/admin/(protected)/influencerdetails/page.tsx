@@ -400,11 +400,8 @@ const loadPage = useCallback(
       {/* Body */}
       <main className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-6 space-y-6">
         {/* Top Stats */}
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <StatCard label="Server Total" value={typeof serverTotal === 'number' ? n(serverTotal) : '—'} icon={<Globe className="h-5 w-5" />} />
-          <StatCard label="Loaded" value={n(stats.totalLoaded)} icon={<Download className="h-5 w-5" />} />
-          <StatCard label="Visible" value={n(stats.visible)} icon={<Eye className="h-5 w-5" />} />
-          <StatCard label="Unique Emails" value={n(stats.uniqueEmails)} icon={<Users2 className="h-5 w-5" />} />
           <StatCard label="Channels" value={n(stats.uniqueChannels)} icon={<Video className="h-5 w-5" />} />
           <StatCard label="Categories" value={n(stats.cats)} icon={<ListChecks className="h-5 w-5" />} />
           <StatCard label="Date Range" value={stats.min ? `${fmtDate(stats.min)} – ${fmtDate(stats.max)}` : '—'} icon={<Calendar className="h-5 w-5" />} />
