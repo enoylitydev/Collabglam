@@ -4,14 +4,24 @@ import { ResultsGrid } from './ResultsGrid';
 import { useInfluencerSearch } from './useInfluencerSearch';
 import type { Platform } from './filters';
 import { SearchHeader } from './SearchHeader';
+import { DetailPanel } from '../browse-influencers/components/DetailPanel';
+import { useInfluencerReport } from '../browse-influencers/hooks/useInfluencerReport';
+import type { Platform as ReportPlatform } from '../browse-influencers/types';
 
 export default function ModashDashboard() {
   const [platforms, setPlatforms] = useState<Platform[]>(['youtube']);
   const [showFilters, setShowFilters] = useState(false);
 
-  // 🔎 search header state
+  // search header state
   const [queryText, setQueryText] = useState('');
   const [showDebug, setShowDebug] = useState(false);
+
+  // detail panel state (reuse browse-influencers implementation)
+  const [panelOpen, setPanelOpen] = useState(false);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedPlatform, setSelectedPlatform] = useState<ReportPlatform | null>(null);
+  const [calculationMethod, setCalculationMethod] = useState<"median" | "average">('median');
+  const { report, rawReport, loading: loadingReport, error: reportError, fetchReport } = useInfluencerReport();
 
   const {
     searchState,
@@ -31,12 +41,11 @@ export default function ModashDashboard() {
   const toggleFilters = useCallback(() => setShowFilters((s) => !s), []);
   const onResetAll = useCallback(() => resetFilters(), [resetFilters]);
 
-  // ✅ Submit from the search header
   const onSearchFromHeader = useCallback(
     (q: string) => {
       const clean = q.trim();
       setQueryText(clean);
-      // If your API expects a different key, change 'influencer.query' accordingly.
+      // update your filter key used by the search hook
       updateFilter('influencer.query', clean);
       runSearch({ reset: true });
     },
@@ -44,6 +53,18 @@ export default function ModashDashboard() {
   );
 
   const onApply = useCallback(() => runSearch({ reset: true }), [runSearch]);
+
+  const onViewProfile = useCallback((influencer: any) => {
+    // Robustly extract id and platform
+    const inferredPlatform: ReportPlatform = (influencer?.platform as ReportPlatform) || (platforms[0] as unknown as ReportPlatform) || 'youtube';
+    const idCandidate = influencer?.id || influencer?.userId || influencer?.username || influencer?.handle || influencer?.url;
+    if (!idCandidate) return;
+    const id = String(idCandidate);
+    setSelectedId(id);
+    setSelectedPlatform(inferredPlatform);
+    setPanelOpen(true);
+    fetchReport(id, inferredPlatform, calculationMethod);
+  }, [calculationMethod, fetchReport, platforms]);
 
   return (
     <div className="min-h-screen">
@@ -75,24 +96,26 @@ export default function ModashDashboard() {
 
       {/* Layout */}
       <div className="px-4 sm:px-6 lg:px-0">
-        {/* Grid lets the left column be sticky without affecting the right */}
-        <div className="grid grid-cols-1 lg:grid-cols-[20rem_1fr] xl:grid-cols-[22rem_1fr] 2xl:grid-cols-[24rem_1fr] gap-4 lg:gap-6 items-start">
-          {/* Desktop sticky wrapper for the sidebar */}
-          <div className="hidden lg:block sticky top-16 self-start h-[calc(100vh-4rem)] z-10">
-            <FilterSidebar
-              platforms={platforms}
-              setPlatforms={setPlatforms}
-              filters={filters}
-              updateFilter={updateFilter}
-              onReset={onResetAll}
-              onApply={onApply}
-              loading={searchState.loading}
-            />
+        {/* Fixed grid layout that prevents shifting */}
+        <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] xl:grid-cols-[352px_1fr] 2xl:grid-cols-[384px_1fr] gap-4 lg:gap-6 items-start">
+          {/* Desktop fixed sidebar wrapper - prevents any shifting */}
+          <div className="hidden lg:block">
+            <div className="fixed top-4 w-[320px] xl:w-[352px] 2xl:w-[384px] h-[calc(100vh-2rem)] z-10 bg-white">
+              <FilterSidebar
+                platforms={platforms}
+                setPlatforms={setPlatforms}
+                filters={filters}
+                updateFilter={updateFilter}
+                onReset={onResetAll}
+                onApply={onApply}
+                loading={searchState.loading}
+              />
+            </div>
           </div>
 
           {/* Right column: search header + results */}
-          <main className="relative flex-1 min-w-0 space-y-6 mt-2">
-            {/* 🔎 Search header at the top of results column */}
+          <main className="relative flex-1 min-w-0 space-y-6 lg:ml-0">
+            {/* Search header pinned to the top of the results column */}
             <SearchHeader
               platform={primaryPlatform}
               queryText={queryText}
@@ -103,14 +126,13 @@ export default function ModashDashboard() {
               setShowDebug={setShowDebug}
             />
 
-            {/* Optional top loading indicator */}
+            {/* Optional top loading indicator (doesn't affect layout) */}
             {searchState.loading && (
-              <div className="absolute top-[84px] right-0 left-0 flex justify-center z-10 pointer-events-none">
-                <div className="mt-2 inline-block h-2 w-40 rounded bg-gradient-to-r from-gray-300 via-gray-400 to-gray-300 animate-pulse" />
+              <div className="absolute top-[88px] right-0 left-0 flex justify-center z-10 pointer-events-none">
+                <div className="inline-block h-2 w-40 rounded bg-gradient-to-r from-gray-300 via-gray-400 to-gray-300 animate-pulse" />
               </div>
             )}
 
-            {/* Results */}
             <ResultsGrid
               platform={primaryPlatform}
               results={searchState.results}
@@ -120,6 +142,7 @@ export default function ModashDashboard() {
               hasMore={searchState.hasMore}
               onLoadMore={loadMore}
               onLoadAll={loadAll}
+              onViewProfile={onViewProfile}
             />
           </main>
         </div>
@@ -142,13 +165,31 @@ export default function ModashDashboard() {
               onReset={onResetAll}
               onApply={() => {
                 onApply();
-                setShowFilters(false);
+                setShowFilters(false); // close drawer after applying
               }}
               loading={searchState.loading}
             />
           </div>
         </div>
       )}
+
+      {/* Detail Panel */}
+      <DetailPanel
+        open={panelOpen}
+        onClose={() => setPanelOpen(false)}
+        loading={loadingReport}
+        error={reportError}
+        data={report}
+        raw={rawReport}
+        platform={selectedPlatform}
+        calc={calculationMethod}
+        onChangeCalc={(calc) => {
+          setCalculationMethod(calc);
+          if (selectedId && selectedPlatform) {
+            fetchReport(selectedId, selectedPlatform, calc);
+          }
+        }}
+      />
     </div>
   );
 }

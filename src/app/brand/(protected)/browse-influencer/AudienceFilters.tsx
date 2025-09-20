@@ -61,7 +61,7 @@ export function AudienceFilters({ filters, updateFilter, platforms }: Props) {
   }, [filters]);
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 mb-4">
       {/* Audience Language (weighted) */}
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-2">Audience Language</label>
