@@ -1,6 +1,6 @@
 // /app/api/modash/route.ts
 import { NextRequest, NextResponse } from 'next/server';
-import type { Platform } from '@/app/brand/(protected)/browse-influencers/types';
+import type { Platform } from '@/app/brand/(protected)/browse-influencer/types';
 
 const ENDPOINT: Record<Platform, string> = {
   instagram: 'https://api.modash.io/v1/instagram/search',
@@ -30,13 +30,50 @@ function toNum(v: any): number | undefined {
   return Number.isFinite(n) ? n : undefined;
 }
 
+/** ---------- Helpers for normalization ---------- */
+
+// Prefer the first non-empty trimmed string, else undefined
+function firstNonEmpty(...vals: Array<unknown>): string | undefined {
+  for (const v of vals) {
+    if (typeof v === 'string') {
+      const trimmed = v.trim();
+      if (trimmed) return trimmed;
+    }
+  }
+  return undefined;
+}
+
+// Extract @handle from a YouTube URL like https://youtube.com/@somehandle
+function extractYouTubeHandleFromUrl(u?: string): string | undefined {
+  if (!u) return undefined;
+  const m = u.match(/youtube\.com\/@([A-Za-z0-9._-]+)/i);
+  return m ? m[1] : undefined;
+}
+
+// Some Modash (and other APIs) shapes nest the primary data differently
+function pickPrimarySrc(item: AnyItem) {
+  return item?.profile ?? item?.channel ?? item?.creator ?? item?.user ?? item;
+}
+
 /** ---------- Normalization / Dedupe ---------- */
 
 function normalizeItem(item: AnyItem, platform: Platform) {
-  const src = item?.profile ?? item;
+  const src = pickPrimarySrc(item);
 
-  const username =
-    src?.username ?? src?.handle ?? src?.channelHandle ?? src?.slug ?? '';
+  const url = firstNonEmpty(src?.url, src?.channelUrl, src?.profileUrl);
+  const derivedHandleFromUrl = extractYouTubeHandleFromUrl(url);
+
+  // Expand possible handle fields and strip a leading '@' if present
+  const rawUsername = firstNonEmpty(
+    src?.username,
+    src?.handle,
+    src?.channelHandle,
+    src?.slug,
+    src?.customUrl,  // YouTube often includes '@handle' here
+    src?.vanityUrl,
+    derivedHandleFromUrl
+  );
+  const username = rawUsername?.replace(/^@/, '');
 
   const userId =
     String(
@@ -45,7 +82,7 @@ function normalizeItem(item: AnyItem, platform: Platform) {
 
   return {
     userId,
-    username,
+    username, // leave undefined if truly missing (avoid empty string)
     fullname:
       src?.fullName ??
       src?.fullname ??
@@ -69,15 +106,17 @@ function normalizeItem(item: AnyItem, platform: Platform) {
       src?.profilePicUrl ??
       src?.thumbnail ??
       src?.channelThumbnailUrl,
-    url: src?.url ?? src?.channelUrl ?? src?.profileUrl,
+    url,
     isVerified: Boolean(src?.isVerified ?? src?.verified),
     isPrivate: Boolean(src?.isPrivate),
     platform,
   };
 }
 
+// Prefer entries with verification, then ones that actually have a username
 function better(a: AnyItem, b: AnyItem) {
   if (a.isVerified !== b.isVerified) return a.isVerified ? a : b;
+  if (!!a.username !== !!b.username) return a.username ? a : b; // prefer item with a username
   if ((a.followers ?? 0) !== (b.followers ?? 0))
     return (a.followers ?? 0) > (b.followers ?? 0) ? a : b;
   if ((a.engagementRate ?? 0) !== (b.engagementRate ?? 0))

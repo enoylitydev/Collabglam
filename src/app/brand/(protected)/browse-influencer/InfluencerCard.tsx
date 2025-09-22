@@ -182,7 +182,7 @@ export function InfluencerCard({ platform, influencer, onViewProfile }: Influenc
         {/* CTA */}
         <button
           type="button"
-          onClick={() => onViewProfile ? onViewProfile(influencer) : window.open(profileUrl, '_blank', 'noopener,noreferrer')}
+          onClick={() => onViewProfile && onViewProfile(influencer)}
           className="mt-auto w-full inline-flex items-center justify-center px-4 py-2 sm:py-2.5 bg-gray-900 text-white text-sm sm:text-[15px] font-medium rounded-lg hover:bg-gray-800 transition-colors group"
         >
           View Profile

@@ -95,3 +95,126 @@ export interface SearchState {
   lastPlatforms: Platform[];
   lastRaw: any;
 }
+
+// ============ NEW TYPES (safe to append) ============
+
+export interface Contact {
+  value: string;
+  type?: string;
+}
+
+export interface Language {
+  code?: string;
+  name?: string;
+}
+
+/** Lightweight weighted item used by audience/affinity lists */
+export interface WeightedItem {
+  name?: string;
+  code?: string;
+  weight?: number;
+}
+
+export interface Audience {
+  genders?: WeightedItem[];
+  ages?: WeightedItem[];
+  geoCountries?: WeightedItem[];
+  languages?: WeightedItem[];
+  ethnicities?: WeightedItem[];
+  audienceTypes?: WeightedItem[];
+  audienceReachability?: WeightedItem[];
+}
+
+export interface InfluencerHeader {
+  picture?: string;
+  fullname?: string;
+  username?: string;
+  handle?: string;
+  url?: string;
+  followers?: number;
+  engagementRate?: number;
+}
+
+export interface MiniUser {
+  userId: string | number;
+  url?: string;
+  picture?: string;
+  fullname?: string;
+  username?: string;
+  followers?: number;
+}
+
+export interface RecentPost {
+  id: string | number;
+  url?: string;
+  thumbnail?: string;
+  image?: string;
+  video?: boolean;
+  title?: string;
+  text?: string;
+  type?: string;
+  likes?: number;
+  comments?: number;
+  views?: number;
+  hashtags?: string[];
+  created?: string | number | Date;
+}
+
+export interface StatHistoryEntry {
+  month: string;         // e.g. "2025-01"
+  avgEngagements: number;
+}
+
+// add near your other exports
+export interface AudienceSummary {
+  notable?: number;
+  credibility?: number;
+}
+
+/** The normalized profile object we render in the DetailPanel */
+export interface InfluencerProfile {
+  userId?: string | number;
+
+  // Top "header" block
+  profile?: InfluencerHeader;
+
+  isVerified?: boolean;
+  isPrivate?: boolean;
+
+  // About
+  country?: string;
+  city?: string;
+  state?: string;
+  description?: string;
+  interests?: Array<string | { name?: string; code?: string }>;
+  contacts?: Contact[];
+  language?: Language;
+  ageGroup?: string;   // ← NEW (used by AboutSection)
+  gender?: string;     // ← NEW (used by AboutSection)
+
+
+  // Audience summary numbers shown in "About"
+  audience?: Audience & AudienceSummary;
+
+  // Common metrics we display in cards
+  avgLikes?: number;
+  avgComments?: number;
+  averageViews?: number;
+  avgReelsPlays?: number;
+  postsCount?: number;
+  totalViews?: number;   // YouTube
+  totalLikes?: number;   // TikTok
+  brandAffinity?: WeightedItem[];
+  // Collections used across the right column sections
+  statsByContentType?: any;
+  popularPosts?: RecentPost[];
+  notableUsers?: MiniUser[];
+  lookalikes?: MiniUser[];
+  lookalikesByTopics?: MiniUser[];
+  audienceLookalikes?: MiniUser[];
+}
+
+/** Raw report we normalize; keep minimal since shapes vary by platform */
+export interface ReportResponse {
+  profile: InfluencerProfile;
+}

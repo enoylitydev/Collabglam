@@ -4,9 +4,10 @@ import { ResultsGrid } from './ResultsGrid';
 import { useInfluencerSearch } from './useInfluencerSearch';
 import type { Platform } from './filters';
 import { SearchHeader } from './SearchHeader';
-import { DetailPanel } from '../browse-influencers/components/DetailPanel';
-import { useInfluencerReport } from '../browse-influencers/hooks/useInfluencerReport';
-import type { Platform as ReportPlatform } from '../browse-influencers/types';
+import { DetailPanel } from './DetailPanel';
+import { useInfluencerReport } from './useInfluencerReport';
+import type { Platform as ReportPlatform } from './types';
+import { useEmailStatus } from './useEmailStatus';
 
 export default function ModashDashboard() {
   const [platforms, setPlatforms] = useState<Platform[]>(['youtube']);
@@ -22,6 +23,7 @@ export default function ModashDashboard() {
   const [selectedPlatform, setSelectedPlatform] = useState<ReportPlatform | null>(null);
   const [calculationMethod, setCalculationMethod] = useState<"median" | "average">('median');
   const { report, rawReport, loading: loadingReport, error: reportError, fetchReport } = useInfluencerReport();
+  const { exists: emailExists, loading: loadingEmail, error: emailError, checkStatus } = useEmailStatus();
 
   const {
     searchState,
@@ -55,16 +57,63 @@ export default function ModashDashboard() {
   const onApply = useCallback(() => runSearch({ reset: true }), [runSearch]);
 
   const onViewProfile = useCallback((influencer: any) => {
-    // Robustly extract id and platform
-    const inferredPlatform: ReportPlatform = (influencer?.platform as ReportPlatform) || (platforms[0] as unknown as ReportPlatform) || 'youtube';
-    const idCandidate = influencer?.id || influencer?.userId || influencer?.username || influencer?.handle || influencer?.url;
+    // 1) infer platform
+    const inferredPlatform: ReportPlatform =
+      (influencer?.platform as ReportPlatform) ||
+      (platforms[0] as unknown as ReportPlatform) ||
+      'youtube';
+
+    // 2) choose an id for the Modash report call
+    const idCandidate =
+      influencer?.id ||
+      influencer?.userId ||
+      influencer?.username ||
+      influencer?.handle ||
+      influencer?.url;
     if (!idCandidate) return;
     const id = String(idCandidate);
+
+    // 3) extract a handle for the email/status call
+    const extractHandle = (it: any): string | null => {
+      let h: string | null =
+        it?.username ??
+        null;
+
+      if (!h && typeof it?.url === 'string' && it.url) {
+        try {
+          const u = new URL(it.url);
+          // last non-empty path segment as a best-effort handle
+          const segments = u.pathname.split('/').filter(Boolean);
+          if (segments.length) h = segments[segments.length - 1];
+        } catch { /* ignore */ }
+      }
+
+      if (!h) return null;
+      h = String(h).trim();
+      if (!h) return null;
+
+      // normalize to '@handle' and validate like your server
+      const core = h.replace(/^@/, '');
+      if (!/^[A-Za-z0-9._\-]+$/.test(core)) return null;
+      return '@' + core.toLowerCase();
+    };
+
+    const handleForStatus = extractHandle(influencer);
+
+    // 4) open panel and fire both requests
     setSelectedId(id);
     setSelectedPlatform(inferredPlatform);
     setPanelOpen(true);
+
+    // A) Modash report
     fetchReport(id, inferredPlatform, calculationMethod);
-  }, [calculationMethod, fetchReport, platforms]);
+
+    // B) Email status (only if we could infer a clean handle)
+    if (handleForStatus) {
+      checkStatus(handleForStatus, inferredPlatform);
+    }
+  }, [calculationMethod, fetchReport, platforms, checkStatus]);
+
 
   return (
     <div className="min-h-screen">
@@ -100,7 +149,7 @@ export default function ModashDashboard() {
         <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] xl:grid-cols-[352px_1fr] 2xl:grid-cols-[384px_1fr] gap-4 lg:gap-6 items-start">
           {/* Desktop fixed sidebar wrapper - prevents any shifting */}
           <div className="hidden lg:block">
-            <div className="fixed top-4 w-[320px] xl:w-[352px] 2xl:w-[384px] h-[calc(100vh-2rem)] z-10 bg-white">
+            <div className="border-l-2 fixed top-4 w-[320px] xl:w-[352px] 2xl:w-[384px] h-[calc(100vh-2rem)] z-10 bg-white">
               <FilterSidebar
                 platforms={platforms}
                 setPlatforms={setPlatforms}
@@ -121,7 +170,7 @@ export default function ModashDashboard() {
               queryText={queryText}
               setQueryText={setQueryText}
               loading={searchState.loading}
-              onSearch={onSearchFromHeader}
+               onSearch={(q) => runSearch({ reset: true, queryText: q })}
               showDebug={showDebug}
               setShowDebug={setShowDebug}
             />
@@ -189,7 +238,9 @@ export default function ModashDashboard() {
             fetchReport(selectedId, selectedPlatform, calc);
           }
         }}
+        emailExists={emailExists}
       />
+
     </div>
   );
 }

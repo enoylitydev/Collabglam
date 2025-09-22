@@ -1,7 +1,6 @@
 import React, { useMemo } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, AlertCircle, BarChart3, Send } from 'lucide-react';
-import { Platform, ReportResponse, StatHistoryEntry } from '../types';
+import { ArrowLeft, AlertCircle, BarChart3, Send, MessageSquare } from 'lucide-react';
 import { ProfileHeader } from './detail-panel/ProfileHeader';
 import { StatsChart } from './detail-panel/StatsChart';
 import { ContentBreakdown } from './detail-panel/ContentBreakdown';
@@ -10,6 +9,9 @@ import { AboutSection } from './detail-panel/AboutSection';
 import { AudienceDistribution } from './detail-panel/AudienceDistribution';
 import { BrandAffinity } from './detail-panel/BrandAffinity';
 import { MiniUserSection } from './detail-panel/MiniUserSection';
+import type { ReportResponse, StatHistoryEntry } from './types';
+
+export type Platform = 'instagram' | 'tiktok' | 'youtube';
 
 interface DetailPanelProps {
   open: boolean;
@@ -19,8 +21,10 @@ interface DetailPanelProps {
   data: ReportResponse | null;
   raw: any;
   platform: Platform | null;
-  calc: "median" | "average";
-  onChangeCalc: (calc: "median" | "average") => void;
+  /** Map your API’s {status: 0|1} to boolean in the parent: `emailExists = status === 1` */
+  emailExists?: boolean | null;
+  calc: 'median' | 'average';
+  onChangeCalc: (calc: 'median' | 'average') => void;
 }
 
 export const DetailPanel = React.memo<DetailPanelProps>(({
@@ -31,6 +35,7 @@ export const DetailPanel = React.memo<DetailPanelProps>(({
   data,
   raw,
   platform,
+  emailExists,
   calc,
   onChangeCalc
 }) => {
@@ -42,8 +47,18 @@ export const DetailPanel = React.memo<DetailPanelProps>(({
   if (!open) return null;
 
   const hasUserId = Boolean(data?.profile?.userId);
-  const inviteHref = hasUserId
-    ? `/brand/messages/new?to=${encodeURIComponent(String(data?.profile?.userId))}`
+  const canAct = hasUserId && !loading;
+
+  // Tri-state awareness: undefined/null means “unknown”
+  const emailKnown = typeof emailExists === 'boolean';
+  const actionMode = emailExists ? 'message' : 'invite';
+  const ctaLabel = emailExists ? 'Message Now' : 'Send Invitation';
+  const ctaTitle = hasUserId
+    ? (emailExists ? 'Message this creator' : 'Send invitation to collect email')
+    : 'Profile not ready';
+
+  const inviteHref = canAct
+    ? `/brand/messages/new?to=${encodeURIComponent(String(data?.profile?.userId))}&mode=${actionMode}`
     : '#';
 
   return (
@@ -73,36 +88,36 @@ export const DetailPanel = React.memo<DetailPanelProps>(({
               <option value="average">average</option>
             </select>
 
-            {/* Send Invitation Button */}
+            {/* CTA: Invitation vs Message */}
             <Link
               href={inviteHref}
               onClick={(e) => {
-                if (!hasUserId || loading) e.preventDefault();
+                if (!canAct) e.preventDefault();
               }}
-              aria-disabled={!hasUserId || loading}
+              aria-disabled={!canAct}
               className={`inline-flex items-center gap-2 rounded-xl px-3 py-1.5 text-sm font-medium text-white transition-opacity
-                ${hasUserId && !loading
+                ${canAct
                   ? 'bg-gradient-to-r from-[#FFA135] to-[#FF7236] hover:opacity-90'
                   : 'bg-gray-300 cursor-not-allowed pointer-events-none opacity-70'
                 }`}
-              title={hasUserId ? 'Send Invitation' : 'Profile not ready'}
+              title={ctaTitle}
             >
-              <Send className="h-4 w-4" />
-              Send Invitation
+              {emailExists ? (
+                <MessageSquare className="h-4 w-4" />
+              ) : (
+                <Send className="h-4 w-4" />
+              )}
+              {ctaLabel}
             </Link>
           </div>
         </div>
 
         <div className="p-5">
           {/* Loading State */}
-          {loading && (
-            <LoadingState />
-          )}
+          {loading && <LoadingState />}
 
           {/* Error State */}
-          {error && (
-            <ErrorState error={error} />
-          )}
+          {error && <ErrorState error={error} />}
 
           {/* Content */}
           {data && (

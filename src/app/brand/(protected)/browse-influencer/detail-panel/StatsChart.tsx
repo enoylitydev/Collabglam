@@ -1,6 +1,6 @@
 import React from 'react';
 import { LineChart, Line, XAxis, YAxis, Tooltip as ReTooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
-import { StatHistoryEntry } from '../../types';
+import { StatHistoryEntry } from '../types';
 
 interface StatsChartProps {
   statHistory: StatHistoryEntry[];

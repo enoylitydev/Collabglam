@@ -1,7 +1,7 @@
 import React from 'react';
 import { User as UserIcon } from 'lucide-react';
-import { MiniUser } from '../../types';
-import { nfmt } from '../../utils';
+import { MiniUser } from '../types';
+import { nfmt } from '../utils';
 
 interface MiniUserSectionProps {
   title: string;
@@ -27,10 +27,11 @@ export const MiniUserSection = React.memo<MiniUserSectionProps>(({ title, users,
             {u.picture ? (
               <img
                 src={u.picture}
-                alt={u.fullname || u.username || u.userId}
+                alt={String(u.fullname || u.username || u.userId)}  // ← ensure string
                 className="h-10 w-10 rounded-lg object-cover"
                 loading="lazy"
               />
+
             ) : (
               <div className="h-10 w-10 rounded-lg bg-gray-100 flex items-center justify-center">
                 <UserIcon className="h-5 w-5 text-gray-400" />

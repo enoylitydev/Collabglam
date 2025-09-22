@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
-import { Platform, ReportResponse } from '../../types';
-import { getMedian, nfmt } from '../../utils';
+import { Platform, ReportResponse } from '../types';
+import { getMedian , nfmt } from '../utils';
 
 interface ContentBreakdownProps {
   data: ReportResponse;

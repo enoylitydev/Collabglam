@@ -1,6 +1,6 @@
 import React from 'react';
-import { WeightedItem } from '../../types';
-import { topN, pct } from '../../utils';
+import { WeightedItem } from '../types';
+import { topN, pct } from '../utils';
 
 interface BrandAffinityProps {
   items: WeightedItem[];

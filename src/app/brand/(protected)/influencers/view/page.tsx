@@ -24,7 +24,6 @@ import {
   Eye,
   Heart,
   MessageCircle,
-  Share2,
   Star,
   Send,
 } from "lucide-react";

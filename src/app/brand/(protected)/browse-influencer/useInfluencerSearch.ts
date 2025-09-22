@@ -1,4 +1,3 @@
-// useInfluencerSearch.tsx
 import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import type { Platform } from './filters';
 import { FilterState, createDefaultFilters } from './filters';
@@ -60,6 +59,29 @@ const dedupeClient = (list: NormalizedInfluencer[]) => {
   return Array.from(map.values());
 };
 
+// ---- helpers to parse free-text into keywords and tags ----
+const parseSearchText = (text?: string) => {
+  const raw = (text ?? '').trim();
+  if (!raw) return { keywords: undefined as string | undefined, hashtags: [] as string[], mentions: [] as string[] };
+
+  // Capture #hashtags (unicode letters/numbers/_)
+  const hashtagMatches = raw.match(/#[\p{L}\p{N}_]+/gu) || [];
+  const hashtags = Array.from(new Set(hashtagMatches.map(h => h.slice(1)))); // strip '#'
+
+  // Capture simple @mentions (avoid emails by skipping if it contains a '.')
+  const mentionMatches = (raw.match(/@[A-Za-z0-9._-]+/g) || []).filter(m => !m.includes('.'));
+  const mentions = Array.from(new Set(mentionMatches.map(m => m.slice(1)))); // strip '@'
+
+  // Remove tags from keywords string to avoid duplication
+  const keywords = raw
+    .replace(/#[\p{L}\p{N}_]+/gu, ' ')
+    .replace(/@[A-Za-z0-9._-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim() || undefined;
+
+  return { keywords, hashtags, mentions };
+};
+
 export function useInfluencerSearch(platforms: Platform[]) {
   const [searchState, setSearchState] = useState<SearchState>({
     loading: false,
@@ -71,6 +93,7 @@ export function useInfluencerSearch(platforms: Platform[]) {
 
   const reqIdRef = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
+  const lastQueryRef = useRef<string>(''); // <-- remember last query for pagination
 
   useEffect(() => () => abortRef.current?.abort(), []);
 
@@ -96,7 +119,10 @@ export function useInfluencerSearch(platforms: Platform[]) {
     credibility: 0.5 as Percent01,
   }), []);
 
-  const buildPayload = useCallback((options?: { page?: number; cursor?: string | null }) => {
+  const buildPayload = useCallback((
+    options?: { page?: number; cursor?: string | null },
+    searchText?: string
+  ) => {
     const inf: any = (filters as any).influencer || {};
     const aud: any = (filters as any).audience || {};
 
@@ -116,21 +142,44 @@ export function useInfluencerSearch(platforms: Platform[]) {
       isVerified: !!inf.isVerified,
     };
 
-    // Common & optional influencer filters
+    // ---- free-text mapping ----
+    const { keywords: qKeywords, hashtags, mentions } = parseSearchText(searchText);
+    // existing keywords in filters, if any
+    const baseKeywords = typeof inf.keywords === 'string' && inf.keywords.trim() ? inf.keywords.trim() : undefined;
+    const mergedKeywords = [baseKeywords, qKeywords].filter(Boolean).join(', ').trim() || undefined;
+    if (mergedKeywords) influencer.keywords = mergedKeywords;
+
+    // Build textTags from parsed hashtags/mentions (IG/TT only)
+    const parsedTags = [
+      ...hashtags.map(h => ({ type: 'hashtag', value: h })),
+      ...mentions.map(m => ({ type: 'mention', value: m })),
+    ];
+    if ((hasIG || hasTT) && parsedTags.length) {
+      const pre = Array.isArray(inf.textTags) ? inf.textTags : [];
+      // simple de-dupe by "type:value"
+      const seen = new Set<string>();
+      const tags = [...pre, ...parsedTags].filter(t => {
+        const key = `${t.type}:${t.value}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+      if (tags.length) influencer.textTags = tags;
+    }
+
+    // ---- Common & optional influencer filters ----
     if (typeof inf.engagementRate === 'number') {
       influencer.engagementRate = Math.max(0, Math.min(1, inf.engagementRate));
     }
     if (inf.language) influencer.language = inf.language;
     if (inf.gender) influencer.gender = inf.gender;
 
-    // Use 'lastposted' to match the Modash examples
     if (typeof inf.lastPostedWithinDays === 'number') {
       influencer.lastposted = Math.max(0, Math.floor(inf.lastPostedWithinDays));
     } else if (typeof inf.lastposted === 'number') {
       influencer.lastposted = Math.max(0, Math.floor(inf.lastposted));
     }
 
-    // Followers growth rate (percent → fraction)
     if (typeof inf.followersGrowthRatePct === 'number') {
       influencer.followersGrowthRate = {
         interval: 'i6months',
@@ -145,7 +194,6 @@ export function useInfluencerSearch(platforms: Platform[]) {
     }
 
     if (typeof inf.bio === 'string' && inf.bio.trim()) influencer.bio = inf.bio.trim();
-    if (typeof inf.keywords === 'string' && inf.keywords.trim()) influencer.keywords = inf.keywords.trim();
 
     if (inf.hasContactDetails === true) {
       influencer.hasContactDetails = [{ contactType: 'email', filterAction: 'must' as const }];
@@ -158,7 +206,6 @@ export function useInfluencerSearch(platforms: Platform[]) {
       };
     }
 
-    // relevance / audienceRelevance / filterOperations passthrough
     if (Array.isArray(inf.relevance) && inf.relevance.length) {
       influencer.relevance = inf.relevance;
     }
@@ -192,7 +239,6 @@ export function useInfluencerSearch(platforms: Platform[]) {
     }
 
     // ---------- Platform-specific overrides ----------
-    // IG override for Reels Plays
     if (hasIG && (inf.reelsPlaysMin != null || inf.reelsPlaysMax != null)) {
       setReels(inf.reelsPlaysMin, inf.reelsPlaysMax);
     }
@@ -248,20 +294,14 @@ export function useInfluencerSearch(platforms: Platform[]) {
       }
     }
 
-    // IG + TT only: textTags
-    if ((hasIG || hasTT) && Array.isArray(inf.textTags) && inf.textTags.length) {
-      influencer.textTags = inf.textTags; // [{type:'hashtag'|'mention', value: string}]
-    }
-
     // ---------- Audience ----------
     const audience: any = {};
 
-    // location: accept number | number[] | {id, weight}[]
     if (Array.isArray(aud.location)) {
       if (typeof aud.location[0] === 'number') {
         audience.location = aud.location.map((id: number) => ({ id, weight: 0.2 }));
       } else {
-        audience.location = aud.location; // already weighted
+        audience.location = aud.location;
       }
     } else if (typeof aud.location === 'number') {
       audience.location = [{ id: aud.location, weight: 0.2 }];
@@ -270,9 +310,8 @@ export function useInfluencerSearch(platforms: Platform[]) {
     if (aud.language?.id) audience.language = { id: aud.language.id, weight: aud.language.weight ?? 0.2 };
     if (aud.gender?.id) audience.gender = { id: aud.gender.id, weight: aud.gender.weight ?? 0.5 };
 
-    // age list (weighted buckets) OR a simple range
     if (Array.isArray(aud.age) && aud.age.length) {
-      audience.age = aud.age; // e.g. [{id:'18-24', weight:0.3}, ...]
+      audience.age = aud.age;
     }
     if (aud.ageRange?.min != null && aud.ageRange?.max != null) {
       audience.ageRange = {
@@ -282,7 +321,6 @@ export function useInfluencerSearch(platforms: Platform[]) {
       };
     }
 
-    // IG-only audience extras
     if (hasIG) {
       if (Array.isArray(aud.interests) && aud.interests.length) {
         audience.interests = aud.interests.map((x: any) =>
@@ -314,7 +352,7 @@ export function useInfluencerSearch(platforms: Platform[]) {
       delete base.filter.influencer.interests;
       if (base.filter.audience) {
         delete base.filter.audience?.interests;
-        delete base.filter.audience?.credibility; // 🔒 ensure credibility is Instagram-only
+        delete base.filter.audience?.credibility;
       }
     }
 
@@ -336,7 +374,7 @@ export function useInfluencerSearch(platforms: Platform[]) {
       delete base.filter.influencer.views;
     }
 
-    // YT-only case → remove textTags
+    // YT-only case → remove textTags (hashtags/mentions don’t apply)
     if (hasYT && !(hasIG || hasTT)) {
       delete base.filter.influencer.textTags;
     }
@@ -381,7 +419,11 @@ export function useInfluencerSearch(platforms: Platform[]) {
     return data;
   };
 
-  const runSearch = useCallback(async (opts?: { reset?: boolean }) => {
+  // --- runSearch now accepts the query text ---
+  const runSearch = useCallback(async (opts?: { reset?: boolean; queryText?: string }) => {
+    const queryText = (opts?.queryText ?? '').trim();
+    if (queryText) lastQueryRef.current = queryText; // remember for pagination
+
     const { id } = startRequest();
 
     setSearchState(prev => ({
@@ -392,7 +434,7 @@ export function useInfluencerSearch(platforms: Platform[]) {
     }));
 
     try {
-      const payload = buildPayload({ page: 0, cursor: null });
+      const payload = buildPayload({ page: 0, cursor: null }, lastQueryRef.current);
       const data = await serverFetch(payload);
 
       const serverResults = Array.isArray(data?.results) ? data.results : [];
@@ -428,7 +470,7 @@ export function useInfluencerSearch(platforms: Platform[]) {
 
     try {
       const nextPage = typeof searchState.page === 'number' ? searchState.page + 1 : undefined;
-      const payload = buildPayload({ page: nextPage, cursor: searchState.nextCursor ?? undefined });
+      const payload = buildPayload({ page: nextPage, cursor: searchState.nextCursor ?? undefined }, lastQueryRef.current);
 
       const data = await serverFetch(payload);
 
@@ -474,7 +516,7 @@ export function useInfluencerSearch(platforms: Platform[]) {
     searchState,
     filters,
     updateFilter,
-    runSearch,     // filters-only
+    runSearch,
     loadMore,
     loadAll,
     resetFilters,

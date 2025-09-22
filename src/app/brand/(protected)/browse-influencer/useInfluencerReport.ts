@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
-import { Platform, ReportResponse } from '../types';
-import { normalizeReport } from '../utils';
+import { Platform, ReportResponse } from './types';
+import { normalizeReport } from './utils';
 
 interface UseInfluencerReportReturn {
   report: ReportResponse | null;
@@ -20,15 +20,15 @@ export function useInfluencerReport(): UseInfluencerReportReturn {
     try {
       setLoading(true);
       setError(null);
-      
+
       const q = new URLSearchParams({ platform, userId: id, calculationMethod: calc });
       const res = await fetch(`/api/modash/report?${q.toString()}`);
       const raw = await res.json();
-      
+
       if (!res.ok || raw?.error) {
         throw new Error(raw?.message || raw?.error || `Failed to fetch report (${res.status})`);
       }
-      
+
       const normalized = normalizeReport(raw as ReportResponse, platform);
       setReport(normalized);
       setRawReport(raw);
