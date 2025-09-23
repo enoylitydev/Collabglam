@@ -1,7 +1,7 @@
 import React from 'react';
 import { CheckCircle2, Lock, User as UserIcon, PlayCircle, ThumbsUp, Star } from 'lucide-react';
-import { Platform, InfluencerProfile } from '../../types';
-import { nfmt, pfmt } from '../../utils';
+import { Platform, InfluencerProfile } from '../types';
+import { nfmt, pfmt } from '../utils';
 import { Metric } from '../common/Metric';
 
 interface ProfileHeaderProps {

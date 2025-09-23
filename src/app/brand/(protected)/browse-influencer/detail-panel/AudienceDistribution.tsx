@@ -1,6 +1,6 @@
 import React from 'react';
-import { Audience, WeightedItem } from '../../types';
-import { topN, titleCase, nfmt, pct } from '../../utils';
+import { Audience, WeightedItem } from '../types';
+import { topN, titleCase, nfmt, pct } from '../utils';
 
 interface AudienceDistributionProps {
   audience?: Audience;

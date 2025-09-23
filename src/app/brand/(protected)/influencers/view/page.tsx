@@ -24,8 +24,8 @@ import {
   Eye,
   Heart,
   MessageCircle,
-  Share2,
   Star,
+  Send,
 } from "lucide-react";
 import {
   LineChart,
@@ -242,10 +242,10 @@ function titleCase(x?: string) {
 function prettyPlace(country?: string, city?: string, state?: string) {
   const cityPretty = city
     ? city
-        .split(" ")
-        .filter(Boolean)
-        .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
-        .join(" ")
+      .split(" ")
+      .filter(Boolean)
+      .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+      .join(" ")
     : "";
   const statePretty = state ? `, ${state}` : "";
   return `${country || "—"}${cityPretty ? ` · ${cityPretty}${statePretty}` : ""}`;
@@ -533,7 +533,7 @@ export default function InfluencerReportPage() {
         {data && (
           <div className="mb-6 rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
             <div className="flex items-start gap-4">
-               {header?.picture ? (
+              {header?.picture ? (
                 <img src={header.picture} alt={header.fullname || header.username} className="h-20 w-20 rounded-2xl object-cover" />
               ) : (
                 <div className="h-20 w-20 rounded-2xl bg-gray-100 flex items-center justify-center">
@@ -852,6 +852,14 @@ export default function InfluencerReportPage() {
             <div className="space-y-6">
               {/* About & audience */}
               <section className="rounded-3xl border border-gray-200 bg-white p-5">
+                <button
+                  onClick={handleFetch}
+                  disabled={!canFetch || loading}
+                  className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-[#FFA135] to-[#FF7236] px-4 py-2 text-white disabled:opacity-50"
+                >
+                  {loading ? <Send className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                  {loading ? "Fetching…" : "Message Now"}
+                </button>
                 <h2 className="text-base font-semibold mb-3">About & audience</h2>
                 <div className="space-y-2 text-sm">
                   <div className="flex items-center gap-2 text-gray-700">
@@ -909,38 +917,38 @@ export default function InfluencerReportPage() {
                 (topN(audience.audienceTypes, 6).length > 0) ||
                 (topN(audience.audienceReachability, 6).length > 0)
               )) && (
-                <section className="rounded-3xl border border-gray-200 bg-white p-5 space-y-4">
-                  <h2 className="text-base font-semibold">Audience breakdown</h2>
-                  {topN(audience.genders, 3).length > 0 && (
-                    <DistBlock title="Genders" items={topN(audience.genders, 3)} formatLabel={(it) => it.name || it.code || "—"} />
-                  )}
-                  {topN(audience.ages, 6).length > 0 && (
-                    <DistBlock title="Ages" items={topN(audience.ages, 6)} formatLabel={(it) => it.name || it.code || "—"} />
-                  )}
-                  {topN(audience.geoCountries, 6).length > 0 && (
-                    <DistBlock title="Top countries" items={topN(audience.geoCountries, 6)} formatLabel={(it) => it.name || it.code || "—"} />
-                  )}
-                  {topN(audience.languages, 6).length > 0 && (
-                    <DistBlock title="Languages" items={topN(audience.languages, 6)} formatLabel={(it) => it.name || it.code || "—"} />
-                  )}
-                  {topN(audience.ethnicities, 6).length > 0 && (
-                    <DistBlock title="Ethnicities" items={topN(audience.ethnicities, 6)} formatLabel={(it) => it.name || it.code || "—"} />
-                  )}
-                  {topN(audience.audienceTypes, 6).length > 0 && (
-                    <DistBlock title="Audience types" items={topN(audience.audienceTypes, 6)} formatLabel={(it) => titleCase(it.code || it.name || "")} />
-                  )}
-                  {topN(audience.audienceReachability, 6).length > 0 && (
-                    <DistBlock title="Reachability" items={topN(audience.audienceReachability, 6)} formatLabel={(it) => it.code || it.name || "—"} />
-                  )}
+                  <section className="rounded-3xl border border-gray-200 bg-white p-5 space-y-4">
+                    <h2 className="text-base font-semibold">Audience breakdown</h2>
+                    {topN(audience.genders, 3).length > 0 && (
+                      <DistBlock title="Genders" items={topN(audience.genders, 3)} formatLabel={(it) => it.name || it.code || "—"} />
+                    )}
+                    {topN(audience.ages, 6).length > 0 && (
+                      <DistBlock title="Ages" items={topN(audience.ages, 6)} formatLabel={(it) => it.name || it.code || "—"} />
+                    )}
+                    {topN(audience.geoCountries, 6).length > 0 && (
+                      <DistBlock title="Top countries" items={topN(audience.geoCountries, 6)} formatLabel={(it) => it.name || it.code || "—"} />
+                    )}
+                    {topN(audience.languages, 6).length > 0 && (
+                      <DistBlock title="Languages" items={topN(audience.languages, 6)} formatLabel={(it) => it.name || it.code || "—"} />
+                    )}
+                    {topN(audience.ethnicities, 6).length > 0 && (
+                      <DistBlock title="Ethnicities" items={topN(audience.ethnicities, 6)} formatLabel={(it) => it.name || it.code || "—"} />
+                    )}
+                    {topN(audience.audienceTypes, 6).length > 0 && (
+                      <DistBlock title="Audience types" items={topN(audience.audienceTypes, 6)} formatLabel={(it) => titleCase(it.code || it.name || "")} />
+                    )}
+                    {topN(audience.audienceReachability, 6).length > 0 && (
+                      <DistBlock title="Reachability" items={topN(audience.audienceReachability, 6)} formatLabel={(it) => it.code || it.name || "—"} />
+                    )}
 
-                  {data.profile.audienceExtra?.followersRange && (
-                    <div className="rounded-xl border border-gray-200 p-4">
-                      <div className="text-xs text-gray-500 mb-2">Audience followers range</div>
-                      <div className="text-sm font-medium">{formatNumber(data.profile.audienceExtra.followersRange.leftNumber)} – {formatNumber(data.profile.audienceExtra.followersRange.rightNumber)}</div>
-                    </div>
-                  )}
-                </section>
-              )}
+                    {data.profile.audienceExtra?.followersRange && (
+                      <div className="rounded-xl border border-gray-200 p-4">
+                        <div className="text-xs text-gray-500 mb-2">Audience followers range</div>
+                        <div className="text-sm font-medium">{formatNumber(data.profile.audienceExtra.followersRange.leftNumber)} – {formatNumber(data.profile.audienceExtra.followersRange.rightNumber)}</div>
+                      </div>
+                    )}
+                  </section>
+                )}
 
               {/* Brand affinity */}
               {Array.isArray(data.profile.brandAffinity) && data.profile.brandAffinity.length > 0 && (
@@ -1012,8 +1020,8 @@ function PeopleList({ people }: { people: MiniUser[] }) {
       {people.map((u, i) => (
         <a key={(u.userId || i) + "_p"} href={u.url || "#"} target="_blank" rel="noreferrer" className="flex items-center gap-3 rounded-xl border border-gray-200 p-2 hover:bg-gray-50">
           {u.picture ? (
-            <img src={u.picture} alt={u.fullname || u.username || ""}             className="h-8 w-8 rounded-md object-cover"
-          />
+            <img src={u.picture} alt={u.fullname || u.username || ""} className="h-8 w-8 rounded-md object-cover"
+            />
           ) : (
             <div className="h-8 w-8 rounded-md bg-gray-100 flex items-center justify-center">
               <User className="h-4 w-4 text-gray-400" />

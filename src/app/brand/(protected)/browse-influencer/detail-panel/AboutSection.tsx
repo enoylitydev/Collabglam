@@ -1,7 +1,7 @@
 import React from 'react';
 import { Globe2, Info, Mail } from 'lucide-react';
-import { InfluencerProfile } from '../../types';
-import { prettyPlace, titleCase, pfmt } from '../../utils';
+import { InfluencerProfile } from '../types';
+import { prettyPlace, titleCase, pfmt } from '../utils';
 import { Metric } from '../common/Metric';
 
 interface AboutSectionProps {

@@ -1,7 +1,6 @@
-import React, { useMemo } from 'react';
-import Link from 'next/link';
-import { ArrowLeft, AlertCircle, BarChart3, Send } from 'lucide-react';
-import { Platform, ReportResponse, StatHistoryEntry } from '../types';
+import React, { useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { ArrowLeft, AlertCircle, BarChart3, Send, MessageSquare } from 'lucide-react';
 import { ProfileHeader } from './detail-panel/ProfileHeader';
 import { StatsChart } from './detail-panel/StatsChart';
 import { ContentBreakdown } from './detail-panel/ContentBreakdown';
@@ -10,6 +9,10 @@ import { AboutSection } from './detail-panel/AboutSection';
 import { AudienceDistribution } from './detail-panel/AudienceDistribution';
 import { BrandAffinity } from './detail-panel/BrandAffinity';
 import { MiniUserSection } from './detail-panel/MiniUserSection';
+import type { ReportResponse, StatHistoryEntry } from './types';
+import { post2 } from '@/lib/api';
+
+export type Platform = 'instagram' | 'tiktok' | 'youtube';
 
 interface DetailPanelProps {
   open: boolean;
@@ -19,8 +22,12 @@ interface DetailPanelProps {
   data: ReportResponse | null;
   raw: any;
   platform: Platform | null;
-  calc: "median" | "average";
-  onChangeCalc: (calc: "median" | "average") => void;
+  emailExists?: boolean | null;
+  calc: 'median' | 'average';
+  onChangeCalc: (calc: 'median' | 'average') => void;
+  brandId: string;
+  /** 👇 new: passed from parent; use as-is */
+  handle: string | null;
 }
 
 export const DetailPanel = React.memo<DetailPanelProps>(({
@@ -31,9 +38,15 @@ export const DetailPanel = React.memo<DetailPanelProps>(({
   data,
   raw,
   platform,
+  emailExists,
   calc,
-  onChangeCalc
+  onChangeCalc,
+  brandId,
+  handle,
 }) => {
+  const router = useRouter();
+  const [sendingInvite, setSendingInvite] = useState(false);
+
   const statHistory = useMemo<StatHistoryEntry[]>(() => {
     const hist = data?.profile?.statsByContentType?.all?.statHistory || [];
     return hist?.slice(-12);
@@ -42,15 +55,84 @@ export const DetailPanel = React.memo<DetailPanelProps>(({
   if (!open) return null;
 
   const hasUserId = Boolean(data?.profile?.userId);
-  const inviteHref = hasUserId
-    ? `/brand/messages/new?to=${encodeURIComponent(String(data?.profile?.userId))}`
-    : '#';
+  const canAct = hasUserId && !loading;
+
+  const ctaTitle = hasUserId
+    ? (emailExists ? 'Message this creator' : 'Send invitation to collect email')
+    : 'Profile not ready';
+
+  const handleMessageNow = (e: React.MouseEvent) => {
+    if (!canAct) {
+      e.preventDefault();
+      return;
+    }
+    router.push('/brand/messages');
+  };
+
+  const handleSendInvitation = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    if (!canAct || sendingInvite) return;
+
+    // use the handle prop directly (no extractor)
+    const rawHandle = handle ? String(handle).trim() : '';
+    const safeHandle = rawHandle
+      ? (rawHandle.startsWith('@') ? rawHandle : `@${rawHandle}`)
+      : '';
+
+    if (!brandId) {
+      alert('Missing brandId. Please provide brandId to DetailPanel.');
+      return;
+    }
+    const normalizedPlatform = (platform ?? '').toLowerCase() as Platform;
+    if (!normalizedPlatform || !['youtube', 'instagram', 'tiktok'].includes(normalizedPlatform)) {
+      alert('Unsupported or missing platform.');
+      return;
+    }
+    if (!safeHandle || !/^[A-Za-z0-9._-]+$/.test(safeHandle.replace(/^@/, ''))) {
+      alert('Invalid or missing handle to send invitation.');
+      return;
+    }
+
+    try {
+      setSendingInvite(true);
+
+      type CreateMissingResp = {
+        status: 'saved' | 'exists';
+        data: {
+          missingId: string;
+          handle: string;
+          platform: 'youtube' | 'instagram' | 'tiktok';
+          brandId: string;
+          note: string | null;
+          createdAt: string;
+        };
+        message?: string;
+      };
+
+
+
+      const resp = await post2<CreateMissingResp>('/missing/create', {
+        handle: safeHandle,
+        platform: normalizedPlatform,
+        brandId
+      });
+
+      if (resp?.status === 'exists') alert('Already recorded.');
+      else if (resp?.status === 'saved') alert('Invitation recorded.');
+      else alert('Saved.');
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || err?.message || 'Failed to send invitation';
+      console.error(err);
+      alert(msg);
+    } finally {
+      setSendingInvite(false);
+    }
+  };
 
   return (
     <div className="fixed inset-0 z-[90]">
       <div className="absolute inset-0 bg-black/30" onClick={onClose} />
       <div className="absolute top-0 right-0 h-full w-full md:w-[50vw] bg-white shadow-2xl border-l rounded-none md:rounded-l-3xl overflow-y-auto">
-
         {/* Top Bar */}
         <div className="sticky top-0 z-10 bg-white/90 backdrop-blur border-b flex items-center gap-2 p-3">
           <button
@@ -61,9 +143,7 @@ export const DetailPanel = React.memo<DetailPanelProps>(({
           </button>
 
           <div className="ml-auto flex items-center gap-2">
-            <label className="text-xs font-semibold text-gray-700">
-              calculationMethod
-            </label>
+            <label className="text-xs font-semibold text-gray-700">calculationMethod</label>
             <select
               value={calc}
               onChange={(e) => onChangeCalc(e.target.value as any)}
@@ -73,45 +153,41 @@ export const DetailPanel = React.memo<DetailPanelProps>(({
               <option value="average">average</option>
             </select>
 
-            {/* Send Invitation Button */}
-            <Link
-              href={inviteHref}
-              onClick={(e) => {
-                if (!hasUserId || loading) e.preventDefault();
-              }}
-              aria-disabled={!hasUserId || loading}
-              className={`inline-flex items-center gap-2 rounded-xl px-3 py-1.5 text-sm font-medium text-white transition-opacity
-                ${hasUserId && !loading
-                  ? 'bg-gradient-to-r from-[#FFA135] to-[#FF7236] hover:opacity-90'
-                  : 'bg-gray-300 cursor-not-allowed pointer-events-none opacity-70'
-                }`}
-              title={hasUserId ? 'Send Invitation' : 'Profile not ready'}
-            >
-              <Send className="h-4 w-4" />
-              Send Invitation
-            </Link>
+            {emailExists ? (
+              <button
+                onClick={handleMessageNow}
+                disabled={!canAct}
+                title={ctaTitle}
+                className={`inline-flex items-center gap-2 rounded-xl px-3 py-1.5 text-sm font-medium text-white transition-opacity
+                  ${canAct ? 'bg-gradient-to-r from-[#FFA135] to-[#FF7236] hover:opacity-90'
+                    : 'bg-gray-300 cursor-not-allowed opacity-70'}`}
+              >
+                <MessageSquare className="h-4 w-4" />
+                Message Now
+              </button>
+            ) : (
+              <button
+                onClick={handleSendInvitation}
+                disabled={!canAct || sendingInvite}
+                title={ctaTitle}
+                className={`inline-flex items-center gap-2 rounded-xl px-3 py-1.5 text-sm font-medium text-white transition-opacity
+                  ${canAct && !sendingInvite ? 'bg-gradient-to-r from-[#FFA135] to-[#FF7236] hover:opacity-90'
+                    : 'bg-gray-300 cursor-not-allowed opacity-70'}`}
+              >
+                <Send className="h-4 w-4" />
+                {sendingInvite ? 'Sending…' : 'Send Invitation'}
+              </button>
+            )}
           </div>
         </div>
 
         <div className="p-5">
-          {/* Loading State */}
-          {loading && (
-            <LoadingState />
-          )}
+          {loading && <LoadingState />}
+          {error && <ErrorState error={error} />}
 
-          {/* Error State */}
-          {error && (
-            <ErrorState error={error} />
-          )}
-
-          {/* Content */}
           {data && (
             <div className="space-y-6">
-              <ProfileHeader
-                profile={data.profile}
-                platform={platform}
-              />
-
+              <ProfileHeader profile={data.profile} platform={platform} />
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 {/* Left Column */}
                 <div className="lg:col-span-2 space-y-6">
@@ -149,6 +225,7 @@ export const DetailPanel = React.memo<DetailPanelProps>(({
             </div>
           )}
         </div>
+
       </div>
     </div>
   );
@@ -156,7 +233,6 @@ export const DetailPanel = React.memo<DetailPanelProps>(({
 
 DetailPanel.displayName = 'DetailPanel';
 
-// Sub-components
 const LoadingState: React.FC = () => (
   <div className="rounded-2xl border border-dashed border-gray-300 bg-white p-8 text-center text-gray-600">
     <div className="mx-auto mb-3 flex h-16 w-16 items-center justify-center rounded-full bg-orange-100">

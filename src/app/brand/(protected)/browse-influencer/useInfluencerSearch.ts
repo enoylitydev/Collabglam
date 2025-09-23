@@ -1,4 +1,3 @@
-// useInfluencerSearch.tsx
 import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import type { Platform } from './filters';
 import { FilterState, createDefaultFilters } from './filters';
@@ -36,6 +35,9 @@ interface SearchState {
   hasMore: boolean;
 }
 
+const API_SEARCH_ENDPOINT = '/api/modash/search'; // your POST route (adjust if you mounted it at /api/modash/search)
+const API_USERS_ENDPOINT  = '/api/modash/users'; // your GET route using ?q=...&platforms=...
+
 const normalizePlatform = (p: unknown, fallback: Platform): Platform => {
   const s = typeof p === 'string' ? p.toLowerCase() : p;
   return (s === 'youtube' || s === 'instagram' || s === 'tiktok') ? (s as Platform) : fallback;
@@ -60,6 +62,26 @@ const dedupeClient = (list: NormalizedInfluencer[]) => {
   return Array.from(map.values());
 };
 
+// ---- free-text -> keywords/hashtags/mentions ----
+const parseSearchText = (text?: string) => {
+  const raw = (text ?? '').trim();
+  if (!raw) return { keywords: undefined as string | undefined, hashtags: [] as string[], mentions: [] as string[] };
+
+  const hashtagMatches = raw.match(/#[\p{L}\p{N}_]+/gu) || [];
+  const hashtags = Array.from(new Set(hashtagMatches.map(h => h.slice(1))));
+
+  const mentionMatches = (raw.match(/@[A-Za-z0-9._-]+/g) || []).filter(m => !m.includes('.'));
+  const mentions = Array.from(new Set(mentionMatches.map(m => m.slice(1))));
+
+  const keywords = raw
+    .replace(/#[\p{L}\p{N}_]+/gu, ' ')
+    .replace(/@[A-Za-z0-9._-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim() || undefined;
+
+  return { keywords, hashtags, mentions };
+};
+
 export function useInfluencerSearch(platforms: Platform[]) {
   const [searchState, setSearchState] = useState<SearchState>({
     loading: false,
@@ -71,6 +93,7 @@ export function useInfluencerSearch(platforms: Platform[]) {
 
   const reqIdRef = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
+  const lastQueryRef = useRef<string>(''); // remember last query for pagination
 
   useEffect(() => () => abortRef.current?.abort(), []);
 
@@ -88,6 +111,37 @@ export function useInfluencerSearch(platforms: Platform[]) {
     });
   }, []);
 
+  // ---- extract handles from text: bare token, @mention, or IG/TT/YT URLs ----
+  const extractHandles = useCallback((q: string): string[] => {
+    const set = new Set<string>();
+    const s = (q || '').trim();
+
+    // URLs
+    for (const m of s.matchAll(/(?:instagram\.com\/|tiktok\.com\/@|youtube\.com\/@)([A-Za-z0-9._-]{2,30})/gi)) {
+      set.add(m[1]);
+    }
+
+    // @mentions (avoid emails)
+    for (const m of s.matchAll(/(^|\s)@([A-Za-z0-9._-]{2,30})\b/g)) {
+      set.add(m[2]);
+    }
+
+    // single bare token like "techwiser"
+    if (/^[A-Za-z0-9._-]{2,30}$/.test(s)) set.add(s.replace(/^@/, ''));
+
+    return Array.from(set);
+  }, []);
+
+  // ---- GET /api/modash?q=a,b,c&platforms=... (preflight usernames) ----
+  const fetchExactUsers = useCallback(async (handles: string[]) => {
+    if (!handles.length) return [];
+    const resp = await fetch(
+      `${API_USERS_ENDPOINT}?q=${encodeURIComponent(handles.join(','))}&platforms=${platforms.join(',')}`
+    );
+    const data = await resp.json().catch(() => ({}));
+    return Array.isArray(data?.results) ? data.results : [];
+  }, [platforms]);
+
   const payloadDefaults = useMemo(() => ({
     followersMin: 0,
     followersMax: 50_000_000,
@@ -96,7 +150,10 @@ export function useInfluencerSearch(platforms: Platform[]) {
     credibility: 0.5 as Percent01,
   }), []);
 
-  const buildPayload = useCallback((options?: { page?: number; cursor?: string | null }) => {
+  const buildPayload = useCallback((
+    options?: { page?: number; cursor?: string | null },
+    searchText?: string
+  ) => {
     const inf: any = (filters as any).influencer || {};
     const aud: any = (filters as any).audience || {};
 
@@ -116,21 +173,42 @@ export function useInfluencerSearch(platforms: Platform[]) {
       isVerified: !!inf.isVerified,
     };
 
-    // Common & optional influencer filters
+    // ---- free-text mapping ----
+    const { keywords: qKeywords, hashtags, mentions } = parseSearchText(searchText);
+    const baseKeywords = typeof inf.keywords === 'string' && inf.keywords.trim() ? inf.keywords.trim() : undefined;
+    const mergedKeywords = [baseKeywords, qKeywords].filter(Boolean).join(', ').trim() || undefined;
+    if (mergedKeywords) influencer.keywords = mergedKeywords;
+
+    // hashtags/mentions -> textTags (IG/TT only)
+    const parsedTags = [
+      ...hashtags.map(h => ({ type: 'hashtag', value: h })),
+      ...mentions.map(m => ({ type: 'mention', value: m })),
+    ];
+    if ((hasIG || hasTT) && parsedTags.length) {
+      const pre = Array.isArray(inf.textTags) ? inf.textTags : [];
+      const seen = new Set<string>();
+      const tags = [...pre, ...parsedTags].filter(t => {
+        const key = `${t.type}:${t.value}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+      if (tags.length) influencer.textTags = tags;
+    }
+
+    // ---- optional influencer filters ----
     if (typeof inf.engagementRate === 'number') {
       influencer.engagementRate = Math.max(0, Math.min(1, inf.engagementRate));
     }
     if (inf.language) influencer.language = inf.language;
     if (inf.gender) influencer.gender = inf.gender;
 
-    // Use 'lastposted' to match the Modash examples
     if (typeof inf.lastPostedWithinDays === 'number') {
       influencer.lastposted = Math.max(0, Math.floor(inf.lastPostedWithinDays));
     } else if (typeof inf.lastposted === 'number') {
       influencer.lastposted = Math.max(0, Math.floor(inf.lastposted));
     }
 
-    // Followers growth rate (percent → fraction)
     if (typeof inf.followersGrowthRatePct === 'number') {
       influencer.followersGrowthRate = {
         interval: 'i6months',
@@ -145,7 +223,6 @@ export function useInfluencerSearch(platforms: Platform[]) {
     }
 
     if (typeof inf.bio === 'string' && inf.bio.trim()) influencer.bio = inf.bio.trim();
-    if (typeof inf.keywords === 'string' && inf.keywords.trim()) influencer.keywords = inf.keywords.trim();
 
     if (inf.hasContactDetails === true) {
       influencer.hasContactDetails = [{ contactType: 'email', filterAction: 'must' as const }];
@@ -158,7 +235,6 @@ export function useInfluencerSearch(platforms: Platform[]) {
       };
     }
 
-    // relevance / audienceRelevance / filterOperations passthrough
     if (Array.isArray(inf.relevance) && inf.relevance.length) {
       influencer.relevance = inf.relevance;
     }
@@ -169,7 +245,7 @@ export function useInfluencerSearch(platforms: Platform[]) {
       influencer.filterOperations = inf.filterOperations;
     }
 
-    // ---------- Common "Video Plays / Views" control ----------
+    // ---- views / reels ----
     const setViews = (min?: number, max?: number) => {
       if (min == null && max == null) return;
       influencer.views = {
@@ -185,19 +261,15 @@ export function useInfluencerSearch(platforms: Platform[]) {
       };
     };
 
-    // If user filled the common control, map it:
     if (inf.videoPlaysMin != null || inf.videoPlaysMax != null) {
       if (hasIG) setReels(inf.videoPlaysMin, inf.videoPlaysMax);
       if (hasTT || hasYT) setViews(inf.videoPlaysMin, inf.videoPlaysMax);
     }
 
-    // ---------- Platform-specific overrides ----------
-    // IG override for Reels Plays
     if (hasIG && (inf.reelsPlaysMin != null || inf.reelsPlaysMax != null)) {
       setReels(inf.reelsPlaysMin, inf.reelsPlaysMax);
     }
 
-    // TT/YT: combine per-platform views into one "views" range
     const ttMin = hasTT ? inf.ttViewsMin : undefined;
     const ttMax = hasTT ? inf.ttViewsMax : undefined;
     const ytMin = hasYT ? inf.ytViewsMin : undefined;
@@ -248,20 +320,14 @@ export function useInfluencerSearch(platforms: Platform[]) {
       }
     }
 
-    // IG + TT only: textTags
-    if ((hasIG || hasTT) && Array.isArray(inf.textTags) && inf.textTags.length) {
-      influencer.textTags = inf.textTags; // [{type:'hashtag'|'mention', value: string}]
-    }
-
     // ---------- Audience ----------
     const audience: any = {};
 
-    // location: accept number | number[] | {id, weight}[]
     if (Array.isArray(aud.location)) {
       if (typeof aud.location[0] === 'number') {
         audience.location = aud.location.map((id: number) => ({ id, weight: 0.2 }));
       } else {
-        audience.location = aud.location; // already weighted
+        audience.location = aud.location;
       }
     } else if (typeof aud.location === 'number') {
       audience.location = [{ id: aud.location, weight: 0.2 }];
@@ -270,9 +336,8 @@ export function useInfluencerSearch(platforms: Platform[]) {
     if (aud.language?.id) audience.language = { id: aud.language.id, weight: aud.language.weight ?? 0.2 };
     if (aud.gender?.id) audience.gender = { id: aud.gender.id, weight: aud.gender.weight ?? 0.5 };
 
-    // age list (weighted buckets) OR a simple range
     if (Array.isArray(aud.age) && aud.age.length) {
-      audience.age = aud.age; // e.g. [{id:'18-24', weight:0.3}, ...]
+      audience.age = aud.age;
     }
     if (aud.ageRange?.min != null && aud.ageRange?.max != null) {
       audience.ageRange = {
@@ -282,7 +347,6 @@ export function useInfluencerSearch(platforms: Platform[]) {
       };
     }
 
-    // IG-only audience extras
     if (hasIG) {
       if (Array.isArray(aud.interests) && aud.interests.length) {
         audience.interests = aud.interests.map((x: any) =>
@@ -304,7 +368,7 @@ export function useInfluencerSearch(platforms: Platform[]) {
       },
     };
 
-    // Strip IG-only fields if IG not selected
+    // Strip IG-only if IG not selected
     if (!hasIG) {
       delete base.filter.influencer.reelsPlays;
       delete base.filter.influencer.hasSponsoredPosts;
@@ -314,32 +378,24 @@ export function useInfluencerSearch(platforms: Platform[]) {
       delete base.filter.influencer.interests;
       if (base.filter.audience) {
         delete base.filter.audience?.interests;
-        delete base.filter.audience?.credibility; // 🔒 ensure credibility is Instagram-only
+        delete base.filter.audience?.credibility;
       }
     }
-
-    // Strip TT-only extras if TT not selected
+    // Strip TT-only if TT not selected
     if (!hasTT) {
       delete base.filter.influencer.likesGrowthRate;
       delete base.filter.influencer.shares;
       delete base.filter.influencer.saves;
     }
-
-    // Strip YT-only extras if YT not selected
+    // Strip YT-only if YT not selected
     if (!hasYT) {
       delete base.filter.influencer.isOfficialArtist;
       delete base.filter.influencer.viewsGrowthRate;
     }
-
-    // No TT/YT → remove views
-    if (!(hasTT || hasYT)) {
-      delete base.filter.influencer.views;
-    }
-
+    // No TT/YT → views irrelevant
+    if (!(hasTT || hasYT)) delete base.filter.influencer.views;
     // YT-only case → remove textTags
-    if (hasYT && !(hasIG || hasTT)) {
-      delete base.filter.influencer.textTags;
-    }
+    if (hasYT && !(hasIG || hasTT)) delete base.filter.influencer.textTags;
 
     if (options?.cursor) base.cursor = options.cursor;
     return base;
@@ -367,8 +423,7 @@ export function useInfluencerSearch(platforms: Platform[]) {
   };
 
   const serverFetch = async (payload: any) => {
-    const endpoint = '/api/modash/search';
-    const resp = await fetch(endpoint, {
+    const resp = await fetch(API_SEARCH_ENDPOINT, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ platforms, body: payload }),
@@ -381,9 +436,12 @@ export function useInfluencerSearch(platforms: Platform[]) {
     return data;
   };
 
-  const runSearch = useCallback(async (opts?: { reset?: boolean }) => {
-    const { id } = startRequest();
+  // --- main search: combines exact username preflight + discovery ---
+  const runSearch = useCallback(async (opts?: { reset?: boolean; queryText?: string }) => {
+    const queryText = (opts?.queryText ?? '').trim();
+    if (queryText) lastQueryRef.current = queryText;
 
+    const { id } = startRequest();
     setSearchState(prev => ({
       ...prev,
       loading: true,
@@ -392,7 +450,21 @@ export function useInfluencerSearch(platforms: Platform[]) {
     }));
 
     try {
-      const payload = buildPayload({ page: 0, cursor: null });
+      // 1) Exact username preflight
+      let exactUsers: NormalizedInfluencer[] = [];
+      const handles = extractHandles(lastQueryRef.current);
+      if (handles.length) {
+        try {
+          const hits = await fetchExactUsers(handles);
+          exactUsers = hits.map((x: any) => ({
+            ...x,
+            platform: normalizePlatform((x as any).platform, platforms[0] ?? 'youtube'),
+          }));
+        } catch {}
+      }
+
+      // 2) Discovery (name/keywords/bio/content)
+      const payload = buildPayload({ page: 0, cursor: null }, lastQueryRef.current);
       const data = await serverFetch(payload);
 
       const serverResults = Array.isArray(data?.results) ? data.results : [];
@@ -400,11 +472,13 @@ export function useInfluencerSearch(platforms: Platform[]) {
         ...r,
         platform: normalizePlatform((r as any).platform, platforms[0] ?? 'youtube'),
       }));
-      const unique = dedupeClient(normalized);
+
+      // 3) Merge: username hits first, then discovery; de-dupe
+      const unique = dedupeClient([...exactUsers, ...normalized]);
 
       const { page, totalPages, nextCursor, hasMore } = parseServerPageInfo(data);
-
       if (id !== reqIdRef.current) return;
+
       setSearchState({
         loading: false,
         results: unique,
@@ -419,7 +493,7 @@ export function useInfluencerSearch(platforms: Platform[]) {
       if (e?.name === 'AbortError') return;
       setSearchState(prev => ({ ...prev, loading: false, error: e?.message || 'Search failed' }));
     }
-  }, [platforms, buildPayload]);
+  }, [platforms, buildPayload, extractHandles, fetchExactUsers]);
 
   const loadMore = useCallback(async () => {
     if (!searchState.hasMore || searchState.loading) return;
@@ -428,7 +502,10 @@ export function useInfluencerSearch(platforms: Platform[]) {
 
     try {
       const nextPage = typeof searchState.page === 'number' ? searchState.page + 1 : undefined;
-      const payload = buildPayload({ page: nextPage, cursor: searchState.nextCursor ?? undefined });
+      const payload = buildPayload(
+        { page: nextPage, cursor: searchState.nextCursor ?? undefined },
+        lastQueryRef.current
+      );
 
       const data = await serverFetch(payload);
 
@@ -457,7 +534,7 @@ export function useInfluencerSearch(platforms: Platform[]) {
       if (e?.name === 'AbortError') return;
       setSearchState(prev => ({ ...prev, loading: false, error: e?.message || 'Search failed' }));
     }
-  }, [searchState, platforms, buildPayload]);
+  }, [searchState, buildPayload]);
 
   const loadAll = useCallback(async () => {
     let safety = 200;
@@ -474,7 +551,7 @@ export function useInfluencerSearch(platforms: Platform[]) {
     searchState,
     filters,
     updateFilter,
-    runSearch,     // filters-only
+    runSearch,
     loadMore,
     loadAll,
     resetFilters,

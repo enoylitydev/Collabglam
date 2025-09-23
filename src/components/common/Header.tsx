@@ -9,7 +9,7 @@ const Header: React.FC = () => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   useEffect(() => {
-    const handleScroll = () => setIsScrolled(window.scrollY > 50);
+    const handleScroll = () => setIsScrolled(window.scrollY > 10);
     window.addEventListener('scroll', handleScroll);
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
@@ -50,10 +50,10 @@ const Header: React.FC = () => {
           {/* Desktop Navigation */}
           <nav className="hidden lg:flex items-center space-x-8">
             {navLinks.map(link => (
-<a
-  key={link.label}
-  href={link.href}
-  className="
+              <a
+                key={link.label}
+                href={link.href}
+                className="
     font-medium text-gray-700
     transition-colors duration-200
     hover:text-transparent
@@ -62,9 +62,9 @@ const Header: React.FC = () => {
     hover:to-[#FF7236]
     hover:bg-clip-text
   "
->
-  {link.label}
-</a>
+              >
+                {link.label}
+              </a>
 
             ))}
           </nav>
@@ -109,7 +109,11 @@ const Header: React.FC = () => {
               <a
                 key={link.label}
                 href={link.href}
-                className="block py-2 text-gray-700 font-medium hover:text-[#ef2f5b] transition-colors"
+                className="block py-2 font-medium hover:text-transparent
+    hover:bg-gradient-to-r
+    hover:from-[#FFA135]
+    hover:to-[#FF7236]
+    hover:bg-clip-text transition-colors"
                 onClick={() => setIsMobileMenuOpen(false)}
               >
                 {link.label}
@@ -118,7 +122,7 @@ const Header: React.FC = () => {
             <div className="pt-4 space-y-3">
               <button
                 onClick={() => navigate('/login')}
-                className="w-full py-3 bg-[#ef2f5b] text-white font-medium rounded-lg hover:bg-[#c21f4f] transition"
+                className="w-full py-3 bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white font-medium rounded-lg hover:bg-[#c21f4f] transition"
               >
                 Get Started
               </button>
