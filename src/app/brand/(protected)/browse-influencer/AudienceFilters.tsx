@@ -7,7 +7,7 @@ import type { AudienceFilters as AF, Platform } from './filters';
 interface Props {
   filters: AF;
   updateFilter: (path: string, value: any) => void;
-  platforms?: Platform[]; // <-- NEW
+  platforms?: Platform[];
 }
 
 type Country = {
@@ -59,6 +59,34 @@ export function AudienceFilters({ filters, updateFilter, platforms }: Props) {
     const n = Number(v);
     return Number.isFinite(n) ? String(n) : '';
   }, [filters]);
+
+  // helpers for age range with no defaults
+  const parseNum = (s: string) => (s === '' ? undefined : Number(s));
+
+  const handleAgeMinChange = (raw: string) => {
+    const min = parseNum(raw);
+    const current = (filters as any).ageRange ?? {};
+    const max = current.max;
+    if (min == null && (max == null || max === '')) {
+      updateFilter('ageRange', undefined); // remove filter entirely
+    } else {
+      updateFilter('ageRange', { min, max });
+    }
+  };
+
+  const handleAgeMaxChange = (raw: string) => {
+    const max = parseNum(raw);
+    const current = (filters as any).ageRange ?? {};
+    const min = current.min;
+    if (max == null && (min == null || min === '')) {
+      updateFilter('ageRange', undefined); // remove filter entirely
+    } else {
+      updateFilter('ageRange', { min, max });
+    }
+  };
+
+  const credibilityValue = filters.credibility ?? undefined;
+  const shownCredibility = credibilityValue != null ? Math.floor(credibilityValue * 100) : null;
 
   return (
     <div className="space-y-4 mb-4">
@@ -116,7 +144,7 @@ export function AudienceFilters({ filters, updateFilter, platforms }: Props) {
         )}
       </div>
 
-      {/* Audience Age Range */}
+      {/* Audience Age Range (no defaults) */}
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-2">Audience Age Range</label>
         <div className="grid grid-cols-2 gap-3">
@@ -127,12 +155,7 @@ export function AudienceFilters({ filters, updateFilter, platforms }: Props) {
             className="w-full px-3 py-2 border rounded-md text-sm"
             placeholder="Min"
             value={(filters as any).ageRange?.min ?? ''}
-            onChange={(e) =>
-              updateFilter('ageRange', {
-                min: Number(e.target.value || 13),
-                max: (filters as any).ageRange?.max ?? 100,
-              })
-            }
+            onChange={(e) => handleAgeMinChange(e.target.value)}
           />
           <input
             type="number"
@@ -141,12 +164,7 @@ export function AudienceFilters({ filters, updateFilter, platforms }: Props) {
             className="w-full px-3 py-2 border rounded-md text-sm"
             placeholder="Max"
             value={(filters as any).ageRange?.max ?? ''}
-            onChange={(e) =>
-              updateFilter('ageRange', {
-                min: (filters as any).ageRange?.min ?? 13,
-                max: Number(e.target.value || 100),
-              })
-            }
+            onChange={(e) => handleAgeMaxChange(e.target.value)}
           />
         </div>
       </div>
@@ -168,22 +186,26 @@ export function AudienceFilters({ filters, updateFilter, platforms }: Props) {
         </select>
       </div>
 
-      {/* Audience Credibility — IG only */}
+      {/* Audience Credibility — IG only; no default */}
       {hasInstagram && (
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">Min Audience Credibility</label>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Min Audience Credibility
+          </label>
           <input
             type="range"
             min={0}
             max={1}
             step={0.05}
             className="w-full"
-            value={filters.credibility ?? 0.75}
+            value={credibilityValue ?? 0}
             onChange={(e) => updateFilter('credibility', Number(e.target.value))}
           />
           <div className="flex justify-between text-xs text-gray-500">
             <span>0%</span>
-            <span className="font-medium">{(((filters.credibility ?? 0.75) * 100) | 0)}%</span>
+            <span className="font-medium">
+              {shownCredibility != null ? `${shownCredibility}%` : '—'}
+            </span>
             <span>100%</span>
           </div>
         </div>
