@@ -16,7 +16,7 @@ type Country = {
   title: string;
 };
 
-const API_URL = 'http://localhost:5000/modash/getAll';
+const API_URL = 'https://api.collabglam.com/modash/getAll';
 
 export function AudienceFilters({ filters, updateFilter, platforms }: Props) {
   const [countries, setCountries] = useState<Country[]>([]);
