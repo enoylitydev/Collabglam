@@ -25,7 +25,8 @@ const navItems = [
   { label: "Subscriptions", href: "/admin/subscriptions", icon: DollarSign },
   { label: "Messages", href: "/admin/messages", icon: MessageCircleIcon },
   { label: "E-Mails", href: "/admin/emails", icon: MailCheckIcon },
-   { label: "Influencer-Email", href: "/admin/influencerdetails", icon: MailCheckIcon },
+  { label: "Influencer-Email", href: "/admin/influencerdetails", icon: MailCheckIcon },
+  { label: "Missing-Email", href: "/admin/missingemail", icon: MailCheckIcon },
 ];
 
 const documentLinks = [
@@ -67,17 +68,15 @@ export default function AdminSidebar() {
         key={href}
         href={href}
         onClick={onClick}
-        className={`flex items-center px-3 py-2 rounded-lg text-sm font-medium transition-colors focus:outline-none ${
-          active
+        className={`flex items-center px-3 py-2 rounded-lg text-sm font-medium transition-colors focus:outline-none ${active
             ? "bg-[#ef2f5b]/20 text-[#ef2f5b]"
             : "text-gray-700 hover:bg-gray-100 hover:text-gray-900"
-        }`}
+          }`}
       >
         {Icon && (
           <Icon
-            className={`mr-3 h-5 w-5 transition-colors ${
-              active ? "text-[#ef2f5b]" : "text-gray-400 hover:text-gray-500"
-            }`}
+            className={`mr-3 h-5 w-5 transition-colors ${active ? "text-[#ef2f5b]" : "text-gray-400 hover:text-gray-500"
+              }`}
           />
         )}
         <span className="whitespace-nowrap flex-1">{label}</span>
@@ -116,11 +115,10 @@ export default function AdminSidebar() {
                   onClick={() => {
                     if (isMobile) setDrawerOpen(false);
                   }}
-                  className={`block px-3 py-1 text-sm rounded-lg transition-colors focus:outline-none ${
-                    active
+                  className={`block px-3 py-1 text-sm rounded-lg transition-colors focus:outline-none ${active
                       ? "bg-[#ef2f5b]/20 text-[#ef2f5b]"
                       : "text-gray-600 hover:bg-gray-100 hover:text-gray-800"
-                  }`}
+                    }`}
                 >
                   {label}
                 </Link>
