@@ -35,6 +35,9 @@ interface SearchState {
   hasMore: boolean;
 }
 
+const API_SEARCH_ENDPOINT = '/api/modash/search'; // your POST route (adjust if you mounted it at /api/modash/search)
+const API_USERS_ENDPOINT  = '/api/modash/users'; // your GET route using ?q=...&platforms=...
+
 const normalizePlatform = (p: unknown, fallback: Platform): Platform => {
   const s = typeof p === 'string' ? p.toLowerCase() : p;
   return (s === 'youtube' || s === 'instagram' || s === 'tiktok') ? (s as Platform) : fallback;
@@ -59,20 +62,17 @@ const dedupeClient = (list: NormalizedInfluencer[]) => {
   return Array.from(map.values());
 };
 
-// ---- helpers to parse free-text into keywords and tags ----
+// ---- free-text -> keywords/hashtags/mentions ----
 const parseSearchText = (text?: string) => {
   const raw = (text ?? '').trim();
   if (!raw) return { keywords: undefined as string | undefined, hashtags: [] as string[], mentions: [] as string[] };
 
-  // Capture #hashtags (unicode letters/numbers/_)
   const hashtagMatches = raw.match(/#[\p{L}\p{N}_]+/gu) || [];
-  const hashtags = Array.from(new Set(hashtagMatches.map(h => h.slice(1)))); // strip '#'
+  const hashtags = Array.from(new Set(hashtagMatches.map(h => h.slice(1))));
 
-  // Capture simple @mentions (avoid emails by skipping if it contains a '.')
   const mentionMatches = (raw.match(/@[A-Za-z0-9._-]+/g) || []).filter(m => !m.includes('.'));
-  const mentions = Array.from(new Set(mentionMatches.map(m => m.slice(1)))); // strip '@'
+  const mentions = Array.from(new Set(mentionMatches.map(m => m.slice(1))));
 
-  // Remove tags from keywords string to avoid duplication
   const keywords = raw
     .replace(/#[\p{L}\p{N}_]+/gu, ' ')
     .replace(/@[A-Za-z0-9._-]+/g, ' ')
@@ -93,7 +93,7 @@ export function useInfluencerSearch(platforms: Platform[]) {
 
   const reqIdRef = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
-  const lastQueryRef = useRef<string>(''); // <-- remember last query for pagination
+  const lastQueryRef = useRef<string>(''); // remember last query for pagination
 
   useEffect(() => () => abortRef.current?.abort(), []);
 
@@ -110,6 +110,37 @@ export function useInfluencerSearch(platforms: Platform[]) {
       return next as FilterState;
     });
   }, []);
+
+  // ---- extract handles from text: bare token, @mention, or IG/TT/YT URLs ----
+  const extractHandles = useCallback((q: string): string[] => {
+    const set = new Set<string>();
+    const s = (q || '').trim();
+
+    // URLs
+    for (const m of s.matchAll(/(?:instagram\.com\/|tiktok\.com\/@|youtube\.com\/@)([A-Za-z0-9._-]{2,30})/gi)) {
+      set.add(m[1]);
+    }
+
+    // @mentions (avoid emails)
+    for (const m of s.matchAll(/(^|\s)@([A-Za-z0-9._-]{2,30})\b/g)) {
+      set.add(m[2]);
+    }
+
+    // single bare token like "techwiser"
+    if (/^[A-Za-z0-9._-]{2,30}$/.test(s)) set.add(s.replace(/^@/, ''));
+
+    return Array.from(set);
+  }, []);
+
+  // ---- GET /api/modash?q=a,b,c&platforms=... (preflight usernames) ----
+  const fetchExactUsers = useCallback(async (handles: string[]) => {
+    if (!handles.length) return [];
+    const resp = await fetch(
+      `${API_USERS_ENDPOINT}?q=${encodeURIComponent(handles.join(','))}&platforms=${platforms.join(',')}`
+    );
+    const data = await resp.json().catch(() => ({}));
+    return Array.isArray(data?.results) ? data.results : [];
+  }, [platforms]);
 
   const payloadDefaults = useMemo(() => ({
     followersMin: 0,
@@ -144,19 +175,17 @@ export function useInfluencerSearch(platforms: Platform[]) {
 
     // ---- free-text mapping ----
     const { keywords: qKeywords, hashtags, mentions } = parseSearchText(searchText);
-    // existing keywords in filters, if any
     const baseKeywords = typeof inf.keywords === 'string' && inf.keywords.trim() ? inf.keywords.trim() : undefined;
     const mergedKeywords = [baseKeywords, qKeywords].filter(Boolean).join(', ').trim() || undefined;
     if (mergedKeywords) influencer.keywords = mergedKeywords;
 
-    // Build textTags from parsed hashtags/mentions (IG/TT only)
+    // hashtags/mentions -> textTags (IG/TT only)
     const parsedTags = [
       ...hashtags.map(h => ({ type: 'hashtag', value: h })),
       ...mentions.map(m => ({ type: 'mention', value: m })),
     ];
     if ((hasIG || hasTT) && parsedTags.length) {
       const pre = Array.isArray(inf.textTags) ? inf.textTags : [];
-      // simple de-dupe by "type:value"
       const seen = new Set<string>();
       const tags = [...pre, ...parsedTags].filter(t => {
         const key = `${t.type}:${t.value}`;
@@ -167,7 +196,7 @@ export function useInfluencerSearch(platforms: Platform[]) {
       if (tags.length) influencer.textTags = tags;
     }
 
-    // ---- Common & optional influencer filters ----
+    // ---- optional influencer filters ----
     if (typeof inf.engagementRate === 'number') {
       influencer.engagementRate = Math.max(0, Math.min(1, inf.engagementRate));
     }
@@ -216,7 +245,7 @@ export function useInfluencerSearch(platforms: Platform[]) {
       influencer.filterOperations = inf.filterOperations;
     }
 
-    // ---------- Common "Video Plays / Views" control ----------
+    // ---- views / reels ----
     const setViews = (min?: number, max?: number) => {
       if (min == null && max == null) return;
       influencer.views = {
@@ -232,18 +261,15 @@ export function useInfluencerSearch(platforms: Platform[]) {
       };
     };
 
-    // If user filled the common control, map it:
     if (inf.videoPlaysMin != null || inf.videoPlaysMax != null) {
       if (hasIG) setReels(inf.videoPlaysMin, inf.videoPlaysMax);
       if (hasTT || hasYT) setViews(inf.videoPlaysMin, inf.videoPlaysMax);
     }
 
-    // ---------- Platform-specific overrides ----------
     if (hasIG && (inf.reelsPlaysMin != null || inf.reelsPlaysMax != null)) {
       setReels(inf.reelsPlaysMin, inf.reelsPlaysMax);
     }
 
-    // TT/YT: combine per-platform views into one "views" range
     const ttMin = hasTT ? inf.ttViewsMin : undefined;
     const ttMax = hasTT ? inf.ttViewsMax : undefined;
     const ytMin = hasYT ? inf.ytViewsMin : undefined;
@@ -342,7 +368,7 @@ export function useInfluencerSearch(platforms: Platform[]) {
       },
     };
 
-    // Strip IG-only fields if IG not selected
+    // Strip IG-only if IG not selected
     if (!hasIG) {
       delete base.filter.influencer.reelsPlays;
       delete base.filter.influencer.hasSponsoredPosts;
@@ -355,29 +381,21 @@ export function useInfluencerSearch(platforms: Platform[]) {
         delete base.filter.audience?.credibility;
       }
     }
-
-    // Strip TT-only extras if TT not selected
+    // Strip TT-only if TT not selected
     if (!hasTT) {
       delete base.filter.influencer.likesGrowthRate;
       delete base.filter.influencer.shares;
       delete base.filter.influencer.saves;
     }
-
-    // Strip YT-only extras if YT not selected
+    // Strip YT-only if YT not selected
     if (!hasYT) {
       delete base.filter.influencer.isOfficialArtist;
       delete base.filter.influencer.viewsGrowthRate;
     }
-
-    // No TT/YT → remove views
-    if (!(hasTT || hasYT)) {
-      delete base.filter.influencer.views;
-    }
-
-    // YT-only case → remove textTags (hashtags/mentions don’t apply)
-    if (hasYT && !(hasIG || hasTT)) {
-      delete base.filter.influencer.textTags;
-    }
+    // No TT/YT → views irrelevant
+    if (!(hasTT || hasYT)) delete base.filter.influencer.views;
+    // YT-only case → remove textTags
+    if (hasYT && !(hasIG || hasTT)) delete base.filter.influencer.textTags;
 
     if (options?.cursor) base.cursor = options.cursor;
     return base;
@@ -405,8 +423,7 @@ export function useInfluencerSearch(platforms: Platform[]) {
   };
 
   const serverFetch = async (payload: any) => {
-    const endpoint = '/api/modash/search';
-    const resp = await fetch(endpoint, {
+    const resp = await fetch(API_SEARCH_ENDPOINT, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ platforms, body: payload }),
@@ -419,13 +436,12 @@ export function useInfluencerSearch(platforms: Platform[]) {
     return data;
   };
 
-  // --- runSearch now accepts the query text ---
+  // --- main search: combines exact username preflight + discovery ---
   const runSearch = useCallback(async (opts?: { reset?: boolean; queryText?: string }) => {
     const queryText = (opts?.queryText ?? '').trim();
-    if (queryText) lastQueryRef.current = queryText; // remember for pagination
+    if (queryText) lastQueryRef.current = queryText;
 
     const { id } = startRequest();
-
     setSearchState(prev => ({
       ...prev,
       loading: true,
@@ -434,6 +450,20 @@ export function useInfluencerSearch(platforms: Platform[]) {
     }));
 
     try {
+      // 1) Exact username preflight
+      let exactUsers: NormalizedInfluencer[] = [];
+      const handles = extractHandles(lastQueryRef.current);
+      if (handles.length) {
+        try {
+          const hits = await fetchExactUsers(handles);
+          exactUsers = hits.map((x: any) => ({
+            ...x,
+            platform: normalizePlatform((x as any).platform, platforms[0] ?? 'youtube'),
+          }));
+        } catch {}
+      }
+
+      // 2) Discovery (name/keywords/bio/content)
       const payload = buildPayload({ page: 0, cursor: null }, lastQueryRef.current);
       const data = await serverFetch(payload);
 
@@ -442,11 +472,13 @@ export function useInfluencerSearch(platforms: Platform[]) {
         ...r,
         platform: normalizePlatform((r as any).platform, platforms[0] ?? 'youtube'),
       }));
-      const unique = dedupeClient(normalized);
+
+      // 3) Merge: username hits first, then discovery; de-dupe
+      const unique = dedupeClient([...exactUsers, ...normalized]);
 
       const { page, totalPages, nextCursor, hasMore } = parseServerPageInfo(data);
-
       if (id !== reqIdRef.current) return;
+
       setSearchState({
         loading: false,
         results: unique,
@@ -461,7 +493,7 @@ export function useInfluencerSearch(platforms: Platform[]) {
       if (e?.name === 'AbortError') return;
       setSearchState(prev => ({ ...prev, loading: false, error: e?.message || 'Search failed' }));
     }
-  }, [platforms, buildPayload]);
+  }, [platforms, buildPayload, extractHandles, fetchExactUsers]);
 
   const loadMore = useCallback(async () => {
     if (!searchState.hasMore || searchState.loading) return;
@@ -470,7 +502,10 @@ export function useInfluencerSearch(platforms: Platform[]) {
 
     try {
       const nextPage = typeof searchState.page === 'number' ? searchState.page + 1 : undefined;
-      const payload = buildPayload({ page: nextPage, cursor: searchState.nextCursor ?? undefined }, lastQueryRef.current);
+      const payload = buildPayload(
+        { page: nextPage, cursor: searchState.nextCursor ?? undefined },
+        lastQueryRef.current
+      );
 
       const data = await serverFetch(payload);
 
@@ -499,7 +534,7 @@ export function useInfluencerSearch(platforms: Platform[]) {
       if (e?.name === 'AbortError') return;
       setSearchState(prev => ({ ...prev, loading: false, error: e?.message || 'Search failed' }));
     }
-  }, [searchState, platforms, buildPayload]);
+  }, [searchState, buildPayload]);
 
   const loadAll = useCallback(async () => {
     let safety = 200;
