@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { CheckCircle2, Building2 } from 'lucide-react';
+import { CheckCircle2, ImagePlus, Eye, EyeOff, UploadCloud } from 'lucide-react';
 import { FloatingLabelInput } from '@/components/common/FloatingLabelInput';
 import { Button } from './Button';
 import { ProgressIndicator } from './ProgressIndicator';
@@ -8,18 +8,29 @@ import { get, post } from '@/lib/api';
 
 type Step = 'email' | 'otp' | 'details';
 
+/** Must match backend enums exactly */
 const categories = [
-  'Beauty', 'Fashion', 'Tech', 'Food & Beverage', 'Fitness & Wellness',
-  'Travel & Hospitality', 'Education', 'Finance', 'Gaming', 'Lifestyle'
+  'Beauty', 'Tech', 'Food', 'Fashion', 'Fitness', 'Travel',
+  'Education', 'Gaming', 'Home', 'Auto', 'Finance', 'Health',
+  'Lifestyle', 'Other'
 ];
-const companySizes = ['1-10', '11-50', '51-200', '201-500', '500+'];
-const businessTypes = ['Direct-to-Consumer', 'Agency', 'Marketplace', 'SaaS', 'E-commerce', 'Other'];
+const companySizes = ['1-10', '11-50', '51-200', '200+'];
+const businessTypes = ['Direct-to-Consumer', 'Agency', 'Marketplace', 'SaaS', 'Other'];
+
+const MAX_LOGO_MB = 3;
+const ACCEPT_LOGO_MIME = ['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml'];
 
 export function BrandSignup({ onSuccess }: { onSuccess: () => void }) {
   const [step, setStep] = useState<Step>('email');
   const [countries, setCountries] = useState<Country[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  const [logoFile, setLogoFile] = useState<File | null>(null);
+  const [logoPreview, setLogoPreview] = useState<string>('');
+  const [logoUploading, setLogoUploading] = useState(false);
+  const [passwordVisible, setPasswordVisible] = useState(false);
+  const [confirmPasswordVisible, setConfirmPasswordVisible] = useState(false);
 
   const [formData, setFormData] = useState({
     email: '',
@@ -36,9 +47,13 @@ export function BrandSignup({ onSuccess }: { onSuccess: () => void }) {
     companySize: '',
     businessType: '',
     referralCode: '',
-    agreedToTerms: false
+    agreedToTerms: false,
+    officialRep: false,
+    logoUrl: ''
   });
 
+  // ————————————————————————————————————————————————
+  // Data fetch
   useEffect(() => {
     (async () => {
       try {
@@ -50,16 +65,71 @@ export function BrandSignup({ onSuccess }: { onSuccess: () => void }) {
     })();
   }, []);
 
+  // ————————————————————————————————————————————————
+  // Helpers
+  const isValidUrl = (val: string) => {
+    if (!val) return true; // optional
+    try {
+      const u = new URL(val.startsWith('http') ? val : `https://${val}`);
+      return !!u.host;
+    } catch {
+      return false;
+    }
+  };
+
+  /** Returns a clean, lowercase handle (no @, no URL, no slashes) */
+  const extractInstagramHandle = (val: string) => {
+    if (!val) return '';
+    let s = val.trim();
+    // Strip full URLs + params
+    s = s.replace(/^https?:\/\/(www\.)?instagram\.com\//i, '');
+    s = s.replace(/\?.*$/, '');
+    // Keep only the first path segment (in case user pasted a profile URL with trailing slash)
+    s = s.split('/')[0];
+    // Strip leading @ and lowercase
+    s = s.replace(/^@/, '').toLowerCase();
+    // Validate allowed chars (frontend check mirrors backend)
+    if (!s) return '';
+    if (!/^[a-z0-9._]{1,30}$/.test(s)) return '';
+    return s;
+  };
+
+  const passwordScore = (pwd: string) => {
+    if (!pwd) return { score: 0, label: 'Too short', pct: 0 };
+    const len = pwd.length;
+    const hasLower = /[a-z]/.test(pwd);
+    const hasUpper = /[A-Z]/.test(pwd);
+    const hasNum = /[0-9]/.test(pwd);
+    const hasSym = /[^A-Za-z0-9]/.test(pwd);
+    const commonish = /(password|12345|qwerty|letmein|admin)/i.test(pwd);
+
+    let score = 0;
+    if (len >= 8) score += 1;
+    if (len >= 12) score += 1;
+    if (hasLower && hasUpper) score += 1;
+    if (hasNum) score += 1;
+    if (hasSym) score += 1;
+    if (commonish) score -= 1;
+
+    const clamped = Math.max(0, Math.min(score, 5));
+    const labels = ['Very weak', 'Weak', 'Fair', 'Good', 'Strong', 'Very strong'];
+    const pct = (clamped / 5) * 100;
+    return { score: clamped, label: labels[clamped], pct };
+  };
+
+  const pwd = passwordScore(formData.password);
+
+  // ————————————————————————————————————————————————
+  // Actions
   const sendOTP = async () => {
     if (!formData.email) {
-      setError('Please enter your email');
+      setError('Please enter your work email.');
       return;
     }
     setLoading(true);
     setError('');
     try {
-      // same as old AuthPage.tsx
-      await post('/brand/requestOtp', { email: formData.email });
+      await post('/brand/requestOtp', { email: formData.email, role: 'Brand' });
       setStep('otp');
     } catch (err: any) {
       setError(err?.response?.data?.message || err?.message || 'Failed to send OTP');
@@ -70,13 +140,13 @@ export function BrandSignup({ onSuccess }: { onSuccess: () => void }) {
 
   const verifyOTP = async () => {
     if (!formData.otp) {
-      setError('Please enter the OTP');
+      setError('Please enter the OTP.');
       return;
     }
     setLoading(true);
     setError('');
     try {
-      await post('/brand/verifyOtp', { email: formData.email, otp: formData.otp });
+      await post('/brand/verifyOtp', { email: formData.email, otp: formData.otp, role: 'Brand' });
       setStep('details');
     } catch (err: any) {
       setError(err?.response?.data?.message || err?.message || 'Invalid or expired OTP');
@@ -85,25 +155,70 @@ export function BrandSignup({ onSuccess }: { onSuccess: () => void }) {
     }
   };
 
+  const uploadLogoIfNeeded = async (): Promise<string> => {
+    if (!logoFile) return '';
+    if (!ACCEPT_LOGO_MIME.includes(logoFile.type)) {
+      setError('Logo must be PNG, JPG, WEBP, or SVG.');
+      return '';
+    }
+    if (logoFile.size > MAX_LOGO_MB * 1024 * 1024) {
+      setError(`Logo must be under ${MAX_LOGO_MB}MB.`);
+      return '';
+    }
+
+    try {
+      setLogoUploading(true);
+      const fd = new FormData();
+      fd.append('file', logoFile);
+      fd.append('email', formData.email);
+      // Expect backend to return { url: string }
+      const res = await post('/brand/uploadLogo', fd);
+      const url = res?.url || res?.data?.url || '';
+      return url;
+    } catch (e: any) {
+      console.warn('Logo upload failed:', e?.message || e);
+      return '';
+    } finally {
+      setLogoUploading(false);
+    }
+  };
+
   const completeSignup = async () => {
+    // Required checks
     if (!formData.name || !formData.password || !formData.phone ||
         !formData.countryId || !formData.callingCodeId || !formData.category) {
-      setError('Please fill in all required fields');
+      setError('Please fill in all required fields.');
       return;
     }
     if (formData.password !== formData.confirmPassword) {
-      setError('Passwords do not match');
+      setError('Passwords do not match.');
+      return;
+    }
+    if (pwd.score < 2) {
+      setError('Please choose a stronger password (at least Fair).');
+      return;
+    }
+    if (!formData.officialRep) {
+      setError('Please confirm you are an official representative of this brand.');
       return;
     }
     if (!formData.agreedToTerms) {
-      setError('Please agree to the Terms & Privacy Policy');
+      setError('Please agree to the Terms of Service and Privacy Policy.');
+      return;
+    }
+    if (!isValidUrl(formData.website)) {
+      setError('Please enter a valid website URL, e.g., https://example.com');
       return;
     }
 
     setLoading(true);
     setError('');
+
+    const instaHandle = extractInstagramHandle(formData.instagramHandle);
+
     try {
-      // payload matches old AuthPage.tsx
+      const uploadedUrl = await uploadLogoIfNeeded();
+
       await post('/brand/register', {
         name: formData.name,
         phone: formData.phone,
@@ -111,14 +226,19 @@ export function BrandSignup({ onSuccess }: { onSuccess: () => void }) {
         password: formData.password,
         countryId: formData.countryId,
         callingId: formData.callingCodeId,
-        // optional extras (backend can ignore if not used)
+        // required enum field
         category: formData.category,
+        // optional extras (omit empties)
         website: formData.website || undefined,
-        instagramHandle: formData.instagramHandle || undefined,
+        instagramHandle: instaHandle || undefined,
         companySize: formData.companySize || undefined,
         businessType: formData.businessType || undefined,
-        referralCode: formData.referralCode || undefined
+        referralCode: formData.referralCode || undefined,
+        logoUrl: uploadedUrl || formData.logoUrl || undefined,
+        // backend-required checkbox
+        isVerifiedRepresentative: formData.officialRep
       });
+
       onSuccess();
     } catch (err: any) {
       setError(err?.response?.data?.message || err?.message || 'Signup failed');
@@ -127,18 +247,30 @@ export function BrandSignup({ onSuccess }: { onSuccess: () => void }) {
     }
   };
 
+  // ————————————————————————————————————————————————
+  // UI State
   const steps = useMemo(() => ([
     { number: 1, label: 'Email',   completed: step !== 'email',     active: step === 'email' },
     { number: 2, label: 'Verify',  completed: step === 'details',   active: step === 'otp' },
     { number: 3, label: 'Details', completed: false,                active: step === 'details' }
   ]), [step]);
 
+  const onPickLogo = (file?: File | null) => {
+    if (!file) return;
+    setLogoFile(file);
+    const reader = new FileReader();
+    reader.onload = () => setLogoPreview(String(reader.result || ''));
+    reader.readAsDataURL(file);
+  };
+
+  // ————————————————————————————————————————————————
+  // Render
   return (
     <div className="space-y-6">
       <div className="text-center space-y-2">
         <div className="flex justify-center">
           <div className="w-16 h-16 rounded-2xl flex items-center justify-center ">
-            <img src='./logo.png' />
+            <img src="./logo.png" alt="CollabGlam" />
           </div>
         </div>
         <h2 className="text-3xl font-bold text-gray-900">Brand Signup</h2>
@@ -148,30 +280,38 @@ export function BrandSignup({ onSuccess }: { onSuccess: () => void }) {
       <ProgressIndicator steps={steps} variant="brand" />
 
       {error && (
-        <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+        <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm" aria-live="polite">
           {error}
         </div>
       )}
 
+      {/* ————————————————— Step 1: Email ————————————————— */}
       {step === 'email' && (
         <div className="space-y-5 animate-fadeIn">
-          <FloatingLabelInput
-            id="brand-email"
-            label="Work Email"
-            type="email"
-            value={formData.email}
-            onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-            required
-          />
-          <p className="text-sm text-gray-500">
-            We'll send a verification code to this email
-          </p>
-          <Button onClick={sendOTP} loading={loading} variant="brand">
-            Send Verification Code
-          </Button>
+          <div className="grid gap-3">
+            <div className="grid sm:grid-cols-2 gap-4">
+              <FloatingLabelInput
+                id="brand-email"
+                label="Work Email"
+                type="email"
+                autoComplete="email"
+                inputMode="email"
+                value={formData.email}
+                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                required
+              />
+            </div>
+
+            <div className="grid sm:grid-cols-2 gap-3">
+              <Button onClick={sendOTP} loading={loading} variant="brand">
+                Send Verification Code
+              </Button>
+            </div>
+          </div>
         </div>
       )}
 
+      {/* ————————————————— Step 2: OTP ————————————————— */}
       {step === 'otp' && (
         <div className="space-y-5 animate-fadeIn">
           <div className="text-center p-4 bg-orange-50 rounded-lg border border-orange-200">
@@ -185,6 +325,8 @@ export function BrandSignup({ onSuccess }: { onSuccess: () => void }) {
             id="brand-otp"
             label="Enter 6-Digit Code"
             type="text"
+            inputMode="numeric"
+            autoComplete="one-time-code"
             maxLength={6}
             value={formData.otp}
             onChange={(e) => setFormData({ ...formData, otp: e.target.value.replace(/\D/g, '') })}
@@ -204,171 +346,254 @@ export function BrandSignup({ onSuccess }: { onSuccess: () => void }) {
         </div>
       )}
 
+      {/* ————————————————— Step 3: Details ————————————————— */}
       {step === 'details' && (
         <div className="space-y-5 animate-fadeIn">
-          <div className="grid sm:grid-cols-2 gap-4">
-            <FloatingLabelInput
-              id="brand-name"
-              label="Brand Name"
-              type="text"
-              value={formData.name}
-              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-              required
-            />
+          {/* Brand header card with optional logo upload */}
+          <div className="grid sm:grid-cols-[96px,1fr] gap-4 p-4 border-2 border-gray-100 rounded-2xl bg-white">
+            <div className="flex flex-col items-center gap-2">
+              <div className="w-24 h-24 rounded-xl bg-gray-50 border-2 border-dashed border-gray-200 flex items-center justify-center overflow-hidden">
+                {logoPreview ? (
+                  <img src={logoPreview} alt="Brand logo preview" className="w-full h-full object-cover" />
+                ) : (
+                  <ImagePlus className="w-8 h-8 text-gray-400" />
+                )}
+              </div>
+              <label className="w-full">
+                <input
+                  type="file"
+                  accept={ACCEPT_LOGO_MIME.join(',')}
+                  className="hidden"
+                  onChange={(e) => onPickLogo(e.target.files?.[0] || null)}
+                />
+                <span className="mt-2 inline-flex items-center gap-2 text-xs text-gray-700 px-3 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 cursor-pointer">
+                  <UploadCloud className="w-4 h-4" /> Upload Logo (Optional)
+                </span>
+              </label>
+              {logoUploading && <span className="text-[10px] text-gray-500">Uploading…</span>}
+            </div>
 
-            <FloatingLabelInput
-              id="brand-email-display"
-              label="Email"
-              type="email"
-              value={formData.email}
-              disabled
-            />
-          </div>
+            <div className="grid gap-4">
+              <div className="grid sm:grid-cols-2 gap-4">
+                <FloatingLabelInput
+                  id="brand-name"
+                  label="Brand Name"
+                  type="text"
+                  autoComplete="organization"
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  required
+                />
 
-          <div className="grid sm:grid-cols-3 gap-4">
-            <select
-              value={formData.callingCodeId}
-              onChange={(e) => setFormData({ ...formData, callingCodeId: e.target.value })}
-              className="px-4 py-3 border-2 border-gray-300 rounded-lg bg-gray-50 focus:bg-white focus:border-orange-500 focus:outline-none"
-              required
-            >
-              <option value="">Code</option>
-              {countries.map((c) => (
-                <option key={c._id} value={c._id}>
-                  {c.flag} {c.callingCode}
-                </option>
-              ))}
-            </select>
+                <FloatingLabelInput
+                  id="brand-email-display"
+                  label="Email"
+                  type="email"
+                  value={formData.email}
+                  disabled
+                />
+              </div>
 
-            <div className="sm:col-span-2">
-              <FloatingLabelInput
-                id="brand-phone"
-                label="Phone Number"
-                type="tel"
-                value={formData.phone}
-                onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+              <div className="grid sm:grid-cols-3 gap-4">
+                <select
+                  value={formData.callingCodeId}
+                  onChange={(e) => setFormData({ ...formData, callingCodeId: e.target.value })}
+                  className="px-4 py-3 border-2 border-gray-300 rounded-lg bg-gray-50 focus:bg-white focus:border-orange-500 focus:outline-none"
+                  required
+                >
+                  <option value="">Code</option>
+                  {countries.map((c) => (
+                    <option key={c._id} value={c._id}>
+                      {c.flag} {c.callingCode}
+                    </option>
+                  ))}
+                </select>
+
+                <div className="sm:col-span-2">
+                  <FloatingLabelInput
+                    id="brand-phone"
+                    label="Phone Number"
+                    type="tel"
+                    autoComplete="tel"
+                    inputMode="tel"
+                    pattern="[0-9()+\\-\\s]*"
+                    value={formData.phone}
+                    onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                    required
+                  />
+                </div>
+              </div>
+
+              <select
+                value={formData.countryId}
+                onChange={(e) => setFormData({ ...formData, countryId: e.target.value })}
+                className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg bg-gray-50 focus:bg-white focus:border-orange-500 focus:outline-none"
                 required
+              >
+                <option value="">Select Country</option>
+                {countries.map((c) => (
+                  <option key={c._id} value={c._id}>
+                    {c.flag} {c.countryName}
+                  </option>
+                ))}
+              </select>
+
+              <select
+                value={formData.category}
+                onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg bg-gray-50 focus:bg-white focus:border-orange-500 focus:outline-none"
+                required
+              >
+                <option value="">Brand Category / Industry</option>
+                {categories.map((cat) => (
+                  <option key={cat} value={cat}>{cat}</option>
+                ))}
+              </select>
+
+              <div className="grid sm:grid-cols-2 gap-4">
+                <FloatingLabelInput
+                  id="brand-website"
+                  label="Website (Optional)"
+                  type="url"
+                  placeholder="https://example.com"
+                  autoComplete="url"
+                  value={formData.website}
+                  onChange={(e) => setFormData({ ...formData, website: e.target.value })}
+                />
+
+                <FloatingLabelInput
+                  id="brand-instagram"
+                  label="Instagram Handle (Optional)"
+                  type="text"
+                  placeholder="@brandname or instagram.com/brandname"
+                  value={formData.instagramHandle}
+                  onChange={(e) => setFormData({ ...formData, instagramHandle: e.target.value })}
+                />
+              </div>
+
+              <div className="grid sm:grid-cols-2 gap-4">
+                <select
+                  value={formData.companySize}
+                  onChange={(e) => setFormData({ ...formData, companySize: e.target.value })}
+                  className="px-4 py-3 border-2 border-gray-300 rounded-lg bg-gray-50 focus:bg-white focus:border-orange-500 focus:outline-none"
+                >
+                  <option value="">Company Size (Optional)</option>
+                  {companySizes.map((size) => (
+                    <option key={size} value={size}>{size} {size.includes('+') ? '' : 'employees'}</option>
+                  ))}
+                </select>
+
+                <select
+                  value={formData.businessType}
+                  onChange={(e) => setFormData({ ...formData, businessType: e.target.value })}
+                  className="px-4 py-3 border-2 border-gray-300 rounded-lg bg-gray-50 focus:bg-white focus:border-orange-500 focus:outline-none"
+                >
+                  <option value="">Business Type (Optional)</option>
+                  {businessTypes.map((type) => (
+                    <option key={type} value={type}>{type}</option>
+                  ))}
+                </select>
+              </div>
+
+              <FloatingLabelInput
+                id="brand-referral"
+                label="Referral Code (Optional)"
+                type="text"
+                autoComplete="one-time-code"
+                value={formData.referralCode}
+                onChange={(e) => setFormData({ ...formData, referralCode: e.target.value })}
               />
+
+              <div className="grid sm:grid-cols-2 gap-4">
+                <div className="relative">
+                  <FloatingLabelInput
+                    id="brand-password"
+                    label="Password"
+                    type={passwordVisible ? 'text' : 'password'}
+                    autoComplete="new-password"
+                    value={formData.password}
+                    onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                    required
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setPasswordVisible(v => !v)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
+                    aria-label={passwordVisible ? 'Hide password' : 'Show password'}
+                  >
+                    {passwordVisible ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                  </button>
+                  <div className="mt-2">
+                    <div className="h-2 w-full bg-gray-200 rounded-full overflow-hidden">
+                      <div
+                        className={`h-full ${
+                          pwd.score <= 1 ? 'bg-red-400' : pwd.score === 2 ? 'bg-yellow-400' : pwd.score === 3 ? 'bg-amber-500' : 'bg-green-500'
+                        }`}
+                        style={{ width: `${pwd.pct}%` }}
+                      />
+                    </div>
+                    <p className="mt-1 text-[11px] text-gray-600">Strength: {pwd.label}</p>
+                  </div>
+                </div>
+
+                <div className="relative">
+                  <FloatingLabelInput
+                    id="brand-confirm-password"
+                    label="Confirm Password"
+                    type={confirmPasswordVisible ? 'text' : 'password'}
+                    autoComplete="new-password"
+                    value={formData.confirmPassword}
+                    onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
+                    required
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setConfirmPasswordVisible(v => !v)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
+                    aria-label={confirmPasswordVisible ? 'Hide password' : 'Show password'}
+                  >
+                    {confirmPasswordVisible ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                  </button>
+                </div>
+              </div>
+
+              {/* Verification + Terms */}
+              <div className="grid gap-3">
+                <label className="flex items-start gap-3 cursor-pointer group">
+                  <input
+                    type="checkbox"
+                    checked={formData.officialRep}
+                    onChange={(e) => setFormData({ ...formData, officialRep: e.target.checked })}
+                    className="mt-1 w-5 h-5 rounded border-gray-300 text-orange-600 focus:ring-orange-500"
+                    required
+                  />
+                  <span className="text-sm text-gray-700 group-hover:text-gray-900">
+                    I confirm that I'm an official representative of this brand.
+                  </span>
+                </label>
+
+                <label className="flex items-start gap-3 cursor-pointer group">
+                  <input
+                    type="checkbox"
+                    checked={formData.agreedToTerms}
+                    onChange={(e) => setFormData({ ...formData, agreedToTerms: e.target.checked })}
+                    className="mt-1 w-5 h-5 rounded border-gray-300 text-orange-600 focus:ring-orange-500"
+                    required
+                  />
+                  <span className="text-sm text-gray-700 group-hover:text-gray-900">
+                    I agree to the{' '}
+                    <a href="#" className="font-semibold text-orange-600 hover:text-orange-700">Terms of Service</a>
+                    {' '}and{' '}
+                    <a href="#" className="font-semibold text-orange-600 hover:text-orange-700">Privacy Policy</a>.
+                  </span>
+                </label>
+              </div>
+
+              <Button onClick={completeSignup} loading={loading || logoUploading} variant="brand">
+                Create Brand Account
+              </Button>
             </div>
           </div>
-
-          <select
-            value={formData.countryId}
-            onChange={(e) => setFormData({ ...formData, countryId: e.target.value })}
-            className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg bg-gray-50 focus:bg-white focus:border-orange-500 focus:outline-none"
-            required
-          >
-            <option value="">Select Country</option>
-            {countries.map((c) => (
-              <option key={c._id} value={c._id}>
-                {c.flag} {c.countryName}
-              </option>
-            ))}
-          </select>
-
-          <select
-            value={formData.category}
-            onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-            className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg bg-gray-50 focus:bg-white focus:border-orange-500 focus:outline-none"
-            required
-          >
-            <option value="">Brand Category / Industry</option>
-            {categories.map((cat) => (
-              <option key={cat} value={cat}>{cat}</option>
-            ))}
-          </select>
-
-          <div className="grid sm:grid-cols-2 gap-4">
-            <FloatingLabelInput
-              id="brand-website"
-              label="Website (Optional)"
-              type="url"
-              placeholder="https://example.com"
-              value={formData.website}
-              onChange={(e) => setFormData({ ...formData, website: e.target.value })}
-            />
-
-            <FloatingLabelInput
-              id="brand-instagram"
-              label="Instagram Handle (Optional)"
-              type="text"
-              placeholder="@brandname"
-              value={formData.instagramHandle}
-              onChange={(e) => setFormData({ ...formData, instagramHandle: e.target.value })}
-            />
-          </div>
-
-          <div className="grid sm:grid-cols-2 gap-4">
-            <select
-              value={formData.companySize}
-              onChange={(e) => setFormData({ ...formData, companySize: e.target.value })}
-              className="px-4 py-3 border-2 border-gray-300 rounded-lg bg-gray-50 focus:bg-white focus:border-orange-500 focus:outline-none"
-            >
-              <option value="">Company Size (Optional)</option>
-              {companySizes.map((size) => (
-                <option key={size} value={size}>{size} employees</option>
-              ))}
-            </select>
-
-            <select
-              value={formData.businessType}
-              onChange={(e) => setFormData({ ...formData, businessType: e.target.value })}
-              className="px-4 py-3 border-2 border-gray-300 rounded-lg bg-gray-50 focus:bg-white focus:border-orange-500 focus:outline-none"
-            >
-              <option value="">Business Type (Optional)</option>
-              {businessTypes.map((type) => (
-                <option key={type} value={type}>{type}</option>
-              ))}
-            </select>
-          </div>
-
-          <FloatingLabelInput
-            id="brand-referral"
-            label="Referral Code (Optional)"
-            type="text"
-            value={formData.referralCode}
-            onChange={(e) => setFormData({ ...formData, referralCode: e.target.value })}
-          />
-
-          <div className="grid sm:grid-cols-2 gap-4">
-            <FloatingLabelInput
-              id="brand-password"
-              label="Password"
-              type="password"
-              value={formData.password}
-              onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-              required
-            />
-
-            <FloatingLabelInput
-              id="brand-confirm-password"
-              label="Confirm Password"
-              type="password"
-              value={formData.confirmPassword}
-              onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
-              required
-            />
-          </div>
-
-          <label className="flex items-start space-x-3 cursor-pointer group">
-            <input
-              type="checkbox"
-              checked={formData.agreedToTerms}
-              onChange={(e) => setFormData({ ...formData, agreedToTerms: e.target.checked })}
-              className="mt-1 w-5 h-5 rounded border-gray-300 text-orange-600 focus:ring-orange-500"
-              required
-            />
-            <span className="text-sm text-gray-600 group-hover:text-gray-900">
-              I confirm that I'm an official representative of this brand and agree to the{' '}
-              <a href="#" className="font-semibold text-orange-600 hover:text-orange-700">Terms of Service</a>
-              {' '}and{' '}
-              <a href="#" className="font-semibold text-orange-600 hover:text-orange-700">Privacy Policy</a>
-            </span>
-          </label>
-
-          <Button onClick={completeSignup} loading={loading} variant="brand">
-            Create Brand Account
-          </Button>
         </div>
       )}
 
