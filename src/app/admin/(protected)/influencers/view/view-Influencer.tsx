@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { post ,get} from "@/lib/api";
+import { post, get } from "@/lib/api";
 import {
   HiChevronLeft,
   HiOutlineMail,
@@ -29,7 +29,6 @@ import {
 } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-// import { get } from "http"; // Remove this line
 
 interface SocialProfile {
   provider: string;
@@ -93,10 +92,7 @@ export default function ViewInfluencerPage() {
       if (!id) return;
       setLoading(true);
       try {
-        const resp = await get(
-          "/admin/influencer/getById",
-          { id }
-        );
+        const resp = await get("/admin/influencer/getById", { id });
         setInfluencer(resp.influencer);
         setError(null);
       } catch (err: any) {
@@ -116,8 +112,8 @@ export default function ViewInfluencerPage() {
     });
 
   const formatNumber = (num: number) => {
-    if (num >= 1000000) return `${(num / 1000000).toFixed(1)}M`;
-    if (num >= 1000) return `${(num / 1000).toFixed(1)}K`;
+    if (num >= 1_000_000) return `${(num / 1_000_000).toFixed(1)}M`;
+    if (num >= 1_000) return `${(num / 1_000).toFixed(1)}K`;
     return num.toString();
   };
 
@@ -142,7 +138,10 @@ export default function ViewInfluencerPage() {
   if (error) {
     return (
       <div className="p-8 max-w-7xl mx-auto">
-        <Button variant="ghost" onClick={() => router.back()} className="mb-4">
+        <Button
+          onClick={() => router.back()}
+          className="mb-4 bg-black text-white hover:bg-black/90"
+        >
           <HiChevronLeft className="mr-2" /> Back
         </Button>
         <Card className="p-6 border-red-200 bg-red-50">
@@ -154,17 +153,17 @@ export default function ViewInfluencerPage() {
 
   if (!influencer) return null;
 
-  const primaryProfile = influencer.socialProfiles?.find(
-    p => p.provider === influencer.primaryPlatform
-  ) || influencer.socialProfiles?.[0];
+  const primaryProfile =
+    influencer.socialProfiles?.find(
+      (p) => p.provider === influencer.primaryPlatform
+    ) || influencer.socialProfiles?.[0];
 
   return (
     <div className="p-8 max-w-7xl mx-auto space-y-8 bg-gray-50 min-h-screen">
       {/* Back Button */}
       <Button
-        variant="ghost"
         onClick={() => router.back()}
-        className="hover:bg-white"
+        className="bg-black text-white hover:bg-black/90"
       >
         <HiChevronLeft className="mr-2 h-5 w-5" />
         Back to Influencers
@@ -195,7 +194,9 @@ export default function ViewInfluencerPage() {
                 {influencer.name}
               </h1>
               <Badge
-                variant={influencer.subscriptionExpired ? "destructive" : "default"}
+                variant={
+                  influencer.subscriptionExpired ? "destructive" : "default"
+                }
                 className="px-3 py-1"
               >
                 {influencer.subscriptionExpired ? "Expired" : "Active"}
@@ -218,7 +219,9 @@ export default function ViewInfluencerPage() {
               </div>
               <div className="flex items-center gap-2 text-gray-600">
                 <HiLocationMarker className="h-5 w-5 text-red-500" />
-                <span>{influencer.city}, {influencer.country}</span>
+                <span>
+                  {influencer.city}, {influencer.country}
+                </span>
               </div>
               <div className="flex items-center gap-2 text-gray-600">
                 <HiCalendar className="h-5 w-5 text-purple-500" />
@@ -230,7 +233,7 @@ export default function ViewInfluencerPage() {
               </div>
               <div className="flex items-center gap-2 text-gray-600">
                 <HiOutlineFlag className="h-5 w-5 text-indigo-500" />
-                <span>{influencer.languages.map(l => l.name).join(", ")}</span>
+                <span>{influencer.languages.map((l) => l.name).join(", ")}</span>
               </div>
             </div>
           </div>
@@ -239,16 +242,34 @@ export default function ViewInfluencerPage() {
 
       {/* Tabs */}
       <Tabs defaultValue="social" className="space-y-6">
-        <TabsList className="bg-white p-1 shadow">
-          <TabsTrigger value="social">Social Profiles</TabsTrigger>
-          <TabsTrigger value="subscription">Subscription</TabsTrigger>
-          <TabsTrigger value="preferences">Preferences</TabsTrigger>
+        <TabsList className="bg-transparent p-1 shadow-none gap-2">
+          <TabsTrigger
+            value="social"
+            className="bg-black text-white hover:bg-black/90 rounded-md px-4 py-2 opacity-80 data-[state=active]:opacity-100 data-[state=active]:ring-2 data-[state=active]:ring-black data-[state=active]:shadow"
+          >
+            Social Profiles
+          </TabsTrigger>
+          <TabsTrigger
+            value="subscription"
+            className="bg-black text-white hover:bg-black/90 rounded-md px-4 py-2 opacity-80 data-[state=active]:opacity-100 data-[state=active]:ring-2 data-[state=active]:ring-black data-[state=active]:shadow"
+          >
+            Subscription
+          </TabsTrigger>
+          <TabsTrigger
+            value="preferences"
+            className="bg-black text-white hover:bg-black/90 rounded-md px-4 py-2 opacity-80 data-[state=active]:opacity-100 data-[state=active]:ring-2 data-[state=active]:ring-black data-[state=active]:shadow"
+          >
+            Preferences
+          </TabsTrigger>
         </TabsList>
 
         {/* Social Profiles Tab */}
         <TabsContent value="social" className="space-y-4">
           {influencer.socialProfiles?.map((profile) => (
-            <Card key={profile.provider} className="p-6 hover:shadow-lg transition-shadow">
+            <Card
+              key={profile.provider}
+              className="p-6 hover:shadow-lg transition-shadow"
+            >
               <div className="flex items-start justify-between">
                 <div className="flex items-center gap-4 flex-1">
                   {profile.picture && (
@@ -340,7 +361,10 @@ export default function ViewInfluencerPage() {
                     const remaining = f.limit - f.used;
                     const percentage = (f.used / f.limit) * 100;
                     return (
-                      <TableRow key={f.key} className={idx % 2 === 0 ? "bg-white" : "bg-gray-50"}>
+                      <TableRow
+                        key={f.key}
+                        className={idx % 2 === 0 ? "bg-white" : "bg-gray-50"}
+                      >
                         <TableCell className="font-medium capitalize">
                           {f.key.replace(/_/g, " ")}
                         </TableCell>
@@ -351,14 +375,24 @@ export default function ViewInfluencerPage() {
                             <div className="w-16 h-2 bg-gray-200 rounded-full overflow-hidden">
                               <div
                                 className={`h-full ${
-                                  percentage > 80 ? "bg-red-500" : percentage > 50 ? "bg-yellow-500" : "bg-green-500"
+                                  percentage > 80
+                                    ? "bg-red-500"
+                                    : percentage > 50
+                                    ? "bg-yellow-500"
+                                    : "bg-green-500"
                                 }`}
                                 style={{ width: `${percentage}%` }}
                               />
                             </div>
                           </div>
                         </TableCell>
-                        <TableCell className={remaining === 0 ? "text-red-600 font-semibold" : "text-green-600"}>
+                        <TableCell
+                          className={
+                            remaining === 0
+                              ? "text-red-600 font-semibold"
+                              : "text-green-600"
+                          }
+                        >
                           {remaining}
                         </TableCell>
                       </TableRow>
@@ -383,7 +417,9 @@ export default function ViewInfluencerPage() {
                   <p className="text-sm text-gray-600 mb-2">Formats</p>
                   <div className="flex flex-wrap gap-2">
                     {influencer.onboarding.formats.map((f) => (
-                      <Badge key={f} variant="secondary">{f}</Badge>
+                      <Badge key={f} variant="secondary">
+                        {f}
+                      </Badge>
                     ))}
                   </div>
                 </div>
@@ -391,7 +427,10 @@ export default function ViewInfluencerPage() {
                   <p className="text-sm text-gray-600 mb-2">Budget Ranges</p>
                   <div className="space-y-2">
                     {influencer.onboarding.budgets.map((b, i) => (
-                      <div key={i} className="flex justify-between items-center p-2 bg-gray-50 rounded">
+                      <div
+                        key={i}
+                        className="flex justify-between items-center p-2 bg-gray-50 rounded"
+                      >
                         <span className="font-medium">{b.format}</span>
                         <Badge>{b.range}</Badge>
                       </div>
@@ -406,7 +445,9 @@ export default function ViewInfluencerPage() {
               <div className="space-y-4">
                 <div className="p-3 bg-blue-50 rounded-lg">
                   <p className="text-sm text-gray-600">Project Length</p>
-                  <p className="font-semibold">{influencer.onboarding.projectLength}</p>
+                  <p className="font-semibold">
+                    {influencer.onboarding.projectLength}
+                  </p>
                 </div>
                 <div className="p-3 bg-green-50 rounded-lg">
                   <p className="text-sm text-gray-600">Capacity</p>
@@ -414,15 +455,25 @@ export default function ViewInfluencerPage() {
                 </div>
                 <div className="p-3 bg-purple-50 rounded-lg">
                   <p className="text-sm text-gray-600">Allowlisting</p>
-                  <Badge variant={influencer.onboarding.allowlisting ? "default" : "secondary"}>
-                    {influencer.onboarding.allowlisting ? "Enabled" : "Disabled"}
+                  <Badge
+                    variant={
+                      influencer.onboarding.allowlisting ? "default" : "secondary"
+                    }
+                  >
+                    {influencer.onboarding.allowlisting
+                      ? "Enabled"
+                      : "Disabled"}
                   </Badge>
                 </div>
                 <div>
-                  <p className="text-sm text-gray-600 mb-2">Collaboration Types</p>
+                  <p className="text-sm text-gray-600 mb-2">
+                    Collaboration Types
+                  </p>
                   <div className="flex flex-wrap gap-2">
                     {influencer.onboarding.collabTypes.map((t) => (
-                      <Badge key={t} variant="outline">{t}</Badge>
+                      <Badge key={t} variant="outline">
+                        {t}
+                      </Badge>
                     ))}
                   </div>
                 </div>
