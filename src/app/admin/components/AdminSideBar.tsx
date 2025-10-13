@@ -25,6 +25,7 @@ const navItems = [
   { label: "Subscriptions", href: "/admin/subscriptions", icon: DollarSign },
   { label: "Messages", href: "/admin/messages", icon: MessageCircleIcon },
   { label: "E-Mails", href: "/admin/emails", icon: MailCheckIcon },
+   { label: "Influencer-Email", href: "/admin/influencerdetails", icon: MailCheckIcon },
 ];
 
 const documentLinks = [

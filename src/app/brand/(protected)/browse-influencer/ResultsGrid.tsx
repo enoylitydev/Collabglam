@@ -13,6 +13,7 @@ interface ResultsGridProps {
   hasMore?: boolean;
   onLoadMore?: () => void;
   onLoadAll?: () => void;
+  onViewProfile?: (influencer: any) => void;
 }
 
 export function ResultsGrid({
@@ -24,6 +25,7 @@ export function ResultsGrid({
   hasMore,
   onLoadMore,
   onLoadAll,
+  onViewProfile,
 }: ResultsGridProps) {
   if (error) {
     return (
@@ -131,6 +133,7 @@ export function ResultsGrid({
             key={(influencer.id ?? influencer.username ?? influencer.url ?? index).toString()}
             platform={influencer.platform || platform}
             influencer={influencer}
+            onViewProfile={onViewProfile}
           />
         ))}
       </div>
