@@ -5,49 +5,80 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { get, post } from "@/lib/api";
 import {
   HiChevronLeft,
-  HiCheckCircle,
-  HiXCircle,
   HiOutlineMail,
   HiPhone,
   HiLocationMarker,
-  HiChevronRight as HiChevronRightIcon,
-  HiChevronLeft as HiChevronLeftIcon,
+  HiCheckCircle,                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            
+  HiXCircle,
+  HiUserGroup,
+  HiIdentification,
+  HiClipboardList,
   HiChevronUp,
-  HiChevronDown
+  HiChevronDown,
 } from "react-icons/hi";
+import {
+  HiWallet,
+  HiChevronRight,
+  HiChevronDoubleRight,
+  HiChevronLeft as HiChevronLeftIcon,
+} from "react-icons/hi2";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
-import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
+import { Card, CardContent } from "@/components/ui/card";
+import {
+  Table,
+  TableHeader,
+  TableBody,
+  TableRow,
+  TableHead,
+  TableCell,
+} from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
-import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectItem,
+} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { HiChevronDoubleRight } from "react-icons/hi2";
 
-// Domain types
+/* ---------- Types ---------- */
 interface Feature {
   key: string;
   limit: number;
   used: number;
 }
 
+interface Subscription {
+  planId: string;
+  planName: string;
+  role: string;
+  monthlyCost: number;
+  autoRenew: boolean;
+  status: string;
+  durationMins: number;
+  startedAt: string;
+  expiresAt: string;
+  features: Feature[];
+}
+
 interface BrandDetail {
   brandId: string;
   name: string;
+  phone: string;
+  country: string;
+  callingcode: string;
   email: string;
-  callingcode?: string;
-  phone?: string;
-  county?: string;
-  createdAt: string;
-  updatedAt?: string;
-  walletBalance: number;
-  subscription: {
-    planName: string;
-    planId: string;
-    startedAt: string;
-    expiresAt: string;
-    features: Feature[];
-  };
+  categoryName: string;
+  businessType: string;
+  companySize: string;
+  referralCode: string;
+  isVerifiedRepresentative: boolean;
   subscriptionExpired: boolean;
+  createdAt: string;
+  updatedAt: string;
+  subscription: Subscription;
+  walletBalance: number;
 }
 
 interface Campaign {
@@ -68,37 +99,31 @@ interface CampaignListResponse {
   campaigns: Campaign[];
 }
 
-type StatusFilter = 0 | 1 | 2; // 0: All, 1: Active, 2: Inactive
-
+type StatusFilter = 0 | 1 | 2;
 type SortKey = keyof Campaign | "startDate" | "endDate" | "status";
 
+/* ---------- Component ---------- */
 export default function ViewBrandPage() {
   const router = useRouter();
   const params = useSearchParams();
   const brandId = params.get("brandId") || undefined;
 
-  // Brand state
   const [brand, setBrand] = useState<BrandDetail | null>(null);
   const [loadingBrand, setLoadingBrand] = useState(true);
   const [errorBrand, setErrorBrand] = useState<string | null>(null);
 
-  // Campaigns state
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [loadingCampaigns, setLoadingCampaigns] = useState(false);
   const [errorCampaigns, setErrorCampaigns] = useState<string | null>(null);
   const [campaignsPage, setCampaignsPage] = useState(1);
-  const [campaignsTotal, setCampaignsTotal] = useState(0);
   const [campaignsTotalPages, setCampaignsTotalPages] = useState(1);
 
-  // Search, filter, sort
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>(0);
   const [sortBy, setSortBy] = useState<SortKey>("productOrServiceName");
   const [sortAsc, setSortAsc] = useState(true);
-
   const campaignsLimit = 10;
 
-  // Fetch brand details
   const fetchBrand = async (id: string) => {
     setLoadingBrand(true);
     try {
@@ -112,7 +137,6 @@ export default function ViewBrandPage() {
     }
   };
 
-  // Fetch campaigns with backend-supported search, filter, sort, pagination
   const fetchCampaigns = async () => {
     if (!brandId) return;
     setLoadingCampaigns(true);
@@ -124,14 +148,14 @@ export default function ViewBrandPage() {
         search: searchTerm,
         status: statusFilter,
         sortBy,
-        sortOrder: sortAsc ? "asc" : "desc"
+        sortOrder: sortAsc ? "asc" : "desc",
       };
-      const resp = await post<CampaignListResponse>("/admin/campaign/getByBrandId", payload);
+      const resp = await post<CampaignListResponse>(
+        "/admin/campaign/getByBrandId",
+        payload
+      );
       setCampaigns(resp.campaigns);
-      setCampaignsTotal(resp.total);
       setCampaignsTotalPages(resp.totalPages);
-      setCampaignsPage(resp.page);
-      setErrorCampaigns(null);
     } catch (err: any) {
       setErrorCampaigns(err.message || "Failed to load campaigns.");
     } finally {
@@ -139,11 +163,8 @@ export default function ViewBrandPage() {
     }
   };
 
-  // Initial and dependencies
   useEffect(() => {
-    if (brandId) {
-      fetchBrand(brandId);
-    }
+    if (brandId) fetchBrand(brandId);
   }, [brandId]);
 
   useEffect(() => {
@@ -154,7 +175,7 @@ export default function ViewBrandPage() {
     new Date(iso).toLocaleDateString(undefined, {
       month: "short",
       day: "numeric",
-      year: "numeric"
+      year: "numeric",
     });
 
   const toggleSort = (key: SortKey) => {
@@ -166,104 +187,186 @@ export default function ViewBrandPage() {
     setCampaignsPage(1);
   };
 
+  if (loadingBrand)
+    return (
+      <div className="max-w-5xl mx-auto p-8 space-y-6">
+        <Skeleton className="h-10 w-32" />
+        <Skeleton className="h-40 w-full" />
+      </div>
+    );
+
+  if (errorBrand)
+    return (
+      <div className="max-w-5xl mx-auto p-8 text-red-600 font-semibold">
+        Error: {errorBrand}
+      </div>
+    );
+
+  if (!brand)
+    return (
+      <div className="max-w-5xl mx-auto p-8 text-gray-700">
+        No brand found.
+      </div>
+    );
+
   return (
-    <div className="space-y-8 max-w-5xl mx-auto p-8">
+    <div className="max-w-6xl mx-auto p-8 space-y-8">
       {/* Back */}
       <Button
-        variant="outline"
-        size="sm"
         onClick={() => router.back()}
-        className="flex items-center space-x-2 text-gray-700 hover:text-gray-900"
+        className="bg-[#ef2f5b] text-white hover:bg-[#ef2f5b]/80 flex items-center gap-2 transition-all hover:shadow-md"
       >
-        <HiChevronLeftIcon className="h-5 w-5" />
-        <span>Back</span>
+        <HiChevronLeft className="h-5 w-5" /> Back
       </Button>
 
-      {/* Brand */}
-      {loadingBrand ? (
-        <Card className="p-6 animate-pulse space-y-4">
-          <Skeleton className="h-8 w-1/2" />
-          <Skeleton className="h-6 w-2/3" />
-          <Skeleton className="h-6 w-full" />
-        </Card>
-      ) : errorBrand ? (
-        <Card className="p-6 text-red-600">Error: {errorBrand}</Card>
-      ) : brand ? (
-          <Card className="p-6 grid grid-cols-1 md:grid-cols-3 gap-6 items-center bg-white shadow-sm">
-            <div className="flex justify-center md:justify-start">
-              <div className="h-24 w-24 bg-gray-200 rounded-full flex items-center justify-center text-4xl text-gray-500">
-                {brand.name.charAt(0)}
-              </div>
-            </div>
-            <div className="md:col-span-2 space-y-4">
-              <div className="flex items-center space-x-3">
-                <h2 className="text-3xl font-bold text-gray-900">{brand.name}</h2>
-                <span className={`px-3 py-1 rounded-full text-sm font-medium ${brand.subscriptionExpired ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'}`}> 
-                  {brand.subscriptionExpired ? 'Expired' : 'Active'}
-                </span>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4 text-gray-700">
-                <div className="space-y-2">
-                  <p className="flex items-center space-x-2"><HiOutlineMail className="h-5 w-5"/><span>{brand.email}</span></p>
-                  <p className="flex items-center space-x-2"><HiPhone className="h-5 w-5"/><span>{brand.callingcode}{brand.phone}</span></p>
-                  <p className="flex items-center space-x-2"><HiLocationMarker className="h-5 w-5"/><span>{brand.county}</span></p>
-                </div>
-                <div className="space-y-2">
-                  <p><strong>Created:</strong> {formatDate(brand.createdAt)}</p>
-                  {brand.updatedAt && <p><strong>Updated:</strong> {formatDate(brand.updatedAt)}</p>}
-                  <p><strong>Wallet Balance:</strong> <span className="font-semibold">${brand.walletBalance.toFixed(2)}</span></p>
-                </div>
-              </div>
-            </div>
-          </Card>
-      ) : null}
+      {/* Brand Overview */}
+      <Card className="overflow-hidden shadow-md border border-gray-100">
+        <div className="bg-white text-gray-900 p-6 flex flex-col sm:flex-row sm:items-center sm:justify-between">
+          <h2 className="text-3xl font-semibold flex items-center gap-3">
+            {brand.name}
+            {brand.isVerifiedRepresentative ? (
+              <HiCheckCircle className="text-green-600" title="Verified" />
+            ) : (
+              <HiXCircle className="text-red-500" title="Not Verified" />
+            )}
+          </h2>
+          <span className="px-3 py-1 rounded-full text-sm font-mono text-gray-700 border border-gray-200">
+            Brand ID: {brand.brandId}
+          </span>
+        </div>
+
+        <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-6 p-6 bg-white text-gray-800">
+          <div className="space-y-3">
+            <p className="flex items-center gap-2">
+              <HiOutlineMail className="text-gray-500" /> {brand.email}
+            </p>
+            <p className="flex items-center gap-2">
+              <HiPhone className="text-gray-500" /> {brand.callingcode}{" "}
+              {brand.phone}
+            </p>
+            <p className="flex items-center gap-2">
+              <HiLocationMarker className="text-gray-500" /> {brand.country}
+            </p>
+            <p className="flex items-center gap-2">
+              <HiIdentification className="text-gray-500" /> Business Type:{" "}
+              <span className="font-medium">{brand.businessType}</span>
+            </p>
+            <p className="flex items-center gap-2">
+              <HiUserGroup className="text-gray-500" /> Company Size:{" "}
+              <span className="font-medium">{brand.companySize}</span>
+            </p>
+          </div>
+
+          <div className="space-y-3">
+            <p>
+              <strong>Category:</strong> {brand.categoryName}
+            </p>
+            <p>
+              <strong>Referral Code:</strong> {brand.referralCode}
+            </p>
+            <p>
+              <strong>Subscription:</strong>{" "}
+              {brand.subscriptionExpired ? (
+                <span className="text-red-600 font-medium">Expired</span>
+              ) : (
+                <span className="text-[#ef2f5b] font-medium">Active</span>
+              )}
+            </p>
+            <p className="flex items-center gap-2">
+              <HiWallet className="text-gray-500" /> Wallet Balance:{" "}
+              <span className="font-semibold">
+                ${brand.walletBalance.toFixed(2)}
+              </span>
+            </p>
+            <p className="text-sm text-gray-500">
+              Created: {formatDate(brand.createdAt)} | Updated:{" "}
+              {formatDate(brand.updatedAt)}
+            </p>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Subscription Section */}
-      {brand && (
-        <Card className="p-6 bg-white shadow-sm">
-          <div className="flex justify-between items-center mb-4">
-            <h3 className="text-2xl font-semibold text-gray-900">Subscription</h3>
-            <span className="px-4 py-1 bg-blue-50 text-blue-800 rounded-full font-medium">{brand.subscription.planName}</span>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 text-gray-700 mb-6">
-            <p><strong>Started:</strong> {formatDate(brand.subscription.startedAt)}</p>
-            <p><strong>Expires:</strong> {formatDate(brand.subscription.expiresAt)}</p>
-          </div>
-          <Table>
-            <TableHeader>
-              <TableRow className="bg-gray-50">
-                <TableHead>Feature</TableHead>
-                <TableHead>Limit</TableHead>
-                <TableHead>Used</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {brand.subscription.features.map((f, i) => (
-                <TableRow key={f.key} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                  <TableCell className="capitalize py-2 text-gray-800">{f.key.replace(/_/g,' ')}</TableCell>
-                  <TableCell className="py-2 text-gray-800">{f.limit}</TableCell>
-                  <TableCell className="py-2 text-gray-800">{f.used}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </Card>
-      )}
+      <Card className="p-6 bg-white shadow-md border border-gray-100 hover:shadow-lg transition-all">
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="text-2xl font-semibold text-gray-900 flex items-center gap-2">
+            <HiClipboardList /> Subscription
+          </h3>
+          <span className="px-4 py-1 bg-[#ef2f5b]/20 text-[#ef2f5b] rounded-full font-medium shadow">
+            {brand.subscription.planName}
+          </span>
+        </div>
 
-      {/* Campaigns Section */}
-      <Card className="p-6 bg-white shadow-sm">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 text-gray-700 mb-6">
+          <p>
+            <strong>Role:</strong> {brand.subscription.role}
+          </p>
+          <p>
+            <strong>Status:</strong> {brand.subscription.status}
+          </p>
+          <p>
+            <strong>Monthly Cost:</strong>{" "}
+            {brand.subscription.monthlyCost > 0
+              ? `$${brand.subscription.monthlyCost}`
+              : "Free"}
+          </p>
+          <p>
+            <strong>Auto Renew:</strong>{" "}
+            {brand.subscription.autoRenew ? "Yes" : "No"}
+          </p>
+          <p>
+            <strong>Started:</strong> {formatDate(brand.subscription.startedAt)}
+          </p>
+          <p>
+            <strong>Expires:</strong> {formatDate(brand.subscription.expiresAt)}
+          </p>
+        </div>
+
+        <Table>
+          <TableHeader>
+            <TableRow className="bg-gray-50">
+              <TableHead>Feature</TableHead>
+              <TableHead>Limit</TableHead>
+              <TableHead>Used</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {brand.subscription.features.map((f, i) => (
+              <TableRow
+                key={f.key}
+                className={i % 2 === 0 ? "bg-white" : "bg-gray-50"}
+              >
+                <TableCell className="capitalize py-2 text-gray-800">
+                  {f.key.replace(/_/g, " ")}
+                </TableCell>
+                <TableCell className="py-2">{f.limit}</TableCell>
+                <TableCell className="py-2">{f.used}</TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </Card>
+
+      {/* ✅ Campaigns Section (Kept) */}
+      <Card className="p-6 bg-white shadow-md border border-gray-100 hover:shadow-lg transition-all">
         <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-4 space-y-2 sm:space-y-0">
           <h3 className="text-2xl font-semibold text-gray-900">Campaigns</h3>
           <div className="flex space-x-2">
             <Input
               placeholder="Search campaigns..."
               value={searchTerm}
-              onChange={e => { setSearchTerm(e.target.value); setCampaignsPage(1); }}
+              onChange={(e) => {
+                setSearchTerm(e.target.value);
+                setCampaignsPage(1);
+              }}
               className="w-full sm:w-64"
             />
             <Select
               value={statusFilter.toString()}
-              onValueChange={val => { setStatusFilter(Number(val) as StatusFilter); setCampaignsPage(1); }}
+              onValueChange={(val) => {
+                setStatusFilter(Number(val) as StatusFilter);
+                setCampaignsPage(1);
+              }}
             >
               <SelectTrigger className="w-32">
                 <SelectValue placeholder="Status" />
@@ -279,7 +382,9 @@ export default function ViewBrandPage() {
 
         {loadingCampaigns ? (
           <div className="space-y-2">
-            {[...Array(3)].map((_, idx) => <Skeleton key={idx} className="h-6 w-full"/>)}
+            {[...Array(3)].map((_, idx) => (
+              <Skeleton key={idx} className="h-6 w-full" />
+            ))}
           </div>
         ) : errorCampaigns ? (
           <p className="text-red-600">Error: {errorCampaigns}</p>
@@ -291,49 +396,61 @@ export default function ViewBrandPage() {
               <TableHeader>
                 <TableRow className="bg-gray-50">
                   {[
-                    { label: 'Name', key: 'productOrServiceName' },
-                    { label: 'Goal', key: 'goal' },
-                    { label: 'Start', key: 'startDate' },
-                    { label: 'End', key: 'endDate' },
-                    { label: 'Applicants', key: 'applicantCount' },
-                    { label: 'Status', key: 'status' },
-                    { label: 'Actions', key: '' }
-                  ].map(col => (
+                    { label: "Name", key: "productOrServiceName" },
+                    { label: "Goal", key: "goal" },
+                    { label: "Start", key: "startDate" },
+                    { label: "End", key: "endDate" },
+                    { label: "Applicants", key: "applicantCount" },
+                    { label: "Status", key: "status" },
+                  ].map((col) => (
                     <TableHead
                       key={col.label}
-                      className={col.key ? 'cursor-pointer select-none' : ''}
+                      className={col.key ? "cursor-pointer select-none" : ""}
                       onClick={() => col.key && toggleSort(col.key as SortKey)}
                     >
                       <div className="flex items-center">
                         {col.label}
-                        {col.key && sortBy === col.key && (sortAsc ? <HiChevronUp className="ml-1"/> : <HiChevronDown className="ml-1"/>)}
+                        {col.key &&
+                          sortBy === col.key &&
+                          (sortAsc ? (
+                            <HiChevronUp className="ml-1" />
+                          ) : (
+                            <HiChevronDown className="ml-1" />
+                          ))}
                       </div>
                     </TableHead>
                   ))}
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {campaigns.map(c => (
+                {campaigns.map((c) => (
                   <TableRow key={c.campaignsId}>
-                    <TableCell className="font-medium">{c.productOrServiceName}</TableCell>
-                    <TableCell>{c.goal || '—'}</TableCell>
+                    <TableCell className="font-medium">
+                      {c.productOrServiceName}
+                    </TableCell>
+                    <TableCell>{c.goal || "—"}</TableCell>
                     <TableCell>{formatDate(c.timeline.startDate)}</TableCell>
                     <TableCell>{formatDate(c.timeline.endDate)}</TableCell>
                     <TableCell>{c.applicantCount || 0}</TableCell>
                     <TableCell>
                       {c.isActive === 1 ? (
-                        <span className="text-green-600 inline-flex items-center"><HiCheckCircle className="mr-1"/>Active</span>
+                        <span className="text-green-600 inline-flex items-center">
+                          <HiCheckCircle className="mr-1" /> Active
+                        </span>
                       ) : (
-                        <span className="text-red-600 inline-flex items-center"><HiXCircle className="mr-1"/>Inactive</span>
+                        <span className="text-red-600 inline-flex items-center">
+                          <HiXCircle className="mr-1" /> Inactive
+                        </span>
                       )}
                     </TableCell>
                     <TableCell>
                       <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => router.push(`/admin/campaigns/view?id=${c.campaignsId}`)}
+                        onClick={() =>
+                          router.push(`/admin/campaigns/view?id=${c.campaignsId}`)
+                        }
+                        className="bg-[#ef2f5b] text-white hover:bg-[#ef2f5b]/80 hover:shadow-md transition-all"
                       >
-                        <HiChevronDoubleRight className="h-5 w-5"/>
+                        <HiChevronDoubleRight className="h-5 w-5" />
                       </Button>
                     </TableCell>
                   </TableRow>
@@ -345,21 +462,27 @@ export default function ViewBrandPage() {
             {campaignsTotalPages > 1 && (
               <div className="flex justify-end items-center space-x-2 mt-4">
                 <Button
-                  variant="outline"
-                  size="icon"
-                  onClick={() => setCampaignsPage(p => Math.max(p - 1, 1))}
+                  onClick={() =>
+                    setCampaignsPage((p) => Math.max(p - 1, 1))
+                  }
                   disabled={campaignsPage === 1}
+                  className="bg-[#ef2f5b] text-white hover:bg-[#ef2f5b]/80"
                 >
                   <HiChevronLeftIcon />
                 </Button>
-                <span className="text-sm">{campaignsPage} / {campaignsTotalPages}</span>
+                <span className="text-sm">
+                  Page {campaignsPage} of {campaignsTotalPages}
+                </span>
                 <Button
-                  variant="outline"
-                  size="icon"
-                  onClick={() => setCampaignsPage(p => Math.min(p + 1, campaignsTotalPages))}
+                  onClick={() =>
+                    setCampaignsPage((p) =>
+                      Math.min(p + 1, campaignsTotalPages)
+                    )
+                  }
                   disabled={campaignsPage === campaignsTotalPages}
+                  className="bg-[#ef2f5b] text-white hover:bg-[#ef2f5b]/80"
                 >
-                  <HiChevronRightIcon />
+                  <HiChevronRight />
                 </Button>
               </div>
             )}
