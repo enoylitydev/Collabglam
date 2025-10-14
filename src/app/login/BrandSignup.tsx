@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { CheckCircle2, ImagePlus, Eye, EyeOff, UploadCloud } from 'lucide-react';
+import { CheckCircle2, ImagePlus, Eye, EyeOff, UploadCloud, Loader2 } from 'lucide-react';
 import { FloatingLabelInput } from '@/components/common/FloatingLabelInput';
 import { Button } from './Button';
 import { ProgressIndicator } from './ProgressIndicator';
@@ -8,14 +8,10 @@ import { get, post } from '@/lib/api';
 
 type Step = 'email' | 'otp' | 'details';
 
-/** Must match backend enums exactly */
-const categories = [
-  'Beauty', 'Tech', 'Food', 'Fashion', 'Fitness', 'Travel',
-  'Education', 'Gaming', 'Home', 'Auto', 'Finance', 'Health',
-  'Lifestyle', 'Other'
-];
+type MetaCategory = { _id: string; id?: number; name: string };
+type MetaBusinessType = { _id: string; name: string };
+
 const companySizes = ['1-10', '11-50', '51-200', '200+'];
-const businessTypes = ['Direct-to-Consumer', 'Agency', 'Marketplace', 'SaaS', 'Other'];
 
 const MAX_LOGO_MB = 3;
 const ACCEPT_LOGO_MIME = ['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml'];
@@ -23,6 +19,10 @@ const ACCEPT_LOGO_MIME = ['image/png', 'image/jpeg', 'image/webp', 'image/svg+xm
 export function BrandSignup({ onSuccess }: { onSuccess: () => void }) {
   const [step, setStep] = useState<Step>('email');
   const [countries, setCountries] = useState<Country[]>([]);
+  const [categories, setCategories] = useState<MetaCategory[]>([]);
+  const [businessTypes, setBusinessTypes] = useState<MetaBusinessType[]>([]);
+  const [metaLoading, setMetaLoading] = useState(true);
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -41,11 +41,11 @@ export function BrandSignup({ onSuccess }: { onSuccess: () => void }) {
     phone: '',
     countryId: '',
     callingCodeId: '',
-    category: '',
+    categoryId: '',          // now stores ObjectId of Category
     website: '',
     instagramHandle: '',
     companySize: '',
-    businessType: '',
+    businessTypeId: '',      // now stores ObjectId of BusinessType
     referralCode: '',
     agreedToTerms: false,
     officialRep: false,
@@ -57,10 +57,37 @@ export function BrandSignup({ onSuccess }: { onSuccess: () => void }) {
   useEffect(() => {
     (async () => {
       try {
-        const data = await get<Country[]>('/country/getall');
-        setCountries(data || []);
+        const countriesData = await get<Country[]>('/country/getall');
+        setCountries(countriesData || []);
       } catch {
         setCountries([]);
+      }
+    })();
+  }, []);
+
+  useEffect(() => {
+    (async () => {
+      setMetaLoading(true);
+      try {
+        // Prefer single endpoint from brandController.getMetaOptions
+        const meta = await get<{ categories: MetaCategory[]; businessTypes: MetaBusinessType[] }>('/brand/metaOptions');
+        if (meta?.categories?.length) setCategories(meta.categories);
+        if (meta?.businessTypes?.length) setBusinessTypes(meta.businessTypes);
+      } catch {
+        // Graceful fallback to individual endpoints if present
+        try {
+          const [cats, btypes] = await Promise.all([
+            get<MetaCategory[]>('/category/categories'),
+            get<{ items: MetaBusinessType[] }>('business/getAll')
+          ]);
+          setCategories(cats || []);
+          setBusinessTypes(btypes?.items || []);
+        } catch {
+          setCategories([]);
+          setBusinessTypes([]);
+        }
+      } finally {
+        setMetaLoading(false);
       }
     })();
   }, []);
@@ -81,14 +108,10 @@ export function BrandSignup({ onSuccess }: { onSuccess: () => void }) {
   const extractInstagramHandle = (val: string) => {
     if (!val) return '';
     let s = val.trim();
-    // Strip full URLs + params
     s = s.replace(/^https?:\/\/(www\.)?instagram\.com\//i, '');
     s = s.replace(/\?.*$/, '');
-    // Keep only the first path segment (in case user pasted a profile URL with trailing slash)
     s = s.split('/')[0];
-    // Strip leading @ and lowercase
     s = s.replace(/^@/, '').toLowerCase();
-    // Validate allowed chars (frontend check mirrors backend)
     if (!s) return '';
     if (!/^[a-z0-9._]{1,30}$/.test(s)) return '';
     return s;
@@ -185,8 +208,10 @@ export function BrandSignup({ onSuccess }: { onSuccess: () => void }) {
 
   const completeSignup = async () => {
     // Required checks
-    if (!formData.name || !formData.password || !formData.phone ||
-        !formData.countryId || !formData.callingCodeId || !formData.category) {
+    if (
+      !formData.name || !formData.password || !formData.phone ||
+      !formData.countryId || !formData.callingCodeId || !formData.categoryId
+    ) {
       setError('Please fill in all required fields.');
       return;
     }
@@ -226,13 +251,14 @@ export function BrandSignup({ onSuccess }: { onSuccess: () => void }) {
         password: formData.password,
         countryId: formData.countryId,
         callingId: formData.callingCodeId,
-        // required enum field
-        category: formData.category,
-        // optional extras (omit empties)
+        // required (send Category ObjectId; backend also supports numeric id or name)
+        category: formData.categoryId,
+        // optionals
         website: formData.website || undefined,
         instagramHandle: instaHandle || undefined,
         companySize: formData.companySize || undefined,
-        businessType: formData.businessType || undefined,
+        // optional: send BusinessType ObjectId if chosen
+        businessType: formData.businessTypeId || undefined,
         referralCode: formData.referralCode || undefined,
         logoUrl: uploadedUrl || formData.logoUrl || undefined,
         // backend-required checkbox
@@ -370,7 +396,11 @@ export function BrandSignup({ onSuccess }: { onSuccess: () => void }) {
                   <UploadCloud className="w-4 h-4" /> Upload Logo (Optional)
                 </span>
               </label>
-              {logoUploading && <span className="text-[10px] text-gray-500">Uploading…</span>}
+              {logoUploading && (
+                <span className="text-[10px] text-gray-500 inline-flex items-center gap-1">
+                  <Loader2 className="w-3 h-3 animate-spin" /> Uploading…
+                </span>
+              )}
             </div>
 
             <div className="grid gap-4">
@@ -398,8 +428,9 @@ export function BrandSignup({ onSuccess }: { onSuccess: () => void }) {
                 <select
                   value={formData.callingCodeId}
                   onChange={(e) => setFormData({ ...formData, callingCodeId: e.target.value })}
-                  className="px-4 py-3 border-2 border-gray-300 rounded-lg bg-gray-50 focus:bg-white focus:border-orange-500 focus:outline-none"
+                  className="px-4 py-3 border-2 border-gray-300 rounded-lg bg-gray-50 focus:bg-white focus:border-orange-500 focus:outline-none disabled:opacity-60"
                   required
+                  disabled={loading || logoUploading}
                 >
                   <option value="">Code</option>
                   {countries.map((c) => (
@@ -427,8 +458,9 @@ export function BrandSignup({ onSuccess }: { onSuccess: () => void }) {
               <select
                 value={formData.countryId}
                 onChange={(e) => setFormData({ ...formData, countryId: e.target.value })}
-                className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg bg-gray-50 focus:bg-white focus:border-orange-500 focus:outline-none"
+                className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg bg-gray-50 focus:bg-white focus:border-orange-500 focus:outline-none disabled:opacity-60"
                 required
+                disabled={loading || logoUploading}
               >
                 <option value="">Select Country</option>
                 {countries.map((c) => (
@@ -438,17 +470,28 @@ export function BrandSignup({ onSuccess }: { onSuccess: () => void }) {
                 ))}
               </select>
 
-              <select
-                value={formData.category}
-                onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-                className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg bg-gray-50 focus:bg-white focus:border-orange-500 focus:outline-none"
-                required
-              >
-                <option value="">Brand Category / Industry</option>
-                {categories.map((cat) => (
-                  <option key={cat} value={cat}>{cat}</option>
-                ))}
-              </select>
+              {/* Category (from DB) */}
+              <div className="relative">
+                <select
+                  value={formData.categoryId}
+                  onChange={(e) => setFormData({ ...formData, categoryId: e.target.value })}
+                  className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg bg-gray-50 focus:bg-white focus:border-orange-500 focus:outline-none disabled:opacity-60"
+                  required
+                  disabled={metaLoading || loading || logoUploading}
+                >
+                  <option value="">{metaLoading ? 'Loading categories…' : 'Brand Category / Industry'}</option>
+                  {categories.map((cat) => (
+                    <option key={cat._id} value={cat._id}>
+                      {cat.name}
+                    </option>
+                  ))}
+                </select>
+                {metaLoading && (
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400">
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  </span>
+                )}
+              </div>
 
               <div className="grid sm:grid-cols-2 gap-4">
                 <FloatingLabelInput
@@ -475,7 +518,8 @@ export function BrandSignup({ onSuccess }: { onSuccess: () => void }) {
                 <select
                   value={formData.companySize}
                   onChange={(e) => setFormData({ ...formData, companySize: e.target.value })}
-                  className="px-4 py-3 border-2 border-gray-300 rounded-lg bg-gray-50 focus:bg-white focus:border-orange-500 focus:outline-none"
+                  className="px-4 py-3 border-2 border-gray-300 rounded-lg bg-gray-50 focus:bg-white focus:border-orange-500 focus:outline-none disabled:opacity-60"
+                  disabled={loading || logoUploading}
                 >
                   <option value="">Company Size (Optional)</option>
                   {companySizes.map((size) => (
@@ -483,16 +527,25 @@ export function BrandSignup({ onSuccess }: { onSuccess: () => void }) {
                   ))}
                 </select>
 
-                <select
-                  value={formData.businessType}
-                  onChange={(e) => setFormData({ ...formData, businessType: e.target.value })}
-                  className="px-4 py-3 border-2 border-gray-300 rounded-lg bg-gray-50 focus:bg-white focus:border-orange-500 focus:outline-none"
-                >
-                  <option value="">Business Type (Optional)</option>
-                  {businessTypes.map((type) => (
-                    <option key={type} value={type}>{type}</option>
-                  ))}
-                </select>
+                {/* Business Type (from DB) */}
+                <div className="relative">
+                  <select
+                    value={formData.businessTypeId}
+                    onChange={(e) => setFormData({ ...formData, businessTypeId: e.target.value })}
+                    className="px-4 py-3 border-2 border-gray-300 rounded-lg bg-gray-50 focus:bg-white focus:border-orange-500 focus:outline-none disabled:opacity-60"
+                    disabled={metaLoading || loading || logoUploading}
+                  >
+                    <option value="">{metaLoading ? 'Loading business types…' : 'Business Type (Optional)'}</option>
+                    {businessTypes.map((t) => (
+                      <option key={t._id} value={t._id}>{t.name}</option>
+                    ))}
+                  </select>
+                  {metaLoading && (
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400">
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    </span>
+                  )}
+                </div>
               </div>
 
               <FloatingLabelInput
@@ -523,17 +576,6 @@ export function BrandSignup({ onSuccess }: { onSuccess: () => void }) {
                   >
                     {passwordVisible ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                   </button>
-                  <div className="mt-2">
-                    <div className="h-2 w-full bg-gray-200 rounded-full overflow-hidden">
-                      <div
-                        className={`h-full ${
-                          pwd.score <= 1 ? 'bg-red-400' : pwd.score === 2 ? 'bg-yellow-400' : pwd.score === 3 ? 'bg-amber-500' : 'bg-green-500'
-                        }`}
-                        style={{ width: `${pwd.pct}%` }}
-                      />
-                    </div>
-                    <p className="mt-1 text-[11px] text-gray-600">Strength: {pwd.label}</p>
-                  </div>
                 </div>
 
                 <div className="relative">
@@ -589,8 +631,13 @@ export function BrandSignup({ onSuccess }: { onSuccess: () => void }) {
                 </label>
               </div>
 
-              <Button onClick={completeSignup} loading={loading || logoUploading} variant="brand">
-                Create Brand Account
+              <Button
+                onClick={completeSignup}
+                loading={loading || logoUploading}
+                variant="brand"
+                disabled={metaLoading}
+              >
+                {metaLoading ? 'Loading options…' : 'Create Brand Account'}
               </Button>
             </div>
           </div>
