@@ -1,4 +1,3 @@
-// components/common/brand-sidebar-context.tsx
 'use client';
 
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
@@ -19,14 +18,14 @@ const COLLAPSE_AT = 1280;
 const EXPAND_AT = 1440;
 
 export function BrandSidebarProvider({ children }: { children: React.ReactNode }) {
-  // IMPORTANT: identical on server and client at first render.
+  // Keep SSR/CSR consistent initially
   const [userOverride, setUserOverride] = useState<boolean | null>(null);
 
-  // Auto states (derived from width) – also identical initially
+  // Auto states (derived from width)
   const [autoCollapsed, setAutoCollapsed] = useState(false);
   const [forcedByWidth, setForcedByWidth] = useState(false);
 
-  // After mount, read localStorage once (safe: effect runs only on client)
+  // Read localStorage on mount
   useEffect(() => {
     try {
       const v = window.localStorage.getItem(LS_KEY);
@@ -38,14 +37,14 @@ export function BrandSidebarProvider({ children }: { children: React.ReactNode }
     }
   }, []);
 
-  // Resize listener with hysteresis (client only)
+  // Resize listener with hysteresis
   useEffect(() => {
     const onResize = () => {
       const w = window.innerWidth;
 
       setForcedByWidth(w <= FORCE_COLLAPSE_AT);
 
-      setAutoCollapsed(prev => {
+      setAutoCollapsed((prev) => {
         if (w < COLLAPSE_AT) return true;
         if (w > EXPAND_AT) return false;
         return prev;
@@ -53,30 +52,35 @@ export function BrandSidebarProvider({ children }: { children: React.ReactNode }
 
       if (w <= FORCE_COLLAPSE_AT && userOverride === false) {
         setUserOverride(null);
-        try { window.localStorage.removeItem(LS_KEY); } catch {}
+        try {
+          window.localStorage.removeItem(LS_KEY);
+        } catch {}
       }
     };
 
-    onResize(); // initial client sync
+    onResize(); // initial sync
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
   }, [userOverride]);
 
-  const effectiveCollapsed = forcedByWidth ? true : (userOverride ?? autoCollapsed);
+  const effectiveCollapsed = forcedByWidth ? true : userOverride ?? autoCollapsed;
   const widthPx = effectiveCollapsed ? 64 : 336;
 
   const setCollapsed = (v: boolean) => {
     setUserOverride(v);
-    try { window.localStorage.setItem(LS_KEY, v ? '1' : '0'); } catch {}
+    try {
+      window.localStorage.setItem(LS_KEY, v ? '1' : '0');
+    } catch {}
   };
 
   useEffect(() => {
     document.documentElement.style.setProperty('--brand-sidebar-w', `${widthPx}px`);
   }, [widthPx]);
 
-  const value = useMemo<Ctx>(() => (
-    { collapsed: effectiveCollapsed, setCollapsed, widthPx }
-  ), [effectiveCollapsed, widthPx]);
+  const value = useMemo<Ctx>(() => ({ collapsed: effectiveCollapsed, setCollapsed, widthPx }), [
+    effectiveCollapsed,
+    widthPx,
+  ]);
 
   return <BrandSidebarCtx.Provider value={value}>{children}</BrandSidebarCtx.Provider>;
 }

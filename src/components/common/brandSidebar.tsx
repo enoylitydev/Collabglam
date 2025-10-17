@@ -4,8 +4,16 @@ import React from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import {
-  HiHome, HiPlusCircle, HiCheckCircle, HiClipboardList, HiUsers,
-  HiLogout, HiMenu, HiX, HiCreditCard, HiPlay,
+  HiHome,
+  HiPlusCircle,
+  HiCheckCircle,
+  HiClipboardList,
+  HiUsers,
+  HiLogout,
+  HiMenu,
+  HiX,
+  HiCreditCard,
+  HiPlay,
 } from 'react-icons/hi';
 import { SendIcon } from 'lucide-react';
 import { useBrandSidebar } from './brand-sidebar-context';
@@ -79,7 +87,7 @@ export default function BrandSidebar({ isOpen, onClose }: BrandSidebarProps) {
       {/* Header */}
       <div className="flex items-center justify-between h-16 px-4 border-b border-gray-200">
         <button
-          onClick={() => setCollapsed(!collapsed)} // manual override
+          onClick={() => setCollapsed(!collapsed)}
           className="p-2 rounded-md hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#FFA135]"
           title={collapsed ? 'Expand Sidebar' : 'Collapse Sidebar'}
         >
@@ -87,9 +95,7 @@ export default function BrandSidebar({ isOpen, onClose }: BrandSidebarProps) {
         </button>
         <Link href="/brand/dashboard" className="flex items-center space-x-2">
           <img src="/logo.png" alt="Collabglam logo" className="h-10 w-auto" />
-          {!collapsed && (
-            <span className="text-2xl font-semibold text-gray-900">CollabGlam Brand</span>
-          )}
+          {!collapsed && <span className="text-2xl font-semibold text-gray-900">CollabGlam Brand</span>}
         </Link>
       </div>
 
@@ -97,6 +103,7 @@ export default function BrandSidebar({ isOpen, onClose }: BrandSidebarProps) {
       <nav className="flex-1 overflow-y-auto mt-4">
         <ul className="flex flex-col space-y-1 px-1">{renderLinks()}</ul>
       </nav>
+
       {/* Logout */}
       <div className="border-t border-gray-200 p-4">
         <button
@@ -114,7 +121,7 @@ export default function BrandSidebar({ isOpen, onClose }: BrandSidebarProps) {
   return (
     <>
       {/* Desktop */}
-      <div className="hidden md:flex">{sidebarContent}</div>
+      <div className="hidden md:flex z-40">{sidebarContent}</div>
 
       {/* Mobile overlay */}
       {isOpen && (
