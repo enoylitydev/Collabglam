@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 import {
   HiOutlinePhotograph,
   HiOutlineCalendar,
@@ -10,31 +10,31 @@ import {
 } from "react-icons/hi";
 import { get } from "@/lib/api";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardHeader,
-  CardContent,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardHeader, CardContent, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
-import { useRouter } from "next/navigation";
 
 interface CampaignData {
   _id: string;
   campaignsId: string;
+  brandName?: string;
   productOrServiceName: string;
   description: string;
   images: string[];
   targetAudience: {
     age: { MinAge: number; MaxAge: number };
-    gender: number;
-    locations: { countryId: string; countryName: string; _id: string }[];
+    gender: number; // 0=Female, 1=Male, 2=All
+    locations: { countryId: string; countryName: string; _id?: string }[];
   };
-  interestId: { _id: string; name: string }[];
+  categories: {
+    categoryId: string;
+    categoryName: string;
+    subcategoryId: string;
+    subcategoryName: string;
+  }[];
   goal: string;
   budget: number;
-  timeline: { startDate: string; endDate: string };
+  timeline: { startDate?: string; endDate?: string };
   creativeBriefText?: string;
   creativeBrief: string[];
   additionalNotes?: string;
@@ -86,7 +86,9 @@ export default function ViewCampaignPage() {
   }
 
   const c = campaign;
-  const interests = c.interestId.map(i => i.name).join(", ");
+
+  const fmtDate = (iso?: string) =>
+    iso ? new Date(iso).toLocaleDateString() : "—";
 
   return (
     <div className="min-h-full p-8 space-y-8">
@@ -109,27 +111,33 @@ export default function ViewCampaignPage() {
             variant="outline"
             onClick={() => router.push(`/brand/add-edit-campaign?id=${c.campaignsId}`)}
             className="
-            bg-gradient-to-r from-[#FFA135] to-[#FF7236]
-            text-white
-            hover:from-[#FF7236] hover:to-[#FFA135]
-            shadow-none
-          "
+              bg-gradient-to-r from-[#FFA135] to-[#FF7236]
+              text-white
+              hover:from-[#FF7236] hover:to-[#FFA135]
+              shadow-none
+            "
           >
             Edit
           </Button>
         </div>
       </header>
 
-
       {/* Product Info */}
       <Card className="bg-white">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-xl font-medium">
-            <HiOutlinePhotograph className="h-6 w-6 text-orange-500" /> Detailed view of <span className="font-">{c.productOrServiceName}</span>
+            <HiOutlinePhotograph className="h-6 w-6 text-orange-500" />
+            Detailed view of <span className="font-">{c.productOrServiceName}</span>
           </CardTitle>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+            {c.brandName && (
+              <div>
+                <p className="text-sm font-medium text-gray-600">Brand</p>
+                <p className="mt-1 text-gray-800">{c.brandName}</p>
+              </div>
+            )}
             <div>
               <p className="text-sm font-medium text-gray-600">Name</p>
               <p className="mt-1 text-gray-800">{c.productOrServiceName}</p>
@@ -172,7 +180,11 @@ export default function ViewCampaignPage() {
             <div>
               <p className="text-sm font-medium text-gray-600">Gender</p>
               <p className="mt-1 text-gray-800">
-                {c.targetAudience.gender === 0 ? "Female" : c.targetAudience.gender === 1 ? "Male" : "All"}
+                {c.targetAudience.gender === 0
+                  ? "Female"
+                  : c.targetAudience.gender === 1
+                  ? "Male"
+                  : "All"}
               </p>
             </div>
             <div>
@@ -186,16 +198,24 @@ export default function ViewCampaignPage() {
               </div>
             </div>
 
-            <div className="md:col-span-3">
-              <p className="text-sm font-medium text-gray-600">Interests</p>
-              <div className="mt-2 flex flex-wrap gap-2">
-                {c.interestId.map(i => (
-                  <Badge key={i._id} variant="outline" className="bg-orange-50 text-orange-700">
-                    {i.name}
-                  </Badge>
-                ))}
+            {/* Categories & Subcategories */}
+            {Array.isArray(c.categories) && c.categories.length > 0 && (
+              <div className="md:col-span-3">
+                <p className="text-sm font-medium text-gray-600">Categories</p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {c.categories.map((cat, idx) => (
+                    <Badge
+                      key={`${cat.subcategoryId}-${idx}`}
+                      variant="outline"
+                      className="bg-orange-50 text-orange-700"
+                      title={`${cat.categoryName} → ${cat.subcategoryName}`}
+                    >
+                      {cat.categoryName}: {cat.subcategoryName}
+                    </Badge>
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -215,7 +235,7 @@ export default function ViewCampaignPage() {
             </div>
             <div>
               <p className="text-sm font-medium text-gray-600">Budget</p>
-              <p className="mt-1 text-gray-800">${c.budget.toLocaleString()}</p>
+              <p className="mt-1 text-gray-800">${Number(c.budget || 0).toLocaleString()}</p>
             </div>
             <div className="flex items-center gap-3">
               <Tooltip>
@@ -224,7 +244,7 @@ export default function ViewCampaignPage() {
                 </TooltipTrigger>
                 <TooltipContent>Start Date</TooltipContent>
               </Tooltip>
-              <p className="text-gray-800">{new Date(c.timeline.startDate).toLocaleDateString()}</p>
+              <p className="text-gray-800">{fmtDate(c.timeline?.startDate)}</p>
             </div>
             <div className="flex items-center gap-3">
               <Tooltip>
@@ -233,7 +253,7 @@ export default function ViewCampaignPage() {
                 </TooltipTrigger>
                 <TooltipContent>End Date</TooltipContent>
               </Tooltip>
-              <p className="text-gray-800">{new Date(c.timeline.endDate).toLocaleDateString()}</p>
+              <p className="text-gray-800">{fmtDate(c.timeline?.endDate)}</p>
             </div>
           </div>
         </CardContent>
@@ -253,7 +273,7 @@ export default function ViewCampaignPage() {
               <p className="whitespace-pre-wrap text-gray-800">{c.creativeBriefText}</p>
             </div>
           )}
-          {c.creativeBrief.length > 0 && (
+          {Array.isArray(c.creativeBrief) && c.creativeBrief.length > 0 && (
             <div>
               <p className="text-sm font-medium text-gray-600">Files</p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
