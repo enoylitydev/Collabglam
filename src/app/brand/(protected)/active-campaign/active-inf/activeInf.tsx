@@ -123,7 +123,7 @@ export default function ActiveInfluencersPage() {
       setSortField(field);
       setSortOrder(1);
     }
-  };
+  }; 
 
   const SortIndicator = ({ field }: { field: keyof Influencer }) =>
     sortField === field ? (
