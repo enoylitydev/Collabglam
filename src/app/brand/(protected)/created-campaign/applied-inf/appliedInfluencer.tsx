@@ -18,7 +18,6 @@ import {
   TableCell,
 } from "@/components/ui/table";
 import {
-  HiOutlineCalendar,
   HiChevronLeft,
   HiChevronRight,
   HiOutlineChevronDown,
@@ -33,14 +32,13 @@ const TABLE_GRADIENT_FROM = "#FFA135";
 const TABLE_GRADIENT_TO = "#FF7236";
 
 interface Influencer {
-  _id: string;
-  name: string;
-  socialMedia: string;
-  categoryName: string;
-  audienceRange: string;
-  createdAt: string;
   influencerId: string;
-  // newly-annotated fields:
+  name: string;
+  primaryPlatform?: "instagram" | "tiktok" | "youtube" | string | null; // kept only for link building
+  handle: string | null;          // e.g. "@creator"
+  category: string | null;        // e.g. "Electronics & Computers"
+  audienceSize: number;           // total followers across profiles
+  createdAt?: string;             // application date from response
   isAssigned: number;
   isContracted: number;
   contractId: string | null;
@@ -59,7 +57,6 @@ interface Meta {
 
 const PAGE_SIZE_OPTIONS = [10, 20, 50, 100];
 
-// at top of file
 const toast = (opts: { icon: "success" | "error"; title: string; text?: string }) =>
   Swal.fire({
     ...opts,
@@ -73,13 +70,38 @@ const toast = (opts: { icon: "success" | "error"; title: string; text?: string }
     },
   });
 
+// helpers
+const formatAudience = (n: number) => {
+  if (!n && n !== 0) return "—";
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
+  return String(n);
+};
+
+const buildHandleUrl = (platform?: string | null, handle?: string | null) => {
+  if (!handle) return null;
+  const raw = handle.startsWith("@") ? handle.slice(1) : handle;
+
+  switch ((platform || "").toLowerCase()) {
+    case "instagram":
+      return `https://instagram.com/${raw}`;
+    case "tiktok":
+      return `https://www.tiktok.com/@${raw}`;
+    case "youtube":
+      return `https://www.youtube.com/@${raw}`;
+    default:
+      // fallback (keep YouTube style @ path)
+      return `https://www.youtube.com/@${raw}`;
+  }
+};
+
 export default function AppliedInfluencersPage() {
   const searchParams = useSearchParams();
   const campaignId = searchParams.get("id");
   const campaignName = searchParams.get("name");
   const router = useRouter();
 
-  // ── Data & Pagination State ───────────────────────────────────────────
+  // Data & Pagination
   const [influencers, setInfluencers] = useState<Influencer[]>([]);
   const [applicantCount, setApplicantCount] = useState(0);
   const [meta, setMeta] = useState<Meta>({
@@ -91,14 +113,14 @@ export default function AppliedInfluencersPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // ── UI State ─────────────────────────────────────────────────────────
+  // UI state
   const [page, setPage] = useState(1);
   const [limit] = useState(PAGE_SIZE_OPTIONS[0]);
   const [searchTerm, setSearchTerm] = useState("");
-  const [sortField, setSortField] = useState<keyof Influencer>("createdAt");
+  const [sortField, setSortField] = useState<keyof Influencer>("name");
   const [sortOrder, setSortOrder] = useState<1 | 0>(1);
 
-  // ── Contract & Milestone Modals ───────────────────────────────────────
+  // Contract & Milestone
   const [showContractModal, setShowContractModal] = useState(false);
   const [selectedInf, setSelectedInf] = useState<Influencer | null>(null);
   const [contractForm, setContractForm] = useState({
@@ -120,20 +142,6 @@ export default function AppliedInfluencersPage() {
     description: "",
   });
 
-  // ── Helpers ───────────────────────────────────────────────────────────
-  const formatDate = (d: string) =>
-    new Intl.DateTimeFormat("en-US", {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-    }).format(new Date(d));
-
-  const formatCurrency = (n: number) =>
-    new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency: "USD",
-    }).format(n);
-
   const toggleSort = (field: keyof Influencer) => {
     setPage(1);
     if (sortField === field) setSortOrder((o) => (o === 1 ? 0 : 1));
@@ -151,7 +159,7 @@ export default function AppliedInfluencersPage() {
       )
     ) : null;
 
-  // ── Fetch Applicants ──────────────────────────────────────────────────
+  // Fetch
   const fetchApplicants = async () => {
     if (!campaignId) return;
     setLoading(true);
@@ -170,9 +178,9 @@ export default function AppliedInfluencersPage() {
         sortOrder,
       });
 
-      setInfluencers(res.influencers);
-      setApplicantCount(res.applicantCount);
-      setMeta(res.meta);
+      setInfluencers(res.influencers || []);
+      setApplicantCount(res.applicantCount || 0);
+      setMeta(res.meta || { total: 0, page: 1, limit, totalPages: 1 });
     } catch {
       setError("Failed to load applicants.");
     } finally {
@@ -182,9 +190,10 @@ export default function AppliedInfluencersPage() {
 
   useEffect(() => {
     fetchApplicants();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [campaignId, page, searchTerm, sortField, sortOrder]);
 
-  // ── Milestone Handlers ───────────────────────────────────────────────
+  // Milestones
   const handleAddMilestone = (inf: Influencer) => {
     setSelectedInf(inf);
     setMilestoneForm({ title: "", amount: "", description: "" });
@@ -209,7 +218,39 @@ export default function AppliedInfluencersPage() {
     }
   };
 
-  // ── Contract Handlers ───────────────────────────────────────────────
+  // ⬇️ NEW: open or create a 1–1 room, then redirect to it
+  const handleMessage = async (inf: Influencer) => {
+    try {
+      const brandId = localStorage.getItem("brandId");
+      if (!brandId) {
+        return toast({
+          icon: "error",
+          title: "Not Logged In",
+          text: "Please log in as a brand to message influencers.",
+        });
+      }
+
+      const res = await post<{ message: string; roomId: string }>("/chat/room", {
+        brandId,
+        influencerId: inf.influencerId,
+      });
+
+      if (!res?.roomId) {
+        throw new Error("No roomId returned by server.");
+      }
+
+      // Redirect to the messages page for this room
+      router.push(`/brand/messages/${encodeURIComponent(res.roomId)}`);
+    } catch (e: any) {
+      toast({
+        icon: "error",
+        title: "Unable to open chat",
+        text: e?.response?.data?.message || e?.message || "Please try again.",
+      });
+    }
+  };
+
+  // Contracts
   const openContractModal = (inf: Influencer) => {
     setSelectedInf(inf);
     setContractForm({
@@ -218,7 +259,7 @@ export default function AppliedInfluencersPage() {
       brandAddress: "",
       influencerName: inf.name,
       influencerAddress: "",
-      influencerHandle: "",
+      influencerHandle: inf.handle || "",
       feeAmount: String(inf.feeAmount || ""),
       paymentTerms: "",
     });
@@ -265,100 +306,124 @@ export default function AppliedInfluencersPage() {
     }
   };
 
-  // ── Rendered Table Rows ──────────────────────────────────────────────
+  // Rows
   const rows = useMemo(
     () =>
-      influencers.map((inf, idx) => (
-        <TableRow
-          key={inf._id}
-          className={`${idx % 2 === 0 ? "bg-white" : "bg-gray-50"} transition-colors`}
-          onMouseEnter={(e) =>
-            (e.currentTarget.style.backgroundImage = `linear-gradient(to right, ${TABLE_GRADIENT_FROM}11, ${TABLE_GRADIENT_TO}11)`)
-          }
-          onMouseLeave={(e) => (e.currentTarget.style.backgroundImage = "")}
-        >
-          <TableCell>{inf.name}</TableCell>
-          <TableCell>{inf.socialMedia}</TableCell>
-          <TableCell>
-            <Badge variant="secondary" className="capitalize">
-              {inf.categoryName}
-            </Badge>
-          </TableCell>
-          <TableCell>{inf.audienceRange}</TableCell>
-          <TableCell className="whitespace-nowrap">
-            <HiOutlineCalendar className="inline mr-1" />
-            {new Date(inf.createdAt).toLocaleDateString()}
-          </TableCell>
-          <TableCell className="text-center">
-            {inf.isRejected === 1 ? (
-              <>
-                <Badge className="bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white shadow-none">
-                  Rejected
-                </Badge>
-                <p className="text-xs text-gray-500">{inf.rejectedReason || "No reason provided"}</p>
-              </>
-            ) : inf.isAccepted === 1 ? (
-              <p>Working</p>
-            ) : inf.isContracted === 1 ? (
-              <p>Contract Sent</p>
-            ) : (
-              <p>Applied for Work</p>
-            )}
-          </TableCell>
-          <TableCell className="flex space-x-2 justify-center">
-            <Button
-              size="sm"
-              variant="outline"
-              className="bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white"
-              onClick={() => router.push(`/brand/influencers?id=${inf.influencerId}`)}
-            >
-              View
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              className="bg-gradient-to-r from-[#FF8C00] via-[#FF5E7E] to-[#D12E53] text-white"
-              onClick={() => router.push("/brand/messages")}
-            >
-              Message
-            </Button>
+      influencers.map((inf, idx) => {
+        const href = buildHandleUrl(inf.primaryPlatform, inf.handle);
+        return (
+          <TableRow
+            key={inf.influencerId}
+            className={`${idx % 2 === 0 ? "bg-white" : "bg-gray-50"} transition-colors`}
+            onMouseEnter={(e) =>
+              (e.currentTarget.style.backgroundImage = `linear-gradient(to right, ${TABLE_GRADIENT_FROM}11, ${TABLE_GRADIENT_TO}11)`)
+            }
+            onMouseLeave={(e) => (e.currentTarget.style.backgroundImage = "")}
+          >
+            <TableCell>{inf.name}</TableCell>
 
-            {/* Send / Resend Contract */}
-            {!inf.isContracted && !inf.isRejected && (
-              <Button
-                size="sm"
-                variant="outline"
-                className="bg-green-500 text-white"
-                onClick={() => openContractModal(inf)}
-              >
-                Send Contract
-              </Button>
-            )}
-            {inf.isRejected === 1 && (
-              <Button
-                size="sm"
-                variant="outline"
-                className="bg-green-500 text-white"
-                onClick={() => openContractModal(inf)}
-              >
-                Resend Contract
-              </Button>
-            )}
+            <TableCell className="whitespace-nowrap">
+              {href ? (
+                <a
+                  href={href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-indigo-600 hover:underline"
+                  title="Open profile"
+                >
+                  {inf.handle || "—"}
+                </a>
+              ) : (
+                <span className="text-gray-500">—</span>
+              )}
+            </TableCell>
 
-            {/* Add Milestone */}
-            {inf.isAccepted === 1 && (
+            {/* Platform column removed */}
+
+            <TableCell>
+              <Badge variant="secondary" className="capitalize">
+                {inf.category || "—"}
+              </Badge>
+            </TableCell>
+
+            <TableCell>{formatAudience(inf.audienceSize)}</TableCell>
+
+            <TableCell className="whitespace-nowrap">
+              {inf.createdAt ? new Date(inf.createdAt).toLocaleDateString() : "—"}
+            </TableCell>
+
+            <TableCell className="text-center">
+              {inf.isRejected === 1 ? (
+                <>
+                  <Badge className="bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white shadow-none">
+                    Rejected
+                  </Badge>
+                  <p className="text-xs text-gray-500">{inf.rejectedReason || "No reason provided"}</p>
+                </>
+              ) : inf.isAccepted === 1 ? (
+                <p>Working</p>
+              ) : inf.isContracted === 1 ? (
+                <p>Contract Sent</p>
+              ) : (
+                <p>Applied for Work</p>
+              )}
+            </TableCell>
+
+            <TableCell className="flex space-x-2 justify-center">
               <Button
                 size="sm"
                 variant="outline"
-                className="bg-green-500 text-white"
-                onClick={() => handleAddMilestone(inf)}
+                className="bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white"
+                onClick={() => router.push(`/brand/influencers?id=${inf.influencerId}`)}
               >
-                Add Milestone
+                View
               </Button>
-            )}
-          </TableCell>
-        </TableRow>
-      )),
+
+              {/* UPDATED: now opens/creates the 1–1 room and redirects */}
+              <Button
+                size="sm"
+                variant="outline"
+                className="bg-gradient-to-r from-[#FF8C00] via-[#FF5E7E] to-[#D12E53] text-white"
+                onClick={() => handleMessage(inf)}
+              >
+                Message
+              </Button>
+
+              {!inf.isContracted && !inf.isRejected && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="bg-green-500 text-white"
+                  onClick={() => openContractModal(inf)}
+                >
+                  Send Contract
+                </Button>
+              )}
+              {inf.isRejected === 1 && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="bg-green-500 text-white"
+                  onClick={() => openContractModal(inf)}
+                >
+                  Resend Contract
+                </Button>
+              )}
+
+              {inf.isAccepted === 1 && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="bg-green-500 text-white"
+                  onClick={() => handleAddMilestone(inf)}
+                >
+                  Add Milestone
+                </Button>
+              )}
+            </TableCell>
+          </TableRow>
+        );
+      }),
     [influencers, router]
   );
 
@@ -366,9 +431,7 @@ export default function AppliedInfluencersPage() {
     <div className="min-h-screen p-4 md:p-8 space-y-8">
       {/* Header */}
       <header className="flex items-center justify-between p-4 rounded-md">
-        <h1 className="text-3xl font-bold">
-          Campaign: {campaignName || "Unknown Campaign"}
-        </h1>
+        <h1 className="text-3xl font-bold">Campaign: {campaignName || "Unknown Campaign"}</h1>
         <Button size="sm" variant="outline" className="bg-gray-200" onClick={() => router.back()}>
           Back
         </Button>
@@ -407,14 +470,15 @@ export default function AppliedInfluencersPage() {
                 <TableHead onClick={() => toggleSort("name")} className="cursor-pointer font-semibold">
                   {applicantCount} Applied <SortIndicator field="name" />
                 </TableHead>
-                <TableHead onClick={() => toggleSort("socialMedia")} className="cursor-pointer font-semibold">
-                  Social Handle <SortIndicator field="socialMedia" />
+                <TableHead onClick={() => toggleSort("handle")} className="cursor-pointer font-semibold">
+                  Social Handle <SortIndicator field="handle" />
                 </TableHead>
-                <TableHead onClick={() => toggleSort("categoryName")} className="cursor-pointer font-semibold">
-                  Category <SortIndicator field="categoryName" />
+                {/* Platform column removed */}
+                <TableHead onClick={() => toggleSort("category")} className="cursor-pointer font-semibold">
+                  Category <SortIndicator field="category" />
                 </TableHead>
-                <TableHead onClick={() => toggleSort("audienceRange")} className="cursor-pointer font-semibold">
-                  Audience <SortIndicator field="audienceRange" />
+                <TableHead onClick={() => toggleSort("audienceSize")} className="cursor-pointer font-semibold">
+                  Audience <SortIndicator field="audienceSize" />
                 </TableHead>
                 <TableHead onClick={() => toggleSort("createdAt")} className="cursor-pointer font-semibold">
                   Date <SortIndicator field="createdAt" />

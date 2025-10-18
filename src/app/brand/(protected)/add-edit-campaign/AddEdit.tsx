@@ -68,7 +68,7 @@ interface CategoriesResponse {
 interface SubcategoryOption {
   value: string; // subcategoryId
   label: string; // subcategory name
-  categoryId: string; // category _id
+  categoryId: number; // category _id
   categoryName: string; // category name
 }
 
@@ -82,7 +82,7 @@ interface CampaignEditPayload {
     locations: { countryId: string; countryName: string; _id: string }[];
   };
   categories?: {
-    categoryId: string;
+    categoryId: number;
     categoryName: string;
     subcategoryId: string;
     subcategoryName: string;
@@ -171,7 +171,7 @@ export default function CampaignFormPage() {
         options: (cat.subcategories || []).map((sc) => ({
           value: sc.subcategoryId,
           label: sc.name,
-          categoryId: cat._id,
+          categoryId: cat.id,      // ✅ numeric Category.id
           categoryName: cat.name,
         })),
       })),
@@ -438,7 +438,10 @@ export default function CampaignFormPage() {
       formData.append(
         "categories",
         JSON.stringify(
-          selectedSubcategories.map((s) => ({ categoryId: s.categoryId, subcategoryId: s.value }))
+          selectedSubcategories.map((s) => ({
+            categoryId: s.categoryId,   // number ✅
+            subcategoryId: s.value
+          }))
         )
       );
       formData.append("additionalNotes", additionalNotes.trim());
@@ -462,7 +465,7 @@ export default function CampaignFormPage() {
         toast({ icon: "success", title: "Campaign Created" });
         try {
           localStorage.removeItem(DRAFT_KEY);
-        } catch {}
+        } catch { }
       }
 
       setIsPreviewOpen(false);
@@ -937,10 +940,10 @@ export default function CampaignFormPage() {
                   <div className="flex flex-wrap gap-2">
                     {selectedCountries.length
                       ? selectedCountries.map((c) => (
-                          <Badge key={c.value} variant="outline" className="bg-orange-50 text-orange-700">
-                            {c.country.flag} {c.country.countryName}
-                          </Badge>
-                        ))
+                        <Badge key={c.value} variant="outline" className="bg-orange-50 text-orange-700">
+                          {c.country.flag} {c.country.countryName}
+                        </Badge>
+                      ))
                       : <span className="text-gray-500">—</span>}
                   </div>
                 </div>
