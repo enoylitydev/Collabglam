@@ -222,7 +222,15 @@ export default function ChatWindow({ params }: { params: { roomId: string } }) {
       });
   }, [roomId, jumpToBottom]);
 
-  useEffect(loadHistory, [loadHistory]);
+  useEffect(() => {
+    loadHistory();
+    // Mark all messages as seen when the chat window loads
+    if (influencerId && roomId) {
+      post("/chat/mark-seen", { roomId, userId: influencerId }).catch((err) =>
+        console.error("Failed to mark messages as seen:", err)
+      );
+    }
+  }, [loadHistory, influencerId, roomId]);
 
   /** websocket */
   useEffect(() => {

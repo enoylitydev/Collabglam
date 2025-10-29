@@ -10,6 +10,7 @@ type RoomSummary = {
   roomId: string;
   participants: { userId: string; name: string }[];
   lastMessage: { senderId: string; text: string; timestamp: string } | null;
+  unseenCount: number;
 };
 
 export default function MessagesList() {
@@ -88,14 +89,21 @@ export default function MessagesList() {
                       {room.lastMessage?.text || "No messages yet"}
                     </p>
                   </div>
-                  <span className="text-xs text-muted-foreground">
-                    {room.lastMessage
-                      ? new Date(room.lastMessage.timestamp).toLocaleTimeString(
-                          [],
-                          { hour: "2-digit", minute: "2-digit" }
-                        )
-                      : "--:--"}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    {room.unseenCount > 0 && (
+                      <span className="flex h-4 w-4 items-center justify-center rounded-full bg-primary text-xs font-medium text-primary-foreground">
+                        {room.unseenCount}
+                      </span>
+                    )}
+                    <span className="text-xs text-muted-foreground">
+                      {room.lastMessage
+                        ? new Date(room.lastMessage.timestamp).toLocaleTimeString(
+                            [],
+                            { hour: "2-digit", minute: "2-digit" }
+                          )
+                        : "--:--"}
+                    </span>
+                  </div>
                 </div>
               </Link>
             );
