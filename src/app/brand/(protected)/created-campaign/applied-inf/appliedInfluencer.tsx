@@ -1,7 +1,7 @@
 /* eslint-disable @next/next/no-img-element */
 "use client";
 
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import api, { post } from "@/lib/api";
 import Swal from "sweetalert2";
@@ -23,22 +23,45 @@ import {
   HiOutlineChevronDown,
   HiOutlineChevronUp,
   HiSearch,
+  HiTrash,
+  HiDocumentText,
+  HiUsers,
+  HiClipboardList,
+  HiEye,
+  HiPaperAirplane,
 } from "react-icons/hi";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 
-// Gradient constants
-const TABLE_GRADIENT_FROM = "#FFA135";
-const TABLE_GRADIENT_TO = "#FF7236";
+// NEW: import the exact sidebar + form components used in the reference UI
+import { ContractSidebar, SidebarSection } from "./ContractSidebar";
+import {
+  FloatingInput,
+  Select,
+  NumberInput,
+  Checkbox,
+  PlatformSelector,
+  ChipInput,
+  TextArea,
+} from "./FormComponents";
 
+// ───────────────────────────────────────────────────────────────────────────────
+// THEME
+// ───────────────────────────────────────────────────────────────────────────────
+const GRADIENT_FROM = "#FFA135";
+const GRADIENT_TO = "#FF7236";
+
+// ───────────────────────────────────────────────────────────────────────────────
+// TYPES
+// ───────────────────────────────────────────────────────────────────────────────
 interface Influencer {
   influencerId: string;
   name: string;
-  primaryPlatform?: "instagram" | "tiktok" | "youtube" | string | null; // kept only for link building
-  handle: string | null;          // e.g. "@creator"
-  category: string | null;        // e.g. "Electronics & Computers"
-  audienceSize: number;           // total followers across profiles
-  createdAt?: string;             // application date from response
+  primaryPlatform?: "instagram" | "tiktok" | "youtube" | string | null;
+  handle: string | null;
+  category: string | null;
+  audienceSize: number;
+  createdAt?: string;
   isAssigned: number;
   isContracted: number;
   contractId: string | null;
@@ -55,8 +78,9 @@ interface Meta {
   totalPages: number;
 }
 
-const PAGE_SIZE_OPTIONS = [10, 20, 50, 100];
-
+// ───────────────────────────────────────────────────────────────────────────────
+// UTILITIES
+// ───────────────────────────────────────────────────────────────────────────────
 const toast = (opts: { icon: "success" | "error"; title: string; text?: string }) =>
   Swal.fire({
     ...opts,
@@ -70,7 +94,6 @@ const toast = (opts: { icon: "success" | "error"; title: string; text?: string }
     },
   });
 
-// helpers
 const formatAudience = (n: number) => {
   if (!n && n !== 0) return "—";
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
@@ -81,7 +104,6 @@ const formatAudience = (n: number) => {
 const buildHandleUrl = (platform?: string | null, handle?: string | null) => {
   if (!handle) return null;
   const raw = handle.startsWith("@") ? handle.slice(1) : handle;
-
   switch ((platform || "").toLowerCase()) {
     case "instagram":
       return `https://instagram.com/${raw}`;
@@ -90,15 +112,98 @@ const buildHandleUrl = (platform?: string | null, handle?: string | null) => {
     case "youtube":
       return `https://www.youtube.com/@${raw}`;
     default:
-      // fallback (keep YouTube style @ path)
       return `https://www.youtube.com/@${raw}`;
   }
 };
 
+const mapPlatformToApi = (p?: string | null) => {
+  switch ((p || "").toLowerCase()) {
+    case "instagram":
+      return "Instagram";
+    case "tiktok":
+      return "TikTok";
+    case "youtube":
+      return "YouTube";
+    default:
+      return "YouTube";
+  }
+};
+
+// Chip input (kept for other parts of the page; sidebar uses ChipInput from reference UI)
+function Chips({
+  label,
+  items,
+  setItems,
+  placeholder,
+  validator,
+}: {
+  label: string;
+  items: string[];
+  setItems: (v: string[]) => void;
+  placeholder?: string;
+  validator?: (s: string) => boolean;
+}) {
+  const [value, setValue] = useState("");
+  const add = () => {
+    const v = value.trim();
+    if (!v) return;
+    if (validator && !validator(v)) {
+      setValue("");
+      return;
+    }
+    if (!items.includes(v)) setItems([...items, v]);
+    setValue("");
+  };
+  return (
+    <div className="rounded-xl border border-gray-100 shadow-sm p-4 bg-white/90 backdrop-blur">
+      <Label className="mb-2 block">{label}</Label>
+      <div className="flex flex-wrap gap-2 mb-2">
+        {items.map((t, i) => (
+          <span
+            key={`${t}-${i}`}
+            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs bg-gray-100 border"
+          >
+            {t}
+            <button
+              type="button"
+              className="p-0.5 rounded hover:bg-gray-200"
+              onClick={() => setItems(items.filter((x) => x !== t))}
+            >
+              <HiTrash className="w-3.5 h-3.5" />
+            </button>
+          </span>
+        ))}
+      </div>
+      <div className="flex gap-2">
+        <input
+          className="w-full border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          placeholder={placeholder || "Type and press +"}
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              add();
+            }
+          }}
+        />
+        <Button type="button" variant="outline" onClick={add}>
+          +
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+// PAGE
+// ───────────────────────────────────────────────────────────────────────────────
+const PAGE_SIZE_OPTIONS = [10, 20, 50, 100];
+
 export default function AppliedInfluencersPage() {
   const searchParams = useSearchParams();
   const campaignId = searchParams.get("id");
-  const campaignName = searchParams.get("name");
+  const campaignName = searchParams.get("name") || "";
   const router = useRouter();
 
   // Data & Pagination
@@ -120,28 +225,36 @@ export default function AppliedInfluencersPage() {
   const [sortField, setSortField] = useState<keyof Influencer>("name");
   const [sortOrder, setSortOrder] = useState<1 | 0>(1);
 
-  // Contract & Milestone
-  const [showContractModal, setShowContractModal] = useState(false);
+  // Right Panel (Contract)
+  const [showContractPanel, setShowContractPanel] = useState(false);
   const [selectedInf, setSelectedInf] = useState<Influencer | null>(null);
-  const [contractForm, setContractForm] = useState({
-    effectiveDate: new Date().toISOString().slice(0, 10),
-    brandName: "",
-    brandAddress: "",
-    influencerName: "",
-    influencerAddress: "",
-    influencerHandle: "",
-    feeAmount: "",
-    paymentTerms: "",
-  });
   const [pdfUrl, setPdfUrl] = useState<string>("");
 
-  const [showMilestoneModal, setShowMilestoneModal] = useState(false);
-  const [milestoneForm, setMilestoneForm] = useState({
-    title: "",
-    amount: "",
-    description: "",
-  });
+  // Form aligned to payload
+  const [campaignTitle, setCampaignTitle] = useState(campaignName);
+  const [platforms, setPlatforms] = useState<string[]>([]); // string[] to match PlatformSelector
+  const [goLiveStart, setGoLiveStart] = useState("");
+  const [goLiveEnd, setGoLiveEnd] = useState("");
+  const [totalFee, setTotalFee] = useState("");
+  const [currency, setCurrency] = useState("USD");
+  const [milestoneSplit, setMilestoneSplit] = useState("50/50");
+  const [revisionsIncluded, setRevisionsIncluded] = useState(1);
 
+  const [influencerHandle, setInfluencerHandle] = useState("");
+
+  // Deliverable fields (single item)
+  const [dType, setDType] = useState("Scope");
+  const [dQuantity, setDQuantity] = useState(1);
+  const [dFormat, setDFormat] = useState("Text");
+  const [dDurationSec, setDDurationSec] = useState(0);
+  const [dDraftRequired, setDDraftRequired] = useState(false);
+  const [dMinLiveHours, setDMinLiveHours] = useState(0);
+  const [dTags, setDTags] = useState<string[]>([]);
+  const [dHandles, setDHandles] = useState<string[]>([]);
+  const [dCaptions, setDCaptions] = useState("");
+  const [dLinks, setDLinks] = useState<string[]>([]);
+
+  // Helpers
   const toggleSort = (field: keyof Influencer) => {
     setPage(1);
     if (sortField === field) setSortOrder((o) => (o === 1 ? 0 : 1));
@@ -150,6 +263,7 @@ export default function AppliedInfluencersPage() {
       setSortOrder(1);
     }
   };
+
   const SortIndicator = ({ field }: { field: keyof Influencer }) =>
     sortField === field ? (
       sortOrder === 1 ? (
@@ -193,12 +307,16 @@ export default function AppliedInfluencersPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [campaignId, page, searchTerm, sortField, sortOrder]);
 
-  // Milestones
+  // Milestones (unchanged)
+  const [showMilestoneModal, setShowMilestoneModal] = useState(false);
+  const [milestoneForm, setMilestoneForm] = useState({ title: "", amount: "", description: "" });
+
   const handleAddMilestone = (inf: Influencer) => {
     setSelectedInf(inf);
     setMilestoneForm({ title: "", amount: "", description: "" });
     setShowMilestoneModal(true);
   };
+
   const handleSaveMilestone = async () => {
     if (!selectedInf) return;
     try {
@@ -218,28 +336,17 @@ export default function AppliedInfluencersPage() {
     }
   };
 
-  // ⬇️ NEW: open or create a 1–1 room, then redirect to it
+  // Chat
   const handleMessage = async (inf: Influencer) => {
     try {
       const brandId = localStorage.getItem("brandId");
-      if (!brandId) {
-        return toast({
-          icon: "error",
-          title: "Not Logged In",
-          text: "Please log in as a brand to message influencers.",
-        });
-      }
-
+      if (!brandId)
+        return toast({ icon: "error", title: "Not Logged In", text: "Please log in as a brand to message influencers." });
       const res = await post<{ message: string; roomId: string }>("/chat/room", {
         brandId,
         influencerId: inf.influencerId,
       });
-
-      if (!res?.roomId) {
-        throw new Error("No roomId returned by server.");
-      }
-
-      // Redirect to the messages page for this room
+      if (!res?.roomId) throw new Error("No roomId returned by server.");
       router.push(`/brand/messages/${encodeURIComponent(res.roomId)}`);
     } catch (e: any) {
       toast({
@@ -250,59 +357,137 @@ export default function AppliedInfluencersPage() {
     }
   };
 
-  // Contracts
-  const openContractModal = (inf: Influencer) => {
+  // Open panel + prefill
+  const openContractPanel = (inf: Influencer) => {
     setSelectedInf(inf);
-    setContractForm({
-      effectiveDate: new Date().toISOString().slice(0, 10),
-      brandName: "",
-      brandAddress: "",
-      influencerName: inf.name,
-      influencerAddress: "",
-      influencerHandle: inf.handle || "",
-      feeAmount: String(inf.feeAmount || ""),
-      paymentTerms: "",
-    });
+    setCampaignTitle(campaignName);
+    setPlatforms([mapPlatformToApi(inf.primaryPlatform) as string]);
+    setGoLiveStart("");
+    setGoLiveEnd("");
+    setTotalFee(String(inf.feeAmount || 5000));
+    setCurrency("USD");
+    setMilestoneSplit("10"); // matches your payload example
+    setRevisionsIncluded(1);
+    setInfluencerHandle(inf.handle || "@");
+
+    // Deliverable defaults based on your payload
+    setDType("Scope");
+    setDQuantity(1);
+    setDFormat("Text");
+    setDDurationSec(0);
+    setDDraftRequired(false);
+    setDMinLiveHours(0);
+    setDTags([]);
+    setDHandles(inf.handle ? [inf.handle] : []);
+    setDCaptions("");
+    setDLinks([]);
+
     setPdfUrl("");
-    setShowContractModal(true);
+    setShowContractPanel(true);
   };
+
+  // Keep deliverable handles synced with influencerHandle if empty
+  useEffect(() => {
+    if (!dHandles.length && influencerHandle) setDHandles([influencerHandle]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [influencerHandle]);
+
+  // Close on Escape
+  useEffect(() => {
+    if (!showContractPanel) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        if (pdfUrl) URL.revokeObjectURL(pdfUrl);
+        setPdfUrl("");
+        setShowContractPanel(false);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [showContractPanel, pdfUrl]);
+
+  // Build yellow payload matching EXACT structure
+  const buildYellowForInitiate = () => {
+    const goLive =
+      goLiveStart || goLiveEnd
+        ? {
+            start: goLiveStart ? new Date(goLiveStart) : undefined,
+            end: goLiveEnd ? new Date(goLiveEnd) : undefined,
+          }
+        : undefined;
+
+    return {
+      campaignTitle,
+      platforms,
+      ...(goLive ? { goLive } : {}),
+      totalFee: Number(totalFee) || 0,
+      currency,
+      milestoneSplit,
+      revisionsIncluded: Number(revisionsIncluded) || 0,
+      deliverablesPresetKey: "ui-manual",
+      deliverablesExpanded: [
+        {
+          type: dType,
+          quantity: Number(dQuantity) || 0,
+          format: dFormat,
+          durationSec: Number(dDurationSec) || 0,
+          postingWindow: goLive || { start: undefined, end: undefined },
+          draftRequired: Boolean(dDraftRequired),
+          minLiveHours: Number(dMinLiveHours) || 0,
+          tags: dTags,
+          handles: dHandles,
+          captions: dCaptions,
+          links: dLinks,
+          disclosures: "",
+        },
+      ],
+      influencerHandle,
+    };
+  };
+
+  // PREVIEW: /contract/initiate type=2 → PDF blob
   const handleGeneratePreview = async () => {
     if (!selectedInf) return;
+    if (!platforms.length) {
+      return toast({ icon: "error", title: "Missing Platforms", text: "Select at least one platform." });
+    }
     try {
       const payload = {
         brandId: localStorage.getItem("brandId"),
         campaignId,
         influencerId: selectedInf.influencerId,
-        ...contractForm,
-        feeAmount: Number(contractForm.feeAmount),
-        type: 0,
+        yellow: buildYellowForInitiate(),
+        type: 2,
       };
-      const res = await api.post("/contract/sendContract", payload, {
-        responseType: "blob",
-      });
+      const res = await api.post("/contract/initiate", payload, { responseType: "blob" });
       const url = URL.createObjectURL(res.data);
       setPdfUrl(url);
       window.open(url, "_blank");
     } catch (e: any) {
-      toast({ icon: "error", title: "Error", text: e.message || "Failed to generate preview." });
+      toast({ icon: "error", title: "Preview Error", text: e?.response?.data?.message || e.message || "Failed to generate preview." });
     }
   };
+
+  // SEND: /contract/initiate type=1 → save/assign
   const handleSendContract = async () => {
     if (!selectedInf) return;
     try {
-      await post("/contract/sendContract", {
+      await post("/contract/initiate", {
         brandId: localStorage.getItem("brandId"),
         campaignId,
         influencerId: selectedInf.influencerId,
-        ...contractForm,
-        feeAmount: Number(contractForm.feeAmount),
+        yellow: buildYellowForInitiate(),
         type: 1,
       });
       toast({ icon: "success", title: "Sent!", text: "Contract sent to influencer." });
-      setShowContractModal(false);
+      setShowContractPanel(false);
       fetchApplicants();
     } catch (e: any) {
-      toast({ icon: "error", title: "Error", text: e.message || "Failed to send contract." });
+      const msg =
+        e?.response?.status === 409
+          ? e?.response?.data?.message || "A contract has already been assigned."
+          : e?.response?.data?.message || e.message || "Failed to send contract.";
+      toast({ icon: "error", title: "Error", text: msg });
     }
   };
 
@@ -316,7 +501,7 @@ export default function AppliedInfluencersPage() {
             key={inf.influencerId}
             className={`${idx % 2 === 0 ? "bg-white" : "bg-gray-50"} transition-colors`}
             onMouseEnter={(e) =>
-              (e.currentTarget.style.backgroundImage = `linear-gradient(to right, ${TABLE_GRADIENT_FROM}11, ${TABLE_GRADIENT_TO}11)`)
+              (e.currentTarget.style.backgroundImage = `linear-gradient(to right, ${GRADIENT_FROM}11, ${GRADIENT_TO}11)`)
             }
             onMouseLeave={(e) => (e.currentTarget.style.backgroundImage = "")}
           >
@@ -338,8 +523,6 @@ export default function AppliedInfluencersPage() {
               )}
             </TableCell>
 
-            {/* Platform column removed */}
-
             <TableCell>
               <Badge variant="secondary" className="capitalize">
                 {inf.category || "—"}
@@ -355,14 +538,12 @@ export default function AppliedInfluencersPage() {
             <TableCell className="text-center">
               {inf.isRejected === 1 ? (
                 <>
-                  <Badge className="bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white shadow-none">
-                    Rejected
-                  </Badge>
+                  <Badge className="bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white shadow-none">Rejected</Badge>
                   <p className="text-xs text-gray-500">{inf.rejectedReason || "No reason provided"}</p>
                 </>
               ) : inf.isAccepted === 1 ? (
                 <p>Working</p>
-              ) : inf.isContracted === 1 ? (
+              ) : inf.isAssigned === 1 ? (
                 <p>Contract Sent</p>
               ) : (
                 <p>Applied for Work</p>
@@ -379,7 +560,6 @@ export default function AppliedInfluencersPage() {
                 View
               </Button>
 
-              {/* UPDATED: now opens/creates the 1–1 room and redirects */}
               <Button
                 size="sm"
                 variant="outline"
@@ -389,34 +569,20 @@ export default function AppliedInfluencersPage() {
                 Message
               </Button>
 
-              {!inf.isContracted && !inf.isRejected && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="bg-green-500 text-white"
-                  onClick={() => openContractModal(inf)}
-                >
+              {!inf.isAssigned && !inf.isRejected && (
+                <Button size="sm" variant="outline" className="bg-green-500 text-white" onClick={() => openContractPanel(inf)}>
                   Send Contract
                 </Button>
               )}
+
               {inf.isRejected === 1 && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="bg-green-500 text-white"
-                  onClick={() => openContractModal(inf)}
-                >
+                <Button size="sm" variant="outline" className="bg-green-500 text-white" onClick={() => openContractPanel(inf)}>
                   Resend Contract
                 </Button>
               )}
 
               {inf.isAccepted === 1 && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="bg-green-500 text-white"
-                  onClick={() => handleAddMilestone(inf)}
-                >
+                <Button size="sm" variant="outline" className="bg-green-500 text-white" onClick={() => handleAddMilestone(inf)}>
                   Add Milestone
                 </Button>
               )}
@@ -437,7 +603,7 @@ export default function AppliedInfluencersPage() {
         </Button>
       </header>
 
-      {/* Search box */}
+      {/* Search */}
       <div className="mb-6 max-w-md">
         <div className="relative bg-white rounded-lg">
           <HiSearch className="absolute inset-y-0 left-3 my-auto text-gray-400" size={20} />
@@ -461,9 +627,9 @@ export default function AppliedInfluencersPage() {
         <ErrorMessage>{error}</ErrorMessage>
       ) : (
         <div className="bg-white rounded-md shadow-sm overflow-x-auto">
-          <Table className="min-w-[900px]">
+          <Table className="min-w-[1000px]">
             <TableHeader
-              style={{ backgroundImage: `linear-gradient(to right, ${TABLE_GRADIENT_FROM}, ${TABLE_GRADIENT_TO})` }}
+              style={{ backgroundImage: `linear-gradient(to right, ${GRADIENT_FROM}, ${GRADIENT_TO})` }}
               className="text-white"
             >
               <tr>
@@ -473,7 +639,6 @@ export default function AppliedInfluencersPage() {
                 <TableHead onClick={() => toggleSort("handle")} className="cursor-pointer font-semibold">
                   Social Handle <SortIndicator field="handle" />
                 </TableHead>
-                {/* Platform column removed */}
                 <TableHead onClick={() => toggleSort("category")} className="cursor-pointer font-semibold">
                   Category <SortIndicator field="category" />
                 </TableHead>
@@ -501,117 +666,236 @@ export default function AppliedInfluencersPage() {
           <span className="text-sm">
             Page <strong>{page}</strong> of {meta.totalPages}
           </span>
-          <Button variant="outline" size="icon" disabled={page === meta.totalPages} onClick={() => setPage((p) => Math.min(p + 1, meta.totalPages))}>
+          <Button
+            variant="outline"
+            size="icon"
+            disabled={page === meta.totalPages}
+            onClick={() => setPage((p) => Math.min(p + 1, meta.totalPages))}
+          >
             <HiChevronRight />
           </Button>
         </div>
       )}
 
-      {/* Contract Modal */}
-      {showContractModal && selectedInf && (
-        <div className="fixed inset-0 backdrop-blur-sm bg-opacity-30 flex items-center justify-center z-50">
-          <div
-            className="max-w-lg bg-white rounded-lg p-6 w-full max-h-[90vh] overflow-auto border-2 border-transparent"
-            style={{ borderImage: `linear-gradient(to right, ${TABLE_GRADIENT_FROM}, ${TABLE_GRADIENT_TO}) 1` }}
-          >
-            {!pdfUrl ? (
-              <>
-                <h2 className="text-xl font-semibold mb-4">Contract Details</h2>
-                <div className="space-y-4">
-                  <FloatingLabelInput
-                    id="effectiveDate"
-                    label="Effective Date"
-                    type="date"
-                    value={contractForm.effectiveDate}
-                    onChange={(e) => setContractForm((f) => ({ ...f, effectiveDate: e.target.value }))}
-                  />
-                  <FloatingLabelInput
-                    id="brandName"
-                    label="Brand Legal Name"
-                    value={contractForm.brandName}
-                    onChange={(e) => setContractForm((f) => ({ ...f, brandName: e.target.value }))}
-                  />
-                  <FloatingLabelInput
-                    id="brandAddress"
-                    label="Brand Address"
-                    value={contractForm.brandAddress}
-                    onChange={(e) => setContractForm((f) => ({ ...f, brandAddress: e.target.value }))}
-                  />
-                  <FloatingLabelInput
-                    id="influencerName"
-                    label="Influencer Legal Name"
-                    value={contractForm.influencerName}
-                    onChange={(e) => setContractForm((f) => ({ ...f, influencerName: e.target.value }))}
-                  />
-                  <FloatingLabelInput
-                    id="influencerAddress"
-                    label="Influencer Address"
-                    value={contractForm.influencerAddress}
-                    onChange={(e) => setContractForm((f) => ({ ...f, influencerAddress: e.target.value }))}
-                  />
-                  <FloatingLabelInput
-                    id="influencerHandle"
-                    label="Influencer Handle"
-                    value={contractForm.influencerHandle}
-                    onChange={(e) => setContractForm((f) => ({ ...f, influencerHandle: e.target.value }))}
-                  />
-                  <FloatingLabelInput
-                    id="feeAmount"
-                    label="Budget (USD)"
-                    value={contractForm.feeAmount}
-                    onChange={(e) => setContractForm((f) => ({ ...f, feeAmount: e.target.value }))}
-                  />
-                  <div className="space-y-1">
-                    <Label htmlFor="paymentTerms">Contract Deliverable Terms</Label>
-                    <Textarea
-                      id="paymentTerms"
-                      rows={4}
-                      value={contractForm.paymentTerms}
-                      onChange={(e) => setContractForm((f) => ({ ...f, paymentTerms: e.target.value }))}
-                      placeholder="e.g. 5 deliverables…"
-                      className="focus:ring-[#FFA135]/50"
+      {/* Sliding Right Sidebar (Contract Panel) — EXACT UI as reference */}
+      <ContractSidebar
+        isOpen={showContractPanel}
+        onClose={() => {
+          if (pdfUrl) URL.revokeObjectURL(pdfUrl);
+          setPdfUrl("");
+          setShowContractPanel(false);
+        }}
+        title="Initiate Contract"
+        subtitle={campaignTitle || "New Agreement"}
+      >
+        {!pdfUrl ? (
+          <>
+            <SidebarSection title="Campaign Details" icon={<HiDocumentText className="w-4 h-4" />}> 
+              <div className="space-y-4">
+                <FloatingInput
+                  id="campaignTitle"
+                  label="Campaign Title"
+                  value={campaignTitle}
+                  onChange={(e) => setCampaignTitle(e.target.value)}
+                />
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-3">Select Platforms</label>
+                  <PlatformSelector platforms={platforms} onChange={setPlatforms} />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label htmlFor="goLiveStart" className="block text-xs font-medium text-gray-600 mb-1.5">
+                      Go Live Start
+                    </label>
+                    <input
+                      id="goLiveStart"
+                      type="date"
+                      value={goLiveStart}
+                      onChange={(e) => setGoLiveStart(e.target.value)}
+                      className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-lg text-sm transition-all duration-200 focus:border-[#FFA135] focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="goLiveEnd" className="block text-xs font-medium text-gray-600 mb-1.5">
+                      Go Live End
+                    </label>
+                    <input
+                      id="goLiveEnd"
+                      type="date"
+                      value={goLiveEnd}
+                      onChange={(e) => setGoLiveEnd(e.target.value)}
+                      className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-lg text-sm transition-all duration-200 focus:border-[#FFA135] focus:outline-none"
                     />
                   </div>
                 </div>
-                <div className="mt-6 flex justify-end space-x-2">
-                  <Button onClick={handleGeneratePreview} className="bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white">
-                    Generate Preview
-                  </Button>
-                  <Button variant="outline" onClick={() => setShowContractModal(false)}>
-                    Cancel
-                  </Button>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <FloatingInput
+                    id="totalFee"
+                    label="Total Fee"
+                    value={totalFee}
+                    onChange={(e) => setTotalFee(e.target.value)}
+                  />
+                  <Select
+                    id="currency"
+                    label="Currency"
+                    value={currency}
+                    onChange={(e) => setCurrency(e.target.value)}
+                    options={[
+                      { value: "USD", label: "USD" },
+                      { value: "EUR", label: "EUR" },
+                      { value: "INR", label: "INR" },
+                      { value: "GBP", label: "GBP" },
+                    ]}
+                  />
                 </div>
-              </>
-            ) : (
-              <>
-                <h2 className="text-xl font-semibold mb-4">Contract Preview</h2>
-                <iframe src={pdfUrl} className="w-full h-[60vh] rounded-md border" title="PDF Preview" />
-                <div className="mt-6 flex justify-end space-x-2">
-                  <Button
-                    variant="outline"
-                    onClick={() => {
-                      URL.revokeObjectURL(pdfUrl);
-                      setPdfUrl("");
-                    }}
-                  >
-                    Back
-                  </Button>
-                  <Button onClick={handleSendContract} className="bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white">
-                    Send Contract
-                  </Button>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <FloatingInput
+                    id="milestoneSplit"
+                    label="Milestone Split"
+                    value={milestoneSplit}
+                    onChange={(e) => setMilestoneSplit(e.target.value)}
+                  />
+                  <NumberInput
+                    id="revisionsIncluded"
+                    label="Revisions Included"
+                    value={revisionsIncluded}
+                    onChange={setRevisionsIncluded}
+                    min={0}
+                  />
                 </div>
-              </>
-            )}
-          </div>
-        </div>
-      )}
+              </div>
+            </SidebarSection>
+
+            <SidebarSection title="Influencer" icon={<HiUsers className="w-4 h-4" />}> 
+              <div className="space-y-4">
+                <FloatingInput
+                  id="influencerHandle"
+                  label="Influencer Handle"
+                  value={influencerHandle}
+                  onChange={(e) => setInfluencerHandle(e.target.value)}
+                />
+                <ChipInput label="Deliverable Handles" items={dHandles} setItems={setDHandles} placeholder="@handle" />
+              </div>
+            </SidebarSection>
+
+            <SidebarSection title="Deliverables" icon={<HiClipboardList className="w-4 h-4" />}> 
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-3">
+                  <FloatingInput id="dType" label="Type" value={dType} onChange={(e) => setDType(e.target.value)} />
+                  <Select
+                    id="dFormat"
+                    label="Format"
+                    value={dFormat}
+                    onChange={(e) => setDFormat(e.target.value)}
+                    options={[
+                      { value: "Text", label: "Text" },
+                      { value: "MP4", label: "MP4" },
+                      { value: "Short", label: "Short" },
+                      { value: "Story", label: "Story" },
+                      { value: "Reel", label: "Reel" },
+                      { value: "Image", label: "Image" },
+                    ]}
+                  />
+                </div>
+
+                <div className="grid grid-cols-3 gap-3">
+                  <NumberInput id="quantity" label="Quantity" value={dQuantity} onChange={setDQuantity} min={1} />
+                  <NumberInput id="duration" label="Duration (sec)" value={dDurationSec} onChange={setDDurationSec} min={0} />
+                  <NumberInput id="minlive" label="Min Live (hrs)" value={dMinLiveHours} onChange={setDMinLiveHours} min={0} />
+                </div>
+
+                <Checkbox id="draftRequired" label="Draft Required" checked={dDraftRequired} onChange={setDDraftRequired} />
+
+                <TextArea
+                  id="captions"
+                  label="Captions / Notes"
+                  value={dCaptions}
+                  onChange={(e) => setDCaptions(e.target.value)}
+                  rows={3}
+                  placeholder="Guidelines, hashtags, instructions..."
+                />
+
+                <div className="grid grid-cols-2 gap-4">
+                  <ChipInput label="Tags" items={dTags} setItems={setDTags} placeholder="#tag" />
+                  <ChipInput
+                    label="Links"
+                    items={dLinks}
+                    setItems={setDLinks}
+                    placeholder="https://"
+                    validator={(s) => /^https?:\/\/.+/i.test(s)}
+                  />
+                </div>
+              </div>
+            </SidebarSection>
+
+            <div className="sticky bottom-0 -mx-6 -mb-6 bg-white border-t border-gray-200 p-6 flex justify-end gap-3 shadow-lg">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  if (pdfUrl) URL.revokeObjectURL(pdfUrl);
+                  setPdfUrl("");
+                  setShowContractPanel(false);
+                }}
+                className="px-6 py-2.5 rounded-lg border-2 border-gray-300 text-gray-700 font-medium transition-all duration-200 hover:bg-gray-50"
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleGeneratePreview}
+                className="px-6 py-2.5 rounded-lg bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white font-medium shadow-md transition-all duration-200 hover:shadow-lg hover:scale-105 flex items-center gap-2"
+                disabled={!platforms.length || !campaignTitle.trim()}
+                title={!platforms.length ? "Select at least one platform" : ""}
+              >
+                <HiEye className="w-5 h-5" />
+                Generate Preview
+              </Button>
+            </div>
+          </>
+        ) : (
+          <>
+            <SidebarSection title="PDF Preview" icon={<HiDocumentText className="w-4 h-4" />}> 
+              <div className="bg-gray-100 rounded-lg p-8 text-center">
+                <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-gradient-to-br from-[#FFA135] to-[#FF7236] flex items-center justify-center">
+                  <HiDocumentText className="w-8 h-8 text-white" />
+                </div>
+                <p className="text-gray-600 mb-2">PDF Preview</p>
+                <p className="text-sm text-gray-500">Contract document ready to send</p>
+              </div>
+            </SidebarSection>
+
+            <div className="sticky bottom-0 -mx-6 -mb-6 bg-white border-t border-gray-200 p-6 flex justify-end gap-3 shadow-lg">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  URL.revokeObjectURL(pdfUrl);
+                  setPdfUrl("");
+                }}
+                className="px-6 py-2.5 rounded-lg border-2 border-gray-300 text-gray-700 font-medium transition-all duration-200 hover:bg-gray-50"
+              >
+                Back
+              </Button>
+              <Button
+                onClick={handleSendContract}
+                className="px-6 py-2.5 rounded-lg bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white font-medium shadow-md transition-all duration-200 hover:shadow-lg hover:scale-105 flex items-center gap-2"
+              >
+                <HiPaperAirplane className="w-5 h-5" />
+                Send Contract
+              </Button>
+            </div>
+          </>
+        )}
+      </ContractSidebar>
 
       {/* Milestone Modal */}
       {showMilestoneModal && selectedInf && (
         <div className="fixed inset-0 backdrop-blur-sm bg-opacity-30 flex items-center justify-center z-50">
           <div
             className="max-w-lg bg-white rounded-lg p-6 w-full max-h-[90vh] overflow-auto border-2 border-transparent"
-            style={{ borderImage: `linear-gradient(to right, ${TABLE_GRADIENT_FROM}, ${TABLE_GRADIENT_TO}) 1` }}
+            style={{ borderImage: `linear-gradient(to right, ${GRADIENT_FROM}, ${GRADIENT_TO}) 1` }}
           >
             <h2 className="text-xl font-semibold mb-4">Add Milestone</h2>
             <div className="space-y-4">
@@ -649,6 +933,9 @@ export default function AppliedInfluencersPage() {
   );
 }
 
+// ───────────────────────────────────────────────────────────────────────────────
+// SUPPORT UI
+// ───────────────────────────────────────────────────────────────────────────────
 const LoadingSkeleton = ({ rows }: { rows: number }) => (
   <div className="p-6 space-y-2">
     {Array.from({ length: rows }).map((_, i) => (
