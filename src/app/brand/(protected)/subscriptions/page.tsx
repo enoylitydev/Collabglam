@@ -42,7 +42,7 @@ interface Plan {
   monthlyCost: number;
   currency?: string;
   features: Feature[];
-  label?: string;     // e.g., "Best Value"
+  label?: string; // e.g., "Best Value"
   addons?: Addon[];
 }
 interface BrandData {
@@ -77,34 +77,48 @@ const FEATURE_LABELS: Record<string, string> = {
   contracts_access: "Contracts",
   milestones_access: "Milestones",
   dispute_support: "Dispute Support",
-  // keep generic fallback for anything else
+  profile_preview_only: "Profile preview only",
 };
 
-const BOOL_POSITIVE = new Set([
+/** Boolean-like feature keys (backend may send 0/1). */
+const BOOLEAN_KEYS = new Set<string>([
+  "search_cached_only",
   "search_fresh_uses_credits",
   "view_full_profiles_uses_credits",
   "in_app_messaging",
   "contracts_access",
   "milestones_access",
   "dispute_support",
+  "profile_preview_only",
 ]);
 
-// In some keys 0 means "Unlimited" (not for credits). Keep list explicit.
+/** In some keys, 0 means Unlimited (counts only; NOT for credits). */
 const ZERO_IS_UNLIMITED = new Set<string>([
-  "apply_to_campaigns_quota", // influencer key, included here for comparison logic reuse
+  "apply_to_campaigns_quota", // influencer key, reused for generic comparison logic
+  "live_campaigns_limit", // treat 0 as Unlimited campaigns if ever used
 ]);
+
+/** For these boolean-like keys, truthy means unlimited rather than just Included. */
+const TRUE_MEANS_UNLIMITED = new Set<string>(["in_app_messaging"]);
 
 function isUnlimited(key: string, value: any) {
   if (value === Infinity) return true;
   if (typeof value === "number" && value === 0 && ZERO_IS_UNLIMITED.has(key)) return true;
+  if (BOOLEAN_KEYS.has(key) && TRUE_MEANS_UNLIMITED.has(key) && Boolean(value)) return true;
   return false;
 }
 
 function formatValue(key: string, value: any): string {
+  // Unlimited first
   if (isUnlimited(key, value)) return "Unlimited";
 
+  // Explicit boolean-like handling (even if numeric 0/1)
+  if (BOOLEAN_KEYS.has(key)) {
+    const on = Boolean(value);
+    return on ? "Included" : "Not included";
+  }
+
   if (typeof value === "number") {
-    // For credits, 0 really means none; for campaigns a finite number is a limit.
     return value.toLocaleString();
   }
 
@@ -130,17 +144,24 @@ function loadScript(src: string): Promise<boolean> {
   });
 }
 
-// Comparison for downgrade losses across numbers/bools/arrays
+/** Determine if a move causes a loss for the given key/value pair. */
 function isLoss(fromVal: any, toVal: any, key: string): boolean {
-  // Unlimited -> anything finite/false is a loss
+  // Unlimited -> anything not unlimited is a loss
   if (isUnlimited(key, fromVal) && !isUnlimited(key, toVal)) return true;
+
+  // Boolean-like semantics (handle numeric 0/1)
+  if (BOOLEAN_KEYS.has(key)) {
+    const fromOn = Boolean(fromVal);
+    const toOn = Boolean(toVal);
+    return fromOn && !toOn;
+  }
 
   // Numbers: smaller is a loss (credits, invites, limits)
   if (typeof fromVal === "number" && typeof toVal === "number") {
     return toVal < fromVal;
   }
 
-  // Booleans: true -> false is a loss (feature removed)
+  // Booleans: true -> false is a loss
   if (typeof fromVal === "boolean" && typeof toVal === "boolean") {
     return fromVal && !toVal;
   }
@@ -150,7 +171,7 @@ function isLoss(fromVal: any, toVal: any, key: string): boolean {
     return toVal.length < fromVal.length;
   }
 
-  // Type changed (e.g., had something vs nothing)
+  // Type changed cases
   if ((fromVal === null || fromVal === undefined) && (toVal !== null && toVal !== undefined)) {
     return false;
   }
@@ -159,6 +180,16 @@ function isLoss(fromVal: any, toVal: any, key: string): boolean {
   }
 
   return false;
+}
+
+/** Positive-ness for icon coloring */
+function isPositive(key: string, value: any): boolean {
+  if (isUnlimited(key, value)) return true;
+  if (BOOLEAN_KEYS.has(key)) return Boolean(value);
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number") return value > 0;
+  if (Array.isArray(value)) return value.length > 0;
+  return Boolean(value);
 }
 
 export default function BrandSubscriptionPage() {
@@ -207,7 +238,10 @@ export default function BrandSubscriptionPage() {
     if (!currentPlanObj || !selectedPlan) return [] as { key: string; from: any; to: any }[];
     const mapNew = new Map(selectedPlan.features.map((f) => [f.key, f.value]));
     const unionKeys = Array.from(
-      new Set([...currentPlanObj.features.map((f) => f.key), ...selectedPlan.features.map((f) => f.key)])
+      new Set([
+        ...currentPlanObj.features.map((f) => f.key),
+        ...selectedPlan.features.map((f) => f.key),
+      ])
     );
 
     return unionKeys
@@ -321,7 +355,9 @@ export default function BrandSubscriptionPage() {
       setCurrentPlan(selectedPlan.name);
       setExpiresAt(null);
       setPaymentStatus("success");
-      setPaymentMessage(`You've moved to the ${capitalize(selectedPlan.name)} plan. If you need us, we're here!`);
+      setPaymentMessage(
+        `You've moved to the ${capitalize(selectedPlan.name)} plan. If you need us, we're here!`
+      );
       setShowDowngradeModal(false);
       setConfirmText("");
     } catch (err) {
@@ -375,9 +411,7 @@ export default function BrandSubscriptionPage() {
                 <CheckCircle className="w-5 h-5 text-emerald-600" />
                 <span className="text-sm font-medium text-gray-600 uppercase tracking-wide">Current Plan</span>
               </div>
-              <h3 className="text-2xl font-bold text-gray-900 mb-1">
-                {capitalize(currentPlan)}
-              </h3>
+              <h3 className="text-2xl font-bold text-gray-900 mb-1">{capitalize(currentPlan)}</h3>
               {expiresAt ? (
                 <p className="text-gray-600">
                   Renews on{" "}
@@ -442,10 +476,11 @@ export default function BrandSubscriptionPage() {
               "contracts_access",
               "in_app_messaging",
               "dispute_support",
+              "profile_preview_only",
             ];
 
             const orderedFeatures = ORDER
-              .map((k) => plan.features.find((f) => f.key === k))
+              .map((k) => plan.features.find((f) => f && f.key === k))
               .filter(Boolean) as Feature[];
 
             const currency = plan.currency || "USD";
@@ -483,7 +518,10 @@ export default function BrandSubscriptionPage() {
                   } ${isActive ? "ring-2 ring-orange-400 border-orange-200" : ""}`}
                 >
                   {/* Plan Header */}
-                  <div className={`px-6 sm:px-8 pt-8 pb-6 ${bestValue ? "bg-gradient-to-br from-orange-50 to-orange-50" : ""}`}>
+                  <div className={`px-6 sm:px-8 pt-8 pb-6 ${
+                    bestValue ? "bg-gradient-to-br from-orange-50 to-orange-50" : ""
+                  }`}
+                  >
                     <div className="text-center space-y-4">
                       <h3 className="text-2xl sm:text-3xl font-bold text-gray-900">
                         {capitalize(plan.name)}
@@ -517,12 +555,10 @@ export default function BrandSubscriptionPage() {
                       {orderedFeatures.map((feature, featureIndex) => {
                         const key = feature.key;
                         const label = FEATURE_LABELS[key] || prettifyKey(key);
-                        const val = formatValue(key, feature.value);
-                        const isBool = typeof feature.value === "boolean";
+                        const valStr = formatValue(key, feature.value);
+                        const positive = isPositive(key, feature.value);
                         const showHint =
-                          key === "monthly_credits" && feature.note
-                            ? feature.note
-                            : undefined;
+                          key === "monthly_credits" && feature.note ? feature.note : undefined;
 
                         return (
                           <li
@@ -531,19 +567,15 @@ export default function BrandSubscriptionPage() {
                             style={{ animationDelay: `${featureIndex * 100}ms` }}
                           >
                             <div className="flex-shrink-0 mt-0.5">
-                              {isBool ? (
-                                feature.value ? (
-                                  <CheckCircle className="w-5 h-5 text-emerald-600" />
-                                ) : (
-                                  <XCircle className="w-5 h-5 text-red-500" />
-                                )
+                              {positive ? (
+                                <CheckCircle className="w-5 h-5 text-emerald-600" />
                               ) : (
-                                <CheckCircle className="w-5 h-5 text-orange-500 group-hover/item:text-orange-600 transition-colors" />
+                                <XCircle className="w-5 h-5 text-red-500" />
                               )}
                             </div>
                             <div className="text-gray-700 group-hover/item:text-gray-900 transition-colors">
                               <span className="font-medium">{label}:</span>{" "}
-                              <span className="font-semibold">{val}</span>
+                              <span className="font-semibold">{valStr}</span>
                               {showHint && (
                                 <span className="ml-2 inline-flex items-center text-xs text-gray-500">
                                   <Info className="w-3 h-3 mr-1" />
@@ -569,7 +601,10 @@ export default function BrandSubscriptionPage() {
                             return (
                               <li key={a.key} className="text-sm text-orange-800">
                                 <span className="font-medium">{a.name}</span>{" "}
-                                <span className="opacity-80">— {sym}{a.price} {a.type === "one_time" ? "one-time" : "/mo"}</span>
+                                <span className="opacity-80">
+                                  — {sym}
+                                  {a.price} {a.type === "one_time" ? "one-time" : "/mo"}
+                                </span>
                               </li>
                             );
                           })}
@@ -619,7 +654,10 @@ export default function BrandSubscriptionPage() {
         <div className="text-center mt-12 lg:mt-16 space-y-4">
           <p className="text-gray-600">
             Questions about our plans?{" "}
-            <a href="mailto:support@collabglam.com" className="text-orange-600 hover:text-orange-700 font-medium underline">
+            <a
+              href="mailto:support@collabglam.com"
+              className="text-orange-600 hover:text-orange-700 font-medium underline"
+            >
               Contact our support team
             </a>
           </p>

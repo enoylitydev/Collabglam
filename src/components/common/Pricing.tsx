@@ -1,12 +1,12 @@
-'use client';
+"use client";
 
-import React, { useState, useEffect, useMemo } from 'react';
-import { Check, X, Star, Plus } from 'lucide-react';
-import { useRouter } from 'next/navigation';
-import { post } from '@/lib/api';
-import { Button } from '@/components/ui/button';
+import React, { useState, useEffect, useMemo } from "react";
+import { Check, X, Star, Plus } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { post } from "@/lib/api";
+import { Button } from "@/components/ui/button";
 
-type Role = 'Brand' | 'Influencer';
+type Role = "Brand" | "Influencer";
 
 type FeatureValue = number | boolean | string | string[] | null | undefined;
 
@@ -19,7 +19,7 @@ interface Feature {
 interface Addon {
   key: string;
   name: string;
-  type: 'one_time' | 'recurring';
+  type: "one_time" | "recurring";
   price: number;
   currency?: string;
   payload?: any;
@@ -32,100 +32,144 @@ interface Plan {
   name: string;
   monthlyCost: number;
   currency?: string;
-  label?: string;          // e.g. "Best Value"
+  label?: string; // e.g. "Best Value"
   features: Feature[];
   addons?: Addon[];
+  // Internal - computed
+  _ordered?: Feature[];
 }
 
 /** Friendly labels per key */
 const LABELS: Record<string, string> = {
   // Brand
-  invites_per_month: 'Invites / month',
-  monthly_credits: 'Monthly credits',
-  live_campaigns_limit: 'Live campaigns',
-  search_cached_only: 'Search mode (cached)',
-  search_fresh_uses_credits: 'Fresh search uses credits',
-  view_full_profiles_uses_credits: 'Full profile uses credits',
-  in_app_messaging: 'In-app messaging',
-  milestones_access: 'Milestones',
-  contracts_access: 'Contracts',
-  dispute_support: 'Dispute support',
+  invites_per_month: "Invites / month",
+  monthly_credits: "Monthly credits",
+  live_campaigns_limit: "Live campaigns",
+  search_cached_only: "Search mode (cached)",
+  search_fresh_uses_credits: "Fresh search uses credits",
+  view_full_profiles_uses_credits: "Full profile uses credits",
+  in_app_messaging: "In‑app messaging",
+  milestones_access: "Milestones",
+  contracts_access: "Contracts",
+  dispute_support: "Dispute support",
+  profile_preview_only: "Profile preview only",
 
   // Influencer
-  apply_to_campaigns_quota: 'Campaign applications / month',
-  media_kit_items_limit: 'Media-kit items',
-  saved_searches: 'Saved searches',
-  connect_instagram: 'Connect Instagram',
-  connect_youtube: 'Connect YouTube',
-  connect_tiktok: 'Connect TikTok',
-  contract_esign_basic: 'Contract e-sign (template)',
-  contract_esign_download_pdf: 'Download signed PDF',
-  dispute_channel: 'Dispute channel',
-  media_kit_sections: 'Media-kit sections',
+  apply_to_campaigns_quota: "Campaign applications / month",
+  media_kit_items_limit: "Media‑kit items",
+  saved_searches: "Saved searches",
+  connect_instagram: "Connect Instagram",
+  connect_youtube: "Connect YouTube",
+  connect_tiktok: "Connect TikTok",
+  contract_esign_basic: "Contract e‑sign (template)",
+  contract_esign_download_pdf: "Download signed PDF",
+  dispute_channel: "Dispute channel",
+  media_kit_sections: "Media‑kit sections",
+  media_kit_builder: "Media‑kit builder",
 };
 
 /** Curated display order per role */
 const ORDER_BY_ROLE: Record<Role, string[]> = {
   Brand: [
-    'invites_per_month',
-    'live_campaigns_limit',
-    'monthly_credits',
-    'search_cached_only',
-    'search_fresh_uses_credits',
-    'view_full_profiles_uses_credits',
-    'milestones_access',
-    'contracts_access',
-    'in_app_messaging',
-    'dispute_support',
+    "invites_per_month",
+    "live_campaigns_limit",
+    "monthly_credits",
+    "search_cached_only",
+    "search_fresh_uses_credits",
+    "view_full_profiles_uses_credits",
+    "milestones_access",
+    "contracts_access",
+    "in_app_messaging",
+    "dispute_support",
+    "profile_preview_only",
   ],
   Influencer: [
-    'apply_to_campaigns_quota',
-    'media_kit_items_limit',
-    'saved_searches',
-    'connect_instagram',
-    'connect_youtube',
-    'connect_tiktok',
-    'contract_esign_download_pdf',
-    'in_app_messaging',
-    'dispute_channel',
-    'media_kit_sections',
+    "apply_to_campaigns_quota",
+    "media_kit_items_limit",
+    "saved_searches",
+    "connect_instagram",
+    "connect_youtube",
+    "connect_tiktok",
+    "contract_esign_download_pdf",
+    "in_app_messaging",
+    "dispute_channel",
+    "media_kit_sections",
+    "media_kit_builder",
   ],
 };
 
 /** Keys where 0 means "Unlimited" */
-const ZERO_IS_UNLIMITED = new Set<string>([
-  'apply_to_campaigns_quota',
-  'live_campaigns_limit',
+const ZERO_IS_UNLIMITED = new Set<string>(["apply_to_campaigns_quota", "live_campaigns_limit"]);
+
+/** Keys that are boolean (0/1) even if numeric is sent */
+const BOOLEAN_KEYS = new Set<string>([
+  "search_cached_only",
+  "search_fresh_uses_credits",
+  "view_full_profiles_uses_credits",
+  "in_app_messaging",
+  "milestones_access",
+  "contracts_access",
+  "dispute_support",
+  "connect_instagram",
+  "connect_youtube",
+  "connect_tiktok",
+  "contract_esign_basic",
+  "contract_esign_download_pdf",
+  "dispute_channel",
+  "profile_preview_only",
+  "saved_searches", // in V1: presence toggle (no per‑plan cap yet)
+  "media_kit_builder",
+]);
+
+/** When a boolean is true, display "Unlimited" instead of "Yes" */
+const TRUE_MEANS_UNLIMITED = new Set<string>([
+  "in_app_messaging", // messaging is not metered in V1
 ]);
 
 /** Format helpers */
 const isUnlimited = (key: string, v: FeatureValue) =>
-  v === Infinity || (typeof v === 'number' && v === 0 && ZERO_IS_UNLIMITED.has(key));
+  v === Infinity || (typeof v === "number" && v === 0 && ZERO_IS_UNLIMITED.has(key));
 
 const formatValue = (key: string, v: FeatureValue): string => {
-  if (isUnlimited(key, v)) return 'Unlimited';
-  if (Array.isArray(v)) return v.length ? v.join(', ') : 'None';
-  if (typeof v === 'boolean') return v ? 'Yes' : 'No';
-  if (v === null || v === undefined || v === '') return '—';
-  if (typeof v === 'number') return v.toLocaleString();
+  // 1) Explicit unlimited (0 for certain count keys)
+  if (isUnlimited(key, v)) return "Unlimited";
+
+  // 2) Booleans (including numeric 0/1)
+  if (BOOLEAN_KEYS.has(key)) {
+    const on = Boolean(v);
+    if (on && TRUE_MEANS_UNLIMITED.has(key)) return "Unlimited";
+    return on ? "Yes" : "No";
+  }
+
+  // 3) Lists
+  if (Array.isArray(v)) return v.length ? v.join(", ") : "None";
+
+  // 4) Nullish / empty string
+  if (v === null || v === undefined || v === "") return "—";
+
+  // 5) Numbers (counts)
+  if (typeof v === "number") return v.toLocaleString();
+
+  // 6) Fallback to string
   return String(v);
 };
 
 /** Used to color the check/cross icon */
 const isPositive = (key: string, v: FeatureValue): boolean => {
   if (isUnlimited(key, v)) return true;
-  if (typeof v === 'boolean') return v;
-  if (typeof v === 'number') return v > 0;
+  if (BOOLEAN_KEYS.has(key)) return Boolean(v);
+  if (typeof v === "boolean") return v;
+  if (typeof v === "number") return v > 0;
   if (Array.isArray(v)) return v.length > 0;
   return Boolean(v);
 };
 
-const currencySymbol = (c?: string) => (c === 'INR' ? '₹' : c === 'EUR' ? '€' : '$');
+const currencySymbol = (c?: string) => (c === "INR" ? "₹" : c === "EUR" ? "€" : "$ ");
 
 const Pricing: React.FC = () => {
   const router = useRouter();
-  const roles: Role[] = ['Brand', 'Influencer'];
-  const [activeRole, setActiveRole] = useState<Role>('Brand');
+  const roles: Role[] = ["Brand", "Influencer"];
+  const [activeRole, setActiveRole] = useState<Role>("Brand");
 
   const [plans, setPlans] = useState<Plan[]>([]);
   const [loading, setLoading] = useState(false);
@@ -137,13 +181,13 @@ const Pricing: React.FC = () => {
       setLoading(true);
       setError(null);
       try {
-        const res = await post<{ message: string; plans: Plan[] }>('/subscription/list', {
+        const res = await post<{ message: string; plans: Plan[] }>("/subscription/list", {
           role: activeRole,
         });
         setPlans(res.plans || []);
       } catch (e) {
         console.error(e);
-        setError('Failed to load plans. Please try again.');
+        setError("Failed to load plans. Please try again.");
       } finally {
         setLoading(false);
       }
@@ -167,9 +211,7 @@ const Pricing: React.FC = () => {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Heading */}
         <div className="text-center mb-16">
-          <h2 className="text-4xl lg:text-5xl font-bold text-gray-900 mb-6">
-            {activeRole} Plans
-          </h2>
+          <h2 className="text-4xl lg:text-5xl font-bold text-gray-900 mb-6">{activeRole} Plans</h2>
           <p className="text-xl text-gray-600 max-w-3xl mx-auto">
             Simple, transparent pricing. Start free, upgrade as you grow.
           </p>
@@ -181,9 +223,7 @@ const Pricing: React.FC = () => {
                 key={role}
                 onClick={() => setActiveRole(role)}
                 className={`px-6 py-2 rounded-lg font-medium transition-all ${
-                  activeRole === role
-                    ? 'bg-white shadow text-gray-900'
-                    : 'text-gray-600 hover:text-gray-900'
+                  activeRole === role ? "bg-white shadow text-gray-900" : "text-gray-600 hover:text-gray-900"
                 }`}
               >
                 {role}s
@@ -196,10 +236,7 @@ const Pricing: React.FC = () => {
         {loading && (
           <div className="grid lg:grid-cols-4 gap-8 max-w-6xl mx-auto">
             {[...Array(4)].map((_, i) => (
-              <div
-                key={i}
-                className="bg-white rounded-3xl shadow-lg animate-pulse p-8 flex flex-col h-full"
-              >
+              <div key={i} className="bg-white rounded-3xl shadow-lg animate-pulse p-8 flex flex-col h-full">
                 <div className="h-6 bg-gray-300 rounded mb-4 w-1/2" />
                 <div className="h-4 bg-gray-300 rounded mb-6 w-1/3" />
                 <div className="h-12 bg-gray-300 rounded mb-6 w-full" />
@@ -243,16 +280,12 @@ const Pricing: React.FC = () => {
                     <h3 className="text-2xl font-bold text-gray-900 mb-2 text-center">
                       {plan.name.charAt(0).toUpperCase() + plan.name.slice(1)}
                     </h3>
-                    <p className="text-gray-600 mb-6 text-center">
-                      {isFree ? 'Forever free' : 'Paid plan'}
-                    </p>
+                    <p className="text-gray-600 mb-6 text-center">{isFree ? "Forever free" : "Paid plan"}</p>
 
                     {/* Price */}
                     <div className="mb-6 text-center">
                       {isFree ? (
-                        <span className="text-4xl font-bold text-gray-900 justify-center text-center">
-                          Free
-                        </span>
+                        <span className="text-4xl font-bold text-gray-900 justify-center text-center">Free</span>
                       ) : (
                         <div className="flex items-baseline justify-center">
                           <span className="text-5xl font-bold text-gray-900 text-center">
@@ -270,19 +303,16 @@ const Pricing: React.FC = () => {
                         const display = formatValue(key, value);
                         const positive = isPositive(key, value);
                         const Icon = positive ? Check : X;
-                        const iconColor = positive ? 'text-green-500' : 'text-red-500';
-                        const label = LABELS[key] || key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+                        const iconColor = positive ? "text-green-500" : "text-red-500";
+                        const label =
+                          LABELS[key] || key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 
                         return (
                           <div key={key} className="flex items-start">
                             <Icon className={`h-5 w-5 ${iconColor} mr-2 mt-0.5 flex-shrink-0`} />
                             <span className="text-gray-700">
                               {label}: <strong>{display}</strong>
-                              {note && (
-                                <span className="ml-2 text-xs text-gray-500 align-middle">
-                                  ({note})
-                                </span>
-                              )}
+                              {note && <span className="ml-2 text-xs text-gray-500 align-middle">({note})</span>}
                             </span>
                           </div>
                         );
@@ -294,15 +324,15 @@ const Pricing: React.FC = () => {
                       <div className="mb-6 rounded-2xl border border-orange-200 bg-orange-50/50 p-4">
                         <div className="flex items-center mb-2 text-orange-900 font-semibold">
                           <Plus className="w-4 h-4 mr-2" />
-                          Available Add-ons
+                          Available Add‑ons
                         </div>
                         <ul className="space-y-2">
                           {plan.addons.map((a) => (
                             <li key={a.key} className="text-sm text-orange-800">
-                              <span className="font-medium">{a.name}</span>{' '}
+                              <span className="font-medium">{a.name}</span>{" "}
                               <span className="opacity-80">
-                                — {currencySymbol(a.currency)}{a.price}{' '}
-                                {a.type === 'one_time' ? 'one-time' : '/mo'}
+                                — {currencySymbol(a.currency)}
+                                {a.price} {a.type === "one_time" ? "one-time" : "/mo"}
                               </span>
                             </li>
                           ))}
@@ -323,9 +353,9 @@ const Pricing: React.FC = () => {
                           hover:bg-gradient-to-r hover:from-[#FF8C1A] hover:to-[#FF5C1E]
                           hover:scale-105
                         "
-                        onClick={() => router.push('/login')}
+                        onClick={() => router.push("/login")}
                       >
-                        {isFree ? 'Start Free' : 'Choose Plan'}
+                        {isFree ? "Start Free" : "Choose Plan"}
                       </button>
                     </div>
                   </div>
@@ -336,7 +366,7 @@ const Pricing: React.FC = () => {
 
         {/* Footnote */}
         <p className="text-center text-gray-500 text-sm mt-12">
-          All paid plans include a 7-day Money-Back Guarantee • No setup fees • Cancel any time
+          All paid plans include a 7‑day Money‑Back Guarantee • No setup fees • Cancel any time
         </p>
       </div>
     </section>

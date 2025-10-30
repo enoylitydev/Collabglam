@@ -18,8 +18,19 @@ import {
   Info,
 } from "lucide-react";
 
-interface Feature { key: string; value: any; note?: string }
-interface Addon { key: string; name: string; type: "one_time" | "recurring"; price: number; currency?: string; payload?: any; }
+interface Feature {
+  key: string;
+  value: any;
+  note?: string;
+}
+interface Addon {
+  key: string;
+  name: string;
+  type: "one_time" | "recurring";
+  price: number;
+  currency?: string;
+  payload?: any;
+}
 interface Plan {
   planId: string;
   name: string;
@@ -29,12 +40,24 @@ interface Plan {
   label?: string;
   addons?: Addon[];
 }
-interface InfluencerData {
-  subscription: { planName: string; expiresAt: string | null } | null;
+
+/** New: lite response shape */
+interface InfluencerLite {
+  influencerId: string;
+  name: string;
+  email: string;
+  planId: string | null;
+  planName: string | null;
+  expiresAt?: string | null;
 }
+
 type PaymentStatus = "idle" | "processing" | "success" | "failed";
 
-declare global { interface Window { Razorpay: any } }
+declare global {
+  interface Window {
+    Razorpay: any;
+  }
+}
 
 const capitalize = (s: string) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
 const prettifyKey = (key: string) => key.split("_").map((k) => capitalize(k)).join(" ");
@@ -51,33 +74,81 @@ const FEATURE_LABELS: Record<string, string> = {
   contract_esign_download_pdf: "Download Signed PDF",
   dispute_channel: "Dispute Channel",
   media_kit_sections: "Media-kit Sections",
+  media_kit_builder: "Media-kit Builder",
 };
 
+/** Keys where numeric 0 means Unlimited (counts only). */
 const ZERO_IS_UNLIMITED = new Set<string>(["apply_to_campaigns_quota"]);
-const BOOL_POSITIVE = new Set(Object.keys(FEATURE_LABELS));
+
+/** Keys that are boolean in meaning even if backend sends 0/1. */
+const BOOLEAN_KEYS = new Set<string>([
+  "saved_searches",
+  "connect_instagram",
+  "connect_youtube",
+  "connect_tiktok",
+  "in_app_messaging",
+  "contract_esign_basic",
+  "contract_esign_download_pdf",
+  "dispute_channel",
+  "media_kit_builder",
+]);
+
+/** For these boolean-like keys, true means "Unlimited" rather than just "Included". */
+const TRUE_MEANS_UNLIMITED = new Set<string>(["in_app_messaging"]);
 
 function isUnlimited(key: string, value: any) {
   if (value === Infinity) return true;
   if (typeof value === "number" && value === 0 && ZERO_IS_UNLIMITED.has(key)) return true;
+  if (BOOLEAN_KEYS.has(key) && TRUE_MEANS_UNLIMITED.has(key) && Boolean(value)) return true;
   return false;
 }
+
 function formatValue(key: string, value: any): string {
   if (isUnlimited(key, value)) return "Unlimited";
+
+  // Handle boolean-like flags (including numeric 0/1)
+  if (BOOLEAN_KEYS.has(key)) {
+    const on = Boolean(value);
+    return on ? "Included" : "Not included";
+  }
+
   if (typeof value === "number") return value.toLocaleString();
   if (typeof value === "boolean") return value ? "Included" : "Not included";
   if (Array.isArray(value)) return value.length ? value.join(", ") : "None";
   if (value === null || value === undefined || value === "") return "—";
   return String(value);
 }
+
+function isPositive(key: string, value: any): boolean {
+  if (isUnlimited(key, value)) return true;
+  if (BOOLEAN_KEYS.has(key)) return Boolean(value);
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number") return value > 0;
+  if (Array.isArray(value)) return value.length > 0;
+  return Boolean(value);
+}
+
 function loadScript(src: string): Promise<boolean> {
   return new Promise((res) => {
     const s = document.createElement("script");
-    s.src = src; s.onload = () => res(true); s.onerror = () => res(false);
+    s.src = src;
+    s.onload = () => res(true);
+    s.onerror = () => res(false);
     document.body.appendChild(s);
   });
 }
+
 function isLoss(fromVal: any, toVal: any, key: string): boolean {
+  // Unlimited -> anything not unlimited is a loss
   if (isUnlimited(key, fromVal) && !isUnlimited(key, toVal)) return true;
+
+  // Boolean-like semantics (handle numeric 0/1 gracefully)
+  if (BOOLEAN_KEYS.has(key)) {
+    const fromOn = Boolean(fromVal);
+    const toOn = Boolean(toVal);
+    return fromOn && !toOn;
+  }
+
   if (typeof fromVal === "number" && typeof toVal === "number") return toVal < fromVal;
   if (typeof fromVal === "boolean" && typeof toVal === "boolean") return fromVal && !toVal;
   if (Array.isArray(fromVal) && Array.isArray(toVal)) return toVal.length < fromVal.length;
@@ -104,11 +175,13 @@ export default function InfluencerSubscriptionPage() {
       try {
         const { plans: fetched } = await post<any>("/subscription/list", { role: "Influencer" });
         setPlans(fetched || []);
+
         const id = localStorage.getItem("influencerId");
         if (id) {
-          const { subscription } = await get<InfluencerData>(`/influencer?id=${id}`);
-          setCurrentPlan(subscription?.planName || null);
-          setExpiresAt(subscription?.expiresAt ?? null);
+          // 🔄 Use lite endpoint: planName, planId, expiresAt
+          const lite = await get<InfluencerLite>(`/influencer/lite?id=${id}`);
+          setCurrentPlan(lite?.planName || null);
+          setExpiresAt(lite?.expiresAt ?? null);
         }
       } catch (e) {
         console.error("Failed to fetch subscription data", e);
@@ -276,7 +349,7 @@ export default function InfluencerSubscriptionPage() {
         <div className="text-center space-y-4 mb-12 lg:mb-16">
           <div className="flex items-center justify-center space-x-2 mb-4">
             <Crown className="w-8 h-8 text-orange-500" />
-            <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold bg-gradient-to-r from-gray-900 via-orange-900 to-orange-900 bg-clip-text text-transparent">
+            <h1 className="text-3xl sm:text-4xl lg:5xl font-bold bg-gradient-to-r from-gray-900 via-orange-900 to-orange-900 bg-clip-text text-transparent">
               Influencer Subscription Plans
             </h1>
           </div>
@@ -357,9 +430,11 @@ export default function InfluencerSubscriptionPage() {
               "in_app_messaging",
               "dispute_channel",
               "media_kit_sections",
+              "media_kit_builder",
             ];
+
             const orderedFeatures = ORDER
-              .map((k) => plan.features.find((f) => f.key === k))
+              .map((k) => plan.features.find((f) => f && f.key === k))
               .filter(Boolean) as Feature[];
 
             const currency = plan.currency || "USD";
@@ -397,9 +472,7 @@ export default function InfluencerSubscriptionPage() {
                   {/* Header */}
                   <div className={`px-6 sm:px-8 pt-8 pb-6 ${bestValue ? "bg-gradient-to-br from-orange-50 to-orange-50" : ""}`}>
                     <div className="text-center space-y-4">
-                      <h3 className="text-2xl sm:text-3xl font-bold text-gray-900">
-                        {capitalize(plan.name)}
-                      </h3>
+                      <h3 className="text-2xl sm:text-3xl font-bold text-gray-900">{capitalize(plan.name)}</h3>
                       <div className="space-y-1">
                         <div className="flex items-baseline justify-center space-x-1">
                           {isFree ? (
@@ -428,28 +501,20 @@ export default function InfluencerSubscriptionPage() {
                         const key = feature.key;
                         const label = FEATURE_LABELS[key] || prettifyKey(key);
                         const val = formatValue(key, feature.value);
-                        const isBool = typeof feature.value === "boolean";
-                        const showHint =
-                          key === "media_kit_items_limit" && feature.note
-                            ? feature.note
-                            : undefined;
+                        const positive = isPositive(key, feature.value);
+                        const showHint = key === "media_kit_items_limit" && feature.note ? feature.note : undefined;
 
                         return (
                           <li key={key} className="flex items-start space-x-3" style={{ animationDelay: `${i * 100}ms` }}>
                             <div className="flex-shrink-0 mt-0.5">
-                              {isBool ? (
-                                feature.value ? (
-                                  <CheckCircle className="w-5 h-5 text-emerald-600" />
-                                ) : (
-                                  <XCircle className="w-5 h-5 text-red-500" />
-                                )
+                              {positive ? (
+                                <CheckCircle className="w-5 h-5 text-emerald-600" />
                               ) : (
-                                <CheckCircle className="w-5 h-5 text-orange-500" />
+                                <XCircle className="w-5 h-5 text-red-500" />
                               )}
                             </div>
                             <div className="text-gray-700">
-                              <span className="font-medium">{label}:</span>{" "}
-                              <span className="font-semibold">{val}</span>
+                              <span className="font-medium">{label}:</span> <span className="font-semibold">{val}</span>
                               {showHint && (
                                 <span className="ml-2 inline-flex items-center text-xs text-gray-500">
                                   <Info className="w-3 h-3 mr-1" />
@@ -462,7 +527,7 @@ export default function InfluencerSubscriptionPage() {
                       })}
                     </ul>
 
-                    {/* Add-ons (if any in future for influencers) */}
+                    {/* Add-ons */}
                     {plan.addons && plan.addons.length > 0 && (
                       <div className="mt-6 rounded-2xl border border-orange-200 bg-orange-50/50 p-4">
                         <div className="flex items-center mb-2 text-orange-900 font-semibold">
