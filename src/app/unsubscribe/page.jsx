@@ -44,7 +44,7 @@ export default function UnsubscribePage() {
           return response.text(); // Or response.json() if your backend returns JSON
         })
         .then(() => {
-          setMessage(`You have successfully unsubscribed ${email}. You will no longer receive notifications.`);
+          setMessage(`You have successfully unsubscribed confirm@collabglam.com. You will no longer receive notifications.`);
         })
         .catch(error => {
           console.error('Unsubscribe error:', error);

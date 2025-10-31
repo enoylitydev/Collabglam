@@ -28,6 +28,7 @@ const menuItems: MenuItem[] = [
   { name: "My Media-Kit", href: "/influencer/media-kit", icon: HiDocument },
   { name: "My Campaigns", href: "/influencer/my-campaign", icon: HiClipboardList },
   { name: "Previous Campaigns", href: "/influencer/prev-campaign", icon: HiArchive },
+  { name: "Disputes", href: "/influencer/disputes", icon: HiClipboardList },
   { name: "Messages", href: "/influencer/messages", icon: HiChatAlt2 },
   { name: "Payment Details", href: "/influencer/payment-detail", icon: HiBanknotes },
   { name: "Subscriptions", href: "/influencer/subscriptions", icon: HiCreditCard },
