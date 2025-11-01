@@ -29,11 +29,13 @@ import {
   HiClipboardList,
   HiEye,
   HiPaperAirplane,
+  HiCheckCircle,
+  HiRefresh,
 } from "react-icons/hi";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 
-// NEW: import the exact sidebar + form components used in the reference UI
+// Reference UI components (sidebar + inputs)
 import { ContractSidebar, SidebarSection } from "./ContractSidebar";
 import {
   FloatingInput,
@@ -62,8 +64,8 @@ interface Influencer {
   category: string | null;
   audienceSize: number;
   createdAt?: string;
-  isAssigned: number;
-  isContracted: number;
+  isAssigned: number;     // contract sent flag
+  isContracted: number;   // legacy naming (kept)
   contractId: string | null;
   feeAmount: number;
   isAccepted: number;
@@ -76,6 +78,15 @@ interface Meta {
   page: number;
   limit: number;
   totalPages: number;
+}
+
+interface Milestone {
+  _id: string;
+  milestoneTitle: string;
+  amount: number;
+  milestoneDescription?: string;
+  status?: "pending" | "completed" | "released" | string;
+  createdAt?: string;
 }
 
 // ───────────────────────────────────────────────────────────────────────────────
@@ -129,7 +140,7 @@ const mapPlatformToApi = (p?: string | null) => {
   }
 };
 
-// Chip input (kept for other parts of the page; sidebar uses ChipInput from reference UI)
+// Lightweight chips (kept for areas outside reference ChipInput)
 function Chips({
   label,
   items,
@@ -232,15 +243,13 @@ export default function AppliedInfluencersPage() {
 
   // Form aligned to payload
   const [campaignTitle, setCampaignTitle] = useState(campaignName);
-  const [platforms, setPlatforms] = useState<string[]>([]); // string[] to match PlatformSelector
+  const [platforms, setPlatforms] = useState<string[]>([]);
   const [goLiveStart, setGoLiveStart] = useState("");
   const [goLiveEnd, setGoLiveEnd] = useState("");
   const [totalFee, setTotalFee] = useState("");
   const [currency, setCurrency] = useState("USD");
   const [milestoneSplit, setMilestoneSplit] = useState("50/50");
   const [revisionsIncluded, setRevisionsIncluded] = useState(1);
-
-  const [influencerHandle, setInfluencerHandle] = useState("");
 
   // Deliverable fields (single item)
   const [dType, setDType] = useState("Scope");
@@ -253,6 +262,14 @@ export default function AppliedInfluencersPage() {
   const [dHandles, setDHandles] = useState<string[]>([]);
   const [dCaptions, setDCaptions] = useState("");
   const [dLinks, setDLinks] = useState<string[]>([]);
+
+  // Milestones (moved out of sidebar)
+  const [showMilestoneModal, setShowMilestoneModal] = useState(false);
+  const [milestoneForm, setMilestoneForm] = useState({ title: "", amount: "", description: "" });
+
+  const [milestones, setMilestones] = useState<Milestone[]>([]);
+  const [milestonesLoading, setMilestonesLoading] = useState(false);
+  const [showMilestoneListModal, setShowMilestoneListModal] = useState(false);
 
   // Helpers
   const toggleSort = (field: keyof Influencer) => {
@@ -273,7 +290,7 @@ export default function AppliedInfluencersPage() {
       )
     ) : null;
 
-  // Fetch
+  // Fetch Applicants
   const fetchApplicants = async () => {
     if (!campaignId) return;
     setLoading(true);
@@ -307,9 +324,24 @@ export default function AppliedInfluencersPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [campaignId, page, searchTerm, sortField, sortOrder]);
 
-  // Milestones (unchanged)
-  const [showMilestoneModal, setShowMilestoneModal] = useState(false);
-  const [milestoneForm, setMilestoneForm] = useState({ title: "", amount: "", description: "" });
+  // Milestone: load list for selected influencer
+  const fetchMilestones = async (inf: Influencer) => {
+    if (!campaignId || !inf?.influencerId) return;
+    setMilestonesLoading(true);
+    try {
+      const res = await post<{ milestones: Milestone[] }>("/milestone/list", {
+        campaignId,
+        influencerId: inf.influencerId,
+      });
+      const list = res?.milestones || [];
+      setMilestones(list);
+    } catch {
+      // silent: the UI will show empty list
+      setMilestones([]);
+    } finally {
+      setMilestonesLoading(false);
+    }
+  };
 
   const handleAddMilestone = (inf: Influencer) => {
     setSelectedInf(inf);
@@ -331,6 +363,10 @@ export default function AppliedInfluencersPage() {
       toast({ icon: "success", title: "Added!", text: "Milestone has been added." });
       setShowMilestoneModal(false);
       fetchApplicants();
+      // if the milestone list modal is open for the same influencer, refresh it
+      if (showMilestoneListModal && selectedInf) {
+        await fetchMilestones(selectedInf);
+      }
     } catch {
       toast({ icon: "error", title: "Error", text: "Failed to add milestone." });
     }
@@ -366,9 +402,8 @@ export default function AppliedInfluencersPage() {
     setGoLiveEnd("");
     setTotalFee(String(inf.feeAmount || 5000));
     setCurrency("USD");
-    setMilestoneSplit("10"); // matches your payload example
+    setMilestoneSplit("10"); // if you intended "10", otherwise keep "50/50"
     setRevisionsIncluded(1);
-    setInfluencerHandle(inf.handle || "@");
 
     // Deliverable defaults based on your payload
     setDType("Scope");
@@ -384,27 +419,8 @@ export default function AppliedInfluencersPage() {
 
     setPdfUrl("");
     setShowContractPanel(true);
+    // NOTE: No milestones inside sidebar anymore.
   };
-
-  // Keep deliverable handles synced with influencerHandle if empty
-  useEffect(() => {
-    if (!dHandles.length && influencerHandle) setDHandles([influencerHandle]);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [influencerHandle]);
-
-  // Close on Escape
-  useEffect(() => {
-    if (!showContractPanel) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        if (pdfUrl) URL.revokeObjectURL(pdfUrl);
-        setPdfUrl("");
-        setShowContractPanel(false);
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [showContractPanel, pdfUrl]);
 
   // Build yellow payload matching EXACT structure
   const buildYellowForInitiate = () => {
@@ -435,17 +451,16 @@ export default function AppliedInfluencersPage() {
           draftRequired: Boolean(dDraftRequired),
           minLiveHours: Number(dMinLiveHours) || 0,
           tags: dTags,
-          handles: dHandles,
+          handles: dHandles, // read-only mirror
           captions: dCaptions,
           links: dLinks,
           disclosures: "",
         },
       ],
-      influencerHandle,
     };
   };
 
-  // PREVIEW: /contract/initiate type=2 → PDF blob
+  // PREVIEW → PDF blob
   const handleGeneratePreview = async () => {
     if (!selectedInf) return;
     if (!platforms.length) {
@@ -468,7 +483,7 @@ export default function AppliedInfluencersPage() {
     }
   };
 
-  // SEND: /contract/initiate type=1 → save/assign
+  // SEND → save/assign
   const handleSendContract = async () => {
     if (!selectedInf) return;
     try {
@@ -491,11 +506,52 @@ export default function AppliedInfluencersPage() {
     }
   };
 
+  // SIGN → brand signature against existing contractId
+  const signByContractId = async (contractId: string) => {
+    await post("/contract/sign", {
+      contractId,
+      role: "brand",
+      brandId: localStorage.getItem("brandId"),
+    });
+  };
+
+  const handleSignContract = async (inf?: Influencer) => {
+    const target = inf || selectedInf;
+    if (!target) return;
+    const cid = target.contractId;
+    if (!cid) {
+      return toast({
+        icon: "error",
+        title: "No Contract Found",
+        text: "Please send the contract first, then you can sign it.",
+      });
+    }
+    try {
+      await signByContractId(cid);
+      toast({ icon: "success", title: "Signed", text: "Contract signed successfully." });
+      fetchApplicants();
+    } catch (e: any) {
+      toast({
+        icon: "error",
+        title: "Sign Failed",
+        text: e?.response?.data?.message || e?.message || "Unable to sign contract.",
+      });
+    }
+  };
+
+  // Open milestone list modal
+  const openMilestoneList = async (inf: Influencer) => {
+    setSelectedInf(inf);
+    setShowMilestoneListModal(true);
+    await fetchMilestones(inf);
+  };
+
   // Rows
   const rows = useMemo(
     () =>
       influencers.map((inf, idx) => {
         const href = buildHandleUrl(inf.primaryPlatform, inf.handle);
+        const canSign = Boolean(inf.contractId) && (inf.isAssigned === 1 || inf.isContracted === 1);
         return (
           <TableRow
             key={inf.influencerId}
@@ -543,14 +599,14 @@ export default function AppliedInfluencersPage() {
                 </>
               ) : inf.isAccepted === 1 ? (
                 <p>Working</p>
-              ) : inf.isAssigned === 1 ? (
+              ) : inf.isAssigned === 1 || inf.isContracted === 1 ? (
                 <p>Contract Sent</p>
               ) : (
                 <p>Applied for Work</p>
               )}
             </TableCell>
 
-            <TableCell className="flex space-x-2 justify-center">
+            <TableCell className="flex flex-wrap gap-2 justify-center">
               <Button
                 size="sm"
                 variant="outline"
@@ -569,6 +625,7 @@ export default function AppliedInfluencersPage() {
                 Message
               </Button>
 
+              {/* Send / Resend Contract */}
               {!inf.isAssigned && !inf.isRejected && (
                 <Button size="sm" variant="outline" className="bg-green-500 text-white" onClick={() => openContractPanel(inf)}>
                   Send Contract
@@ -581,11 +638,25 @@ export default function AppliedInfluencersPage() {
                 </Button>
               )}
 
+              {/* Add Milestone (quick) */}
               {inf.isAccepted === 1 && (
                 <Button size="sm" variant="outline" className="bg-green-500 text-white" onClick={() => handleAddMilestone(inf)}>
                   Add Milestone
                 </Button>
               )}
+
+              {/* Sign Contract */}
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={!canSign}
+                className={`text-white ${canSign ? "bg-emerald-600 hover:bg-emerald-700" : "bg-gray-300 cursor-not-allowed"}`}
+                onClick={() => handleSignContract(inf)}
+                title={canSign ? "Sign this contract as Brand" : "No contract available to sign"}
+              >
+                <HiCheckCircle className="mr-1 h-4 w-4" />
+                Sign Contract
+              </Button>
             </TableCell>
           </TableRow>
         );
@@ -677,7 +748,7 @@ export default function AppliedInfluencersPage() {
         </div>
       )}
 
-      {/* Sliding Right Sidebar (Contract Panel) — EXACT UI as reference */}
+      {/* Sliding Right Sidebar (Contract Panel) — Milestones removed from here */}
       <ContractSidebar
         isOpen={showContractPanel}
         onClose={() => {
@@ -686,11 +757,16 @@ export default function AppliedInfluencersPage() {
           setShowContractPanel(false);
         }}
         title="Initiate Contract"
-        subtitle={campaignTitle || "New Agreement"}
+        subtitle={
+          selectedInf
+            ? `${campaignTitle || "New Agreement"} • ${selectedInf.name}`
+            : (campaignTitle || "New Agreement")
+        }
       >
         {!pdfUrl ? (
           <>
-            <SidebarSection title="Campaign Details" icon={<HiDocumentText className="w-4 h-4" />}> 
+            {/* Campaign Details */}
+            <SidebarSection title="Campaign Details" icon={<HiDocumentText className="w-4 h-4" />}>
               <div className="space-y-4">
                 <FloatingInput
                   id="campaignTitle"
@@ -770,19 +846,29 @@ export default function AppliedInfluencersPage() {
               </div>
             </SidebarSection>
 
-            <SidebarSection title="Influencer" icon={<HiUsers className="w-4 h-4" />}> 
-              <div className="space-y-4">
-                <FloatingInput
-                  id="influencerHandle"
-                  label="Influencer Handle"
-                  value={influencerHandle}
-                  onChange={(e) => setInfluencerHandle(e.target.value)}
-                />
-                <ChipInput label="Deliverable Handles" items={dHandles} setItems={setDHandles} placeholder="@handle" />
+            {/* Influencer header (name as title, handle inside) */}
+            <SidebarSection title={selectedInf?.name || "Influencer"} icon={<HiUsers className="w-4 h-4" />}>
+              <div className="space-y-2">
+                <div className="text-sm text-gray-700">
+                  Handle:&nbsp;
+                  {selectedInf?.handle ? (
+                    <a
+                      className="text-indigo-600 hover:underline"
+                      href={buildHandleUrl(selectedInf?.primaryPlatform, selectedInf?.handle) || "#"}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      {selectedInf.handle}
+                    </a>
+                  ) : (
+                    <span className="text-gray-500">—</span>
+                  )}
+                </div>
               </div>
             </SidebarSection>
 
-            <SidebarSection title="Deliverables" icon={<HiClipboardList className="w-4 h-4" />}> 
+            {/* Deliverables */}
+            <SidebarSection title="Deliverables" icon={<HiClipboardList className="w-4 h-4" />}>
               <div className="space-y-4">
                 <div className="grid grid-cols-2 gap-3">
                   <FloatingInput id="dType" label="Type" value={dType} onChange={(e) => setDType(e.target.value)} />
@@ -829,10 +915,32 @@ export default function AppliedInfluencersPage() {
                     validator={(s) => /^https?:\/\/.+/i.test(s)}
                   />
                 </div>
+
+                {/* Read-only handles display */}
+                <div className="text-sm text-gray-600">
+                  <span className="font-medium">Handles (locked): </span>
+                  {dHandles.length ? dHandles.join(", ") : "—"}
+                </div>
               </div>
             </SidebarSection>
 
-            <div className="sticky bottom-0 -mx-6 -mb-6 bg-white border-t border-gray-200 p-6 flex justify-end gap-3 shadow-lg">
+            {/* Footer Actions */}
+            <div className="sticky bottom-0 -mx-6 -mb-6 bg-white border-t border-gray-200 p-6 flex flex-wrap justify-end gap-3 shadow-lg">
+              {/* Optional immediate sign if a contract already exists */}
+              <Button
+                type="button"
+                variant="outline"
+                className={`flex items-center gap-2 ${
+                  selectedInf?.contractId ? "border-emerald-600 text-emerald-700" : "border-gray-300 text-gray-400"
+                }`}
+                disabled={!selectedInf?.contractId}
+                onClick={() => handleSignContract()}
+                title={selectedInf?.contractId ? "Sign existing contract" : "Send contract first"}
+              >
+                <HiCheckCircle className="w-5 h-5" />
+                Sign Contract
+              </Button>
+
               <Button
                 variant="outline"
                 onClick={() => {
@@ -857,7 +965,7 @@ export default function AppliedInfluencersPage() {
           </>
         ) : (
           <>
-            <SidebarSection title="PDF Preview" icon={<HiDocumentText className="w-4 h-4" />}> 
+            <SidebarSection title="PDF Preview" icon={<HiDocumentText className="w-4 h-4" />}>
               <div className="bg-gray-100 rounded-lg p-8 text-center">
                 <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-gradient-to-br from-[#FFA135] to-[#FF7236] flex items-center justify-center">
                   <HiDocumentText className="w-8 h-8 text-white" />
@@ -867,7 +975,7 @@ export default function AppliedInfluencersPage() {
               </div>
             </SidebarSection>
 
-            <div className="sticky bottom-0 -mx-6 -mb-6 bg-white border-t border-gray-200 p-6 flex justify-end gap-3 shadow-lg">
+            <div className="sticky bottom-0 -mx-6 -mb-6 bg-white border-t border-gray-200 p-6 flex flex-wrap justify-end gap-3 shadow-lg">
               <Button
                 variant="outline"
                 onClick={() => {
@@ -878,6 +986,22 @@ export default function AppliedInfluencersPage() {
               >
                 Back
               </Button>
+
+              {/* NEW: Sign Contract from preview step (if already created/sent before) */}
+              <Button
+                type="button"
+                variant="outline"
+                disabled={!selectedInf?.contractId}
+                onClick={() => handleSignContract()}
+                className={`px-6 py-2.5 rounded-lg flex items-center gap-2 ${
+                  selectedInf?.contractId ? "border-emerald-600 text-emerald-700" : "border-gray-300 text-gray-400"
+                }`}
+                title={selectedInf?.contractId ? "Sign existing contract" : "Send contract first"}
+              >
+                <HiCheckCircle className="w-5 h-5" />
+                Sign Contract
+              </Button>
+
               <Button
                 onClick={handleSendContract}
                 className="px-6 py-2.5 rounded-lg bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white font-medium shadow-md transition-all duration-200 hover:shadow-lg hover:scale-105 flex items-center gap-2"
@@ -890,7 +1014,74 @@ export default function AppliedInfluencersPage() {
         )}
       </ContractSidebar>
 
-      {/* Milestone Modal */}
+      {/* Milestone List Modal (DISPLAY) */}
+      {showMilestoneListModal && selectedInf && (
+        <div className="fixed inset-0 backdrop-blur-sm bg-black/10 flex items-center justify-center z-50">
+          <div
+            className="max-w-2xl bg-white rounded-lg p-6 w-full max-h-[90vh] overflow-auto border-2 border-transparent"
+            style={{ borderImage: `linear-gradient(to right, ${GRADIENT_FROM}, ${GRADIENT_TO}) 1` }}
+          >
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-semibold">
+                Milestones • {selectedInf.name}
+              </h2>
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="px-2"
+                  onClick={() => fetchMilestones(selectedInf)}
+                  title="Refresh milestones"
+                >
+                  <HiRefresh className="w-4 h-4" />
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="bg-green-600 text-white"
+                  onClick={() => handleAddMilestone(selectedInf)}
+                >
+                  Add Milestone
+                </Button>
+              </div>
+            </div>
+
+            {milestonesLoading ? (
+              <div className="rounded-md border p-3 text-sm text-gray-500">Loading milestones…</div>
+            ) : milestones.length ? (
+              <div className="space-y-3">
+                {milestones.map((m) => (
+                  <div key={m._id} className="rounded-lg border border-gray-200 p-4 bg-white/70">
+                    <div className="flex items-center justify-between">
+                      <h4 className="font-medium">{m.milestoneTitle}</h4>
+                      <span className="text-sm px-2 py-0.5 rounded bg-gray-100 border">
+                        ${Number(m.amount || 0).toLocaleString()}
+                      </span>
+                    </div>
+                    {m.milestoneDescription && (
+                      <p className="mt-2 text-sm text-gray-600">{m.milestoneDescription}</p>
+                    )}
+                    <div className="mt-2 flex items-center justify-between text-xs text-gray-500">
+                      <span>Status: {m.status ? String(m.status) : "—"}</span>
+                      <span>{m.createdAt ? new Date(m.createdAt).toLocaleString() : ""}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="rounded-md border p-3 text-sm text-gray-500">No milestones yet.</div>
+            )}
+
+            <div className="mt-6 flex justify-end space-x-2">
+              <Button variant="outline" onClick={() => setShowMilestoneListModal(false)}>
+                Close
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Milestone Add Modal */}
       {showMilestoneModal && selectedInf && (
         <div className="fixed inset-0 backdrop-blur-sm bg-opacity-30 flex items-center justify-center z-50">
           <div

@@ -1,12 +1,13 @@
+// ContractSidebar.tsx
 import React from "react";
-import { HiX, HiCheckCircle, HiDocumentText } from "react-icons/hi";
+import { HiX, HiDocumentText } from "react-icons/hi";
 
 interface ContractSidebarProps {
   isOpen: boolean;
   onClose: () => void;
   children: React.ReactNode;
-  title?: string;
-  subtitle?: string;
+  title?: string;    // small, upper label
+  subtitle?: string; // big line (we'll show influencer name here)
 }
 
 export function ContractSidebar({
@@ -18,19 +19,22 @@ export function ContractSidebar({
 }: ContractSidebarProps) {
   return (
     <div className={`fixed inset-0 z-50 ${isOpen ? "" : "pointer-events-none"}`}>
+      {/* Backdrop */}
       <div
-        className={`absolute inset-0 bg-black/50 backdrop-blur-sm transition-opacity duration-300 ${
+        className={`absolute inset-0 bg-black/50 backdrop-blur-[2px] transition-opacity duration-300 ${
           isOpen ? "opacity-100" : "opacity-0"
         }`}
         onClick={onClose}
       />
 
+      {/* Panel */}
       <div
-        className={`absolute right-0 top-0 h-full w-full sm:w-[600px] bg-white shadow-2xl transform transition-transform duration-300 ease-out ${
+        className={`absolute right-0 top-0 h-full w-full sm:w-[720px] md:w-[860px] lg:w-[960px] bg-white shadow-2xl transform transition-transform duration-300 ease-out ${
           isOpen ? "translate-x-0" : "translate-x-full"
         }`}
       >
-        <div className="relative h-32 overflow-hidden">
+        {/* Header */}
+        <div className="relative h-36 overflow-hidden">
           <div
             className="absolute inset-0 opacity-10"
             style={{
@@ -38,38 +42,41 @@ export function ContractSidebar({
               clipPath: "polygon(0 0, 100% 0, 100% 65%, 0 100%)",
             }}
           />
-
           <div
             className="absolute inset-0"
             style={{
               background: `linear-gradient(135deg, #FFA135 0%, #FF7236 100%)`,
-              clipPath: "polygon(0 0, 100% 0, 100% 75%, 0 90%)",
+              clipPath: "polygon(0 0, 100% 0, 100% 78%, 0 92%)",
             }}
           />
 
           <div className="relative z-10 p-6 text-white flex items-start justify-between h-full">
             <div className="flex items-start gap-4">
-              <div className="w-12 h-12 rounded-full bg-white/20 backdrop-blur-md flex items-center justify-center mt-1">
+              <div className="w-12 h-12 rounded-2xl bg-white/15 backdrop-blur-md flex items-center justify-center mt-1 shadow-sm">
                 <HiDocumentText className="w-6 h-6 text-white" />
               </div>
               <div>
-                <div className="text-xs font-medium opacity-90 uppercase tracking-wider mb-1">
+                <div className="text-[11px] tracking-wide font-semibold uppercase/relaxed opacity-95 mb-1">
                   {title}
                 </div>
-                <div className="text-xl font-bold">{subtitle}</div>
+                {/* Big line — put Influencer name here */}
+                <div className="text-2xl font-extrabold leading-tight">{subtitle}</div>
               </div>
             </div>
 
             <button
-              className="w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 backdrop-blur-sm flex items-center justify-center transition-all duration-200 hover:scale-110"
+              className="w-10 h-10 rounded-full bg-white/15 hover:bg-white/25 backdrop-blur-sm flex items-center justify-center transition-all duration-150 hover:scale-110"
               onClick={onClose}
+              aria-label="Close"
+              title="Close"
             >
               <HiX className="w-5 h-5" />
             </button>
           </div>
         </div>
 
-        <div className="h-[calc(100%-8rem)] overflow-y-auto">
+        {/* Body */}
+        <div className="h-[calc(100%-9rem)] overflow-y-auto">
           <div className="p-6 space-y-5">{children}</div>
         </div>
       </div>
