@@ -47,6 +47,7 @@ export function BrandSignup({ onSuccess }: { onSuccess: () => void }) {
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [resendIn, setResendIn] = useState<number>(0);
 
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [logoPreview, setLogoPreview] = useState<string>('');
@@ -85,6 +86,13 @@ export function BrandSignup({ onSuccess }: { onSuccess: () => void }) {
       }
     })();
   }, []);
+
+  // Resend countdown timer
+  useEffect(() => {
+    if (resendIn <= 0) return;
+    const t = setInterval(() => setResendIn((s) => (s > 0 ? s - 1 : 0)), 1000);
+    return () => clearInterval(t);
+  }, [resendIn]);
 
   useEffect(() => {
     (async () => {
@@ -216,11 +224,13 @@ export function BrandSignup({ onSuccess }: { onSuccess: () => void }) {
       setError('Please enter your work email.');
       return;
     }
+    if (resendIn > 0) return;
     setLoading(true);
     setError('');
     try {
       await post('/brand/requestOtp', { email: formData.email, role: 'Brand' });
       setStep('otp');
+      setResendIn(30);
     } catch (err: any) {
       setError(err?.response?.data?.message || err?.message || 'Failed to send OTP');
     } finally {
@@ -278,6 +288,12 @@ export function BrandSignup({ onSuccess }: { onSuccess: () => void }) {
       setError('Please fill in all required fields.');
       return;
     }
+    // Enforce 10-digit mobile without country code
+    const phoneDigits = (formData.phone || '').replace(/\D/g, '');
+    if (phoneDigits.length !== 10) {
+      setError('Please enter a valid 10-digit mobile number (exclude country code).');
+      return;
+    }
     if (formData.password !== formData.confirmPassword) {
       setError('Passwords do not match.');
       return;
@@ -309,7 +325,7 @@ export function BrandSignup({ onSuccess }: { onSuccess: () => void }) {
 
       await post('/brand/register', {
         name: formData.name,
-        phone: formData.phone,
+        phone: phoneDigits,
         email: formData.email,
         password: formData.password,
         countryId: formData.countryId,
@@ -425,6 +441,21 @@ export function BrandSignup({ onSuccess }: { onSuccess: () => void }) {
             </p>
           </div>
 
+          <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
+            <Button
+              onClick={sendOTP}
+              loading={loading}
+              disabled={resendIn > 0}
+              variant="brand"
+              className="w-full sm:w-auto px-6"
+            >
+              Resend Code
+            </Button>
+            <span className="self-center text-sm text-gray-600">
+              {resendIn > 0 ? `Resend in ${resendIn}s` : 'You can resend now'}
+            </span>
+          </div>
+
           <FloatingLabelInput
             id="brand-otp"
             label="Enter 6-Digit Code"
@@ -441,7 +472,14 @@ export function BrandSignup({ onSuccess }: { onSuccess: () => void }) {
             Verify Code
           </Button>
 
-          <button onClick={() => setStep('email')} className="w-full text-sm text-gray-600 hover:text-gray-900">
+          <button
+            onClick={() => {
+              setStep('email');
+              setResendIn(0);
+              setFormData({ ...formData, otp: '' });
+            }}
+            className="w-full text-sm text-gray-600 hover:text-gray-900"
+          >
             Change email address
           </button>
         </div>
@@ -514,17 +552,22 @@ export function BrandSignup({ onSuccess }: { onSuccess: () => void }) {
                   />
 
                   <div className="md:col-span-2">
-                    <FloatingLabelInput
-                      id="brand-phone"
-                      label="Phone Number"
-                      type="tel"
-                      autoComplete="tel"
-                      inputMode="tel"
-                      pattern="[0-9()+\\-\\s]*"
-                      value={formData.phone}
-                      onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                      required
-                    />
+                  <FloatingLabelInput
+                    id="brand-phone"
+                    label="Phone Number"
+                    type="tel"
+                    autoComplete="tel"
+                    inputMode="numeric"
+                    pattern="[0-9]{10}"
+                    maxLength={10}
+                    title="Enter 10-digit mobile number (exclude country code)"
+                    value={formData.phone}
+                    onChange={(e) => {
+                      const digits = e.target.value.replace(/\D/g, '').slice(0, 10);
+                      setFormData({ ...formData, phone: digits });
+                    }}
+                    required
+                  />
                   </div>
                 </div>
 
@@ -667,7 +710,7 @@ export function BrandSignup({ onSuccess }: { onSuccess: () => void }) {
                 </div>
 
                 {/* Verification + Terms (symmetrical on md+) */}
-                <div className="grid md:grid-cols-2 gap-3">
+                <div className="grid md:grid-rows-2 gap-2">
                   <label className="flex items-start gap-3 cursor-pointer group">
                     <input
                       type="checkbox"

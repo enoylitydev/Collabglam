@@ -17,6 +17,7 @@ export function LoginForm({ role, onForgotPassword, onSuccess }: LoginFormProps)
     password: '',
     rememberMe: false
   });
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const router = useRouter();
@@ -96,24 +97,24 @@ export function LoginForm({ role, onForgotPassword, onSuccess }: LoginFormProps)
       <FloatingLabelInput
         id="login-password"
         label="Password"
-        type="password"
+        type={showPassword ? 'text' : 'password'}
         value={formData.password}
         onChange={(e) => setFormData({ ...formData, password: e.target.value })}
         required
       />
 
       <div className="flex items-center justify-between text-sm">
-        {/* <label className="flex items-center space-x-2 cursor-pointer group">
+        <label className="flex items-center space-x-2 cursor-pointer group select-none">
           <input
             type="checkbox"
-            checked={formData.rememberMe}
-            onChange={(e) => setFormData({ ...formData, rememberMe: e.target.checked })}
+            checked={showPassword}
+            onChange={(e) => setShowPassword(e.target.checked)}
             className={`rounded border-gray-300 ${
               role === 'brand' ? 'text-orange-600 focus:ring-orange-500' : 'text-yellow-600 focus:ring-yellow-500'
             }`}
           />
-          <span className="text-gray-600 group-hover:text-gray-900">Remember me</span>
-        </label> */}
+          <span className="text-gray-600 group-hover:text-gray-900">Show password</span>
+        </label>
 
         <button
           type="button"

@@ -101,6 +101,9 @@ export default function InfluencerSignup({ onSuccess }: { onSuccess: () => void 
   const [langLoading, setLangLoading] = useState(false);
   const [langError, setLangError] = useState('');
 
+  // Max allowed DOB: 2013 or earlier
+  const maxDob = '2013-12-31';
+
   // OTP state
   const [resendIn, setResendIn] = useState<number>(0);
   const [otpSent, setOtpSent] = useState(false);
@@ -254,6 +257,25 @@ export default function InfluencerSignup({ onSuccess }: { onSuccess: () => void 
       setError('Please fill in all required fields');
       return;
     }
+    // DOB must be 2013-12-31 or earlier
+    if (!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(formData.dateOfBirth)) {
+      setError('Please enter a valid date of birth');
+      return;
+    }
+    const cutoff = '2013-12-31';
+    // compare ISO strings (YYYY-MM-DD) lexicographically
+    if (formData.dateOfBirth > cutoff) {
+      setError('Date of birth must be on or before 2013');
+      return;
+    }
+    // Enforce 10-digit mobile without country code
+    const phoneDigits = (formData.phone || '').replace(/\D/g, '');
+    if (phoneDigits.length !== 10) {
+      setError('Please enter a valid 10-digit mobile number (exclude country code).');
+      return;
+    }
+    // Persist normalized digits
+    setFormData((prev) => ({ ...prev, phone: phoneDigits }));
     setError('');
     setStep('verify');
     setOtpSent(false);
@@ -358,6 +380,8 @@ export default function InfluencerSignup({ onSuccess }: { onSuccess: () => void 
   const setProvider = (p: Provider, patch: Partial<ProviderState>) =>
     setPlatforms((s) => ({ ...s, [p]: { ...s[p], ...patch } }));
 
+  
+
   const resolveProfile = async (provider: Provider) => {
     const s = platforms[provider];
     const handle = s.handle.replace(/^@/, '').trim();
@@ -452,7 +476,7 @@ export default function InfluencerSignup({ onSuccess }: { onSuccess: () => void 
         name: formData.fullName,
         email: formData.email,
         password: formData.password,
-        phone: formData.phone,
+        phone: (formData.phone || '').replace(/\D/g, ''),
         countryId: formData.countryId,
         callingId: formData.callingCodeId,
         // NEW: pass basics & languages
@@ -557,7 +581,7 @@ export default function InfluencerSignup({ onSuccess }: { onSuccess: () => void 
               {step === 'basic' && 'Let’s get to know you 💫'}
               {step === 'verify' && 'Secure your account 🔐'}
               {step === 'platform' && 'Where do you shine online? ✨'}
-              {step === 'quick' && 'A few quick questions to personalize your experience'}
+              {step === 'quick' && 'Optional: A few quick questions to personalize your experience'}
             </p>
           </div>
 
@@ -613,16 +637,23 @@ export default function InfluencerSignup({ onSuccess }: { onSuccess: () => void 
                     />
                   </div>
                   <div className="sm:col-span-2">
-                    <FloatingLabelInput
-                      id="inf-phone"
-                      label="Mobile Number"
-                      type="tel"
-                      placeholder="For urgent approvals only"
-                      value={formData.phone}
-                      onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                      required
-                      autoComplete="tel"
-                    />
+                  <FloatingLabelInput
+                    id="inf-phone"
+                    label="Mobile Number"
+                    type="tel"
+                    placeholder="10-digit mobile (no country code)"
+                    inputMode="numeric"
+                    pattern="[0-9]{10}"
+                    maxLength={10}
+                    title="Enter 10-digit mobile number (exclude country code)"
+                    value={formData.phone}
+                    onChange={(e) => {
+                      const digits = e.target.value.replace(/\D/g, '').slice(0, 10);
+                      setFormData({ ...formData, phone: digits });
+                    }}
+                    required
+                    autoComplete="tel"
+                  />
                   </div>
                 </div>
 
@@ -633,7 +664,17 @@ export default function InfluencerSignup({ onSuccess }: { onSuccess: () => void 
                       label="Date of Birth"
                       type="date"
                       value={formData.dateOfBirth}
-                      onChange={(e) => setFormData({ ...formData, dateOfBirth: e.target.value })}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (/^\d{4}-\d{2}-\d{2}$/.test(val) && val > maxDob) {
+                          setError('Date of birth must be on or before 2013');
+                          (e.currentTarget as HTMLInputElement).setCustomValidity('Date of birth must be on or before 2013');
+                          (e.currentTarget as HTMLInputElement).reportValidity?.();
+                          return;
+                        }
+                        (e.currentTarget as HTMLInputElement).setCustomValidity('');
+                        setFormData({ ...formData, dateOfBirth: val });
+                      }}
                       required
                       autoComplete="bday"
                     />
@@ -1295,6 +1336,17 @@ function QuickQuestions({
         </div>
       </div>
 
+      {/* Skip option (global) */}
+      <div className="flex justify-end">
+        <button
+          type="button"
+          onClick={() => onComplete()}
+          className="text-sm text-gray-600 underline hover:text-gray-800"
+        >
+          Skip for now
+        </button>
+      </div>
+
       {err && <div className="p-3 text-sm rounded-md border border-red-200 bg-red-50 text-red-700" aria-live="polite">{err}</div>}
 
       {/* ===== SUBSTEP 1 — all react-select */}
@@ -1372,8 +1424,7 @@ function QuickQuestions({
             </div>
           </div>
 
-          <div className="flex justify-between">
-            <div />
+          <div className="flex justify-end">
             <Button onClick={next} variant="influencer" disabled={!validStep1}>
               Next
             </Button>
@@ -1546,6 +1597,14 @@ function QuickQuestions({
             <div className="flex gap-2">
               <Button onClick={back} variant="outline">
                 Back
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                className="py-1 px-3 !w-auto"
+                onClick={() => onComplete()}
+              >
+                Skip for now
               </Button>
               <Button onClick={finish} loading={saving} variant="influencer" disabled={!validStep3}>
                 Finish
