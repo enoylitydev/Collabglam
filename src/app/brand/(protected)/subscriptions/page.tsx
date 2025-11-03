@@ -10,30 +10,44 @@ import {
   X,
   Star,
   Loader2,
-  Sparkles,
   Crown,
   AlertTriangle,
   Heart,
   Mail,
+  Plus,
+  Info,
 } from "lucide-react";
 
+/** ────────────────────────────────────────────────────────────────────────────
+ * Types aligned to updated backend model
+ *  - features.value can be number | boolean | string | string[] | null
+ *  - plans may include `label`, `currency`, and `addons`
+ * ──────────────────────────────────────────────────────────────────────────── */
 interface Feature {
   key: string;
-  value: number;
+  value: any; // number | boolean | string | string[] | null
+  note?: string;
 }
-
+interface Addon {
+  key: string;
+  name: string;
+  type: "one_time" | "recurring";
+  price: number;
+  currency?: string;
+  payload?: any;
+}
 interface Plan {
   planId: string;
   name: string;
-  monthlyCost: number; // 0 or free => no Razorpay
+  monthlyCost: number;
+  currency?: string;
   features: Feature[];
-  featured?: boolean;
+  label?: string; // e.g., "Best Value"
+  addons?: Addon[];
 }
-
 interface BrandData {
-  subscription: { planName: string; expiresAt: string };
+  subscription: { planName: string; expiresAt: string | null } | null;
 }
-
 type PaymentStatus = "idle" | "processing" | "success" | "failed";
 
 declare global {
@@ -42,13 +56,83 @@ declare global {
   }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
 // Helpers
-const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+// ─────────────────────────────────────────────────────────────────────────────
+const capitalize = (s: string) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
 const prettifyKey = (key: string) =>
   key
     .split("_")
     .map((k) => capitalize(k))
     .join(" ");
+
+const FEATURE_LABELS: Record<string, string> = {
+  invites_per_month: "Invites / month",
+  monthly_credits: "Monthly Credits",
+  live_campaigns_limit: "Live Campaigns",
+  search_cached_only: "Search Mode (Cached only)",
+  search_fresh_uses_credits: "Fresh Search Uses Credits",
+  view_full_profiles_uses_credits: "Full Profile View Uses Credits",
+  in_app_messaging: "In-app Messaging",
+  contracts_access: "Contracts",
+  milestones_access: "Milestones",
+  dispute_support: "Dispute Support",
+  profile_preview_only: "Profile preview only",
+};
+
+/** Boolean-like feature keys (backend may send 0/1). */
+const BOOLEAN_KEYS = new Set<string>([
+  "search_cached_only",
+  "search_fresh_uses_credits",
+  "view_full_profiles_uses_credits",
+  "in_app_messaging",
+  "contracts_access",
+  "milestones_access",
+  "dispute_support",
+  "profile_preview_only",
+]);
+
+/** In some keys, 0 means Unlimited (counts only; NOT for credits). */
+const ZERO_IS_UNLIMITED = new Set<string>([
+  "apply_to_campaigns_quota", // influencer key, reused for generic comparison logic
+  "live_campaigns_limit", // treat 0 as Unlimited campaigns if ever used
+]);
+
+/** For these boolean-like keys, truthy means unlimited rather than just Included. */
+const TRUE_MEANS_UNLIMITED = new Set<string>(["in_app_messaging"]);
+
+function isUnlimited(key: string, value: any) {
+  if (value === Infinity) return true;
+  if (typeof value === "number" && value === 0 && ZERO_IS_UNLIMITED.has(key)) return true;
+  if (BOOLEAN_KEYS.has(key) && TRUE_MEANS_UNLIMITED.has(key) && Boolean(value)) return true;
+  return false;
+}
+
+function formatValue(key: string, value: any): string {
+  // Unlimited first
+  if (isUnlimited(key, value)) return "Unlimited";
+
+  // Explicit boolean-like handling (even if numeric 0/1)
+  if (BOOLEAN_KEYS.has(key)) {
+    const on = Boolean(value);
+    return on ? "Included" : "Not included";
+  }
+
+  if (typeof value === "number") {
+    return value.toLocaleString();
+  }
+
+  if (typeof value === "boolean") {
+    return value ? "Included" : "Not included";
+  }
+
+  if (Array.isArray(value)) {
+    return value.length ? value.join(", ") : "None";
+  }
+
+  if (value === null || value === undefined || value === "") return "—";
+  return String(value);
+}
 
 function loadScript(src: string): Promise<boolean> {
   return new Promise((res) => {
@@ -58,6 +142,54 @@ function loadScript(src: string): Promise<boolean> {
     script.onerror = () => res(false);
     document.body.appendChild(script);
   });
+}
+
+/** Determine if a move causes a loss for the given key/value pair. */
+function isLoss(fromVal: any, toVal: any, key: string): boolean {
+  // Unlimited -> anything not unlimited is a loss
+  if (isUnlimited(key, fromVal) && !isUnlimited(key, toVal)) return true;
+
+  // Boolean-like semantics (handle numeric 0/1)
+  if (BOOLEAN_KEYS.has(key)) {
+    const fromOn = Boolean(fromVal);
+    const toOn = Boolean(toVal);
+    return fromOn && !toOn;
+  }
+
+  // Numbers: smaller is a loss (credits, invites, limits)
+  if (typeof fromVal === "number" && typeof toVal === "number") {
+    return toVal < fromVal;
+  }
+
+  // Booleans: true -> false is a loss
+  if (typeof fromVal === "boolean" && typeof toVal === "boolean") {
+    return fromVal && !toVal;
+  }
+
+  // Arrays: shrinking is a loss
+  if (Array.isArray(fromVal) && Array.isArray(toVal)) {
+    return toVal.length < fromVal.length;
+  }
+
+  // Type changed cases
+  if ((fromVal === null || fromVal === undefined) && (toVal !== null && toVal !== undefined)) {
+    return false;
+  }
+  if ((toVal === null || toVal === undefined) && (fromVal !== null && fromVal !== undefined)) {
+    return true;
+  }
+
+  return false;
+}
+
+/** Positive-ness for icon coloring */
+function isPositive(key: string, value: any): boolean {
+  if (isUnlimited(key, value)) return true;
+  if (BOOLEAN_KEYS.has(key)) return Boolean(value);
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number") return value > 0;
+  if (Array.isArray(value)) return value.length > 0;
+  return Boolean(value);
 }
 
 export default function BrandSubscriptionPage() {
@@ -78,15 +210,13 @@ export default function BrandSubscriptionPage() {
   useEffect(() => {
     (async () => {
       try {
-        const { plans: fetched } = await post<any>("/subscription/list", {
-          role: "Brand",
-        });
+        const { plans: fetched } = await post<any>("/subscription/list", { role: "Brand" });
         setPlans(fetched || []);
         const id = localStorage.getItem("brandId");
         if (id) {
           const { subscription } = await get<BrandData>(`/brand?id=${id}`);
           setCurrentPlan(subscription?.planName || null);
-          setExpiresAt(subscription?.expiresAt || null);
+          setExpiresAt(subscription?.expiresAt ?? null);
         }
       } catch (e) {
         console.error("Failed to fetch subscription data", e);
@@ -103,25 +233,30 @@ export default function BrandSubscriptionPage() {
     [plans, currentPlan]
   );
 
-  // Compute what the user would lose when moving to a cheaper/free plan
+  // Compute what the user would lose when moving to selected (usually Free)
   const featureLoss = useMemo(() => {
-    if (!currentPlanObj || !selectedPlan) return [] as { key: string; from: number; to: number }[];
+    if (!currentPlanObj || !selectedPlan) return [] as { key: string; from: any; to: any }[];
     const mapNew = new Map(selectedPlan.features.map((f) => [f.key, f.value]));
-    return currentPlanObj.features
-      .map((f) => ({ key: f.key, from: f.value, to: mapNew.get(f.key) ?? 0 }))
-      .filter((diff) => {
-        const fromVal = diff.from;
-        const toVal = diff.to;
-        // Infinity handling: any finite number < Infinity
-        if (fromVal === Infinity && toVal !== Infinity) return true;
-        return typeof fromVal === "number" && typeof toVal === "number" && toVal < fromVal;
-      });
+    const unionKeys = Array.from(
+      new Set([
+        ...currentPlanObj.features.map((f) => f.key),
+        ...selectedPlan.features.map((f) => f.key),
+      ])
+    );
+
+    return unionKeys
+      .map((k) => {
+        const from = currentPlanObj.features.find((f) => f.key === k)?.value;
+        const to = mapNew.get(k);
+        return { key: k, from, to };
+      })
+      .filter((diff) => isLoss(diff.from, diff.to, diff.key));
   }, [currentPlanObj, selectedPlan]);
 
   const handleSelect = async (plan: Plan) => {
     if (processing || plan.name.toLowerCase() === currentPlan?.toLowerCase()) return;
 
-    // If selecting a free / 0 amount plan => show downgrade modal, don't hit Razorpay
+    // Free / 0 amount plan => show downgrade modal, don't hit Razorpay
     if (plan.monthlyCost <= 0) {
       setSelectedPlan(plan);
       setShowDowngradeModal(true);
@@ -156,7 +291,7 @@ export default function BrandSubscriptionPage() {
         key: "rzp_test_2oIQzZ7i0uQ6sn",
         amount,
         currency,
-        name: "Your Company",
+        name: "CollabGlam",
         description: `${capitalize(plan.name)} Plan`,
         order_id: orderId,
         handler: async (response: any) => {
@@ -168,6 +303,7 @@ export default function BrandSubscriptionPage() {
               planId: plan.planId,
             });
             setCurrentPlan(plan.name);
+            // Let backend control exact cycle; here we just show +30d for UX continuity
             const newExpiry = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
             setExpiresAt(newExpiry);
             setPaymentStatus("success");
@@ -217,10 +353,11 @@ export default function BrandSubscriptionPage() {
         planId: selectedPlan.planId,
       });
       setCurrentPlan(selectedPlan.name);
-      // For free plans, we can clear expiry or set to 30d from now; using clear here.
       setExpiresAt(null);
       setPaymentStatus("success");
-      setPaymentMessage("You've moved to the Free plan. We're here if you need us back!");
+      setPaymentMessage(
+        `You've moved to the ${capitalize(selectedPlan.name)} plan. If you need us, we're here!`
+      );
       setShowDowngradeModal(false);
       setConfirmText("");
     } catch (err) {
@@ -262,7 +399,7 @@ export default function BrandSubscriptionPage() {
             </h1>
           </div>
           <p className="text-lg sm:text-xl text-gray-600 max-w-3xl mx-auto leading-relaxed">
-            Elevate your brand presence with our comprehensive suite of marketing tools and analytics.
+            Elevate your brand presence with our comprehensive suite of tools and analytics.
           </p>
         </div>
 
@@ -274,17 +411,15 @@ export default function BrandSubscriptionPage() {
                 <CheckCircle className="w-5 h-5 text-emerald-600" />
                 <span className="text-sm font-medium text-gray-600 uppercase tracking-wide">Current Plan</span>
               </div>
-              <h3 className="text-2xl font-bold text-gray-900 mb-1">
-                {capitalize(currentPlan)}
-              </h3>
+              <h3 className="text-2xl font-bold text-gray-900 mb-1">{capitalize(currentPlan)}</h3>
               {expiresAt ? (
                 <p className="text-gray-600">
                   Renews on{" "}
                   <span className="font-semibold">
-                    {new Date(expiresAt).toLocaleDateString('en-US', {
-                      year: 'numeric',
-                      month: 'long',
-                      day: 'numeric'
+                    {new Date(expiresAt).toLocaleDateString("en-US", {
+                      year: "numeric",
+                      month: "long",
+                      day: "numeric",
                     })}
                   </span>
                 </p>
@@ -299,12 +434,13 @@ export default function BrandSubscriptionPage() {
         {paymentStatus !== "idle" && (
           <div className="max-w-md mx-auto mb-8">
             <div
-              className={`p-4 rounded-2xl border backdrop-blur-sm flex items-center justify-center space-x-3 transition-all duration-300 ${paymentStatus === "success"
+              className={`p-4 rounded-2xl border backdrop-blur-sm flex items-center justify-center space-x-3 transition-all duration-300 ${
+                paymentStatus === "success"
                   ? "bg-emerald-50/80 border-emerald-200 text-emerald-800"
                   : paymentStatus === "processing"
-                    ? "bg-orange-50/80 border-orange-200 text-orange-800"
-                    : "bg-red-50/80 border-red-200 text-red-800"
-                }`}
+                  ? "bg-orange-50/80 border-orange-200 text-orange-800"
+                  : "bg-red-50/80 border-red-200 text-red-800"
+              }`}
             >
               {paymentStatus === "success" ? (
                 <CheckCircle className="w-6 h-6" />
@@ -326,20 +462,43 @@ export default function BrandSubscriptionPage() {
             const isActive = plan.name.toLowerCase() === currentPlan?.toLowerCase();
             const isProcessing = processing === plan.name;
             const isFree = plan.monthlyCost <= 0;
-            const isPro = plan.name.toLowerCase() === "pro";
+            const bestValue = plan.label?.toLowerCase() === "best value";
+
+            // Show only relevant, friendly features in UI (order curated)
+            const ORDER: string[] = [
+              "invites_per_month",
+              "live_campaigns_limit",
+              "monthly_credits",
+              "search_cached_only",
+              "search_fresh_uses_credits",
+              "view_full_profiles_uses_credits",
+              "milestones_access",
+              "contracts_access",
+              "in_app_messaging",
+              "dispute_support",
+              "profile_preview_only",
+            ];
+
+            const orderedFeatures = ORDER
+              .map((k) => plan.features.find((f) => f && f.key === k))
+              .filter(Boolean) as Feature[];
+
+            const currency = plan.currency || "USD";
+            const currencySymbol = currency === "INR" ? "₹" : currency === "EUR" ? "€" : "$";
 
             return (
               <div
                 key={plan.planId}
-                className={`relative group transition-all duration-500 hover:scale-105 ${index % 2 === 0 ? 'hover:-rotate-1' : 'hover:rotate-1'
-                  }`}
+                className={`relative group transition-all duration-500 hover:scale-105 ${
+                  index % 2 === 0 ? "hover:-rotate-1" : "hover:rotate-1"
+                }`}
               >
-                {/* Best Value Badge */}
-                {isPro && (
+                {/* Label Badge (e.g., Best Value) */}
+                {bestValue && (
                   <div className="absolute -top-4 left-1/2 transform -translate-x-1/2 z-10">
                     <div className="bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white text-xs font-bold py-2 px-4 rounded-full shadow-lg flex items-center space-x-1">
                       <Star className="w-3 h-3 fill-current" />
-                      <span>BEST VALUE</span>
+                      <span>{plan.label}</span>
                     </div>
                   </div>
                 )}
@@ -354,16 +513,15 @@ export default function BrandSubscriptionPage() {
                 )}
 
                 <div
-                  className={`relative bg-white/80 backdrop-blur-sm rounded-3xl shadow-xl overflow-hidden border transition-all duration-300 h-full flex flex-col group-hover:shadow-2xl ${isPro
-                      ? "border-orange-200 shadow-orange-100/50"
-                      : "border-white/20"
-                    } ${isActive
-                      ? "ring-2 ring-orange-400 border-orange-200"
-                      : ""
-                    }`}
+                  className={`relative bg-white/80 backdrop-blur-sm rounded-3xl shadow-xl overflow-hidden border transition-all duration-300 h-full flex flex-col group-hover:shadow-2xl ${
+                    bestValue ? "border-orange-200 shadow-orange-100/50" : "border-white/20"
+                  } ${isActive ? "ring-2 ring-orange-400 border-orange-200" : ""}`}
                 >
                   {/* Plan Header */}
-                  <div className={`px-6 sm:px-8 pt-8 pb-6 ${isPro ? 'bg-gradient-to-br from-orange-50 to-orange-50' : ''}`}>
+                  <div className={`px-6 sm:px-8 pt-8 pb-6 ${
+                    bestValue ? "bg-gradient-to-br from-orange-50 to-orange-50" : ""
+                  }`}
+                  >
                     <div className="text-center space-y-4">
                       <h3 className="text-2xl sm:text-3xl font-bold text-gray-900">
                         {capitalize(plan.name)}
@@ -377,40 +535,82 @@ export default function BrandSubscriptionPage() {
                           ) : (
                             <>
                               <span className="text-5xl sm:text-6xl font-bold bg-gradient-to-r from-gray-900 to-gray-700 bg-clip-text text-transparent">
-                                ${plan.monthlyCost}
+                                {currencySymbol}
+                                {plan.monthlyCost}
                               </span>
                               <span className="text-xl font-medium text-gray-600">/month</span>
                             </>
                           )}
                         </div>
-                        {!isFree && <p className="text-gray-600 text-sm font-medium">Billed monthly</p>}
+                        {!isFree && (
+                          <p className="text-gray-600 text-sm font-medium">Billed monthly</p>
+                        )}
                       </div>
                     </div>
                   </div>
 
                   {/* Features List */}
-                  <div className="px-6 sm:px-8 pb-8 flex-1">
+                  <div className="px-6 sm:px-8 pb-6 flex-1">
                     <ul className="space-y-4">
-                      {plan.features.map((feature, featureIndex) => (
-                        <li
-                          key={feature.key}
-                          className="flex items-start space-x-3 group/item"
-                          style={{
-                            animationDelay: `${featureIndex * 100}ms`
-                          }}
-                        >
-                          <div className="flex-shrink-0 mt-0.5">
-                            <CheckCircle className="w-5 h-5 text-orange-500 group-hover/item:text-orange-600 transition-colors" />
-                          </div>
-                          <span className="text-gray-700 group-hover/item:text-gray-900 transition-colors">
-                            <span className="font-medium">{prettifyKey(feature.key)}:</span>{" "}
-                            <span className="font-semibold">
-                              {feature.value === Infinity ? "Unlimited" : feature.value.toLocaleString()}
-                            </span>
-                          </span>
-                        </li>
-                      ))}
+                      {orderedFeatures.map((feature, featureIndex) => {
+                        const key = feature.key;
+                        const label = FEATURE_LABELS[key] || prettifyKey(key);
+                        const valStr = formatValue(key, feature.value);
+                        const positive = isPositive(key, feature.value);
+                        const showHint =
+                          key === "monthly_credits" && feature.note ? feature.note : undefined;
+
+                        return (
+                          <li
+                            key={key}
+                            className="flex items-start space-x-3 group/item"
+                            style={{ animationDelay: `${featureIndex * 100}ms` }}
+                          >
+                            <div className="flex-shrink-0 mt-0.5">
+                              {positive ? (
+                                <CheckCircle className="w-5 h-5 text-emerald-600" />
+                              ) : (
+                                <XCircle className="w-5 h-5 text-red-500" />
+                              )}
+                            </div>
+                            <div className="text-gray-700 group-hover/item:text-gray-900 transition-colors">
+                              <span className="font-medium">{label}:</span>{" "}
+                              <span className="font-semibold">{valStr}</span>
+                              {showHint && (
+                                <span className="ml-2 inline-flex items-center text-xs text-gray-500">
+                                  <Info className="w-3 h-3 mr-1" />
+                                  {showHint}
+                                </span>
+                              )}
+                            </div>
+                          </li>
+                        );
+                      })}
                     </ul>
+
+                    {/* Add-ons */}
+                    {plan.addons && plan.addons.length > 0 && (
+                      <div className="mt-6 rounded-2xl border border-orange-200 bg-orange-50/50 p-4">
+                        <div className="flex items-center mb-2 text-orange-900 font-semibold">
+                          <Plus className="w-4 h-4 mr-2" />
+                          Available Add-ons
+                        </div>
+                        <ul className="space-y-2">
+                          {plan.addons.map((a) => {
+                            const sym = (a.currency || "USD") === "INR" ? "₹" : (a.currency || "USD") === "EUR" ? "€" : "$";
+                            return (
+                              <li key={a.key} className="text-sm text-orange-800">
+                                <span className="font-medium">{a.name}</span>{" "}
+                                <span className="opacity-80">
+                                  — {sym}
+                                  {a.price} {a.type === "one_time" ? "one-time" : "/mo"}
+                                </span>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      </div>
+                    )}
                   </div>
 
                   {/* Action Button */}
@@ -418,12 +618,13 @@ export default function BrandSubscriptionPage() {
                     <button
                       onClick={() => handleSelect(plan)}
                       disabled={isActive || isProcessing}
-                      className={`w-full py-4 text-base font-semibold rounded-2xl flex items-center justify-center space-x-2 transition-all duration-300 focus:outline-none focus:ring-4 ${isActive
+                      className={`w-full py-4 text-base font-semibold rounded-2xl flex items-center justify-center space-x-2 transition-all duration-300 focus:outline-none focus:ring-4 ${
+                        isActive
                           ? "bg-gray-100 text-gray-500 cursor-not-allowed border border-gray-200"
                           : isProcessing
-                            ? "bg-orange-100 text-orange-700 cursor-not-allowed border border-orange-200"
-                            : "bg-gradient-to-r from-[#FFA135] to-[#FF7236] hover:from-[#FF7236] hover:to-[#FFA135] text-white shadow-lg hover:shadow-xl transform hover:scale-105 focus:ring-orange-200"
-                        }`}
+                          ? "bg-orange-100 text-orange-700 cursor-not-allowed border border-orange-200"
+                          : "bg-gradient-to-r from-[#FFA135] to-[#FF7236] hover:from-[#FF7236] hover:to-[#FFA135] text-white shadow-lg hover:shadow-xl transform hover:scale-105 focus:ring-orange-200"
+                      }`}
                     >
                       {isActive ? (
                         <>
@@ -453,13 +654,14 @@ export default function BrandSubscriptionPage() {
         <div className="text-center mt-12 lg:mt-16 space-y-4">
           <p className="text-gray-600">
             Questions about our plans?{" "}
-            <a href="#" className="text-orange-600 hover:text-orange-700 font-medium underline">
+            <a
+              href="mailto:support@collabglam.com"
+              className="text-orange-600 hover:text-orange-700 font-medium underline"
+            >
               Contact our support team
             </a>
           </p>
-          <p className="text-sm text-gray-500">
-            All plans include a 14-day money-back guarantee
-          </p>
+          <p className="text-sm text-gray-500">All plans include a 14-day money-back guarantee</p>
         </div>
       </div>
 
@@ -479,10 +681,8 @@ export default function BrandSubscriptionPage() {
                     <AlertTriangle className="w-6 h-6 text-orange-600" />
                   </div>
                   <div>
-                    <h3 className="text-2xl font-bold text-gray-900">
-                      Before you cancel your subscription...
-                    </h3>
-                    <p className="text-gray-600 mt-1">We'd hate to see you go! 😢</p>
+                    <h3 className="text-2xl font-bold text-gray-900">Before you change your plan…</h3>
+                    <p className="text-gray-600 mt-1">We’d hate to see you lose superpowers 😢</p>
                   </div>
                 </div>
                 <button
@@ -497,31 +697,24 @@ export default function BrandSubscriptionPage() {
             {/* Modal Content */}
             <div className="px-8 py-6 space-y-6">
               <p className="text-gray-700 leading-relaxed">
-                We get it—budgets change. Just a heads up: cancelling your paid plan will move you to the{" "}
-                <span className="font-semibold text-gray-900">Free</span> plan, and you'll lose some of the superpowers you currently enjoy.
+                Moving to <span className="font-semibold text-gray-900">{capitalize(selectedPlan.name)}</span> will reduce or remove some features:
               </p>
 
               {featureLoss.length > 0 && (
                 <div className="bg-red-50 border border-red-200 rounded-2xl p-6">
                   <div className="flex items-center space-x-2 mb-4">
                     <XCircle className="w-5 h-5 text-red-500" />
-                    <p className="font-semibold text-red-900">
-                      You'll lose access or limits will be reduced on:
-                    </p>
+                    <p className="font-semibold text-red-900">You’ll lose access or limits will be reduced on:</p>
                   </div>
                   <ul className="space-y-3">
                     {featureLoss.map((d) => (
                       <li key={d.key} className="flex items-center space-x-3">
                         <div className="w-2 h-2 bg-red-400 rounded-full flex-shrink-0"></div>
                         <span className="text-red-800">
-                          <span className="font-medium">{prettifyKey(d.key)}:</span>
-                          <span className="ml-2 font-semibold">
-                            {d.from === Infinity ? "Unlimited" : d.from.toLocaleString()}
-                          </span>
+                          <span className="font-medium">{FEATURE_LABELS[d.key] || prettifyKey(d.key)}:</span>
+                          <span className="ml-2 font-semibold">{formatValue(d.key, d.from)}</span>
                           <span className="mx-2 text-red-600">→</span>
-                          <span className="font-semibold">
-                            {d.to === Infinity ? "Unlimited" : d.to.toLocaleString()}
-                          </span>
+                          <span className="font-semibold">{formatValue(d.key, d.to)}</span>
                         </span>
                       </li>
                     ))}
@@ -533,14 +726,12 @@ export default function BrandSubscriptionPage() {
                 <div className="flex items-start space-x-3">
                   <Heart className="w-6 h-6 text-orange-500 flex-shrink-0 mt-0.5" />
                   <div>
-                    <p className="text-orange-900 font-medium mb-2">
-                      We'd love to keep you!
-                    </p>
+                    <p className="text-orange-900 font-medium mb-2">We’d love to keep you!</p>
                     <p className="text-orange-800 text-sm leading-relaxed">
-                      If there's anything we can do—custom plan, temporary pause, or startup discount—drop us a line at{" "}
+                      If there’s anything we can do—custom plan, pause, or startup discount—drop us a line at{" "}
                       <a
                         className="inline-flex items-center space-x-1 font-semibold underline hover:text-orange-900 transition-colors"
-                        href="mailto:support@collabglam.com?subject=Cancellation%20help"
+                        href="mailto:support@collabglam.com?subject=Plan%20change%20help"
                       >
                         <Mail className="w-4 h-4" />
                         <span>support@collabglam.com</span>
@@ -553,7 +744,7 @@ export default function BrandSubscriptionPage() {
               <div className="space-y-3">
                 <label className="block">
                   <span className="text-sm font-medium text-gray-700 mb-2 block">
-                    Type <span className="font-bold text-gray-900">CANCEL</span> to confirm cancellation
+                    Type <span className="font-bold text-gray-900">CANCEL</span> to confirm
                   </span>
                   <input
                     className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-orange-400 focus:border-orange-400 focus:outline-none transition-colors"
@@ -577,10 +768,11 @@ export default function BrandSubscriptionPage() {
               <button
                 onClick={handleConfirmDowngrade}
                 disabled={confirmText.trim().toUpperCase() !== "CANCEL" || submittingDowngrade}
-                className={`px-6 py-3 rounded-xl font-semibold text-white transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-orange-400 ${confirmText.trim().toUpperCase() === "CANCEL" && !submittingDowngrade
+                className={`px-6 py-3 rounded-xl font-semibold text-white transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-orange-400 ${
+                  confirmText.trim().toUpperCase() === "CANCEL" && !submittingDowngrade
                     ? "bg-gradient-to-r from-[#FFA135] to-[#FF7236] hover:from-[#FF7236] hover:to-[#FFA135] shadow-lg hover:shadow-xl"
                     : "bg-gray-400 cursor-not-allowed"
-                  }`}
+                }`}
               >
                 {submittingDowngrade ? (
                   <div className="flex items-center space-x-2">
@@ -588,7 +780,7 @@ export default function BrandSubscriptionPage() {
                     <span>Applying...</span>
                   </div>
                 ) : (
-                  "Cancel & move to Free"
+                  "Confirm change"
                 )}
               </button>
             </div>
