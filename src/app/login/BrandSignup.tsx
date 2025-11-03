@@ -6,6 +6,7 @@ import { Button } from './Button';
 import { ProgressIndicator } from './ProgressIndicator';
 import type { Country } from './types';
 import { get, post } from '@/lib/api';
+import { useRouter } from 'next/navigation';
 
 // ————————————————— Types
 
@@ -36,6 +37,7 @@ function toArray<T = any>(v: any): T[] {
 }
 
 export function BrandSignup({ onSuccess }: { onSuccess: () => void }) {
+  const router = useRouter();
   // NOTE: keep default to 'email' if you want to skip email/otp while testing
   const [step, setStep] = useState<Step>('email');
   const [countries, setCountries] = useState<Country[]>([]);
@@ -326,7 +328,18 @@ export function BrandSignup({ onSuccess }: { onSuccess: () => void }) {
         isVerifiedRepresentative: formData.officialRep,
       });
 
-      onSuccess();
+      // Auto-login after successful signup
+      const login = await post<{ token: string; brandId: string }>(
+        '/brand/login',
+        { email: formData.email, password: formData.password }
+      );
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('token', login.token);
+        localStorage.setItem('brandId', login.brandId);
+        localStorage.setItem('userType', 'brand');
+        localStorage.setItem('userEmail', formData.email);
+      }
+      router.replace('/brand/dashboard');
     } catch (err: any) {
       setError(err?.response?.data?.message || err?.message || 'Signup failed');
     } finally {

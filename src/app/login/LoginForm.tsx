@@ -43,7 +43,7 @@ export function LoginForm({ role, onForgotPassword, onSuccess }: LoginFormProps)
         localStorage.setItem('userType', 'brand');
         localStorage.setItem('userEmail', formData.email);
         onSuccess();
-        router.push('/brand/dashboard');
+        router.replace('/brand/dashboard');
       } else {
         const data = await post<{ token: string; influencerId: string; categoryId: string }>(
           '/influencer/login',
@@ -55,7 +55,7 @@ export function LoginForm({ role, onForgotPassword, onSuccess }: LoginFormProps)
         localStorage.setItem('userType', 'influencer');
         localStorage.setItem('userEmail', formData.email);
         onSuccess();
-        router.push('/influencer/dashboard');
+        router.replace('/influencer/dashboard');
       }
     } catch (err: any) {
       setError(err?.response?.data?.message || err?.message || 'Login failed');
@@ -103,7 +103,7 @@ export function LoginForm({ role, onForgotPassword, onSuccess }: LoginFormProps)
       />
 
       <div className="flex items-center justify-between text-sm">
-        <label className="flex items-center space-x-2 cursor-pointer group">
+        {/* <label className="flex items-center space-x-2 cursor-pointer group">
           <input
             type="checkbox"
             checked={formData.rememberMe}
@@ -113,7 +113,7 @@ export function LoginForm({ role, onForgotPassword, onSuccess }: LoginFormProps)
             }`}
           />
           <span className="text-gray-600 group-hover:text-gray-900">Remember me</span>
-        </label>
+        </label> */}
 
         <button
           type="button"

@@ -6,6 +6,7 @@ import { ProgressIndicator } from './ProgressIndicator';
 import Select, { GroupBase, MultiValue, SingleValue } from 'react-select';
 import type { Country } from './types';
 import { get, post } from '@/lib/api';
+import { useRouter } from 'next/navigation';
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 
@@ -89,6 +90,7 @@ const rsStyles = {
 // =========================
 
 export default function InfluencerSignup({ onSuccess }: { onSuccess: () => void }) {
+  const router = useRouter();
   // Start at BASIC for a natural flow
   const [step, setStep] = useState<Step>('basic');
   const [countries, setCountries] = useState<Country[]>([]);
@@ -473,7 +475,29 @@ export default function InfluencerSignup({ onSuccess }: { onSuccess: () => void 
   };
 
   /** Step 4 — Quick */
-  const finishAll = () => onSuccess();
+  const finishAll = async () => {
+    try {
+      setLoading(true);
+      const data = await post<{ token: string; influencerId: string; categoryId: string }>(
+        '/influencer/login',
+        { email: formData.email, password: formData.password }
+      );
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('token', data.token);
+        localStorage.setItem('influencerId', data.influencerId);
+        localStorage.setItem('categoryId', data.categoryId);
+        localStorage.setItem('userType', 'influencer');
+        localStorage.setItem('userEmail', formData.email);
+      }
+      router.replace('/influencer/dashboard');
+    } catch (err: any) {
+      // If auto-login fails, fall back to existing success handling
+      console.warn('Auto-login failed after signup:', err?.message || err);
+      onSuccess();
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const steps = useMemo(
     () => [
