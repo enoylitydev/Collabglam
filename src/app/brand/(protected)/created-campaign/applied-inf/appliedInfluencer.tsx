@@ -1,14 +1,13 @@
 /* eslint-disable @next/next/no-img-element */
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, ChangeEvent } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import api, { post } from "@/lib/api";
 import Swal from "sweetalert2";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
-import { FloatingLabelInput } from "@/components/common/FloatingLabelInput";
 import {
   Table,
   TableHeader,
@@ -23,38 +22,20 @@ import {
   HiOutlineChevronDown,
   HiOutlineChevronUp,
   HiSearch,
-  HiTrash,
   HiDocumentText,
-  HiUsers,
   HiClipboardList,
   HiEye,
   HiPaperAirplane,
-  HiCheckCircle,
-  HiRefresh,
 } from "react-icons/hi";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-
-// Reference UI components (sidebar + inputs)
-import { ContractSidebar, SidebarSection } from "./ContractSidebar";
-import {
-  FloatingInput,
-  Select,
-  NumberInput,
-  Checkbox,
-  PlatformSelector,
-  ChipInput,
-  TextArea,
-} from "./FormComponents";
 
 // ───────────────────────────────────────────────────────────────────────────────
-// THEME
+// THEME (black & white)
 // ───────────────────────────────────────────────────────────────────────────────
-const GRADIENT_FROM = "#FFA135";
-const GRADIENT_TO = "#FF7236";
+const GRADIENT_FROM = "#000000";
+const GRADIENT_TO = "#4B5563"; // gray-600
 
 // ───────────────────────────────────────────────────────────────────────────────
-// TYPES
+/** TYPES */
 // ───────────────────────────────────────────────────────────────────────────────
 interface Influencer {
   influencerId: string;
@@ -64,8 +45,8 @@ interface Influencer {
   category: string | null;
   audienceSize: number;
   createdAt?: string;
-  isAssigned: number;     // contract sent flag
-  isContracted: number;   // legacy naming (kept)
+  isAssigned: number;
+  isContracted: number;
   contractId: string | null;
   feeAmount: number;
   isAccepted: number;
@@ -80,13 +61,37 @@ interface Meta {
   totalPages: number;
 }
 
-interface Milestone {
-  _id: string;
-  milestoneTitle: string;
-  amount: number;
-  milestoneDescription?: string;
-  status?: "pending" | "completed" | "released" | string;
-  createdAt?: string;
+interface PartyConfirm {
+  confirmed?: boolean;
+  byUserId?: string;
+  at?: string;
+}
+interface PartySign {
+  signed?: boolean;
+  byUserId?: string;
+  name?: string;
+  email?: string;
+  at?: string;
+}
+interface ContractMeta {
+  contractId: string;
+  campaignId: string;
+  status:
+    | "draft"
+    | "sent"
+    | "viewed"
+    | "negotiation"
+    | "finalize"
+    | "signing"
+    | "locked";
+  lastSentAt?: string;
+  lockedAt?: string | null;
+  confirmations?: { brand?: PartyConfirm; influencer?: PartyConfirm };
+  signatures?: { brand?: PartySign; influencer?: PartySign; collabglam?: PartySign };
+  isEdit?: boolean;
+  isEditBy?: "brand" | "influencer" | "admin" | string;
+  editedFields?: string[];
+  lastEdit?: { isEdit: boolean; by: string; at: string; fields: string[] } | null;
 }
 
 // ───────────────────────────────────────────────────────────────────────────────
@@ -96,13 +101,10 @@ const toast = (opts: { icon: "success" | "error"; title: string; text?: string }
   Swal.fire({
     ...opts,
     showConfirmButton: false,
-    timer: 1500,
+    timer: 1400,
     timerProgressBar: true,
     background: "white",
-    customClass: {
-      popup: "rounded-lg border border-gray-200",
-      icon: "bg-gradient-to-r from-[#FFA135] to-[#FF7236] bg-clip-text text-transparent",
-    },
+    customClass: { popup: "rounded-lg border border-gray-200" },
   });
 
 const formatAudience = (n: number) => {
@@ -140,76 +142,11 @@ const mapPlatformToApi = (p?: string | null) => {
   }
 };
 
-// Lightweight chips (kept for areas outside reference ChipInput)
-function Chips({
-  label,
-  items,
-  setItems,
-  placeholder,
-  validator,
-}: {
-  label: string;
-  items: string[];
-  setItems: (v: string[]) => void;
-  placeholder?: string;
-  validator?: (s: string) => boolean;
-}) {
-  const [value, setValue] = useState("");
-  const add = () => {
-    const v = value.trim();
-    if (!v) return;
-    if (validator && !validator(v)) {
-      setValue("");
-      return;
-    }
-    if (!items.includes(v)) setItems([...items, v]);
-    setValue("");
-  };
-  return (
-    <div className="rounded-xl border border-gray-100 shadow-sm p-4 bg-white/90 backdrop-blur">
-      <Label className="mb-2 block">{label}</Label>
-      <div className="flex flex-wrap gap-2 mb-2">
-        {items.map((t, i) => (
-          <span
-            key={`${t}-${i}`}
-            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs bg-gray-100 border"
-          >
-            {t}
-            <button
-              type="button"
-              className="p-0.5 rounded hover:bg-gray-200"
-              onClick={() => setItems(items.filter((x) => x !== t))}
-            >
-              <HiTrash className="w-3.5 h-3.5" />
-            </button>
-          </span>
-        ))}
-      </div>
-      <div className="flex gap-2">
-        <input
-          className="w-full border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-          placeholder={placeholder || "Type and press +"}
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.preventDefault();
-              add();
-            }
-          }}
-        />
-        <Button type="button" variant="outline" onClick={add}>
-          +
-        </Button>
-      </div>
-    </div>
-  );
-}
-
 // ───────────────────────────────────────────────────────────────────────────────
 // PAGE
 // ───────────────────────────────────────────────────────────────────────────────
-const PAGE_SIZE_OPTIONS = [10, 20, 50, 100];
+const PAGE_SIZE_OPTIONS = [10, 20, 50, 100] as const;
+type PanelMode = "initiate" | "view" | "edit";
 
 export default function AppliedInfluencersPage() {
   const searchParams = useSearchParams();
@@ -238,10 +175,16 @@ export default function AppliedInfluencersPage() {
 
   // Right Panel (Contract)
   const [showContractPanel, setShowContractPanel] = useState(false);
+  const [panelMode, setPanelMode] = useState<PanelMode>("initiate");
   const [selectedInf, setSelectedInf] = useState<Influencer | null>(null);
+  const [selectedContractMeta, setSelectedContractMeta] = useState<ContractMeta | null>(null);
   const [pdfUrl, setPdfUrl] = useState<string>("");
 
-  // Form aligned to payload
+  // Cache of latest contract meta for influencers on current page
+  const [metaCache, setMetaCache] = useState<Record<string, ContractMeta | null>>({});
+  const [metaCacheLoading, setMetaCacheLoading] = useState(false);
+
+  // Form aligned to backend BRAND payload
   const [campaignTitle, setCampaignTitle] = useState(campaignName);
   const [platforms, setPlatforms] = useState<string[]>([]);
   const [goLiveStart, setGoLiveStart] = useState("");
@@ -263,15 +206,25 @@ export default function AppliedInfluencersPage() {
   const [dCaptions, setDCaptions] = useState("");
   const [dLinks, setDLinks] = useState<string[]>([]);
 
-  // Milestones (moved out of sidebar)
-  const [showMilestoneModal, setShowMilestoneModal] = useState(false);
-  const [milestoneForm, setMilestoneForm] = useState({ title: "", amount: "", description: "" });
+  // Requested Effective Date (Brand intent — display token)
+  const [requestedEffDate, setRequestedEffDate] = useState<string>("");
+  const [requestedEffTz, setRequestedEffTz] = useState<string>("Europe/Amsterdam");
 
-  const [milestones, setMilestones] = useState<Milestone[]>([]);
-  const [milestonesLoading, setMilestonesLoading] = useState(false);
-  const [showMilestoneListModal, setShowMilestoneListModal] = useState(false);
+  // Signature upload state (PNG/JPG ≤ 50 KB)
+  const [signatureDataUrl, setSignatureDataUrl] = useState<string>("");
 
+  // (optional) cached signer info
+  const signerName =
+    (typeof window !== "undefined" &&
+      (localStorage.getItem("brandContactName") ||
+        localStorage.getItem("brandName") ||
+        "")) || "";
+  const signerEmail =
+    (typeof window !== "undefined" && (localStorage.getItem("brandEmail") || "")) || "";
+
+  // ───────────────────────────────────────────────────────────────────────────
   // Helpers
+  // ───────────────────────────────────────────────────────────────────────────
   const toggleSort = (field: keyof Influencer) => {
     setPage(1);
     if (sortField === field) setSortOrder((o) => (o === 1 ? 0 : 1));
@@ -290,7 +243,20 @@ export default function AppliedInfluencersPage() {
       )
     ) : null;
 
-  // Fetch Applicants
+  const tzOptions = useMemo(
+    () => [
+      { value: "Europe/Amsterdam", label: "Europe/Amsterdam" },
+      { value: "UTC", label: "UTC" },
+      { value: "America/Los_Angeles", label: "America/Los_Angeles" },
+      { value: "America/New_York", label: "America/New_York" },
+      { value: "Asia/Kolkata", label: "Asia/Kolkata" },
+    ],
+    []
+  );
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // Data loading
+  // ───────────────────────────────────────────────────────────────────────────
   const fetchApplicants = async () => {
     if (!campaignId) return;
     setLoading(true);
@@ -324,88 +290,57 @@ export default function AppliedInfluencersPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [campaignId, page, searchTerm, sortField, sortOrder]);
 
-  // Milestone: load list for selected influencer
-  const fetchMilestones = async (inf: Influencer) => {
-    if (!campaignId || !inf?.influencerId) return;
-    setMilestonesLoading(true);
+  const getLatestContractFor = async (inf: Influencer): Promise<ContractMeta | null> => {
+    const brandId = typeof window !== "undefined" ? localStorage.getItem("brandId") : null;
+    if (!brandId) return null;
     try {
-      const res = await post<{ milestones: Milestone[] }>("/milestone/list", {
-        campaignId,
-        influencerId: inf.influencerId,
-      });
-      const list = res?.milestones || [];
-      setMilestones(list);
-    } catch {
-      // silent: the UI will show empty list
-      setMilestones([]);
-    } finally {
-      setMilestonesLoading(false);
-    }
-  };
-
-  const handleAddMilestone = (inf: Influencer) => {
-    setSelectedInf(inf);
-    setMilestoneForm({ title: "", amount: "", description: "" });
-    setShowMilestoneModal(true);
-  };
-
-  const handleSaveMilestone = async () => {
-    if (!selectedInf) return;
-    try {
-      await post("milestone/create", {
-        influencerId: selectedInf.influencerId,
-        campaignId,
-        milestoneTitle: milestoneForm.title,
-        amount: Number(milestoneForm.amount),
-        milestoneDescription: milestoneForm.description,
-        brandId: localStorage.getItem("brandId"),
-      });
-      toast({ icon: "success", title: "Added!", text: "Milestone has been added." });
-      setShowMilestoneModal(false);
-      fetchApplicants();
-      // if the milestone list modal is open for the same influencer, refresh it
-      if (showMilestoneListModal && selectedInf) {
-        await fetchMilestones(selectedInf);
-      }
-    } catch {
-      toast({ icon: "error", title: "Error", text: "Failed to add milestone." });
-    }
-  };
-
-  // Chat
-  const handleMessage = async (inf: Influencer) => {
-    try {
-      const brandId = localStorage.getItem("brandId");
-      if (!brandId)
-        return toast({ icon: "error", title: "Not Logged In", text: "Please log in as a brand to message influencers." });
-      const res = await post<{ message: string; roomId: string }>("/chat/room", {
+      const res = await post<{ contracts: ContractMeta[] }>("/contract/getContract", {
         brandId,
         influencerId: inf.influencerId,
       });
-      if (!res?.roomId) throw new Error("No roomId returned by server.");
-      router.push(`/brand/messages/${encodeURIComponent(res.roomId)}`);
-    } catch (e: any) {
-      toast({
-        icon: "error",
-        title: "Unable to open chat",
-        text: e?.response?.data?.message || e?.message || "Please try again.",
-      });
+      const list = (res.contracts || []).filter(
+        (c: any) => String(c.campaignId) === String(campaignId)
+      );
+      return list.length ? list[0] : null;
+    } catch {
+      return null;
     }
   };
 
-  // Open panel + prefill
-  const openContractPanel = (inf: Influencer) => {
-    setSelectedInf(inf);
+  const loadMetaCache = async (list: Influencer[]) => {
+    if (!list.length) {
+      setMetaCache({});
+      return;
+    }
+    setMetaCacheLoading(true);
+    try {
+      const metas = await Promise.all(list.map((inf) => getLatestContractFor(inf)));
+      const next: Record<string, ContractMeta | null> = {};
+      list.forEach((inf, i) => (next[inf.influencerId] = metas[i] || null));
+      setMetaCache(next);
+    } finally {
+      setMetaCacheLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadMetaCache(influencers);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [influencers]);
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // Contract panel openers (modes)
+  // ───────────────────────────────────────────────────────────────────────────
+  const prefillFormFor = (inf: Influencer) => {
     setCampaignTitle(campaignName);
     setPlatforms([mapPlatformToApi(inf.primaryPlatform) as string]);
     setGoLiveStart("");
     setGoLiveEnd("");
     setTotalFee(String(inf.feeAmount || 5000));
     setCurrency("USD");
-    setMilestoneSplit("10"); // if you intended "10", otherwise keep "50/50"
+    setMilestoneSplit("50/50");
     setRevisionsIncluded(1);
 
-    // Deliverable defaults based on your payload
     setDType("Scope");
     setDQuantity(1);
     setDFormat("Text");
@@ -417,13 +352,33 @@ export default function AppliedInfluencersPage() {
     setDCaptions("");
     setDLinks([]);
 
-    setPdfUrl("");
-    setShowContractPanel(true);
-    // NOTE: No milestones inside sidebar anymore.
+    setRequestedEffDate("");
+    setRequestedEffTz("Europe/Amsterdam");
+    setSignatureDataUrl("");
   };
 
-  // Build yellow payload matching EXACT structure
-  const buildYellowForInitiate = () => {
+  const openContractPanel = async (inf: Influencer, override?: PanelMode) => {
+    setSelectedInf(inf);
+    prefillFormFor(inf);
+    setPdfUrl("");
+
+    const meta = metaCache[inf.influencerId] ?? (await getLatestContractFor(inf));
+    setSelectedContractMeta(meta);
+
+    let mode: PanelMode = "initiate";
+    if (meta?.contractId) {
+      const influencerConfirmed = !!meta?.confirmations?.influencer?.confirmed;
+      const locked = meta?.status === "locked";
+      mode = locked ? "view" : influencerConfirmed ? "edit" : "view";
+    }
+    setPanelMode(override || mode);
+    setShowContractPanel(true);
+  };
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // Build Brand payload (initiate / edit)
+  // ───────────────────────────────────────────────────────────────────────────
+  const buildBrand = () => {
     const goLive =
       goLiveStart || goLiveEnd
         ? {
@@ -451,7 +406,7 @@ export default function AppliedInfluencersPage() {
           draftRequired: Boolean(dDraftRequired),
           minLiveHours: Number(dMinLiveHours) || 0,
           tags: dTags,
-          handles: dHandles, // read-only mirror
+          handles: dHandles,
           captions: dCaptions,
           links: dLinks,
           disclosures: "",
@@ -460,98 +415,186 @@ export default function AppliedInfluencersPage() {
     };
   };
 
-  // PREVIEW → PDF blob
+  // ───────────────────────────────────────────────────────────────────────────
+  // Signature upload
+  // ───────────────────────────────────────────────────────────────────────────
+  const handleSignatureFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!/image\/(png|jpeg)/i.test(file.type)) {
+      toast({ icon: "error", title: "Invalid file", text: "Please upload a PNG or JPG." });
+      return;
+    }
+    if (file.size > 50 * 1024) {
+      toast({ icon: "error", title: "Too large", text: "Signature must be ≤ 50 KB." });
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => setSignatureDataUrl(reader.result as string);
+    reader.readAsDataURL(file);
+  };
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // Actions: View / Send / Edit / Preview / Sign
+  // ───────────────────────────────────────────────────────────────────────────
+  const handleViewExistingContract = async (inf?: Influencer) => {
+    const target = inf || selectedInf;
+    if (!target) return;
+    const meta = metaCache[target.influencerId] ?? (await getLatestContractFor(target));
+    if (!meta?.contractId) {
+      return toast({ icon: "error", title: "No Contract", text: "Please send the contract first." });
+    }
+    try {
+      const res = await api.get("/contract/preview", {
+        params: { contractId: meta.contractId },
+        responseType: "blob",
+      } as any);
+      const url = URL.createObjectURL(res.data);
+      window.open(url, "_blank");
+    } catch (e: any) {
+      toast({
+        icon: "error",
+        title: "View Failed",
+        text: e?.response?.data?.message || e?.message || "Unable to open contract.",
+      });
+    }
+  };
+
+  // PREVIEW (server renders a PDF preview of current inputs)
   const handleGeneratePreview = async () => {
     if (!selectedInf) return;
     if (!platforms.length) {
       return toast({ icon: "error", title: "Missing Platforms", text: "Select at least one platform." });
     }
     try {
-      const payload = {
+      const payload: any = {
         brandId: localStorage.getItem("brandId"),
         campaignId,
         influencerId: selectedInf.influencerId,
-        yellow: buildYellowForInitiate(),
-        type: 2,
+        brand: buildBrand(),
+        preview: true,
       };
+      if (requestedEffDate) payload.requestedEffectiveDate = requestedEffDate;
+      if (requestedEffTz) payload.requestedEffectiveDateTimezone = requestedEffTz;
+
       const res = await api.post("/contract/initiate", payload, { responseType: "blob" });
       const url = URL.createObjectURL(res.data);
       setPdfUrl(url);
       window.open(url, "_blank");
     } catch (e: any) {
-      toast({ icon: "error", title: "Preview Error", text: e?.response?.data?.message || e.message || "Failed to generate preview." });
+      toast({
+        icon: "error",
+        title: "Preview Error",
+        text: e?.response?.data?.message || e.message || "Failed to generate preview.",
+      });
     }
   };
 
-  // SEND → save/assign
-  const handleSendContract = async () => {
+  // SEND (first time) or UPDATE (after influencer confirm)
+  const handleSendOrUpdate = async () => {
     if (!selectedInf) return;
     try {
-      await post("/contract/initiate", {
-        brandId: localStorage.getItem("brandId"),
-        campaignId,
-        influencerId: selectedInf.influencerId,
-        yellow: buildYellowForInitiate(),
-        type: 1,
+      const brand = buildBrand();
+      const brandId = localStorage.getItem("brandId")!;
+      const meta = selectedContractMeta;
+
+      // First-time send
+      if (!meta?.contractId) {
+        const payload: any = {
+          brandId,
+          campaignId,
+          influencerId: selectedInf.influencerId,
+          brand,
+        };
+        if (requestedEffDate) payload.requestedEffectiveDate = requestedEffDate;
+        if (requestedEffTz) payload.requestedEffectiveDateTimezone = requestedEffTz;
+
+        await post("/contract/initiate", payload);
+        toast({ icon: "success", title: "Sent!", text: "Contract sent to influencer." });
+        setShowContractPanel(false);
+        fetchApplicants();
+        loadMetaCache(influencers);
+        return;
+      }
+
+      // Existing → only allow edit/update after influencer confirms
+      const influencerConfirmed = !!meta?.confirmations?.influencer?.confirmed;
+      const locked = meta?.status === "locked";
+      if (!influencerConfirmed || locked) {
+        return toast({
+          icon: "error",
+          title: "Editing Disabled",
+          text: locked
+            ? "Contract is locked and no longer editable."
+            : "Edits are allowed only after the influencer confirms.",
+        });
+      }
+
+      // /contract/brand/update expects requestedEffectiveDate(*) inside brandUpdates
+      const brandUpdates: any = { ...brand };
+      if (requestedEffDate) brandUpdates.requestedEffectiveDate = requestedEffDate;
+      if (requestedEffTz) brandUpdates.requestedEffectiveDateTimezone = requestedEffTz;
+
+      await post("/contract/brand/update", {
+        contractId: meta.contractId,
+        brandId,
+        brandUpdates,
       });
-      toast({ icon: "success", title: "Sent!", text: "Contract sent to influencer." });
+
+      toast({ icon: "success", title: "Updated", text: "Contract updated." });
       setShowContractPanel(false);
       fetchApplicants();
+      loadMetaCache(influencers);
     } catch (e: any) {
-      const msg =
-        e?.response?.status === 409
-          ? e?.response?.data?.message || "A contract has already been assigned."
-          : e?.response?.data?.message || e.message || "Failed to send contract.";
+      const msg = e?.response?.data?.message || e.message || "Failed to send/update contract.";
       toast({ icon: "error", title: "Error", text: msg });
     }
   };
 
-  // SIGN → brand signature against existing contractId
-  const signByContractId = async (contractId: string) => {
-    await post("/contract/sign", {
-      contractId,
-      role: "brand",
-      brandId: localStorage.getItem("brandId"),
-    });
-  };
-
-  const handleSignContract = async (inf?: Influencer) => {
-    const target = inf || selectedInf;
-    if (!target) return;
-    const cid = target.contractId;
-    if (!cid) {
-      return toast({
-        icon: "error",
-        title: "No Contract Found",
-        text: "Please send the contract first, then you can sign it.",
-      });
+  // SIGN (Brand)
+  const handleSignAsBrand = async () => {
+    const meta = selectedContractMeta;
+    if (!meta?.contractId) {
+      toast({ icon: "error", title: "No Contract", text: "Send the contract first." });
+      return;
+    }
+    if (!signatureDataUrl) {
+      toast({ icon: "error", title: "No signature", text: "Upload a signature image first." });
+      return;
     }
     try {
-      await signByContractId(cid);
-      toast({ icon: "success", title: "Signed", text: "Contract signed successfully." });
+      await post("/contract/sign", {
+        contractId: meta.contractId,
+        role: "brand",
+        name: signerName,
+        email: signerEmail,
+        signatureImageDataUrl: signatureDataUrl,
+      });
+      toast({ icon: "success", title: "Signed", text: "Signature recorded." });
+      setShowContractPanel(false);
       fetchApplicants();
+      loadMetaCache(influencers);
     } catch (e: any) {
       toast({
         icon: "error",
-        title: "Sign Failed",
-        text: e?.response?.data?.message || e?.message || "Unable to sign contract.",
+        title: "Sign failed",
+        text: e?.response?.data?.message || e.message || "Could not sign contract.",
       });
     }
   };
 
-  // Open milestone list modal
-  const openMilestoneList = async (inf: Influencer) => {
-    setSelectedInf(inf);
-    setShowMilestoneListModal(true);
-    await fetchMilestones(inf);
-  };
-
+  // ───────────────────────────────────────────────────────────────────────────
   // Rows
+  // ───────────────────────────────────────────────────────────────────────────
   const rows = useMemo(
     () =>
       influencers.map((inf, idx) => {
         const href = buildHandleUrl(inf.primaryPlatform, inf.handle);
-        const canSign = Boolean(inf.contractId) && (inf.isAssigned === 1 || inf.isContracted === 1);
+        const meta = metaCache[inf.influencerId] || null;
+        const hasContract = !!(meta?.contractId || inf.contractId || inf.isAssigned);
+        const influencerConfirmed = !!meta?.confirmations?.influencer?.confirmed;
+        const locked = meta ? meta.status === "locked" : false;
+
         return (
           <TableRow
             key={inf.influencerId}
@@ -561,7 +604,7 @@ export default function AppliedInfluencersPage() {
             }
             onMouseLeave={(e) => (e.currentTarget.style.backgroundImage = "")}
           >
-            <TableCell>{inf.name}</TableCell>
+            <TableCell className="font-medium">{inf.name}</TableCell>
 
             <TableCell className="whitespace-nowrap">
               {href ? (
@@ -569,7 +612,7 @@ export default function AppliedInfluencersPage() {
                   href={href}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-indigo-600 hover:underline"
+                  className="text-black hover:underline"
                   title="Open profile"
                 >
                   {inf.handle || "—"}
@@ -580,7 +623,7 @@ export default function AppliedInfluencersPage() {
             </TableCell>
 
             <TableCell>
-              <Badge variant="secondary" className="capitalize">
+              <Badge variant="secondary" className="capitalize bg-gray-200 text-gray-800">
                 {inf.category || "—"}
               </Badge>
             </TableCell>
@@ -593,16 +636,18 @@ export default function AppliedInfluencersPage() {
 
             <TableCell className="text-center">
               {inf.isRejected === 1 ? (
-                <>
-                  <Badge className="bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white shadow-none">Rejected</Badge>
+                <div className="space-y-1">
+                  <Badge className="bg-black text-white shadow-none">Rejected</Badge>
                   <p className="text-xs text-gray-500">{inf.rejectedReason || "No reason provided"}</p>
-                </>
-              ) : inf.isAccepted === 1 ? (
-                <p>Working</p>
-              ) : inf.isAssigned === 1 || inf.isContracted === 1 ? (
-                <p>Contract Sent</p>
+                </div>
+              ) : hasContract ? (
+                <Badge variant="secondary" className="bg-gray-100 text-gray-800">
+                  Contract {locked ? "Locked" : influencerConfirmed ? "Ready to Edit" : "Sent"}
+                </Badge>
               ) : (
-                <p>Applied for Work</p>
+                <Badge variant="secondary" className="bg-gray-200 text-gray-800">
+                  Applied
+                </Badge>
               )}
             </TableCell>
 
@@ -610,66 +655,68 @@ export default function AppliedInfluencersPage() {
               <Button
                 size="sm"
                 variant="outline"
-                className="bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white"
+                className="bg-white border text-black"
                 onClick={() => router.push(`/brand/influencers?id=${inf.influencerId}`)}
+                title="View profile"
               >
                 View
               </Button>
 
-              <Button
-                size="sm"
-                variant="outline"
-                className="bg-gradient-to-r from-[#FF8C00] via-[#FF5E7E] to-[#D12E53] text-white"
-                onClick={() => handleMessage(inf)}
-              >
-                Message
-              </Button>
-
-              {/* Send / Resend Contract */}
-              {!inf.isAssigned && !inf.isRejected && (
-                <Button size="sm" variant="outline" className="bg-green-500 text-white" onClick={() => openContractPanel(inf)}>
+              {!hasContract && inf.isRejected !== 1 && (
+                <Button
+                  size="sm"
+                  className="bg-black text-white"
+                  onClick={() => openContractPanel(inf, "initiate")}
+                  title="Send contract"
+                >
+                  <HiPaperAirplane className="mr-1 h-4 w-4" />
                   Send Contract
                 </Button>
               )}
 
-              {inf.isRejected === 1 && (
-                <Button size="sm" variant="outline" className="bg-green-500 text-white" onClick={() => openContractPanel(inf)}>
-                  Resend Contract
-                </Button>
-              )}
+              {hasContract && (
+                <>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="bg-white"
+                    onClick={() => handleViewExistingContract(inf)}
+                    title="View contract"
+                    disabled={metaCacheLoading && !meta}
+                  >
+                    <HiEye className="mr-1 h-4 w-4" />
+                    View Contract
+                  </Button>
 
-              {/* Add Milestone (quick) */}
-              {inf.isAccepted === 1 && (
-                <Button size="sm" variant="outline" className="bg-green-500 text-white" onClick={() => handleAddMilestone(inf)}>
-                  Add Milestone
-                </Button>
+                  {influencerConfirmed && !locked && (
+                    <Button
+                      size="sm"
+                      className="bg-gray-900 text-white"
+                      onClick={() => openContractPanel(inf, "edit")}
+                      title="Edit contract"
+                    >
+                      Edit Contract
+                    </Button>
+                  )}
+                </>
               )}
-
-              {/* Sign Contract */}
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={!canSign}
-                className={`text-white ${canSign ? "bg-emerald-600 hover:bg-emerald-700" : "bg-gray-300 cursor-not-allowed"}`}
-                onClick={() => handleSignContract(inf)}
-                title={canSign ? "Sign this contract as Brand" : "No contract available to sign"}
-              >
-                <HiCheckCircle className="mr-1 h-4 w-4" />
-                Sign Contract
-              </Button>
             </TableCell>
           </TableRow>
         );
       }),
-    [influencers, router]
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [influencers, metaCache, metaCacheLoading]
   );
 
+  // ───────────────────────────────────────────────────────────────────────────
+  // RENDER
+  // ───────────────────────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen p-4 md:p-8 space-y-8">
       {/* Header */}
-      <header className="flex items-center justify-between p-4 rounded-md">
+      <header className="flex items-center justify-between p-2 md:p-4 rounded-md">
         <h1 className="text-3xl font-bold">Campaign: {campaignName || "Unknown Campaign"}</h1>
-        <Button size="sm" variant="outline" className="bg-gray-200" onClick={() => router.back()}>
+        <Button size="sm" variant="outline" className="bg-gray-200 text-black" onClick={() => router.back()}>
           Back
         </Button>
       </header>
@@ -686,7 +733,7 @@ export default function AppliedInfluencersPage() {
               setSearchTerm(e.target.value);
               setPage(1);
             }}
-            className="w-full pl-10 pr-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
+            className="w-full pl-10 pr-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-black text-sm"
           />
         </div>
       </div>
@@ -698,12 +745,12 @@ export default function AppliedInfluencersPage() {
         <ErrorMessage>{error}</ErrorMessage>
       ) : (
         <div className="bg-white rounded-md shadow-sm overflow-x-auto">
-          <Table className="min-w-[1000px]">
+          <Table className="min-w-[1024px]">
             <TableHeader
               style={{ backgroundImage: `linear-gradient(to right, ${GRADIENT_FROM}, ${GRADIENT_TO})` }}
               className="text-white"
             >
-              <tr>
+              <TableRow>
                 <TableHead onClick={() => toggleSort("name")} className="cursor-pointer font-semibold">
                   {applicantCount} Applied <SortIndicator field="name" />
                 </TableHead>
@@ -721,7 +768,7 @@ export default function AppliedInfluencersPage() {
                 </TableHead>
                 <TableHead className="font-semibold">Status</TableHead>
                 <TableHead className="text-center font-semibold">Actions</TableHead>
-              </tr>
+              </TableRow>
             </TableHeader>
             <TableBody>{rows}</TableBody>
           </Table>
@@ -731,7 +778,13 @@ export default function AppliedInfluencersPage() {
       {/* Pagination */}
       {meta.totalPages > 1 && (
         <div className="flex justify-center md:justify-end items-center gap-2">
-          <Button variant="outline" size="icon" disabled={page === 1} onClick={() => setPage((p) => Math.max(p - 1, 1))}>
+          <Button
+            variant="outline"
+            size="icon"
+            disabled={page === 1}
+            onClick={() => setPage((p) => Math.max(p - 1, 1))}
+            className="text-black"
+          >
             <HiChevronLeft />
           </Button>
           <span className="text-sm">
@@ -742,33 +795,48 @@ export default function AppliedInfluencersPage() {
             size="icon"
             disabled={page === meta.totalPages}
             onClick={() => setPage((p) => Math.min(p + 1, meta.totalPages))}
+            className="text-black"
           >
             <HiChevronRight />
           </Button>
         </div>
       )}
 
-      {/* Sliding Right Sidebar (Contract Panel) — Milestones removed from here */}
+      {/* Sliding Right Sidebar (Contract Panel) */}
       <ContractSidebar
         isOpen={showContractPanel}
         onClose={() => {
           if (pdfUrl) URL.revokeObjectURL(pdfUrl);
           setPdfUrl("");
           setShowContractPanel(false);
+          setSelectedContractMeta(null);
         }}
-        title="Initiate Contract"
-        subtitle={
-          selectedInf
-            ? `${campaignTitle || "New Agreement"} • ${selectedInf.name}`
-            : (campaignTitle || "New Agreement")
-        }
+        title={panelMode === "initiate" ? "Send Contract" : panelMode === "edit" ? "Edit Contract" : "View Contract"}
+        subtitle={selectedInf ? `${campaignTitle || "Agreement"} • ${selectedInf.name}` : campaignTitle || "Agreement"}
       >
-        {!pdfUrl ? (
+        {/* VIEW MODE */}
+        {panelMode === "view" && (
+          <SidebarSection title="Contract" icon={<HiDocumentText className="w-4 h-4" />}>
+            <div className="space-y-3">
+              <p className="text-sm text-gray-600">
+                {selectedContractMeta?.confirmations?.influencer?.confirmed
+                  ? "Influencer confirmed. You may edit from the list using the Edit button."
+                  : "Awaiting influencer confirmation. You can only view the contract for now."}
+              </p>
+              <Button className="bg-white border-2 text-black" variant="outline" onClick={() => handleViewExistingContract()}>
+                <HiEye className="mr-2 h-5 w-5" />
+                Open PDF
+              </Button>
+            </div>
+          </SidebarSection>
+        )}
+
+        {/* INITIATE / EDIT MODE */}
+        {(panelMode === "initiate" || panelMode === "edit") && (
           <>
-            {/* Campaign Details */}
             <SidebarSection title="Campaign Details" icon={<HiDocumentText className="w-4 h-4" />}>
               <div className="space-y-4">
-                <FloatingInput
+                <FloatingLabelInput
                   id="campaignTitle"
                   label="Campaign Title"
                   value={campaignTitle}
@@ -776,7 +844,7 @@ export default function AppliedInfluencersPage() {
                 />
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-3">Select Platforms</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-3">Platforms</label>
                   <PlatformSelector platforms={platforms} onChange={setPlatforms} />
                 </div>
 
@@ -790,7 +858,7 @@ export default function AppliedInfluencersPage() {
                       type="date"
                       value={goLiveStart}
                       onChange={(e) => setGoLiveStart(e.target.value)}
-                      className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-lg text-sm transition-all duration-200 focus:border-[#FFA135] focus:outline-none"
+                      className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-lg text-sm transition-all duration-200 focus:border-black focus:outline-none"
                     />
                   </div>
                   <div>
@@ -802,17 +870,19 @@ export default function AppliedInfluencersPage() {
                       type="date"
                       value={goLiveEnd}
                       onChange={(e) => setGoLiveEnd(e.target.value)}
-                      className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-lg text-sm transition-all duration-200 focus:border-[#FFA135] focus:outline-none"
+                      className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-lg text-sm transition-all duration-200 focus:border-black focus:outline-none"
                     />
                   </div>
                 </div>
 
+                {/* Fees: keep 2-col grid + Currency (backend requires it) */}
                 <div className="grid grid-cols-2 gap-3">
-                  <FloatingInput
+                  <FloatingLabelInput
                     id="totalFee"
                     label="Total Fee"
                     value={totalFee}
                     onChange={(e) => setTotalFee(e.target.value)}
+                    type="number"
                   />
                   <Select
                     id="currency"
@@ -829,7 +899,7 @@ export default function AppliedInfluencersPage() {
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
-                  <FloatingInput
+                  <FloatingLabelInput
                     id="milestoneSplit"
                     label="Milestone Split"
                     value={milestoneSplit}
@@ -843,35 +913,56 @@ export default function AppliedInfluencersPage() {
                     min={0}
                   />
                 </div>
-              </div>
-            </SidebarSection>
 
-            {/* Influencer header (name as title, handle inside) */}
-            <SidebarSection title={selectedInf?.name || "Influencer"} icon={<HiUsers className="w-4 h-4" />}>
-              <div className="space-y-2">
-                <div className="text-sm text-gray-700">
-                  Handle:&nbsp;
-                  {selectedInf?.handle ? (
-                    <a
-                      className="text-indigo-600 hover:underline"
-                      href={buildHandleUrl(selectedInf?.primaryPlatform, selectedInf?.handle) || "#"}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      {selectedInf.handle}
-                    </a>
-                  ) : (
-                    <span className="text-gray-500">—</span>
+                {/* Requested Effective Date (display token) */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label htmlFor="requestedEffDate" className="block text-xs font-medium text-gray-600 mb-1.5">
+                      Requested Effective Date (display)
+                    </label>
+                    <input
+                      id="requestedEffDate"
+                      type="date"
+                      value={requestedEffDate}
+                      onChange={(e) => setRequestedEffDate(e.target.value)}
+                      className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-lg text-sm transition-all duration-200 focus:border-black focus:outline-none"
+                    />
+                  </div>
+                  <Select
+                    id="requestedEffTz"
+                    label="Timezone"
+                    value={requestedEffTz}
+                    onChange={(e) => setRequestedEffTz(e.target.value)}
+                    options={tzOptions}
+                  />
+                </div>
+
+                {/* Signature upload (compact, black & white) */}
+                <div className="space-y-2">
+                  <label className="block text-sm font-medium text-gray-700">
+                    Upload Signature (PNG/JPG ≤ 50 KB)
+                  </label>
+                  <input
+                    type="file"
+                    accept="image/png,image/jpeg"
+                    onChange={handleSignatureFileChange}
+                    className="block w-full text-sm text-gray-700"
+                  />
+                  {signatureDataUrl && (
+                    <img
+                      src={signatureDataUrl}
+                      alt="Signature preview"
+                      className="h-12 mt-2 border border-gray-200 rounded bg-white"
+                    />
                   )}
                 </div>
               </div>
             </SidebarSection>
 
-            {/* Deliverables */}
             <SidebarSection title="Deliverables" icon={<HiClipboardList className="w-4 h-4" />}>
               <div className="space-y-4">
                 <div className="grid grid-cols-2 gap-3">
-                  <FloatingInput id="dType" label="Type" value={dType} onChange={(e) => setDType(e.target.value)} />
+                  <FloatingLabelInput id="dType" label="Type" value={dType} onChange={(e) => setDType(e.target.value)} />
                   <Select
                     id="dFormat"
                     label="Format"
@@ -916,31 +1007,15 @@ export default function AppliedInfluencersPage() {
                   />
                 </div>
 
-                {/* Read-only handles display */}
                 <div className="text-sm text-gray-600">
-                  <span className="font-medium">Handles (locked): </span>
+                  <span className="font-medium">Handles: </span>
                   {dHandles.length ? dHandles.join(", ") : "—"}
                 </div>
               </div>
             </SidebarSection>
 
             {/* Footer Actions */}
-            <div className="sticky bottom-0 -mx-6 -mb-6 bg-white border-t border-gray-200 p-6 flex flex-wrap justify-end gap-3 shadow-lg">
-              {/* Optional immediate sign if a contract already exists */}
-              <Button
-                type="button"
-                variant="outline"
-                className={`flex items-center gap-2 ${
-                  selectedInf?.contractId ? "border-emerald-600 text-emerald-700" : "border-gray-300 text-gray-400"
-                }`}
-                disabled={!selectedInf?.contractId}
-                onClick={() => handleSignContract()}
-                title={selectedInf?.contractId ? "Sign existing contract" : "Send contract first"}
-              >
-                <HiCheckCircle className="w-5 h-5" />
-                Sign Contract
-              </Button>
-
+            <div className="sticky bottom-0 -mx-6 -mb-6 bg-white border-t border-gray-200 p-6 flex flex-wrap justify-end gap-3">
               <Button
                 variant="outline"
                 onClick={() => {
@@ -948,178 +1023,44 @@ export default function AppliedInfluencersPage() {
                   setPdfUrl("");
                   setShowContractPanel(false);
                 }}
-                className="px-6 py-2.5 rounded-lg border-2 border-gray-300 text-gray-700 font-medium transition-all duration-200 hover:bg-gray-50"
+                className="px-6 text-black"
               >
-                Cancel
+                Close
               </Button>
+
               <Button
                 onClick={handleGeneratePreview}
-                className="px-6 py-2.5 rounded-lg bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white font-medium shadow-md transition-all duration-200 hover:shadow-lg hover:scale-105 flex items-center gap-2"
+                className="px-6 bg-black text-white"
                 disabled={!platforms.length || !campaignTitle.trim()}
                 title={!platforms.length ? "Select at least one platform" : ""}
               >
-                <HiEye className="w-5 h-5" />
-                Generate Preview
-              </Button>
-            </div>
-          </>
-        ) : (
-          <>
-            <SidebarSection title="PDF Preview" icon={<HiDocumentText className="w-4 h-4" />}>
-              <div className="bg-gray-100 rounded-lg p-8 text-center">
-                <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-gradient-to-br from-[#FFA135] to-[#FF7236] flex items-center justify-center">
-                  <HiDocumentText className="w-8 h-8 text-white" />
-                </div>
-                <p className="text-gray-600 mb-2">PDF Preview</p>
-                <p className="text-sm text-gray-500">Contract document ready to send</p>
-              </div>
-            </SidebarSection>
-
-            <div className="sticky bottom-0 -mx-6 -mb-6 bg-white border-t border-gray-200 p-6 flex flex-wrap justify-end gap-3 shadow-lg">
-              <Button
-                variant="outline"
-                onClick={() => {
-                  URL.revokeObjectURL(pdfUrl);
-                  setPdfUrl("");
-                }}
-                className="px-6 py-2.5 rounded-lg border-2 border-gray-300 text-gray-700 font-medium transition-all duration-200 hover:bg-gray-50"
-              >
-                Back
-              </Button>
-
-              {/* NEW: Sign Contract from preview step (if already created/sent before) */}
-              <Button
-                type="button"
-                variant="outline"
-                disabled={!selectedInf?.contractId}
-                onClick={() => handleSignContract()}
-                className={`px-6 py-2.5 rounded-lg flex items-center gap-2 ${
-                  selectedInf?.contractId ? "border-emerald-600 text-emerald-700" : "border-gray-300 text-gray-400"
-                }`}
-                title={selectedInf?.contractId ? "Sign existing contract" : "Send contract first"}
-              >
-                <HiCheckCircle className="w-5 h-5" />
-                Sign Contract
+                <HiEye className="w-5 h-5 mr-2" />
+                Preview
               </Button>
 
               <Button
-                onClick={handleSendContract}
-                className="px-6 py-2.5 rounded-lg bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white font-medium shadow-md transition-all duration-200 hover:shadow-lg hover:scale-105 flex items-center gap-2"
+                onClick={handleSendOrUpdate}
+                className="px-6 bg-gray-900 text-white"
+                title={panelMode === "initiate" ? "Send contract" : "Update contract"}
               >
-                <HiPaperAirplane className="w-5 h-5" />
-                Send Contract
+                <HiPaperAirplane className="w-5 h-5 mr-2" />
+                {panelMode === "initiate" ? "Send Contract" : "Update Contract"}
               </Button>
+
+              {selectedContractMeta?.confirmations?.influencer?.confirmed &&
+                selectedContractMeta?.status !== "locked" && (
+                  <Button
+                    onClick={handleSignAsBrand}
+                    className="px-6 bg-gray-800 text-white"
+                    title="Sign as Brand"
+                  >
+                    Sign as Brand
+                  </Button>
+                )}
             </div>
           </>
         )}
       </ContractSidebar>
-
-      {/* Milestone List Modal (DISPLAY) */}
-      {showMilestoneListModal && selectedInf && (
-        <div className="fixed inset-0 backdrop-blur-sm bg-black/10 flex items-center justify-center z-50">
-          <div
-            className="max-w-2xl bg-white rounded-lg p-6 w-full max-h-[90vh] overflow-auto border-2 border-transparent"
-            style={{ borderImage: `linear-gradient(to right, ${GRADIENT_FROM}, ${GRADIENT_TO}) 1` }}
-          >
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-semibold">
-                Milestones • {selectedInf.name}
-              </h2>
-              <div className="flex items-center gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="px-2"
-                  onClick={() => fetchMilestones(selectedInf)}
-                  title="Refresh milestones"
-                >
-                  <HiRefresh className="w-4 h-4" />
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="bg-green-600 text-white"
-                  onClick={() => handleAddMilestone(selectedInf)}
-                >
-                  Add Milestone
-                </Button>
-              </div>
-            </div>
-
-            {milestonesLoading ? (
-              <div className="rounded-md border p-3 text-sm text-gray-500">Loading milestones…</div>
-            ) : milestones.length ? (
-              <div className="space-y-3">
-                {milestones.map((m) => (
-                  <div key={m._id} className="rounded-lg border border-gray-200 p-4 bg-white/70">
-                    <div className="flex items-center justify-between">
-                      <h4 className="font-medium">{m.milestoneTitle}</h4>
-                      <span className="text-sm px-2 py-0.5 rounded bg-gray-100 border">
-                        ${Number(m.amount || 0).toLocaleString()}
-                      </span>
-                    </div>
-                    {m.milestoneDescription && (
-                      <p className="mt-2 text-sm text-gray-600">{m.milestoneDescription}</p>
-                    )}
-                    <div className="mt-2 flex items-center justify-between text-xs text-gray-500">
-                      <span>Status: {m.status ? String(m.status) : "—"}</span>
-                      <span>{m.createdAt ? new Date(m.createdAt).toLocaleString() : ""}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="rounded-md border p-3 text-sm text-gray-500">No milestones yet.</div>
-            )}
-
-            <div className="mt-6 flex justify-end space-x-2">
-              <Button variant="outline" onClick={() => setShowMilestoneListModal(false)}>
-                Close
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Milestone Add Modal */}
-      {showMilestoneModal && selectedInf && (
-        <div className="fixed inset-0 backdrop-blur-sm bg-opacity-30 flex items-center justify-center z-50">
-          <div
-            className="max-w-lg bg-white rounded-lg p-6 w-full max-h-[90vh] overflow-auto border-2 border-transparent"
-            style={{ borderImage: `linear-gradient(to right, ${GRADIENT_FROM}, ${GRADIENT_TO}) 1` }}
-          >
-            <h2 className="text-xl font-semibold mb-4">Add Milestone</h2>
-            <div className="space-y-4">
-              <FloatingLabelInput
-                id="milestoneTitle"
-                label="Title"
-                value={milestoneForm.title}
-                onChange={(e) => setMilestoneForm((f) => ({ ...f, title: e.target.value }))}
-              />
-              <FloatingLabelInput
-                id="milestoneAmount"
-                label="Amount"
-                value={milestoneForm.amount}
-                onChange={(e) => setMilestoneForm((f) => ({ ...f, amount: e.target.value }))}
-              />
-              <FloatingLabelInput
-                id="milestoneDesc"
-                label="Description"
-                value={milestoneForm.description}
-                onChange={(e) => setMilestoneForm((f) => ({ ...f, description: e.target.value }))}
-              />
-            </div>
-            <div className="mt-6 flex justify-end space-x-2">
-              <Button variant="outline" onClick={() => setShowMilestoneModal(false)}>
-                Cancel
-              </Button>
-              <Button onClick={handleSaveMilestone} className="bg-green-600 text-white">
-                Add
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
@@ -1136,5 +1077,373 @@ const LoadingSkeleton = ({ rows }: { rows: number }) => (
 );
 
 const ErrorMessage: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-  <p className="p-6 text-center text-destructive">{children}</p>
+  <p className="p-6 text-center text-red-600">{children}</p>
 );
+
+// ───────────────────────────────────────────────────────────────────────────────
+// INLINE: FormComponents.tsx (kept here for a single-file drop-in)
+// ───────────────────────────────────────────────────────────────────────────────
+export function FloatingLabelInput({
+  id,
+  label,
+  value,
+  onChange,
+  type = "text",
+  ...props
+}: {
+  id: string;
+  label: string;
+  value: string;
+  onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  type?: string;
+  [key: string]: any;
+}) {
+  const [focused, setFocused] = useState(false);
+  const hasValue = value !== "";
+
+  return (
+    <div className="relative">
+      <input
+        id={id}
+        type={type}
+        value={value}
+        onChange={onChange}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
+        className="w-full px-4 pt-6 pb-2 border-2 border-gray-200 rounded-lg text-sm transition-all duration-200 focus:border-black focus:outline-none peer"
+        placeholder=" "
+        {...props}
+      />
+      <label
+        htmlFor={id}
+        className={`absolute left-4 transition-all duration-200 pointer-events-none ${
+          focused || hasValue
+            ? "top-2 text-xs text-black font-medium"
+            : "top-1/2 -translate-y-1/2 text-sm text-gray-500"
+        }`}
+      >
+        {label}
+      </label>
+    </div>
+  );
+}
+
+type SelectProps = {
+  id: string;
+  label: string;
+  value: string;
+  onChange: (e: ChangeEvent<HTMLSelectElement>) => void;
+  options: { value: string; label: string }[] | { value: string; label: string }[][];
+  disabled?: boolean;
+};
+
+export function Select({
+  id,
+  label,
+  value,
+  onChange,
+  options,
+  disabled = false,
+}: SelectProps) {
+  const flat = (Array.isArray(options[0]) ? (options as any).flat() : (options as any)) as {
+    value: string;
+    label: string;
+  }[];
+  return (
+    <div className="space-y-1.5">
+      <label htmlFor={id} className="text-sm font-medium text-gray-700">
+        {label}
+      </label>
+      <select
+        id={id}
+        value={value}
+        onChange={onChange}
+        disabled={disabled}
+        className={`w-full px-3 py-2.5 border-2 rounded-lg text-sm focus:outline-none ${
+          disabled ? "opacity-60 cursor-not-allowed" : "focus:border-black border-gray-200"
+        }`}
+      >
+        {flat.map((o) => (
+          <option key={o.value} value={o.value}>
+            {o.label}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
+export function NumberInput({
+  id,
+  label,
+  value,
+  onChange,
+  min = 0,
+  ...props
+}: {
+  id: string;
+  label: string;
+  value: number;
+  onChange: (val: number) => void;
+  min?: number;
+  [key: string]: any;
+}) {
+  return (
+    <div className="relative">
+      <input
+        id={id}
+        type="number"
+        min={min}
+        value={value}
+        onChange={(e) => onChange(Math.max(min, Number(e.target.value || min)))}
+        className="w-full px-4 pt-6 pb-2 border-2 border-gray-200 rounded-lg text-sm transition-all duration-200 focus:border-black focus:outline-none"
+        {...props}
+      />
+      <label htmlFor={id} className="absolute left-4 top-2 text-xs text-black font-medium pointer-events-none">
+        {label}
+      </label>
+    </div>
+  );
+}
+
+type CheckboxProps = {
+  id: string;
+  label: string;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+  disabled?: boolean;
+};
+
+export function Checkbox({ id, label, checked, onChange, disabled = false }: CheckboxProps) {
+  return (
+    <label htmlFor={id} className={`flex items-center gap-2 ${disabled ? "opacity-60 cursor-not-allowed" : ""}`}>
+      <input id={id} type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} disabled={disabled} className="h-4 w-4" />
+      <span className="text-sm text-gray-700">{label}</span>
+    </label>
+  );
+}
+
+type PlatformSelectorProps = {
+  platforms: string[];
+  onChange: (platforms: string[]) => void;
+  disabled?: boolean;
+};
+
+export function PlatformSelector({ platforms, onChange, disabled = false }: PlatformSelectorProps) {
+  const toggle = (p: string) => {
+    if (disabled) return;
+    const next = platforms.includes(p) ? platforms.filter((x) => x !== p) : [...platforms, p];
+    onChange(next);
+  };
+
+  const opts = ["YouTube", "Instagram", "TikTok"];
+
+  return (
+    <div className="flex flex-wrap gap-2">
+      {opts.map((p) => {
+        const active = platforms.includes(p);
+        return (
+          <button
+            key={p}
+            type="button"
+            onClick={() => toggle(p)}
+            disabled={disabled}
+            aria-disabled={disabled}
+            className={`px-3 py-1.5 rounded-lg border text-sm ${
+              active ? "border-black bg-gray-100" : "border-gray-300 bg-white"
+            } ${disabled ? "opacity-60 cursor-not-allowed" : ""}`}
+          >
+            {p}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+type ChipInputProps = {
+  label: string;
+  items: string[];
+  setItems: (items: string[]) => void;
+  placeholder?: string;
+  validator?: (s: string) => boolean;
+  disabled?: boolean;
+};
+
+export function ChipInput({ label, items, setItems, placeholder, validator, disabled = false }: ChipInputProps) {
+  const [val, setVal] = useState("");
+
+  const add = () => {
+    if (disabled) return;
+    const v = val.trim();
+    if (!v) return;
+    if (validator && !validator(v)) return;
+    setItems([...items, v]);
+    setVal("");
+  };
+
+  const remove = (ix: number) => {
+    if (disabled) return;
+    setItems(items.filter((_, i) => i !== ix));
+  };
+
+  return (
+    <div className="space-y-1.5">
+      <div className="text-sm font-medium text-gray-700">{label}</div>
+      <div className={`flex flex-wrap gap-2 rounded-lg border-2 p-2 ${disabled ? "opacity-60 cursor-not-allowed" : "border-gray-200"}`}>
+        {items.map((t, i) => (
+          <span key={`${t}-${i}`} className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-gray-100 text-xs">
+            {t}
+            <button
+              type="button"
+              onClick={() => remove(i)}
+              disabled={disabled}
+              className="text-gray-500 hover:text-gray-700 disabled:cursor-not-allowed"
+              aria-label="Remove"
+            >
+              ×
+            </button>
+          </span>
+        ))}
+        <input
+          value={val}
+          onChange={(e) => setVal(e.target.value)}
+          onKeyDown={(e) => (e.key === "Enter" ? (e.preventDefault(), add()) : undefined)}
+          placeholder={placeholder}
+          disabled={disabled}
+          className="flex-1 min-w-[120px] border-0 outline-none text-sm bg-transparent"
+        />
+        <button type="button" onClick={add} disabled={disabled} className="px-2 py-1 text-xs border rounded">
+          Add
+        </button>
+      </div>
+    </div>
+  );
+}
+
+type TextAreaProps = {
+  id: string;
+  label: string;
+  value: string;
+  onChange: (e: ChangeEvent<HTMLTextAreaElement>) => void;
+  rows?: number;
+  placeholder?: string;
+  disabled?: boolean;
+};
+
+export function TextArea({ id, label, value, onChange, rows = 3, placeholder, disabled = false }: TextAreaProps) {
+  return (
+    <div className="space-y-1.5">
+      <label htmlFor={id} className="text-sm font-medium text-gray-700">
+        {label}
+      </label>
+      <textarea
+        id={id}
+        value={value}
+        onChange={onChange}
+        rows={rows}
+        placeholder={placeholder}
+        disabled={disabled}
+        className={`w-full px-3 py-2.5 border-2 rounded-lg text-sm focus:outline-none ${
+          disabled ? "opacity-60 cursor-not-allowed" : "focus:border-black border-gray-200"
+        }`}
+      />
+    </div>
+  );
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+// INLINE: ContractSidebar.tsx (single-file drop-in)
+// ───────────────────────────────────────────────────────────────────────────────
+function ContractSidebar({
+  isOpen,
+  onClose,
+  children,
+  title = "Initiate Contract",
+  subtitle = "New Agreement",
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  children: React.ReactNode;
+  title?: string;
+  subtitle?: string;
+}) {
+  return (
+    <div className={`fixed inset-0 z-50 ${isOpen ? "" : "pointer-events-none"}`}>
+      {/* Backdrop */}
+      <div
+        className={`absolute inset-0 bg-black/50 backdrop-blur-[2px] transition-opacity duration-300 ${
+          isOpen ? "opacity-100" : "opacity-0"
+        }`}
+        onClick={onClose}
+      />
+
+      {/* Panel */}
+      <div
+        className={`absolute right-0 top-0 h-full w-full sm:w-[720px] md:w-[860px] lg:w-[960px] bg-white shadow-2xl transform transition-transform duration-300 ease-out ${
+          isOpen ? "translate-x-0" : "translate-x-full"
+        }`}
+      >
+        {/* Header */}
+        <div className="relative h-36 overflow-hidden">
+          <div
+            className="absolute inset-0 opacity-10"
+            style={{
+              backgroundImage: `linear-gradient(135deg, ${GRADIENT_FROM} 0%, ${GRADIENT_TO} 100%)`,
+              clipPath: "polygon(0 0, 100% 0, 100% 65%, 0 100%)",
+            }}
+          />
+          <div
+            className="absolute inset-0"
+            style={{
+              background: `linear-gradient(135deg, ${GRADIENT_FROM} 0%, ${GRADIENT_TO} 100%)`,
+              clipPath: "polygon(0 0, 100% 0, 100% 78%, 0 92%)",
+            }}
+          />
+
+          <div className="relative z-10 p-6 text-white flex items-start justify-between h-full">
+            <div className="flex items-start gap-4">
+              <div className="w-12 h-12 rounded-2xl bg-white/15 backdrop-blur-md flex items-center justify-center mt-1 shadow-sm">
+                <HiDocumentText className="w-6 h-6 text-white" />
+              </div>
+              <div>
+                <div className="text-[11px] tracking-wide font-semibold uppercase/relaxed opacity-95 mb-1">{title}</div>
+                <div className="text-2xl font-extrabold leading-tight">{subtitle}</div>
+              </div>
+            </div>
+
+            <button
+              className="w-10 h-10 rounded-full bg-white/15 hover:bg-white/25 backdrop-blur-sm flex items-center justify-center transition-all duration-150 hover:scale-110"
+              onClick={onClose}
+              aria-label="Close"
+              title="Close"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+
+        {/* Body */}
+        <div className="h-[calc(100%-9rem)] overflow-y-auto">
+          <div className="p-6 space-y-5">{children}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SidebarSection({ title, children, icon }: { title: string; children: React.ReactNode; icon?: React.ReactNode }) {
+  return (
+    <div className="bg-gradient-to-br from-white to-gray-50 rounded-xl border border-gray-100 shadow-sm p-5 transition-all duration-200 hover:shadow-md">
+      <div className="flex items-center gap-2 mb-4 pb-3 border-b border-gray-100">
+        {icon && (
+          <div className="w-8 h-8 rounded-lg bg-black text-white flex items-center justify-center">
+            {icon}
+          </div>
+        )}
+        <div className="font-semibold text-gray-800">{title}</div>
+      </div>
+      {children}
+    </div>
+  );
+}
