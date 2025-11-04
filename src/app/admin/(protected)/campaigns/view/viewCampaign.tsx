@@ -149,12 +149,7 @@ export default function ViewCampaignPage() {
           >
             <HiOutlineRefresh className="h-5 w-5" />
           </Button>
-          <Button
-            variant="secondary"
-            onClick={() => router.push(`/admin/campaigns/edit?id=${c._id}`)}
-          >
-            Edit
-          </Button>
+         
         </div>
       </div>
 

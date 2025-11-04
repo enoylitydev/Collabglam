@@ -106,7 +106,7 @@ export default function BrandDashboardHome() {
           {/* Zero campaigns CTA */}
           {totalActiveCampaigns === 0 && (
             <ZeroCampaignCTA
-              onClick={() => router.push("/brand/create-campaign")}
+              onClick={() => router.push("/brand/add-edit-campaign")}
               accentFrom={accentFrom}
               accentTo={accentTo}
             />
@@ -142,7 +142,7 @@ export default function BrandDashboardHome() {
               label="Hired Influencers"
               value={totalInfluencers.toLocaleString()}
               accentFrom={accentFrom}
-              onClick={() => router.push("/brand/browse-influencers")}
+              // onClick={() => router.push("/brand/browse-influencers")}
             />
 
             <StatCard
@@ -150,7 +150,7 @@ export default function BrandDashboardHome() {
               label="Budget Remaining"
               value={`$${budgetRemaining.toLocaleString()}`}
               accentFrom={accentFrom}
-              onClick={() => router.push("/brand/dashboard/settings")}
+              // onClick={() => router.push("/brand/dashboard/settings")}
             />
           </div>
 

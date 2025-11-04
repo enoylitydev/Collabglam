@@ -6,6 +6,7 @@ import { Button } from './Button';
 import { ProgressIndicator } from './ProgressIndicator';
 import type { Country } from './types';
 import { get, post } from '@/lib/api';
+import { useRouter } from 'next/navigation';
 
 // ————————————————— Types
 
@@ -35,7 +36,8 @@ function toArray<T = any>(v: any): T[] {
   return [];
 }
 
-export function BrandSignup({ onSuccess }: { onSuccess: () => void }) {
+export function BrandSignup({ onSuccess, onStepChange }: { onSuccess: () => void; onStepChange?: (currentStep: number) => void }) {
+  const router = useRouter();
   // NOTE: keep default to 'email' if you want to skip email/otp while testing
   const [step, setStep] = useState<Step>('email');
   const [countries, setCountries] = useState<Country[]>([]);
@@ -45,12 +47,14 @@ export function BrandSignup({ onSuccess }: { onSuccess: () => void }) {
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [resendIn, setResendIn] = useState<number>(0);
 
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [logoPreview, setLogoPreview] = useState<string>('');
   const [logoUploading, setLogoUploading] = useState(false);
   const [passwordVisible, setPasswordVisible] = useState(false);
   const [confirmPasswordVisible, setConfirmPasswordVisible] = useState(false);
+  const [showRequiredHints, setShowRequiredHints] = useState(false);
 
   const [formData, setFormData] = useState({
     email: '',
@@ -83,6 +87,19 @@ export function BrandSignup({ onSuccess }: { onSuccess: () => void }) {
       }
     })();
   }, []);
+
+  // Notify parent about current step number for conditional UI (e.g., role switch visibility)
+  useEffect(() => {
+    const current = step === 'email' ? 1 : step === 'otp' ? 2 : 3;
+    onStepChange?.(current);
+  }, [step, onStepChange]);
+
+  // Resend countdown timer
+  useEffect(() => {
+    if (resendIn <= 0) return;
+    const t = setInterval(() => setResendIn((s) => (s > 0 ? s - 1 : 0)), 1000);
+    return () => clearInterval(t);
+  }, [resendIn]);
 
   useEffect(() => {
     (async () => {
@@ -214,11 +231,13 @@ export function BrandSignup({ onSuccess }: { onSuccess: () => void }) {
       setError('Please enter your work email.');
       return;
     }
+    if (resendIn > 0) return;
     setLoading(true);
     setError('');
     try {
       await post('/brand/requestOtp', { email: formData.email, role: 'Brand' });
       setStep('otp');
+      setResendIn(30);
     } catch (err: any) {
       setError(err?.response?.data?.message || err?.message || 'Failed to send OTP');
     } finally {
@@ -271,9 +290,18 @@ export function BrandSignup({ onSuccess }: { onSuccess: () => void }) {
   };
 
   const completeSignup = async () => {
+    // Reset inline required hints at the start of an attempt
+    setShowRequiredHints(false);
     // Required checks
     if (!formData.name || !formData.password || !formData.phone || !formData.countryId || !formData.callingCodeId || !formData.categoryId) {
-      setError('Please fill in all required fields.');
+      // Show inline hints only; no global message
+      setShowRequiredHints(true);
+      return;
+    }
+    // Enforce 10-digit mobile without country code
+    const phoneDigits = (formData.phone || '').replace(/\D/g, '');
+    if (phoneDigits.length !== 10) {
+      setError('Please enter a valid 10-digit mobile number (exclude country code).');
       return;
     }
     if (formData.password !== formData.confirmPassword) {
@@ -307,7 +335,7 @@ export function BrandSignup({ onSuccess }: { onSuccess: () => void }) {
 
       await post('/brand/register', {
         name: formData.name,
-        phone: formData.phone,
+        phone: phoneDigits,
         email: formData.email,
         password: formData.password,
         countryId: formData.countryId,
@@ -326,7 +354,18 @@ export function BrandSignup({ onSuccess }: { onSuccess: () => void }) {
         isVerifiedRepresentative: formData.officialRep,
       });
 
-      onSuccess();
+      // Auto-login after successful signup
+      const login = await post<{ token: string; brandId: string }>(
+        '/brand/login',
+        { email: formData.email, password: formData.password }
+      );
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('token', login.token);
+        localStorage.setItem('brandId', login.brandId);
+        localStorage.setItem('userType', 'brand');
+        localStorage.setItem('userEmail', formData.email);
+      }
+      router.replace('/brand/dashboard');
     } catch (err: any) {
       setError(err?.response?.data?.message || err?.message || 'Signup failed');
     } finally {
@@ -355,9 +394,22 @@ export function BrandSignup({ onSuccess }: { onSuccess: () => void }) {
   const safeCategories = Array.isArray(categories) ? categories : [];
   const safeBusinessTypes = Array.isArray(businessTypes) ? businessTypes : [];
 
+  const missing = {
+    name: showRequiredHints && !formData.name,
+    countryId: showRequiredHints && !formData.countryId,
+    categoryId: showRequiredHints && !formData.categoryId,
+    password: showRequiredHints && !formData.password,
+    phone: showRequiredHints && !formData.phone,
+    callingCodeId: showRequiredHints && !formData.callingCodeId,
+  };
+
+  // Never render this deprecated generic message
+  const filteredError = error === 'Please fill in all required fields.' ? '' : error;
+  
+
   // ————————————————— Render
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 w-full">
       <div className="text-center space-y-2">
         <div className="flex justify-center">
           <div className="w-16 h-16 rounded-2xl flex items-center justify-center ">
@@ -370,9 +422,9 @@ export function BrandSignup({ onSuccess }: { onSuccess: () => void }) {
 
       <ProgressIndicator steps={steps} variant="brand" />
 
-      {error && (
+      {filteredError && (
         <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm" aria-live="polite">
-          {error}
+          {filteredError}
         </div>
       )}
 
@@ -380,7 +432,7 @@ export function BrandSignup({ onSuccess }: { onSuccess: () => void }) {
       {step === 'email' && (
         <div className="space-y-5 animate-fadeIn">
           <div className="grid gap-3">
-            <div className="grid sm:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-[1fr,360px] items-end gap-4 mx-4 md:mx-[0%]">
               <FloatingLabelInput
                 id="brand-email"
                 label="Work Email"
@@ -391,9 +443,6 @@ export function BrandSignup({ onSuccess }: { onSuccess: () => void }) {
                 onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                 required
               />
-            </div>
-
-            <div className="grid sm:grid-cols-2 gap-3">
               <Button onClick={sendOTP} loading={loading} variant="brand">
                 Send Verification Code
               </Button>
@@ -412,6 +461,7 @@ export function BrandSignup({ onSuccess }: { onSuccess: () => void }) {
             </p>
           </div>
 
+
           <FloatingLabelInput
             id="brand-otp"
             label="Enter 6-Digit Code"
@@ -424,11 +474,33 @@ export function BrandSignup({ onSuccess }: { onSuccess: () => void }) {
             required
           />
 
+          <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
+            <Button
+              onClick={sendOTP}
+              loading={loading}
+              disabled={resendIn > 0}
+              variant="brand"
+              className="w-full sm:w-auto px-6"
+            >
+              Resend Code
+            </Button>
+            <span className="self-center text-sm text-gray-600">
+              {resendIn > 0 ? `Resend in ${resendIn}s` : 'You can resend now'}
+            </span>
+          </div>
+
           <Button onClick={verifyOTP} loading={loading} variant="brand">
             Verify Code
           </Button>
 
-          <button onClick={() => setStep('email')} className="w-full text-sm text-gray-600 hover:text-gray-900">
+          <button
+            onClick={() => {
+              setStep('email');
+              setResendIn(0);
+              setFormData({ ...formData, otp: '' });
+            }}
+            className="w-full text-sm text-gray-600 hover:text-gray-900"
+          >
             Change email address
           </button>
         </div>
@@ -442,23 +514,20 @@ export function BrandSignup({ onSuccess }: { onSuccess: () => void }) {
             <div className="grid gap-6 lg:gap-8 lg:grid-cols-[112px,1fr] items-start">
               {/* Logo uploader */}
               <div className="flex flex-col items-center gap-2">
-                <div className="w-28 h-28 rounded-xl bg-gray-50 border-2 border-dashed border-gray-200 flex items-center justify-center overflow-hidden">
-                  {logoPreview ? (
-                    <img src={logoPreview} alt="Brand logo preview" className="w-full h-full object-cover" />
-                  ) : (
-                    <ImagePlus className="w-8 h-8 text-gray-400" />
-                  )}
-                </div>
-                <label className="w-full">
+                <label className="cursor-pointer">
+                  <div className="w-28 h-28 rounded-xl bg-gray-50 border-2 border-dashed border-gray-200 flex items-center justify-center overflow-hidden hover:bg-gray-100 transition-colors">
+                    {logoPreview ? (
+                      <img src={logoPreview} alt="Brand logo preview" className="w-full h-full object-cover" />
+                    ) : (
+                      <ImagePlus className="w-8 h-8 text-gray-400" />
+                    )}
+                  </div>
                   <input
                     type="file"
                     accept={ACCEPT_LOGO_MIME.join(',')}
                     className="hidden"
                     onChange={(e) => onPickLogo(e.target.files?.[0] || null)}
                   />
-                  <span className="mt-2 inline-flex items-center gap-2 text-xs text-gray-700 px-3 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 cursor-pointer">
-                    <UploadCloud className="w-4 h-4" /> Upload Logo (Optional)
-                  </span>
                 </label>
                 {logoUploading && (
                   <span className="text-[10px] text-gray-500 inline-flex items-center gap-1">
@@ -471,79 +540,63 @@ export function BrandSignup({ onSuccess }: { onSuccess: () => void }) {
               <div className="grid gap-6">
                 {/* Top row: brand + email */}
                 <div className="grid md:grid-cols-2 gap-4">
-                  <FloatingLabelInput
-                    id="brand-name"
-                    label="Brand Name"
-                    type="text"
-                    autoComplete="organization"
-                    value={formData.name}
-                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    required
-                  />
+                  <div className="space-y-1">
+                    <FloatingLabelInput
+                      id="brand-name"
+                      label="Brand Name"
+                      type="text"
+                      autoComplete="organization"
+                      value={formData.name}
+                      onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                      required
+                    />
+                    {missing.name && (
+                      <p className="text-xs text-red-600">This field is required</p>
+                    )}
+                  </div>
 
                   <FloatingLabelInput id="brand-email-display" label="Email" type="email" value={formData.email} disabled />
                 </div>
 
-                {/* Contact row */}
-                <div className="grid md:grid-cols-3 gap-4">
-                  <Select
-                    instanceId="calling-code"
-                    inputId="calling-code"
-                    className="rs"
-                    classNamePrefix="rs"
-                    styles={selectStyles}
-                    placeholder="Code"
-                    options={callingCodeOptions}
-                    value={getOption(callingCodeOptions, formData.callingCodeId)}
-                    onChange={(opt: SingleValue<Option>) => setFormData({ ...formData, callingCodeId: opt?.value || '' })}
-                    isDisabled={loading || logoUploading}
-                    isLoading={!countries.length}
-                  />
-
-                  <div className="md:col-span-2">
-                    <FloatingLabelInput
-                      id="brand-phone"
-                      label="Phone Number"
-                      type="tel"
-                      autoComplete="tel"
-                      inputMode="tel"
-                      pattern="[0-9()+\\-\\s]*"
-                      value={formData.phone}
-                      onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                      required
-                    />
-                  </div>
-                </div>
-
                 {/* Location + Category */}
                 <div className="grid md:grid-cols-2 gap-4">
-                  <Select
-                    instanceId="country"
-                    inputId="country"
-                    className="rs"
-                    classNamePrefix="rs"
-                    styles={selectStyles}
-                    placeholder="Select Country"
-                    options={countryOptions}
-                    value={getOption(countryOptions, formData.countryId)}
-                    onChange={(opt: SingleValue<Option>) => setFormData({ ...formData, countryId: opt?.value || '' })}
-                    isDisabled={loading || logoUploading}
-                    isLoading={metaLoading}
-                  />
+                  <div className="space-y-1">
+                    <Select
+                      instanceId="country"
+                      inputId="country"
+                      className="rs"
+                      classNamePrefix="rs"
+                      styles={selectStyles}
+                      placeholder="Select Country"
+                      options={countryOptions}
+                      value={getOption(countryOptions, formData.countryId)}
+                      onChange={(opt: SingleValue<Option>) => setFormData({ ...formData, countryId: opt?.value || '' })}
+                      isDisabled={loading || logoUploading}
+                      isLoading={metaLoading}
+                    />
+                    {missing.countryId && (
+                      <p className="text-xs text-red-600">This field is required</p>
+                    )}
+                  </div>
 
-                  <Select
-                    instanceId="category"
-                    inputId="category"
-                    className="rs"
-                    classNamePrefix="rs"
-                    styles={selectStyles}
-                    placeholder={metaLoading ? 'Loading categories…' : 'Brand Category / Industry'}
-                    options={categoryOptions}
-                    value={getOption(categoryOptions, formData.categoryId)}
-                    onChange={(opt: SingleValue<Option>) => setFormData({ ...formData, categoryId: opt?.value || '' })}
-                    isDisabled={metaLoading || loading || logoUploading}
-                    isLoading={metaLoading}
-                  />
+                  <div className="space-y-1">
+                    <Select
+                      instanceId="category"
+                      inputId="category"
+                      className="rs"
+                      classNamePrefix="rs"
+                      styles={selectStyles}
+                      placeholder={metaLoading ? 'Loading categories…' : 'Brand Category / Industry'}
+                      options={categoryOptions}
+                      value={getOption(categoryOptions, formData.categoryId)}
+                      onChange={(opt: SingleValue<Option>) => setFormData({ ...formData, categoryId: opt?.value || '' })}
+                      isDisabled={metaLoading || loading || logoUploading}
+                      isLoading={metaLoading}
+                    />
+                    {missing.categoryId && (
+                      <p className="text-xs text-red-600">This field is required</p>
+                    )}
+                  </div>
                 </div>
 
                 {/* Web + Instagram */}
@@ -600,16 +653,6 @@ export function BrandSignup({ onSuccess }: { onSuccess: () => void }) {
                   />
                 </div>
 
-                {/* Referral */}
-                <FloatingLabelInput
-                  id="brand-referral"
-                  label="Referral Code (Optional)"
-                  type="text"
-                  autoComplete="one-time-code"
-                  value={formData.referralCode}
-                  onChange={(e) => setFormData({ ...formData, referralCode: e.target.value })}
-                />
-
                 {/* Passwords with strength */}
                 <div className="grid md:grid-cols-2 gap-4">
                   <div className="relative">
@@ -620,16 +663,18 @@ export function BrandSignup({ onSuccess }: { onSuccess: () => void }) {
                       autoComplete="new-password"
                       value={formData.password}
                       onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                      style={{ paddingRight: 40 }}
                       required
                     />
                     <button
                       type="button"
                       onClick={() => setPasswordVisible((v) => !v)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
+                      className="absolute inset-y-0 right-3 my-auto text-gray-500 hover:text-gray-700"
                       aria-label={passwordVisible ? 'Hide password' : 'Show password'}
                     >
                       {passwordVisible ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                     </button>
+                    {/* Inline required hint for password removed per request */}
                   </div>
 
                   <div className="relative">
@@ -640,12 +685,13 @@ export function BrandSignup({ onSuccess }: { onSuccess: () => void }) {
                       autoComplete="new-password"
                       value={formData.confirmPassword}
                       onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
+                      style={{ paddingRight: 40 }}
                       required
                     />
                     <button
                       type="button"
                       onClick={() => setConfirmPasswordVisible((v) => !v)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
+                      className="absolute inset-y-0 right-3 my-auto text-gray-500 hover:text-gray-700"
                       aria-label={confirmPasswordVisible ? 'Hide password' : 'Show password'}
                     >
                       {confirmPasswordVisible ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
@@ -654,7 +700,7 @@ export function BrandSignup({ onSuccess }: { onSuccess: () => void }) {
                 </div>
 
                 {/* Verification + Terms (symmetrical on md+) */}
-                <div className="grid md:grid-cols-2 gap-3">
+                <div className="grid md:grid-rows-2 gap-2">
                   <label className="flex items-start gap-3 cursor-pointer group">
                     <input
                       type="checkbox"
@@ -664,7 +710,7 @@ export function BrandSignup({ onSuccess }: { onSuccess: () => void }) {
                       required
                     />
                     <span className="text-sm text-gray-700 group-hover:text-gray-900">
-                      I confirm that I'm an official representative of this brand.
+                      I confirm that I'm an official representative of this brand. By continuing, I agree to receive transactional emails.
                     </span>
                   </label>
 
@@ -689,11 +735,10 @@ export function BrandSignup({ onSuccess }: { onSuccess: () => void }) {
                   </label>
                 </div>
 
-                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+                <div className="flex flex-col gap-3">
                   <Button onClick={completeSignup} loading={loading || logoUploading} variant="brand" disabled={metaLoading}>
                     {metaLoading ? 'Loading options…' : 'Create Brand Account'}
                   </Button>
-                  <p className="text-xs text-gray-500">By continuing, you agree to receive transactional emails.</p>
                 </div>
               </div>
             </div>

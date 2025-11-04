@@ -118,7 +118,7 @@ export default function InfluencerDashboard() {
     <div className="p-6 min-h-screen space-y-8">
       {/* Header */}
       <header className="flex items-center justify-between">
-        <h1 className="text-3xl font-semibold">Rejected Campaigns</h1>
+        <h1 className="text-3xl font-semibold">Previous Campaigns</h1>
       </header>
 
       {/* Table */}
