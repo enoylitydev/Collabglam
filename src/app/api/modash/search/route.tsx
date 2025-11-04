@@ -236,8 +236,9 @@ function buildPlatformBody(p: Platform, body: any, opts?: { relax?: boolean }) {
 export async function POST(req: NextRequest) {
   const apiKey = process.env.MODASH_API_KEY;
   if (!apiKey) {
+    // Mask sensitive server configuration details from the client
     return NextResponse.json(
-      { error: 'Missing MODASH_API_KEY' },
+      { error: 'Search failed' },
       { status: 500, headers: corsHeaders() },
     );
   }
@@ -282,8 +283,10 @@ export async function POST(req: NextRequest) {
 
       let data = await firstResp.json().catch(() => ({}));
       if (!firstResp.ok) {
-        const msg =
-          data?.message || data?.error || `Modash ${p} failed (${firstResp.status})`;
+        // Sanitize upstream error messages so we don't leak API token hints to the UI
+        const rawMsg = data?.message || data?.error || `Modash ${p} failed (${firstResp.status})`;
+        const isSensitive = /api token|developer section|modash|authorization|bearer|marketer\.modash\.io/i.test(String(rawMsg));
+        const msg = isSensitive ? 'Search failed' : rawMsg;
         throw new Error(msg);
       }
 
@@ -339,8 +342,11 @@ export async function POST(req: NextRequest) {
       { status: 200, headers: corsHeaders() },
     );
   } catch (err: any) {
+    const raw = err?.message as string | undefined;
+    const isSensitive = /api token|developer section|modash|authorization|bearer|modash_api_key/i.test(String(raw));
+    const safe = isSensitive ? 'Search failed' : (raw || 'Search failed');
     return NextResponse.json(
-      { error: err?.message || 'Search failed' },
+      { error: safe },
       { status: 400, headers: corsHeaders() },
     );
   }

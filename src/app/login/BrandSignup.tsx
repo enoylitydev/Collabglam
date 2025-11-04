@@ -412,8 +412,12 @@ export function BrandSignup({ onSuccess, onStepChange }: { onSuccess: () => void
     callingCodeId: showRequiredHints && !formData.callingCodeId,
   } as const;
 
-  // Never render this deprecated generic message
-  const filteredError = error === 'Please fill in all required fields.' ? '' : error;
+  // Never render this deprecated generic message, and suppress password mismatch (shown at bottom)
+  const filteredError =
+    error === 'Please fill in all required fields.' || error === 'Passwords do not match.'
+      ? ''
+      : error;
+  const showPwdMismatchBottom = error === 'Passwords do not match.';
 
   // ————————————————— Render
   return (
@@ -633,6 +637,8 @@ export function BrandSignup({ onSuccess, onStepChange }: { onSuccess: () => void
                       label="Mobile Number (exclude country code)"
                       type="tel"
                       inputMode="numeric"
+                      maxLength={10}
+                      minLength={10}
                       value={formData.phone}
                       onChange={(e) => setFormData({ ...formData, phone: e.target.value.replace(/[^0-9]/g, '') })}
                       required
@@ -782,6 +788,11 @@ export function BrandSignup({ onSuccess, onStepChange }: { onSuccess: () => void
                   <Button onClick={completeSignup} loading={loading || logoUploading} variant="brand" disabled={metaLoading} aria-disabled={metaLoading}>
                     {metaLoading ? 'Loading options…' : 'Create Brand Account'}
                   </Button>
+                  {showPwdMismatchBottom && (
+                    <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm" aria-live="polite">
+                      Passwords do not match.
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

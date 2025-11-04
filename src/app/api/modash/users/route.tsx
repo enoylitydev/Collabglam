@@ -66,7 +66,8 @@ function dedupeByBest(items: (AnyUser & { __score: number })[]) {
 export async function GET(req: NextRequest) {
   const apiKey = process.env.MODASH_API_KEY;
   if (!apiKey) {
-    return NextResponse.json({ error: 'Missing MODASH_API_KEY' }, { status: 500, headers: corsHeaders() });
+    // Hide server configuration details from the client
+    return NextResponse.json({ error: 'Lookup failed' }, { status: 500, headers: corsHeaders() });
   }
 
   const { searchParams } = new URL(req.url);
@@ -175,8 +176,11 @@ export async function GET(req: NextRequest) {
       { status: 200, headers: corsHeaders() }
     );
   } catch (err: any) {
+    const raw = err?.message as string | undefined;
+    const isSensitive = /api token|developer section|modash|authorization|bearer|modash_api_key/i.test(String(raw));
+    const safe = isSensitive ? 'Lookup failed' : (raw || 'Lookup failed');
     return NextResponse.json(
-      { error: err?.message || 'Lookup failed' },
+      { error: safe },
       { status: 400, headers: corsHeaders() }
     );
   }
