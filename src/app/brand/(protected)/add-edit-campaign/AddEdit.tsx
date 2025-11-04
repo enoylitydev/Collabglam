@@ -155,6 +155,13 @@ export default function CampaignFormPage() {
   const [useFileUploadForBrief, setUseFileUploadForBrief] = useState(false);
   const [additionalNotes, setAdditionalNotes] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showRequiredHints, setShowRequiredHints] = useState(false);
+  const ageOrderError =
+    ageRange.min !== "" &&
+    ageRange.max !== "" &&
+    Number(ageRange.min) >= Number(ageRange.max);
+  const dateOrderError =
+    !!(timeline.start && timeline.end && new Date(timeline.start) >= new Date(timeline.end));
 
   const [draftLoaded, setDraftLoaded] = useState(false);
 
@@ -395,6 +402,7 @@ export default function CampaignFormPage() {
   // ── submit ───────────────────────────────────────────────
   const handleSubmit = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
+    setShowRequiredHints(false);
 
     if (
       !productName.trim() ||
@@ -410,16 +418,17 @@ export default function CampaignFormPage() {
       !timeline.end ||
       (!creativeBriefText.trim() && !useFileUploadForBrief)
     ) {
+      setShowRequiredHints(true);
       setIsPreviewOpen(false);
-      return toast({ icon: "error", title: "Missing Fields", text: "Complete all required fields." });
+      return; // no popup; show only inline hints
     }
-    if (Number(ageRange.min) > Number(ageRange.max)) {
+    if (Number(ageRange.min) >= Number(ageRange.max)) {
       setIsPreviewOpen(false);
-      return toast({ icon: "error", title: "Invalid Age Range", text: "Min Age cannot exceed Max Age." });
+      return toast({ icon: "error", title: "Invalid Age Range", text: "Min Age must be less than Max Age." });
     }
-    if (new Date(timeline.start) > new Date(timeline.end)) {
+    if (timeline.start && timeline.end && new Date(timeline.start) >= new Date(timeline.end)) {
       setIsPreviewOpen(false);
-      return toast({ icon: "error", title: "Invalid Dates", text: "Start Date cannot be after End Date." });
+      return toast({ icon: "error", title: "Invalid Dates", text: "Start Date must be before End Date." });
     }
 
     setIsSubmitting(true);
@@ -514,16 +523,21 @@ export default function CampaignFormPage() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="pt-6 space-y-6 bg-white">
-                <FloatingLabelInput
-                  id="productName"
-                  label="Product / Service Name"
-                  type="text"
-                  value={productName}
-                  onChange={(e) => setProductName(e.target.value)}
-                  required
-                />
+                <div className="space-y-1">
+                  <FloatingLabelInput
+                    id="productName"
+                    label="Product / Service Name"
+                    type="text"
+                    value={productName}
+                    onChange={(e) => setProductName(e.target.value)}
+                    required
+                  />
+                  {showRequiredHints && !productName.trim() && (
+                    <p className="text-xs text-red-600">This field is required</p>
+                  )}
+                </div>
 
-                <div>
+                <div className="space-y-1">
                   <Label htmlFor="description" className="text-sm font-medium text-gray-700 mb-2 block">
                     Description
                   </Label>
@@ -536,6 +550,9 @@ export default function CampaignFormPage() {
                     className="resize-none focus:ring-2 focus:ring-orange-500/20"
                     required
                   />
+                  {showRequiredHints && !description.trim() && (
+                    <p className="text-xs text-red-600">This field is required</p>
+                  )}
                 </div>
 
                 <div>
@@ -591,25 +608,38 @@ export default function CampaignFormPage() {
               </CardHeader>
               <CardContent className="pt-6 space-y-6 bg-white">
                 <div className="grid sm:grid-cols-2 gap-6">
-                  <FloatingLabelInput
-                    id="ageMin"
-                    label="Minimum Age"
-                    type="number"
-                    value={ageRange.min}
-                    onChange={(e) => setAgeRange({ ...ageRange, min: e.target.value === "" ? "" : +e.target.value })}
-                    required
-                  />
-                  <FloatingLabelInput
-                    id="ageMax"
-                    label="Maximum Age"
-                    type="number"
-                    value={ageRange.max}
-                    onChange={(e) => setAgeRange({ ...ageRange, max: e.target.value === "" ? "" : +e.target.value })}
-                    required
-                  />
+                  <div className="space-y-1">
+                    <FloatingLabelInput
+                      id="ageMin"
+                      label="Minimum Age"
+                      type="number"
+                      value={ageRange.min}
+                      onChange={(e) => setAgeRange({ ...ageRange, min: e.target.value === "" ? "" : +e.target.value })}
+                      required
+                    />
+                    {showRequiredHints && ageRange.min === "" && (
+                      <p className="text-xs text-red-600">This field is required</p>
+                    )}
+                  </div>
+                  <div className="space-y-1">
+                    <FloatingLabelInput
+                      id="ageMax"
+                      label="Maximum Age"
+                      type="number"
+                      value={ageRange.max}
+                      onChange={(e) => setAgeRange({ ...ageRange, max: e.target.value === "" ? "" : +e.target.value })}
+                      required
+                    />
+                    {showRequiredHints && ageRange.max === "" && (
+                      <p className="text-xs text-red-600">This field is required</p>
+                    )}
+                    {ageOrderError && (
+                      <p className="text-xs text-red-600">Min Age must be less than Max Age.</p>
+                    )}
+                  </div>
                 </div>
 
-                <div>
+                <div className="space-y-1">
                   <Label className="text-sm font-medium text-gray-700 mb-2 block">Gender</Label>
                   <select
                     value={selectedGender}
@@ -626,9 +656,12 @@ export default function CampaignFormPage() {
                       </option>
                     ))}
                   </select>
+                  {showRequiredHints && !selectedGender && (
+                    <p className="text-xs text-red-600">This field is required</p>
+                  )}
                 </div>
 
-                <div>
+                <div className="space-y-1">
                   <Label className="text-sm font-medium text-gray-700 mb-2 block">Target Locations</Label>
                   <ReactSelect
                     isMulti
@@ -641,9 +674,12 @@ export default function CampaignFormPage() {
                     placeholder="Select countries..."
                     filterOption={filterByCountryName}
                   />
+                  {showRequiredHints && selectedCountries.length === 0 && (
+                    <p className="text-xs text-red-600">This field is required</p>
+                  )}
                 </div>
 
-                <div>
+                <div className="space-y-1">
                   <Label className="text-sm font-medium text-gray-700 mb-2 block">Categories & Subcategories</Label>
                   <ReactSelect
                     isMulti
@@ -656,6 +692,9 @@ export default function CampaignFormPage() {
                     placeholder="Search & choose subcategories..."
                     noOptionsMessage={() => "No matching subcategories"}
                   />
+                  {showRequiredHints && selectedSubcategories.length === 0 && (
+                    <p className="text-xs text-red-600">This field is required</p>
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -670,7 +709,7 @@ export default function CampaignFormPage() {
               </CardHeader>
               <CardContent className="pt-6 space-y-6 bg-white">
                 <div className="grid sm:grid-cols-2 gap-6">
-                  <div>
+                  <div className="space-y-1">
                     <Label className="text-sm font-medium text-gray-700 mb-2 block">Campaign Goal</Label>
                     <select
                       value={selectedGoal}
@@ -687,9 +726,12 @@ export default function CampaignFormPage() {
                         </option>
                       ))}
                     </select>
+                    {showRequiredHints && !selectedGoal && (
+                      <p className="text-xs text-red-600">This field is required</p>
+                    )}
                   </div>
 
-                  <div>
+                  <div className="space-y-1">
                     <Label className="text-sm font-medium text-gray-700 mb-2 block">Budget (USD)</Label>
                     <div className="relative">
                       <HiOutlineCurrencyDollar className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 h-5 w-5" />
@@ -703,11 +745,14 @@ export default function CampaignFormPage() {
                         required
                       />
                     </div>
+                    {showRequiredHints && budget === "" && (
+                      <p className="text-xs text-red-600">This field is required</p>
+                    )}
                   </div>
                 </div>
 
                 <div className="grid sm:grid-cols-2 gap-6">
-                  <div>
+                  <div className="space-y-1">
                     <Label className="text-sm font-medium text-gray-700 mb-2 block">Start Date</Label>
                     <div className="relative">
                       <HiOutlineCalendar className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 h-5 w-5" />
@@ -719,9 +764,13 @@ export default function CampaignFormPage() {
                         required
                       />
                     </div>
+                    {/* Show date order error only below End Date */}
+                    {showRequiredHints && !timeline.start && (
+                      <p className="text-xs text-red-600">This field is required</p>
+                    )}
                   </div>
 
-                  <div>
+                  <div className="space-y-1">
                     <Label className="text-sm font-medium text-gray-700 mb-2 block">End Date</Label>
                     <div className="relative">
                       <HiOutlineCalendar className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 h-5 w-5" />
@@ -733,6 +782,12 @@ export default function CampaignFormPage() {
                         required
                       />
                     </div>
+                    {dateOrderError && (
+                      <p className="text-xs text-red-600">End Date must be after Start Date.</p>
+                    )}
+                    {showRequiredHints && !timeline.end && (
+                      <p className="text-xs text-red-600">This field is required</p>
+                    )}
                   </div>
                 </div>
               </CardContent>
@@ -799,7 +854,7 @@ export default function CampaignFormPage() {
                     )}
                   </div>
                 ) : (
-                  <div>
+                  <div className="space-y-1">
                     <Label htmlFor="briefText" className="text-sm font-medium text-gray-700 mb-2 block">
                       Creative Brief
                     </Label>
@@ -812,6 +867,9 @@ export default function CampaignFormPage() {
                       className="resize-none focus:ring-2 focus:ring-orange-500/20"
                       required
                     />
+                    {showRequiredHints && !useFileUploadForBrief && !creativeBriefText.trim() && (
+                      <p className="text-xs text-red-600">This field is required</p>
+                    )}
                   </div>
                 )}
 

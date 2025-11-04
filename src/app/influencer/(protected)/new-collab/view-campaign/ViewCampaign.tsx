@@ -30,7 +30,12 @@ interface CampaignData {
     gender: number;
     locations: { countryId: string; countryName: string; _id: string }[];
   };
-  interestId: { _id: string; name: string }[];
+  categories: {
+    categoryId: number;
+    categoryName: string;
+    subcategoryId: string;
+    subcategoryName: string;
+  }[];
   goal: string;
   budget: number;
   timeline: { startDate: string; endDate: string };
@@ -147,25 +152,24 @@ export default function ViewCampaignPage() {
           Detailed view of <span className="font-medium">{c.productOrServiceName}</span>.
         </p>
 
-        {/* single flex container for both Back + Apply/Badge */}
-        <div className="flex justify-end items-center space-x-4 mt-4">
+        <div className="flex justify-between items-center mt-4 space-x-4">
           <Button
             onClick={() => router.back()}
-            className="bg-gray-300 text-gray-800 px-4 py-2 rounded-md"
+            className="bg-gray-300 text-gray-800 px-4 py-2 rounded-md hover:bg-gray-400 transition"
           >
             Back
           </Button>
 
           {c.hasApplied === 1 ? (
             <span
-              className="inline-block px-4 py-2 rounded-md bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-800"
+              className="inline-block px-4 py-2 rounded-md bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-800 font-semibold"
             >
               Already Applied
             </span>
           ) : (
             <Button
               onClick={handleApply}
-              className="inline-block px-4 py-2 rounded-md bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-800 cursor-pointer hover:bg-gradient-to-r hover:from-[#FFDB58] hover:to-[#FFBF00]"
+              className="inline-block px-4 py-2 rounded-md bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-800 font-semibold hover:bg-gradient-to-r hover:from-[#FFDB58] hover:to-[#FFBF00] transition"
             >
               Apply for Work
             </Button>
@@ -173,10 +177,9 @@ export default function ViewCampaignPage() {
         </div>
       </header>
 
-      {/* Product Info */}
-      <Card className="bg-white">
+      <Card className="bg-white shadow-lg rounded-lg">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-xl">
+          <CardTitle className="flex items-center gap-2 text-xl font-medium text-gray-800">
             <HiOutlinePhotograph className="h-6 w-6 text-[#FFBF00]" /> Product Info
           </CardTitle>
         </CardHeader>
@@ -188,14 +191,14 @@ export default function ViewCampaignPage() {
             </div>
             <div className="md:col-span-2 lg:col-span-2">
               <p className="text-sm font-medium text-gray-600">Description</p>
-              <p className="mt-1 whitespace-pre-wrap text-gray-800">{c.description}</p>
+              <p className="mt-1 text-gray-800 whitespace-pre-wrap">{c.description}</p>
             </div>
             {c.images?.length > 0 && (
               <div className="md:col-span-3">
                 <p className="text-sm font-medium text-gray-600">Images</p>
                 <div className="mt-2 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
                   {c.images.map((url, i) => (
-                    <div key={i} className="relative h-36 rounded-lg overflow-hidden border">
+                    <div key={i} className="relative h-36 rounded-lg overflow-hidden border border-gray-300 shadow-sm">
                       <img src={url} alt={`img-${i}`} className="h-full w-full object-cover" />
                     </div>
                   ))}
@@ -206,10 +209,9 @@ export default function ViewCampaignPage() {
         </CardContent>
       </Card>
 
-      {/* Target Audience */}
-      <Card className="bg-white">
+      <Card className="bg-white shadow-lg rounded-lg">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-xl">
+          <CardTitle className="flex items-center gap-2 text-xl font-medium text-gray-800">
             <HiOutlineCalendar className="h-6 w-6 text-[#FFBF00]" /> Target Audience
           </CardTitle>
         </CardHeader>
@@ -235,13 +237,12 @@ export default function ViewCampaignPage() {
                 ))}
               </div>
             </div>
-
             <div className="md:col-span-3">
-              <p className="text-sm font-medium text-gray-600">Interests</p>
+              <p className="text-sm font-medium text-gray-600">Categories</p>
               <div className="mt-2 flex flex-wrap gap-2">
-                {c.interestId.map(i => (
-                  <Badge key={i._id} variant="default" className="text-gray-800 bg-gradient-to-r from-[#FFBF00] to-[#FFDB58]">
-                    {i.name}
+                {c.categories.map((cat) => (
+                  <Badge key={cat.subcategoryId} variant="default" className="text-gray-800 bg-gradient-to-r from-[#FFBF00] to-[#FFDB58]">
+                    {cat.categoryName}: {cat.subcategoryName}
                   </Badge>
                 ))}
               </div>
@@ -250,10 +251,9 @@ export default function ViewCampaignPage() {
         </CardContent>
       </Card>
 
-      {/* Campaign Details */}
-      <Card className="bg-white">
+      <Card className="bg-white shadow-lg rounded-lg">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-xl">
+          <CardTitle className="flex items-center gap-2 text-xl font-medium text-gray-800">
             <HiOutlineCurrencyDollar className="h-6 w-6 text-[#FFBF00]" /> Campaign Details
           </CardTitle>
         </CardHeader>
@@ -289,10 +289,9 @@ export default function ViewCampaignPage() {
         </CardContent>
       </Card>
 
-      {/* Creative Brief & Notes */}
-      <Card className="bg-white">
+      <Card className="bg-white shadow-lg rounded-lg">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-xl">
+          <CardTitle className="flex items-center gap-2 text-xl font-medium text-gray-800">
             <HiOutlineDocument className="h-6 w-6 text-[#FFBF00]" /> Creative Brief & Notes
           </CardTitle>
         </CardHeader>
@@ -313,9 +312,9 @@ export default function ViewCampaignPage() {
                     href={url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="flex items-center gap-2 rounded-lg border border-[#FFBF00] bg-white px-2 py-1 hover:bg-gray-50"
+                    className="flex items-center gap-2 rounded-lg border border-[#FFBF00] bg-white px-2 py-1 hover:bg-gray-50 transition"
                   >
-                    <HiOutlineDocument className="h-5 w-5 bg-clip-text text-transparent bg-gradient-to-r from-[#FFBF00] to-[#FFDB58]" />
+                    <HiOutlineDocument className="h-5 w-5 text-[#FFBF00]" />
                     <span className="truncate text-sm font-medium text-gray-800">{url.split("/").pop()}</span>
                   </a>
                 ))}

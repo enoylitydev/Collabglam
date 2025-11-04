@@ -17,7 +17,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
+// ❌ Removed tooltip imports
 import Swal from "sweetalert2";
 
 interface AudienceLocation {
@@ -328,30 +328,30 @@ export default function ViewCampaignPage() {
                 ${Number(c.budget || 0).toLocaleString()}
               </p>
             </div>
+
+            {/* Start Date — label always visible */}
             {c.timeline?.startDate && (
-              <div className="flex items-center gap-3">
-                <Tooltip>
-                  <TooltipTrigger>
-                    <HiOutlineCalendar className="h-5 w-5 text-[#FFBF00]" />
-                  </TooltipTrigger>
-                  <TooltipContent>Start Date</TooltipContent>
-                </Tooltip>
-                <p className="text-gray-800">
-                  {new Date(c.timeline.startDate).toLocaleDateString()}
-                </p>
+              <div>
+                <p className="text-sm font-medium text-gray-600">Start Date</p>
+                <div className="mt-1 flex items-center gap-2">
+                  <HiOutlineCalendar className="h-5 w-5 text-[#FFBF00]" />
+                  <span className="text-gray-800">
+                    {new Date(c.timeline.startDate).toLocaleDateString()}
+                  </span>
+                </div>
               </div>
             )}
+
+            {/* End Date — label always visible */}
             {c.timeline?.endDate && (
-              <div className="flex items-center gap-3">
-                <Tooltip>
-                  <TooltipTrigger>
-                    <HiOutlineCalendar className="h-5 w-5 text-[#FFBF00]" />
-                  </TooltipTrigger>
-                  <TooltipContent>End Date</TooltipContent>
-                </Tooltip>
-                <p className="text-gray-800">
-                  {new Date(c.timeline.endDate).toLocaleDateString()}
-                </p>
+              <div>
+                <p className="text-sm font-medium text-gray-600">End Date</p>
+                <div className="mt-1 flex items-center gap-2">
+                  <HiOutlineCalendar className="h-5 w-5 text-[#FFBF00]" />
+                  <span className="text-gray-800">
+                    {new Date(c.timeline.endDate).toLocaleDateString()}
+                  </span>
+                </div>
               </div>
             )}
           </div>
