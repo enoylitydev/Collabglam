@@ -331,9 +331,24 @@ export default function AppliedInfluencersPage() {
   // ───────────────────────────────────────────────────────────────────────────
   // Contract panel openers (modes)
   // ───────────────────────────────────────────────────────────────────────────
-  const prefillFormFor = (inf: Influencer) => {
-    setCampaignTitle(campaignName);
-    setPlatforms([mapPlatformToApi(inf.primaryPlatform) as string]);
+  // Replace existing prefillFormFor and openContractPanel with this code:
+
+  /** Helper: convert ISO/Date-ish -> yyyy-mm-dd (or empty string) */
+  const toInputDate = (v?: string | Date | null) => {
+    if (!v) return "";
+    const d = new Date(v);
+    if (Number.isNaN(d.getTime())) return "";
+    // YYYY-MM-DD
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const dd = String(d.getDate()).padStart(2, "0");
+    return `${yyyy}-${mm}-${dd}`;
+  };
+
+  const prefillFormFor = (inf: Influencer, meta?: ContractMeta | null) => {
+    // Defaults from influencer / campaign
+    setCampaignTitle(campaignName || inf?.name || "");
+    setPlatforms(inf?.primaryPlatform ? [mapPlatformToApi(inf.primaryPlatform) as string] : []);
     setGoLiveStart("");
     setGoLiveEnd("");
     setTotalFee(String(inf.feeAmount || 5000));
@@ -341,6 +356,7 @@ export default function AppliedInfluencersPage() {
     setMilestoneSplit("50/50");
     setRevisionsIncluded(1);
 
+    // Deliverable defaults
     setDType("Scope");
     setDQuantity(1);
     setDFormat("Text");
@@ -355,15 +371,73 @@ export default function AppliedInfluencersPage() {
     setRequestedEffDate("");
     setRequestedEffTz("Europe/Amsterdam");
     setSignatureDataUrl("");
+
+    // If a contract meta exists, override defaults with contract values
+    if (meta) {
+      // brand-level fields may live at meta.brand OR top-level meta depending on server shape
+      const brand = (meta as any).brand ?? (meta as any);
+
+      if (brand) {
+        if (typeof brand.campaignTitle === "string") setCampaignTitle(String(brand.campaignTitle));
+        if (Array.isArray(brand.platforms) && brand.platforms.length) {
+          // normalise platform strings
+          setPlatforms((brand.platforms as string[]).map((p) => String(p || "")));
+        }
+        if (brand.goLive) {
+          // brand.goLive.start/end might be Date objects or ISO strings
+          setGoLiveStart(toInputDate((brand.goLive as any).start));
+          setGoLiveEnd(toInputDate((brand.goLive as any).end));
+        }
+        if (brand.totalFee !== undefined && brand.totalFee !== null) setTotalFee(String(brand.totalFee));
+        if (brand.currency) setCurrency(String(brand.currency));
+        if (brand.milestoneSplit) setMilestoneSplit(String(brand.milestoneSplit));
+        if (brand.revisionsIncluded !== undefined && brand.revisionsIncluded !== null)
+          setRevisionsIncluded(Number(brand.revisionsIncluded));
+
+        // requested effective dates (brand-level)
+        if (brand.requestedEffectiveDate) setRequestedEffDate(toInputDate(brand.requestedEffectiveDate));
+        if (brand.requestedEffectiveDateTimezone) setRequestedEffTz(String(brand.requestedEffectiveDateTimezone));
+      }
+
+      // Deliverables: pick first expanded item if present
+      const expanded = (meta as any).deliverablesExpanded ?? (brand && brand.deliverablesExpanded) ?? undefined;
+      if (Array.isArray(expanded) && expanded.length) {
+        const first = expanded[0];
+        if (first.type) setDType(String(first.type));
+        if (first.quantity !== undefined && first.quantity !== null) setDQuantity(Number(first.quantity));
+        if (first.format) setDFormat(String(first.format));
+        if (first.durationSec !== undefined && first.durationSec !== null) setDDurationSec(Number(first.durationSec));
+        if (first.draftRequired !== undefined) setDDraftRequired(Boolean(first.draftRequired));
+        if (first.minLiveHours !== undefined && first.minLiveHours !== null) setDMinLiveHours(Number(first.minLiveHours));
+        if (Array.isArray(first.tags)) setDTags(first.tags.map((t: any) => String(t)));
+        if (Array.isArray(first.handles)) setDHandles(first.handles.map((h: any) => String(h)));
+        if (first.captions) setDCaptions(String(first.captions));
+        if (Array.isArray(first.links)) setDLinks(first.links.map((l: any) => String(l)));
+      }
+
+      // Signature preview — common locations: meta.signatures.brand.sigImageDataUrl OR meta.signatures.brand.sigImage OR meta.brand.signature
+      const sig =
+        (meta as any).signatures?.brand?.sigImageDataUrl ||
+        (meta as any).signatures?.brand?.sigImage ||
+        (brand && (brand.signatureImageDataUrl || brand.signature)) ||
+        "";
+
+      if (sig) setSignatureDataUrl(String(sig));
+    }
   };
 
   const openContractPanel = async (inf: Influencer, override?: PanelMode) => {
     setSelectedInf(inf);
-    prefillFormFor(inf);
     setPdfUrl("");
+    setSelectedContractMeta(null);
 
-    const meta = metaCache[inf.influencerId] ?? (await getLatestContractFor(inf));
+    // try to find cached meta or fetch
+    const cached = metaCache[inf.influencerId] ?? null;
+    const meta = cached ?? (await getLatestContractFor(inf));
     setSelectedContractMeta(meta);
+
+    // Prefill using both influencer and meta (if present)
+    prefillFormFor(inf, meta);
 
     let mode: PanelMode = "initiate";
     if (meta?.contractId) {
@@ -374,7 +448,7 @@ export default function AppliedInfluencersPage() {
     setPanelMode(override || mode);
     setShowContractPanel(true);
 
-    // Fetch contract preview PDF if available
+    // Fetch contract preview PDF if available (same as before)
     if (meta?.contractId) {
       try {
         const res = await api.get("/contract/preview", {
@@ -388,7 +462,6 @@ export default function AppliedInfluencersPage() {
       }
     }
   };
-
 
   // ───────────────────────────────────────────────────────────────────────────
   // Build Brand payload (initiate / edit)
