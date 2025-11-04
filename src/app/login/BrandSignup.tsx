@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import Select, { type SingleValue, type StylesConfig } from 'react-select';
-import { CheckCircle2, ImagePlus, Eye, EyeOff, UploadCloud, Loader2 } from 'lucide-react';
+import { CheckCircle2, ImagePlus, Eye, EyeOff, Loader2 } from 'lucide-react';
 import { FloatingLabelInput } from '@/components/common/FloatingLabelInput';
 import { Button } from './Button';
 import { ProgressIndicator } from './ProgressIndicator';
@@ -279,7 +279,7 @@ export function BrandSignup({ onSuccess, onStepChange }: { onSuccess: () => void
       fd.append('file', logoFile);
       fd.append('email', formData.email);
       const res = await post('/brand/uploadLogo', fd);
-      const url = (res?.url || res?.data?.url || '') as string;
+      const url = (res?.url || (res as any)?.data?.url || '') as string;
       return url;
     } catch (e: any) {
       console.warn('Logo upload failed:', e?.message || e);
@@ -290,14 +290,24 @@ export function BrandSignup({ onSuccess, onStepChange }: { onSuccess: () => void
   };
 
   const completeSignup = async () => {
-    // Reset inline required hints at the start of an attempt
     setShowRequiredHints(false);
-    // Required checks
+
+    // Required checks — add phone & calling code which previously had no inputs in UI
     if (!formData.name || !formData.password || !formData.phone || !formData.countryId || !formData.callingCodeId || !formData.categoryId) {
-      // Show inline hints only; no global message
       setShowRequiredHints(true);
+      // scroll to first missing field
+      const firstMissingId = [
+        ['brand-name', !formData.name],
+        ['calling-code', !formData.callingCodeId],
+        ['brand-phone', !formData.phone],
+        ['country', !formData.countryId],
+        ['category', !formData.categoryId],
+        ['brand-password', !formData.password],
+      ].find(([, miss]) => miss)?.[0] as string | undefined;
+      if (firstMissingId) document.getElementById(firstMissingId)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
       return;
     }
+
     // Enforce 10-digit mobile without country code
     const phoneDigits = (formData.phone || '').replace(/\D/g, '');
     if (phoneDigits.length !== 10) {
@@ -339,32 +349,31 @@ export function BrandSignup({ onSuccess, onStepChange }: { onSuccess: () => void
         email: formData.email,
         password: formData.password,
         countryId: formData.countryId,
+        // NOTE: backend field name can vary; keeping original "callingId" but you may switch to callingCodeId if your API expects it
         callingId: formData.callingCodeId,
-        // required (send Category ObjectId; backend also supports numeric id or name)
         category: formData.categoryId,
         // optionals
         website: formData.website || undefined,
         instagramHandle: instaHandle || undefined,
         companySize: formData.companySize || undefined,
-        // IMPORTANT: send businessType NAME (backend stores name directly)
         businessType: formData.businessType || undefined,
         referralCode: formData.referralCode || undefined,
         logoUrl: uploadedUrl || formData.logoUrl || undefined,
-        // backend-required checkbox
         isVerifiedRepresentative: formData.officialRep,
       });
 
-      // Auto-login after successful signup
-      const login = await post<{ token: string; brandId: string }>(
-        '/brand/login',
-        { email: formData.email, password: formData.password }
+      // Auto-login after successful signup — unwrap response in case your post() returns { data }
+      const login = unwrap<{ token: string; brandId: string }>(
+        await post('/brand/login', { email: formData.email, password: formData.password })
       );
+
       if (typeof window !== 'undefined') {
-        localStorage.setItem('token', login.token);
-        localStorage.setItem('brandId', login.brandId);
+        if (login?.token) localStorage.setItem('token', login.token);
+        if (login?.brandId) localStorage.setItem('brandId', login.brandId);
         localStorage.setItem('userType', 'brand');
         localStorage.setItem('userEmail', formData.email);
       }
+
       router.replace('/brand/dashboard');
     } catch (err: any) {
       setError(err?.response?.data?.message || err?.message || 'Signup failed');
@@ -401,11 +410,10 @@ export function BrandSignup({ onSuccess, onStepChange }: { onSuccess: () => void
     password: showRequiredHints && !formData.password,
     phone: showRequiredHints && !formData.phone,
     callingCodeId: showRequiredHints && !formData.callingCodeId,
-  };
+  } as const;
 
   // Never render this deprecated generic message
   const filteredError = error === 'Please fill in all required fields.' ? '' : error;
-  
 
   // ————————————————— Render
   return (
@@ -460,7 +468,6 @@ export function BrandSignup({ onSuccess, onStepChange }: { onSuccess: () => void
               We sent a 6-digit code to <strong>{formData.email}</strong>
             </p>
           </div>
-
 
           <FloatingLabelInput
             id="brand-otp"
@@ -599,6 +606,43 @@ export function BrandSignup({ onSuccess, onStepChange }: { onSuccess: () => void
                   </div>
                 </div>
 
+                {/* Phone (Calling code + number) */}
+                <div className="grid md:grid-cols-[180px,1fr] gap-4">
+                  <div className="space-y-1">
+                    <Select
+                      instanceId="calling-code"
+                      inputId="calling-code"
+                      className="rs"
+                      classNamePrefix="rs"
+                      styles={selectStyles}
+                      placeholder="Calling Code"
+                      options={callingCodeOptions}
+                      value={getOption(callingCodeOptions, formData.callingCodeId)}
+                      onChange={(opt: SingleValue<Option>) => setFormData({ ...formData, callingCodeId: opt?.value || '' })}
+                      isDisabled={loading || logoUploading}
+                      isLoading={metaLoading}
+                    />
+                    {missing.callingCodeId && (
+                      <p className="text-xs text-red-600">This field is required</p>
+                    )}
+                  </div>
+
+                  <div className="space-y-1">
+                    <FloatingLabelInput
+                      id="brand-phone"
+                      label="Mobile Number (exclude country code)"
+                      type="tel"
+                      inputMode="numeric"
+                      value={formData.phone}
+                      onChange={(e) => setFormData({ ...formData, phone: e.target.value.replace(/[^0-9]/g, '') })}
+                      required
+                    />
+                    {missing.phone && (
+                      <p className="text-xs text-red-600">This field is required</p>
+                    )}
+                  </div>
+                </div>
+
                 {/* Web + Instagram */}
                 <div className="grid md:grid-cols-2 gap-4">
                   <FloatingLabelInput
@@ -674,7 +718,6 @@ export function BrandSignup({ onSuccess, onStepChange }: { onSuccess: () => void
                     >
                       {passwordVisible ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                     </button>
-                    {/* Inline required hint for password removed per request */}
                   </div>
 
                   <div className="relative">
@@ -736,7 +779,7 @@ export function BrandSignup({ onSuccess, onStepChange }: { onSuccess: () => void
                 </div>
 
                 <div className="flex flex-col gap-3">
-                  <Button onClick={completeSignup} loading={loading || logoUploading} variant="brand" disabled={metaLoading}>
+                  <Button onClick={completeSignup} loading={loading || logoUploading} variant="brand" disabled={metaLoading} aria-disabled={metaLoading}>
                     {metaLoading ? 'Loading options…' : 'Create Brand Account'}
                   </Button>
                 </div>
