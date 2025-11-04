@@ -373,6 +373,10 @@ export default function InfluencerSignup({ onSuccess, onStepChange }: { onSucces
       setError('Please enter your password');
       return;
     }
+    if (formData.password.length < 8) {
+      setError('Password must be at least 8 characters long');
+      return;
+    }
     if (formData.password !== formData.confirmPassword) {
       setError('Passwords do not match');
       return;
@@ -829,12 +833,14 @@ export default function InfluencerSignup({ onSuccess, onStepChange }: { onSucces
           {/* STEP 2 — VERIFY */}
           {step === 'verify' && (
             <div className="space-y-5 animate-fadeIn">
-              <div className="text-center p-4 bg-yellow-50 rounded-lg border border-yellow-200">
-                <CheckCircle2 className="w-8 h-8 text-yellow-600 mx-auto mb-2" />
-                <p className="text-sm text-gray-700">
-                  We’ll send a 6-digit code to <strong>{formData.email}</strong>
-                </p>
-              </div>
+              {!otpVerified && (
+                <div className="text-center p-4 bg-yellow-50 rounded-lg border border-yellow-200">
+                  <CheckCircle2 className="w-8 h-8 text-yellow-600 mx-auto mb-2" />
+                  <p className="text-sm text-gray-700">
+                    We’ll send a 6-digit code to <strong>{formData.email}</strong>
+                  </p>
+                </div>
+              )}
 
               {!otpVerified && (
                 <>
@@ -894,6 +900,7 @@ export default function InfluencerSignup({ onSuccess, onStepChange }: { onSucces
                         value={formData.password}
                         onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                         required
+                        minLength={8}
                         autoComplete="new-password"
                         style={{ paddingRight: 40 }}
                         />
@@ -908,6 +915,9 @@ export default function InfluencerSignup({ onSuccess, onStepChange }: { onSucces
                       </div>
                       {missingPwd.password && (
                         <p className="text-xs text-red-600">this feild is required</p>
+                      )}
+                      {showPwdHints && !!formData.password && formData.password.length < 8 && (
+                        <p className="text-xs text-red-600">Password must be at least 8 characters</p>
                       )}
                     </div>
 
