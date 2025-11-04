@@ -21,11 +21,11 @@ export function ProgressIndicator({ steps, variant = 'brand' }: ProgressIndicato
 
   return (
     <div className="w-full py-6">
-      {/* Center the whole track and cap its width */}
-      <div className="relative w-full mx-auto px-2">
-        <div className="flex items-center justify-between">
+      {/* Center the whole track and keep it compact */}
+      <div className="relative mx-auto px-2 w-fit">
+        <div className="flex items-center justify-center">
           {steps.map((step, index) => (
-            <div key={step.number} className="flex items-center basis-0 flex-1">
+            <div key={step.number} className="flex items-center">
               <div className="flex flex-col items-center relative z-10">
                 <div
                   className={`
@@ -52,7 +52,7 @@ export function ProgressIndicator({ steps, variant = 'brand' }: ProgressIndicato
               </div>
 
               {index < steps.length - 1 && (
-                <div className="flex-1 h-1 mx-2 relative top-[-12px]">
+                <div className="w-24 sm:w-32 h-1 mx-3 relative top-[-12px]">
                   <div className="h-full bg-gray-200 rounded-full">
                     <div
                       className={`

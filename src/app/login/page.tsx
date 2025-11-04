@@ -15,6 +15,7 @@ function Login() {
   const [mounted, setMounted] = useState(false);
   const [showForgotPassword, setShowForgotPassword] = useState(false);
   const [showSuccessMessage, setShowSuccessMessage] = useState(false);
+  const [signupStep, setSignupStep] = useState<number>(1);
 
   useEffect(() => {
     setMounted(true);
@@ -104,30 +105,34 @@ function Login() {
                       onSuccess={handleLoginSuccess}
                     />
                   ) : role === 'brand' ? (
-                    <BrandSignup onSuccess={handleSignupSuccess} />
+                    <BrandSignup onSuccess={handleSignupSuccess} onStepChange={(n) => setSignupStep(n)} />
                   ) : (
-                    <InfluencerSignup onSuccess={handleSignupSuccess} />
+                    <InfluencerSignup onSuccess={handleSignupSuccess} onStepChange={(n) => setSignupStep(n)} />
                   )}
                 </div>
 
-                <div className="relative">
-                  <div className="absolute inset-0 flex items-center">
-                    <div className="w-full border-t border-gray-200"></div>
-                  </div>
-                  <div className="relative flex justify-center text-sm">
-                    <span className="px-4 bg-white text-gray-500">or</span>
-                  </div>
-                </div>
+                {!(activeTab === 'signup' && signupStep > 1) && (
+                  <>
+                    <div className="relative">
+                      <div className="absolute inset-0 flex items-center">
+                        <div className="w-full border-t border-gray-200"></div>
+                      </div>
+                      <div className="relative flex justify-center text-sm">
+                        <span className="px-4 bg-white text-gray-500">or</span>
+                      </div>
+                    </div>
 
-                <button
-                  onClick={() => setRole(role === 'brand' ? 'influencer' : 'brand')}
-                  className="w-full flex items-center justify-center space-x-2 py-3 px-4 border-2 border-gray-200 rounded-lg hover:bg-gray-50 transition-all duration-200 group"
-                >
-                  <ArrowLeft className="w-4 h-4 text-gray-400 group-hover:text-gray-600 transition-colors" />
-                  <span className="text-gray-700 font-medium">
-                    Continue as {role === 'brand' ? 'Influencer' : 'Brand'}
-                  </span>
-                </button>
+                    <button
+                      onClick={() => setRole(role === 'brand' ? 'influencer' : 'brand')}
+                      className="w-full flex items-center justify-center space-x-2 py-3 px-4 border-2 border-gray-200 rounded-lg hover:bg-gray-50 transition-all duration-200 group"
+                    >
+                      <ArrowLeft className="w-4 h-4 text-gray-400 group-hover:text-gray-600 transition-colors" />
+                      <span className="text-gray-700 font-medium">
+                        Continue as {role === 'brand' ? 'Influencer' : 'Brand'}
+                      </span>
+                    </button>
+                  </>
+                )}
               </div>
 
               <p className="text-center text-sm text-gray-500 mt-6">

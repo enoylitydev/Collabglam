@@ -89,7 +89,7 @@ const rsStyles = {
 // Component
 // =========================
 
-export default function InfluencerSignup({ onSuccess }: { onSuccess: () => void }) {
+export default function InfluencerSignup({ onSuccess, onStepChange }: { onSuccess: () => void; onStepChange?: (currentStep: number) => void }) {
   const router = useRouter();
   // Start at BASIC for a natural flow
   const [step, setStep] = useState<Step>('basic');
@@ -210,6 +210,12 @@ export default function InfluencerSignup({ onSuccess }: { onSuccess: () => void 
       }
     })();
   }, []);
+
+  // Inform parent about current step (1..4) for UI decisions
+  useEffect(() => {
+    const current = step === 'basic' ? 1 : step === 'verify' ? 2 : step === 'platform' ? 3 : 4;
+    onStepChange?.(current);
+  }, [step, onStepChange]);
 
   // ====== Options (memoized)
   const genderOptions: Option[] = useMemo(() => genders.map((g) => ({ value: g, label: g })), []);

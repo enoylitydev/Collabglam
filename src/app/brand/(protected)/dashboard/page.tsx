@@ -137,20 +137,20 @@ export default function BrandDashboardHome() {
               onClick={() => router.push("/brand/active-campaign")}
             />
 
-            {/* <StatCard
+            <StatCard
               icon={<HiOutlineUsers className="text-[#4f46e5]" size={32} />}
               label="Hired Influencers"
               value={totalInfluencers.toLocaleString()}
               accentFrom={accentFrom}
-              onClick={() => router.push("/brand/browse-influencers")}
-            /> */}
+              // onClick={() => router.push("/brand/browse-influencers")}
+            />
 
             <StatCard
               icon={<HiOutlineCurrencyDollar className="text-[#10b981]" size={32} />}
               label="Budget Remaining"
               value={`$${budgetRemaining.toLocaleString()}`}
               accentFrom={accentFrom}
-              onClick={() => router.push("/brand/dashboard/settings")}
+              // onClick={() => router.push("/brand/dashboard/settings")}
             />
           </div>
 
