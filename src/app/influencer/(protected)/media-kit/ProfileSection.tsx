@@ -1,17 +1,29 @@
+
+// -----------------------------------------------------------------------------
+// ProfileSection.tsx — v2 (reads from MediaKit.profiles[]; adds bio + link)
+// -----------------------------------------------------------------------------
+
 import React, { useRef, useState } from 'react';
-import { Camera, Loader2, Users } from 'lucide-react';
+import { Camera, Loader2, ExternalLink } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { MediaKit } from './mediakit';
+import type { MediaKit, ProfileKit } from './mediakit';
 import { COLORS } from './index';
+
+// Local helper to pretty-print provider name
+function providerLabel(p?: string | null) {
+  if (!p) return '—';
+  return p.charAt(0).toUpperCase() + p.slice(1);
+}
 
 interface ProfileSectionProps {
   mediaKit: MediaKit;
   isEditing: boolean;
-  onImageChange: (imageUrl: string) => void;
+  onImageChange?: (imageUrl: string) => void; // kept optional; gallery is derived from posts
   onFieldChange: (field: keyof MediaKit, value: any) => void;
-  validationErrors: string[];
+  activeProfileIndex: number;
+  setActiveProfileIndex: (i: number) => void;
 }
 
 export const ProfileSection: React.FC<ProfileSectionProps> = ({
@@ -19,30 +31,25 @@ export const ProfileSection: React.FC<ProfileSectionProps> = ({
   isEditing,
   onImageChange,
   onFieldChange,
-  validationErrors,
+  activeProfileIndex,
+  setActiveProfileIndex,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isUploading, setIsUploading] = useState(false);
 
+  const profiles = mediaKit.profiles || [];
+  const profile: ProfileKit | undefined = profiles[activeProfileIndex];
+
   const handleImageUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
-
-    if (!file.type.startsWith('image/')) {
-      alert('Please select a valid image file');
-      return;
-    }
-
-    if (file.size > 5 * 1024 * 1024) {
-      alert('Image size should be less than 5MB');
-      return;
-    }
-
+    if (!file.type.startsWith('image/')) return alert('Please select a valid image file');
+    if (file.size > 5 * 1024 * 1024) return alert('Image size should be less than 5MB');
     setIsUploading(true);
     try {
       const imageUrl = URL.createObjectURL(file);
-      onImageChange(imageUrl);
-    } catch (error) {
+      onImageChange?.(imageUrl);
+    } catch {
       alert('Failed to upload image');
     } finally {
       setIsUploading(false);
@@ -51,7 +58,7 @@ export const ProfileSection: React.FC<ProfileSectionProps> = ({
 
   return (
     <div className="relative">
-      {/* Hero Background */}
+      {/* Hero */}
       <div className={`bg-gradient-to-r ${COLORS.PRIMARY_GRADIENT} h-40 rounded-t-2xl relative overflow-hidden`}>
         <div className="absolute inset-0 bg-black/5" />
         <div className="absolute bottom-0 left-0 right-0 h-20 bg-gradient-to-t from-black/20 to-transparent" />
@@ -59,17 +66,36 @@ export const ProfileSection: React.FC<ProfileSectionProps> = ({
 
       {/* Profile Content */}
       <div className="bg-white rounded-b-2xl px-8 pb-8 -mt-16 relative">
+        {/* Provider Tabs */}
+        <div className="flex gap-2 pt-6 pb-2 flex-wrap">
+          {profiles.map((p, idx) => (
+            <button
+              key={`${(p as any).provider}-${idx}`}
+              onClick={() => setActiveProfileIndex(idx)}
+              className={`px-3 py-1.5 rounded-full text-sm border ${
+                idx === activeProfileIndex
+                  ? 'bg-yellow-100 border-yellow-300 text-yellow-900'
+                  : 'bg-gray-50 border-gray-200 text-gray-700'
+              } transition`}
+            >
+              {(p as any).provider?.toUpperCase?.() ?? 'PROFILE'}
+            </button>
+          ))}
+        </div>
+
         <div className="flex flex-col lg:flex-row items-start lg:items-end gap-8 pt-6">
-          {/* Profile Image */}
+          {/* Profile Avatar */}
           <div className="relative group">
             <Avatar className="w-40 h-40 border-4 border-white shadow-xl ring-4 ring-gray-50">
-              <AvatarImage 
-                src={mediaKit.profileImage} 
-                alt={mediaKit.name} 
+              <AvatarImage
+                src={(profile as any)?.picture}
+                alt={mediaKit.name || (profile as any)?.fullname || (profile as any)?.username || ''}
                 className="object-cover"
               />
               <AvatarFallback className="text-3xl font-bold bg-gradient-to-br from-gray-100 to-gray-200 text-gray-600">
-                {mediaKit.name.charAt(0).toUpperCase()}
+                {(mediaKit.name || (profile as any)?.fullname || (profile as any)?.username || 'U')
+                  .charAt(0)
+                  .toUpperCase()}
               </AvatarFallback>
             </Avatar>
 
@@ -92,88 +118,61 @@ export const ProfileSection: React.FC<ProfileSectionProps> = ({
                     {!isUploading && <span className="ml-2">Update</span>}
                   </Button>
                 </div>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*"
-                  onChange={handleImageUpload}
-                  className="hidden"
-                />
+                <input ref={fileInputRef} type="file" accept="image/*" onChange={handleImageUpload} className="hidden" />
               </>
             )}
           </div>
 
-          {/* Profile Info */}
+          {/* Identity & Bio */}
           <div className="flex-1 space-y-6 w-full pt-6">
-            {isEditing ? (
-              <div className="space-y-6">
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2 flex items-center gap-2">
-                    <Users className="h-4 w-4" />
-                    Full Name *
-                  </label>
-                  <input
-                    type="text"
-                    value={mediaKit.name}
-                    onChange={(e) => onFieldChange('name', e.target.value)}
-                    className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-yellow-500 focus:border-yellow-500 transition-all text-lg font-medium"
-                    placeholder="Enter your full name"
-                  />
-                </div>
-                
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Bio & Description *
-                  </label>
-                  <textarea
-                    value={mediaKit.bio}
-                    onChange={(e) => onFieldChange('bio', e.target.value)}
-                    rows={4}
-                    className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-yellow-500 focus:border-yellow-500 transition-all resize-none"
-                    placeholder="Tell your story, describe your content style, and what makes you unique..."
-                  />
-                </div>
-                
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Content Categories
-                  </label>
-                  <input
-                    type="text"
-                    value={mediaKit.categories.join(', ')}
-                    onChange={(e) => onFieldChange('categories', e.target.value.split(',').map(c => c.trim()))}
-                    className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-yellow-500 focus:border-yellow-500 transition-all"
-                    placeholder="Fashion, Lifestyle, Travel, Food, Tech..."
-                  />
-                </div>
+            <div className="space-y-3">
+              <h1 className="text-3xl lg:text-4xl font-bold text-gray-900 leading-tight">
+                {mediaKit.name || (profile as any)?.fullname || (profile as any)?.username || 'Unnamed Creator'}
+              </h1>
+              <div className="text-gray-600">
+                {providerLabel((profile as any)?.provider)}{' '}
+                {(profile as any)?.username ? `· @${(profile as any).username}` : ''}
               </div>
-            ) : (
-              <div className="space-y-6">
-                <div>
-                  <h1 className="text-4xl lg:text-5xl font-bold text-gray-900 mb-2 leading-tight">
-                    {mediaKit.name}
-                  </h1>
-                  <p className="text-lg text-gray-600 leading-relaxed font-medium">
-                    @{mediaKit.platformName}
-                  </p>
-                </div>
-                
-                <p className="text-lg text-gray-700 leading-relaxed max-w-3xl">
-                  {mediaKit.bio}
-                </p>
-                
-                {mediaKit.categories.length > 0 && (
-                  <div className="flex flex-wrap gap-3">
-                    {mediaKit.categories.map((category) => (
-                      <Badge
-                        key={category}
-                        className="bg-gradient-to-r from-yellow-100 to-yellow-200 text-yellow-800 px-4 py-2 text-sm font-semibold rounded-full hover:shadow-md transition-all"
-                      >
-                        {category}
-                      </Badge>
-                    ))}
-                  </div>
-                )}
+              {(profile as any)?.url && (
+                <a
+                  className="inline-flex items-center gap-2 text-sm text-blue-600 hover:underline"
+                  href={(profile as any).url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <ExternalLink className="h-4 w-4" /> Visit Profile
+                </a>
+              )}
+            </div>
+
+            {(profile as any)?.bio ? (
+              <p className="text-sm text-gray-700 whitespace-pre-line">{(profile as any).bio}</p>
+            ) : null}
+
+            {(profile as any)?.categories?.length ? (
+              <div className="flex flex-wrap gap-3">
+                {(profile as any).categories.map((c: any, i: number) => (
+                  <Badge
+                    key={`${c.subcategoryId ?? c.id ?? i}`}
+                    className="bg-gradient-to-r from-yellow-100 to-yellow-200 text-yellow-800 px-4 py-2 text-sm font-semibold rounded-full hover:shadow-md transition-all"
+                  >
+                    {c.subcategoryName ?? c.name}
+                  </Badge>
+                ))}
+              </div>
+            ) : null}
+
+            {/* Optional top-level editable name */}
+            {isEditing && (
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Display Name (optional)</label>
+                <input
+                  type="text"
+                  value={mediaKit.name || ''}
+                  onChange={(e) => onFieldChange('name', e.target.value)}
+                  className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-yellow-500 focus:border-yellow-500 transition-all text-lg font-medium"
+                  placeholder="Enter your display name"
+                />
               </div>
             )}
           </div>
@@ -182,3 +181,4 @@ export const ProfileSection: React.FC<ProfileSectionProps> = ({
     </div>
   );
 };
+
