@@ -31,8 +31,8 @@ import {
 // ───────────────────────────────────────────────────────────────────────────────
 // THEME (black & white)
 // ───────────────────────────────────────────────────────────────────────────────
-const GRADIENT_FROM = "#000000";
-const GRADIENT_TO = "#4B5563"; // gray-600
+const GRADIENT_FROM = "#FFA135";
+const GRADIENT_TO = "#FF7236"; // gray-600
 
 // ───────────────────────────────────────────────────────────────────────────────
 /** TYPES */
@@ -77,13 +77,13 @@ interface ContractMeta {
   contractId: string;
   campaignId: string;
   status:
-    | "draft"
-    | "sent"
-    | "viewed"
-    | "negotiation"
-    | "finalize"
-    | "signing"
-    | "locked";
+  | "draft"
+  | "sent"
+  | "viewed"
+  | "negotiation"
+  | "finalize"
+  | "signing"
+  | "locked";
   lastSentAt?: string;
   lockedAt?: string | null;
   confirmations?: { brand?: PartyConfirm; influencer?: PartyConfirm };
@@ -373,7 +373,22 @@ export default function AppliedInfluencersPage() {
     }
     setPanelMode(override || mode);
     setShowContractPanel(true);
+
+    // Fetch contract preview PDF if available
+    if (meta?.contractId) {
+      try {
+        const res = await api.get("/contract/preview", {
+          params: { contractId: meta.contractId },
+          responseType: "blob",
+        });
+        const url = URL.createObjectURL(res.data);
+        setPdfUrl(url);
+      } catch (e: any) {
+        toast({ icon: "error", title: "Preview Error", text: e?.message || "Failed to load preview." });
+      }
+    }
   };
+
 
   // ───────────────────────────────────────────────────────────────────────────
   // Build Brand payload (initiate / edit)
@@ -382,9 +397,9 @@ export default function AppliedInfluencersPage() {
     const goLive =
       goLiveStart || goLiveEnd
         ? {
-            start: goLiveStart ? new Date(goLiveStart) : undefined,
-            end: goLiveEnd ? new Date(goLiveEnd) : undefined,
-          }
+          start: goLiveStart ? new Date(goLiveStart) : undefined,
+          end: goLiveEnd ? new Date(goLiveEnd) : undefined,
+        }
         : undefined;
 
     return {
@@ -655,7 +670,7 @@ export default function AppliedInfluencersPage() {
               <Button
                 size="sm"
                 variant="outline"
-                className="bg-white border text-black"
+                className="bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white hover:from-[#FF7236] hover:to-[#FFA135] shadow-none"
                 onClick={() => router.push(`/brand/influencers?id=${inf.influencerId}`)}
                 title="View profile"
               >
@@ -665,7 +680,7 @@ export default function AppliedInfluencersPage() {
               {!hasContract && inf.isRejected !== 1 && (
                 <Button
                   size="sm"
-                  className="bg-black text-white"
+                  className="bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white hover:from-[#FF7236] hover:to-[#FFA135] shadow-none"
                   onClick={() => openContractPanel(inf, "initiate")}
                   title="Send contract"
                 >
@@ -679,7 +694,7 @@ export default function AppliedInfluencersPage() {
                   <Button
                     size="sm"
                     variant="outline"
-                    className="bg-white"
+                    className="bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white hover:from-[#FF7236] hover:to-[#FFA135] shadow-none"
                     onClick={() => handleViewExistingContract(inf)}
                     title="View contract"
                     disabled={metaCacheLoading && !meta}
@@ -691,7 +706,7 @@ export default function AppliedInfluencersPage() {
                   {influencerConfirmed && !locked && (
                     <Button
                       size="sm"
-                      className="bg-gray-900 text-white"
+                      className="bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white hover:from-[#FF7236] hover:to-[#FFA135] shadow-none"
                       onClick={() => openContractPanel(inf, "edit")}
                       title="Edit contract"
                     >
@@ -813,6 +828,7 @@ export default function AppliedInfluencersPage() {
         }}
         title={panelMode === "initiate" ? "Send Contract" : panelMode === "edit" ? "Edit Contract" : "View Contract"}
         subtitle={selectedInf ? `${campaignTitle || "Agreement"} • ${selectedInf.name}` : campaignTitle || "Agreement"}
+        previewUrl={pdfUrl}
       >
         {/* VIEW MODE */}
         {panelMode === "view" && (
@@ -1030,7 +1046,7 @@ export default function AppliedInfluencersPage() {
 
               <Button
                 onClick={handleGeneratePreview}
-                className="px-6 bg-black text-white"
+                className="px-6 bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white hover:from-[#FF7236] hover:to-[#FFA135] shadow-none"
                 disabled={!platforms.length || !campaignTitle.trim()}
                 title={!platforms.length ? "Select at least one platform" : ""}
               >
@@ -1040,7 +1056,7 @@ export default function AppliedInfluencersPage() {
 
               <Button
                 onClick={handleSendOrUpdate}
-                className="px-6 bg-gray-900 text-white"
+                className="px-6 bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white hover:from-[#FF7236] hover:to-[#FFA135] shadow-none"
                 title={panelMode === "initiate" ? "Send contract" : "Update contract"}
               >
                 <HiPaperAirplane className="w-5 h-5 mr-2" />
@@ -1051,11 +1067,12 @@ export default function AppliedInfluencersPage() {
                 selectedContractMeta?.status !== "locked" && (
                   <Button
                     onClick={handleSignAsBrand}
-                    className="px-6 bg-gray-800 text-white"
+                    className="px-6 bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white hover:from-[#FF7236] hover:to-[#FFA135] shadow-none"
                     title="Sign as Brand"
                   >
                     Sign as Brand
                   </Button>
+
                 )}
             </div>
           </>
@@ -1116,11 +1133,10 @@ export function FloatingLabelInput({
       />
       <label
         htmlFor={id}
-        className={`absolute left-4 transition-all duration-200 pointer-events-none ${
-          focused || hasValue
-            ? "top-2 text-xs text-black font-medium"
-            : "top-1/2 -translate-y-1/2 text-sm text-gray-500"
-        }`}
+        className={`absolute left-4 transition-all duration-200 pointer-events-none ${focused || hasValue
+          ? "top-2 text-xs text-black font-medium"
+          : "top-1/2 -translate-y-1/2 text-sm text-gray-500"
+          }`}
       >
         {label}
       </label>
@@ -1159,9 +1175,8 @@ export function Select({
         value={value}
         onChange={onChange}
         disabled={disabled}
-        className={`w-full px-3 py-2.5 border-2 rounded-lg text-sm focus:outline-none ${
-          disabled ? "opacity-60 cursor-not-allowed" : "focus:border-black border-gray-200"
-        }`}
+        className={`w-full px-3 py-2.5 border-2 rounded-lg text-sm focus:outline-none ${disabled ? "opacity-60 cursor-not-allowed" : "focus:border-black border-gray-200"
+          }`}
       >
         {flat.map((o) => (
           <option key={o.value} value={o.value}>
@@ -1249,9 +1264,8 @@ export function PlatformSelector({ platforms, onChange, disabled = false }: Plat
             onClick={() => toggle(p)}
             disabled={disabled}
             aria-disabled={disabled}
-            className={`px-3 py-1.5 rounded-lg border text-sm ${
-              active ? "border-black bg-gray-100" : "border-gray-300 bg-white"
-            } ${disabled ? "opacity-60 cursor-not-allowed" : ""}`}
+            className={`px-3 py-1.5 rounded-lg border text-sm ${active ? "border-black bg-gray-100" : "border-gray-300 bg-white"
+              } ${disabled ? "opacity-60 cursor-not-allowed" : ""}`}
           >
             {p}
           </button>
@@ -1344,9 +1358,8 @@ export function TextArea({ id, label, value, onChange, rows = 3, placeholder, di
         rows={rows}
         placeholder={placeholder}
         disabled={disabled}
-        className={`w-full px-3 py-2.5 border-2 rounded-lg text-sm focus:outline-none ${
-          disabled ? "opacity-60 cursor-not-allowed" : "focus:border-black border-gray-200"
-        }`}
+        className={`w-full px-3 py-2.5 border-2 rounded-lg text-sm focus:outline-none ${disabled ? "opacity-60 cursor-not-allowed" : "focus:border-black border-gray-200"
+          }`}
       />
     </div>
   );
@@ -1361,28 +1374,28 @@ function ContractSidebar({
   children,
   title = "Initiate Contract",
   subtitle = "New Agreement",
+  previewUrl, // Add previewUrl to load the contract preview
 }: {
   isOpen: boolean;
   onClose: () => void;
   children: React.ReactNode;
   title?: string;
   subtitle?: string;
+  previewUrl?: string; // URL of the preview file (PDF, etc.)
 }) {
   return (
     <div className={`fixed inset-0 z-50 ${isOpen ? "" : "pointer-events-none"}`}>
       {/* Backdrop */}
       <div
-        className={`absolute inset-0 bg-black/50 backdrop-blur-[2px] transition-opacity duration-300 ${
-          isOpen ? "opacity-100" : "opacity-0"
-        }`}
+        className={`absolute inset-0 bg-black/50 backdrop-blur-[2px] transition-opacity duration-300 ${isOpen ? "opacity-100" : "opacity-0"
+          }`}
         onClick={onClose}
       />
 
       {/* Panel */}
       <div
-        className={`absolute right-0 top-0 h-full w-full sm:w-[720px] md:w-[860px] lg:w-[960px] bg-white shadow-2xl transform transition-transform duration-300 ease-out ${
-          isOpen ? "translate-x-0" : "translate-x-full"
-        }`}
+        className={`absolute right-0 top-0 h-full w-full bg-white shadow-2xl transform transition-transform duration-300 ease-out ${isOpen ? "translate-x-0" : "translate-x-full"
+          }`}
       >
         {/* Header */}
         <div className="relative h-36 overflow-hidden">
@@ -1423,9 +1436,25 @@ function ContractSidebar({
           </div>
         </div>
 
-        {/* Body */}
-        <div className="h-[calc(100%-9rem)] overflow-y-auto">
-          <div className="p-6 space-y-5">{children}</div>
+        {/* Body with two sections */}
+        <div className="flex h-[calc(100%-9rem)]">
+          {/* Left side: Preview of the contract */}
+          {previewUrl && (
+            <div className="w-1/2 p-6 overflow-auto">
+              <iframe
+                src={previewUrl}
+                width="100%"
+                height="100%"
+                className="border-0"
+                title="Contract Preview"
+              />
+            </div>
+          )}
+
+          {/* Right side: Form for sending/editing contract */}
+          <div className="w-full sm:w-1/2 h-full px-6 space-y-5 overflow-auto">
+            {children}
+          </div>
         </div>
       </div>
     </div>
@@ -1437,7 +1466,7 @@ function SidebarSection({ title, children, icon }: { title: string; children: Re
     <div className="bg-gradient-to-br from-white to-gray-50 rounded-xl border border-gray-100 shadow-sm p-5 transition-all duration-200 hover:shadow-md">
       <div className="flex items-center gap-2 mb-4 pb-3 border-b border-gray-100">
         {icon && (
-          <div className="w-8 h-8 rounded-lg bg-black text-white flex items-center justify-center">
+          <div className="w-8 h-8 rounded-lg bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white flex items-center justify-center">
             {icon}
           </div>
         )}
