@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState, useCallback } from 'react';
-import { Sparkles, Instagram, Youtube, Globe, CheckCircle2 } from 'lucide-react';
+import { Sparkles, Instagram, Youtube, Globe, CheckCircle2, Eye, EyeOff } from 'lucide-react';
 import { FloatingLabelInput } from '@/components/common/FloatingLabelInput';
 import { Button } from './Button';
 import { ProgressIndicator } from './ProgressIndicator';
 import Select, { GroupBase, MultiValue, SingleValue } from 'react-select';
 import type { Country } from './types';
 import { get, post } from '@/lib/api';
+import { useRouter } from 'next/navigation';
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 
@@ -88,21 +89,32 @@ const rsStyles = {
 // Component
 // =========================
 
-export default function InfluencerSignup({ onSuccess }: { onSuccess: () => void }) {
+export default function InfluencerSignup({ onSuccess, onStepChange }: { onSuccess: () => void; onStepChange?: (currentStep: number) => void }) {
+  const router = useRouter();
   // Start at BASIC for a natural flow
   const [step, setStep] = useState<Step>('basic');
   const [countries, setCountries] = useState<Country[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  // Inline required-hint flags per step
+  const [showBasicHints, setShowBasicHints] = useState(false);
+  const [showVerifyOtpHint, setShowVerifyOtpHint] = useState(false);
+  const [showPwdHints, setShowPwdHints] = useState(false);
+  const [showPlatformHints, setShowPlatformHints] = useState(false);
 
   const [languages, setLanguages] = useState<Language[]>([]);
   const [langLoading, setLangLoading] = useState(false);
   const [langError, setLangError] = useState('');
 
+  // Max allowed DOB: 2013 or earlier
+  const maxDob = '2013-12-31';
+
   // OTP state
   const [resendIn, setResendIn] = useState<number>(0);
   const [otpSent, setOtpSent] = useState(false);
   const [otpVerified, setOtpVerified] = useState(false);
+  const [passwordVisible, setPasswordVisible] = useState(false);
+  const [confirmPasswordVisible, setConfirmPasswordVisible] = useState(false);
 
   // Track influencerId returned from /influencer/register for follow-up onboarding
   const [influencerId, setInfluencerId] = useState<string>('');
@@ -206,6 +218,12 @@ export default function InfluencerSignup({ onSuccess }: { onSuccess: () => void 
     })();
   }, []);
 
+  // Inform parent about current step (1..4) for UI decisions
+  useEffect(() => {
+    const current = step === 'basic' ? 1 : step === 'verify' ? 2 : step === 'platform' ? 3 : 4;
+    onStepChange?.(current);
+  }, [step, onStepChange]);
+
   // ====== Options (memoized)
   const genderOptions: Option[] = useMemo(() => genders.map((g) => ({ value: g, label: g })), []);
   const languageOptions: Option[] = useMemo(
@@ -248,10 +266,45 @@ export default function InfluencerSignup({ onSuccess }: { onSuccess: () => void 
 
   // ===== Step 1 — Basic + Email (auto-send OTP on continue)
   const completeBasicDetails = () => {
+    setShowBasicHints(false);
     if (!formData.fullName || !formData.email || !formData.phone || !formData.dateOfBirth || !formData.countryId || !formData.callingCodeId || !formData.gender) {
-      setError('Please fill in all required fields');
+      setShowBasicHints(true);
+      // Do not show generic banner error; rely on inline hints
+      setError('');
+      // try scroll to first missing
+      const firstMissingId = (
+        [
+          ['inf-name', !formData.fullName],
+          ['inf-email', !formData.email],
+          ['calling-code', !formData.callingCodeId],
+          ['inf-phone', !formData.phone],
+          ['inf-dob', !formData.dateOfBirth],
+          ['gender', !formData.gender],
+          ['country', !formData.countryId],
+        ] as const
+      ).find(([, miss]) => miss)?.[0];
+      if (firstMissingId) document.getElementById(firstMissingId)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
       return;
     }
+    // DOB must be 2013-12-31 or earlier
+    if (!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(formData.dateOfBirth)) {
+      setError('Please enter a valid date of birth');
+      return;
+    }
+    const cutoff = '2013-12-31';
+    // compare ISO strings (YYYY-MM-DD) lexicographically
+    if (formData.dateOfBirth > cutoff) {
+      setError('Date of birth must be on or before 2013');
+      return;
+    }
+    // Enforce 10-digit mobile without country code
+    const phoneDigits = (formData.phone || '').replace(/\D/g, '');
+    if (phoneDigits.length !== 10) {
+      setError('Please enter a valid 10-digit mobile number (exclude country code).');
+      return;
+    }
+    // Persist normalized digits
+    setFormData((prev) => ({ ...prev, phone: phoneDigits }));
     setError('');
     setStep('verify');
     setOtpSent(false);
@@ -284,6 +337,7 @@ export default function InfluencerSignup({ onSuccess }: { onSuccess: () => void 
 
   const verifyOTP = async () => {
     if (!formData.otp) {
+      setShowVerifyOtpHint(true);
       setError('Please enter the OTP');
       return;
     }
@@ -306,15 +360,21 @@ export default function InfluencerSignup({ onSuccess }: { onSuccess: () => void 
     setOtpVerified(false);
     setResendIn(0);
     setFormData((prev) => ({ ...prev, otp: '' }));
+    setShowVerifyOtpHint(false);
   };
 
   const proceedToPlatform = () => {
+    setShowPwdHints(true);
     if (!otpVerified) {
       setError('Please verify your email first');
       return;
     }
     if (!formData.password || !formData.confirmPassword) {
       setError('Please enter your password');
+      return;
+    }
+    if (formData.password.length < 8) {
+      setError('Password must be at least 8 characters long');
       return;
     }
     if (formData.password !== formData.confirmPassword) {
@@ -356,6 +416,8 @@ export default function InfluencerSignup({ onSuccess }: { onSuccess: () => void 
   const setProvider = (p: Provider, patch: Partial<ProviderState>) =>
     setPlatforms((s) => ({ ...s, [p]: { ...s[p], ...patch } }));
 
+  
+
   const resolveProfile = async (provider: Provider) => {
     const s = platforms[provider];
     const handle = s.handle.replace(/^@/, '').trim();
@@ -375,10 +437,13 @@ export default function InfluencerSignup({ onSuccess }: { onSuccess: () => void 
 
       setProvider(provider, { payload: (result as any).providerRaw ?? normalized, preview: (result as any).preview ?? null, error: '' });
     } catch (err: any) {
+      const rawMsg = err?.response?.data?.message || err?.message || '';
+      const isSensitive = /api token|developer section|modash|authorization|bearer|marketer\.modash\.io|modash_api_key/i.test(String(rawMsg));
+      const safeMsg = isSensitive ? 'Failed to fetch profile' : (rawMsg || 'Failed to fetch profile');
       setProvider(provider, {
         payload: null,
         preview: null,
-        error: err?.response?.data?.message || err?.message || 'Failed to fetch profile',
+        error: safeMsg,
       });
     } finally {
       setProvider(provider, { loading: false });
@@ -405,6 +470,7 @@ export default function InfluencerSignup({ onSuccess }: { onSuccess: () => void 
 
   // ===== Registration (requires at least one verified platform unless fallback allowed)
   const finishPlatformStep = async () => {
+    setShowPlatformHints(true);
     const included = (['instagram', 'youtube', 'tiktok'] as Provider[]).filter((p) => platforms[p].include);
 
     if (included.length === 0) {
@@ -450,7 +516,7 @@ export default function InfluencerSignup({ onSuccess }: { onSuccess: () => void 
         name: formData.fullName,
         email: formData.email,
         password: formData.password,
-        phone: formData.phone,
+        phone: (formData.phone || '').replace(/\D/g, ''),
         countryId: formData.countryId,
         callingId: formData.callingCodeId,
         // NEW: pass basics & languages
@@ -473,7 +539,29 @@ export default function InfluencerSignup({ onSuccess }: { onSuccess: () => void 
   };
 
   /** Step 4 — Quick */
-  const finishAll = () => onSuccess();
+  const finishAll = async () => {
+    try {
+      setLoading(true);
+      const data = await post<{ token: string; influencerId: string; categoryId: string }>(
+        '/influencer/login',
+        { email: formData.email, password: formData.password }
+      );
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('token', data.token);
+        localStorage.setItem('influencerId', data.influencerId);
+        localStorage.setItem('categoryId', data.categoryId);
+        localStorage.setItem('userType', 'influencer');
+        localStorage.setItem('userEmail', formData.email);
+      }
+      router.replace('/influencer/dashboard');
+    } catch (err: any) {
+      // If auto-login fails, fall back to existing success handling
+      console.warn('Auto-login failed after signup:', err?.message || err);
+      onSuccess();
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const steps = useMemo(
     () => [
@@ -505,6 +593,22 @@ export default function InfluencerSignup({ onSuccess }: { onSuccess: () => void 
   // Derived booleans for button disables
   const canSubmitPlatform = includedPlatforms.length > 0 && !includedPlatforms.some((p) => platforms[p].loading);
 
+  // Derived missing flags for inline hints
+  const missingBasic = {
+    fullName: showBasicHints && !formData.fullName,
+    email: showBasicHints && !formData.email,
+    phone: showBasicHints && !formData.phone,
+    dateOfBirth: showBasicHints && !formData.dateOfBirth,
+    callingCodeId: showBasicHints && !formData.callingCodeId,
+    countryId: showBasicHints && !formData.countryId,
+    gender: showBasicHints && !formData.gender,
+  } as const;
+  const missingPwd = {
+    password: showPwdHints && !formData.password,
+    confirmPassword: showPwdHints && !formData.confirmPassword,
+    agreedToTerms: showPwdHints && !formData.agreedToTerms,
+  } as const;
+
   return (
     <div className="min-h-screen flex flex-col">
       {/* Header area */}
@@ -533,7 +637,7 @@ export default function InfluencerSignup({ onSuccess }: { onSuccess: () => void 
               {step === 'basic' && 'Let’s get to know you 💫'}
               {step === 'verify' && 'Secure your account 🔐'}
               {step === 'platform' && 'Where do you shine online? ✨'}
-              {step === 'quick' && 'A few quick questions to personalize your experience'}
+              {step === 'quick' && 'Optional: A few quick questions to personalize your experience'}
             </p>
           </div>
 
@@ -549,7 +653,7 @@ export default function InfluencerSignup({ onSuccess }: { onSuccess: () => void 
               <p className="text-sm text-gray-600 text-center">Just a few quick details to start your creator journey</p>
 
               <div className="grid gap-4 sm:grid-cols-2">
-                <div className="sm:col-span-2">
+                <div className="sm:col-span-2 space-y-1">
                   <FloatingLabelInput
                     id="inf-name"
                     label="Full Name"
@@ -560,9 +664,12 @@ export default function InfluencerSignup({ onSuccess }: { onSuccess: () => void 
                     required
                     autoComplete="name"
                   />
+                  {missingBasic.fullName && (
+                    <p className="text-xs text-red-600">this feild is required</p>
+                  )}
                 </div>
 
-                <div className="sm:col-span-2">
+                <div className="sm:col-span-2 space-y-1">
                   <FloatingLabelInput
                     id="inf-email"
                     label="Work Email"
@@ -573,12 +680,16 @@ export default function InfluencerSignup({ onSuccess }: { onSuccess: () => void 
                     required
                     autoComplete="email"
                   />
+                  {missingBasic.email && (
+                    <p className="text-xs text-red-600">this feild is required</p>
+                  )}
                 </div>
 
                 <div className="grid sm:grid-cols-3 gap-4 sm:col-span-2">
-                  <div className="sm:col-span-1">
+                  <div className="sm:col-span-1 space-y-1">
                     <Select
                       instanceId="calling-code"
+                      inputId="calling-code"
                       options={callingCodeOptions}
                       value={findOption(callingCodeOptions, formData.callingCodeId)}
                       onChange={(opt: SingleValue<Option>) => setFormData((p) => ({ ...p, callingCodeId: opt?.value || '' }))}
@@ -587,37 +698,65 @@ export default function InfluencerSignup({ onSuccess }: { onSuccess: () => void 
                       theme={rsTheme}
                       formatOptionLabel={formatOptionLabelCalling}
                     />
+                    {missingBasic.callingCodeId && (
+                      <p className="text-xs text-red-600">this feild is required</p>
+                    )}
                   </div>
-                  <div className="sm:col-span-2">
-                    <FloatingLabelInput
-                      id="inf-phone"
-                      label="Mobile Number"
-                      type="tel"
-                      placeholder="For urgent approvals only"
-                      value={formData.phone}
-                      onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                      required
-                      autoComplete="tel"
-                    />
+                  <div className="sm:col-span-2 space-y-1">
+                  <FloatingLabelInput
+                    id="inf-phone"
+                    label="Mobile Number"
+                    type="tel"
+                    placeholder="10-digit mobile (no country code)"
+                    inputMode="numeric"
+                    pattern="[0-9]{10}"
+                    maxLength={10}
+                    minLength={10}
+                    title="Enter 10-digit mobile number (exclude country code)"
+                    value={formData.phone}
+                    onChange={(e) => {
+                      const digits = e.target.value.replace(/\D/g, '').slice(0, 10);
+                      setFormData({ ...formData, phone: digits });
+                    }}
+                    required
+                    autoComplete="tel"
+                  />
+                  {missingBasic.phone && (
+                    <p className="text-xs text-red-600">this feild is required</p>
+                  )}
                   </div>
                 </div>
 
                 <div className="grid sm:grid-cols-2 gap-4 sm:col-span-2">
-                  <div className="sm:col-span-1">
+                  <div className="sm:col-span-1 space-y-1">
                     <FloatingLabelInput
                       id="inf-dob"
                       label="Date of Birth"
                       type="date"
                       value={formData.dateOfBirth}
-                      onChange={(e) => setFormData({ ...formData, dateOfBirth: e.target.value })}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (/^\d{4}-\d{2}-\d{2}$/.test(val) && val > maxDob) {
+                          setError('Date of birth must be on or before 2013');
+                          (e.currentTarget as HTMLInputElement).setCustomValidity('Date of birth must be on or before 2013');
+                          (e.currentTarget as HTMLInputElement).reportValidity?.();
+                          return;
+                        }
+                        (e.currentTarget as HTMLInputElement).setCustomValidity('');
+                        setFormData({ ...formData, dateOfBirth: val });
+                      }}
                       required
                       autoComplete="bday"
                     />
+                    {missingBasic.dateOfBirth && (
+                      <p className="text-xs text-red-600">this feild is required</p>
+                    )}
                     <p className="text-xs text-gray-500 -mt-3">Never shown publicly</p>
                   </div>
-                  <div className="sm:col-span-1">
+                  <div className="sm:col-span-1 space-y-1">
                     <Select
                       instanceId="gender"
+                      inputId="gender"
                       options={genderOptions}
                       value={findOption(genderOptions, formData.gender)}
                       onChange={(opt: SingleValue<Option>) => setFormData((p) => ({ ...p, gender: opt?.value || '' }))}
@@ -625,13 +764,17 @@ export default function InfluencerSignup({ onSuccess }: { onSuccess: () => void 
                       styles={rsStyles as any}
                       theme={rsTheme}
                     />
+                    {missingBasic.gender && (
+                      <p className="text-xs text-red-600">this feild is required</p>
+                    )}
                   </div>
                 </div>
 
                 <div className="grid sm:grid-cols-2 gap-4 sm:col-span-2">
-                  <div className="sm:col-span-1">
+                  <div className="sm:col-span-1 space-y-1">
                     <Select
                       instanceId="country"
+                      inputId="country"
                       options={countryOptions}
                       value={findOption(countryOptions, formData.countryId)}
                       onChange={(opt: SingleValue<Option>) => setFormData((p) => ({ ...p, countryId: opt?.value || '' }))}
@@ -640,6 +783,9 @@ export default function InfluencerSignup({ onSuccess }: { onSuccess: () => void 
                       theme={rsTheme}
                       formatOptionLabel={formatOptionLabelCountry}
                     />
+                    {missingBasic.countryId && (
+                      <p className="text-xs text-red-600">this feild is required</p>
+                    )}
                   </div>
                   <div className="sm:col-span-1">
                     <FloatingLabelInput
@@ -676,7 +822,7 @@ export default function InfluencerSignup({ onSuccess }: { onSuccess: () => void 
               </div>
 
               <div className="flex flex-col-reverse sm:flex-row gap-3 sm:justify-end">
-                <p className="text-xs text-gray-500 text-center sm:text-left">You can edit this anytime</p>
+                {/* <p className="text-xs text-gray-500 text-center sm:text-left">You can edit this anytime</p> */}
                 <Button onClick={completeBasicDetails} variant="influencer" className="self-center sm:self-auto">
                   Continue
                 </Button>
@@ -687,15 +833,35 @@ export default function InfluencerSignup({ onSuccess }: { onSuccess: () => void 
           {/* STEP 2 — VERIFY */}
           {step === 'verify' && (
             <div className="space-y-5 animate-fadeIn">
-              <div className="text-center p-4 bg-yellow-50 rounded-lg border border-yellow-200">
-                <CheckCircle2 className="w-8 h-8 text-yellow-600 mx-auto mb-2" />
-                <p className="text-sm text-gray-700">
-                  We’ll send a 6-digit code to <strong>{formData.email}</strong>
-                </p>
-              </div>
+              {!otpVerified && (
+                <div className="text-center p-4 bg-yellow-50 rounded-lg border border-yellow-200">
+                  <CheckCircle2 className="w-8 h-8 text-yellow-600 mx-auto mb-2" />
+                  <p className="text-sm text-gray-700">
+                    We’ll send a 6-digit code to <strong>{formData.email}</strong>
+                  </p>
+                </div>
+              )}
 
               {!otpVerified && (
                 <>
+
+                  <div className="space-y-1">
+                    <FloatingLabelInput
+                    id="inf-otp"
+                    label="Enter 6-Digit Code"
+                    type="text"
+                    inputMode="numeric"
+                    maxLength={6}
+                    value={formData.otp}
+                    onChange={(e) => setFormData({ ...formData, otp: e.target.value.replace(/\D/g, '') })}
+                    required
+                    autoComplete="one-time-code"
+                    />
+                    {showVerifyOtpHint && !formData.otp && (
+                      <p className="text-xs text-red-600">this feild is required</p>
+                    )}
+                  </div>
+
                   <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
                     <Button onClick={sendOTP} loading={loading} variant="influencer" className="w-full sm:w-auto px-6">
                       {otpSent ? 'Resend Code' : 'Send Verification Code'}
@@ -707,18 +873,7 @@ export default function InfluencerSignup({ onSuccess }: { onSuccess: () => void 
                     )}
                   </div>
 
-                  <FloatingLabelInput
-                    id="inf-otp"
-                    label="Enter 6-Digit Code"
-                    type="text"
-                    inputMode="numeric"
-                    maxLength={6}
-                    value={formData.otp}
-                    onChange={(e) => setFormData({ ...formData, otp: e.target.value.replace(/\D/g, '') })}
-                    required
-                    autoComplete="one-time-code"
-                  />
-
+                  
                   <div className="flex flex-col sm:flex-row gap-2">
                     <Button onClick={verifyOTP} loading={loading} variant="influencer">
                       Verify Code
@@ -735,40 +890,81 @@ export default function InfluencerSignup({ onSuccess }: { onSuccess: () => void 
                   <p className="text-sm text-gray-600 text-center">Perfect — your email’s verified! Let’s secure your account.</p>
 
                   <div className="grid sm:grid-cols-2 gap-4">
-                    <FloatingLabelInput
-                      id="inf-password"
-                      label="Password"
-                      type="password"
-                      placeholder="≥8 chars, 1 number, 1 letter"
-                      value={formData.password}
-                      onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                      required
-                      autoComplete="new-password"
-                    />
+                    <div className="space-y-1">
+                      <div className="relative">
+                        <FloatingLabelInput
+                        id="inf-password"
+                        label="Password"
+                        type={passwordVisible ? 'text' : 'password'}
+                        placeholder="≥8 chars, 1 number, 1 letter"
+                        value={formData.password}
+                        onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                        required
+                        minLength={8}
+                        autoComplete="new-password"
+                        style={{ paddingRight: 40 }}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setPasswordVisible((v) => !v)}
+                          className="absolute inset-y-0 right-3 my-auto text-gray-500 hover:text-gray-700"
+                          aria-label={passwordVisible ? 'Hide password' : 'Show password'}
+                        >
+                          {passwordVisible ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                        </button>
+                      </div>
+                      {missingPwd.password && (
+                        <p className="text-xs text-red-600">this feild is required</p>
+                      )}
+                      {showPwdHints && !!formData.password && formData.password.length < 8 && (
+                        <p className="text-xs text-red-600">Password must be at least 8 characters</p>
+                      )}
+                    </div>
 
-                    <FloatingLabelInput
-                      id="inf-confirm-password"
-                      label="Confirm Password"
-                      type="password"
-                      value={formData.confirmPassword}
-                      onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
-                      required
-                      autoComplete="new-password"
-                    />
+                    <div className="space-y-1">
+                      <div className="relative">
+                        <FloatingLabelInput
+                        id="inf-confirm-password"
+                        label="Confirm Password"
+                        type={confirmPasswordVisible ? 'text' : 'password'}
+                        value={formData.confirmPassword}
+                        onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
+                        required
+                        autoComplete="new-password"
+                        style={{ paddingRight: 40 }}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setConfirmPasswordVisible((v) => !v)}
+                          className="absolute inset-y-0 right-3 my-auto text-gray-500 hover:text-gray-700"
+                          aria-label={confirmPasswordVisible ? 'Hide password' : 'Show password'}
+                        >
+                          {confirmPasswordVisible ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                        </button>
+                      </div>
+                      {missingPwd.confirmPassword && (
+                        <p className="text-xs text-red-600">this feild is required</p>
+                      )}
+                    </div>
                   </div>
 
-                  <label className="flex items-start space-x-3 cursor-pointer group">
-                    <input
+                  <div className="space-y-1">
+                    <label className="flex items-start space-x-3 cursor-pointer group">
+                      <input
                       type="checkbox"
                       checked={formData.agreedToTerms}
                       onChange={(e) => setFormData({ ...formData, agreedToTerms: e.target.checked })}
                       className="mt-1 w-5 h-5 rounded border-gray-300 text-yellow-600 focus:ring-yellow-500"
                       required
-                    />
-                    <span className="text-sm text-gray-600 group-hover:text-gray-900">
-                      I agree to the <a href="#" className="font-semibold text-yellow-600 hover:text-yellow-700">Terms & Privacy Policy</a>
-                    </span>
-                  </label>
+                      />
+                      <span className="text-sm text-gray-600 group-hover:text-gray-900">
+                        I agree to the <a href="#" className="font-semibold text-yellow-600 hover:text-yellow-700">Terms & Privacy Policy</a>
+                      </span>
+                    </label>
+                    {missingPwd.agreedToTerms && (
+                      <p className="text-xs text-red-600">this feild is required</p>
+                    )}
+                  </div>
 
                   <div className="flex justify-end">
                     <Button onClick={proceedToPlatform} variant="influencer">
@@ -794,6 +990,7 @@ export default function InfluencerSignup({ onSuccess }: { onSuccess: () => void 
                 <label className="block text-sm font-medium text-gray-700">Platforms</label>
                 <Select
                   instanceId="platforms"
+                  inputId="platforms"
                   isMulti
                   closeMenuOnSelect={false}
                   options={platformOptions}
@@ -803,6 +1000,9 @@ export default function InfluencerSignup({ onSuccess }: { onSuccess: () => void 
                   theme={rsTheme}
                   placeholder="Select one or more platforms"
                 />
+                {showPlatformHints && includedPlatforms.length === 0 && (
+                  <p className="text-xs text-red-600">this feild is required</p>
+                )}
                 <p className="text-xs text-gray-500">Add platforms here; cards will appear below.</p>
               </div>
 
@@ -876,7 +1076,8 @@ export default function InfluencerSignup({ onSuccess }: { onSuccess: () => void 
                         </div>
 
                         {/* Handle input */}
-                        <FloatingLabelInput
+                        <div className="space-y-1">
+                          <FloatingLabelInput
                           id={`handle-${p}`}
                           label={`${label} Handle`}
                           type="text"
@@ -884,7 +1085,11 @@ export default function InfluencerSignup({ onSuccess }: { onSuccess: () => void 
                           value={s.handle}
                           onChange={(e) => setProvider(p, { handle: e.target.value, error: '', payload: null, preview: null })}
                           required
-                        />
+                          />
+                          {showPlatformHints && !s.handle.replace(/^@/, '').trim() && (
+                            <p className="text-xs text-red-600">this feild is required</p>
+                          )}
+                        </div>
 
                         {/* Status / errors */}
                         {s.loading && (
@@ -1271,6 +1476,17 @@ function QuickQuestions({
         </div>
       </div>
 
+      {/* Skip option (global) */}
+      <div className="flex justify-end">
+        <button
+          type="button"
+          onClick={() => onComplete()}
+          className="text-sm text-gray-600 underline hover:text-gray-800"
+        >
+          Skip for now
+        </button>
+      </div>
+
       {err && <div className="p-3 text-sm rounded-md border border-red-200 bg-red-50 text-red-700" aria-live="polite">{err}</div>}
 
       {/* ===== SUBSTEP 1 — all react-select */}
@@ -1348,8 +1564,7 @@ function QuickQuestions({
             </div>
           </div>
 
-          <div className="flex justify-between">
-            <div />
+          <div className="flex justify-end">
             <Button onClick={next} variant="influencer" disabled={!validStep1}>
               Next
             </Button>
@@ -1522,6 +1737,14 @@ function QuickQuestions({
             <div className="flex gap-2">
               <Button onClick={back} variant="outline">
                 Back
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                className="py-1 px-3 !w-auto"
+                onClick={() => onComplete()}
+              >
+                Skip for now
               </Button>
               <Button onClick={finish} loading={saving} variant="influencer" disabled={!validStep3}>
                 Finish

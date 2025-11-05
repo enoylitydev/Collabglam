@@ -18,7 +18,7 @@ try {
 const token = process.env.MODASH_API_KEY;
 if (!token) {
 return NextResponse.json(
-{ error: "Server is missing MODASH_API_KEY" },
+{ error: "Report unavailable" },
 { status: 500 }
 );
 }
@@ -56,10 +56,23 @@ cache: "no-store",
 });
 
 
-const text = await upstream.text();
 const contentType = upstream.headers.get("content-type") || "application/json";
+// If upstream failed, mask sensitive error details before surfacing to client
+if (!upstream.ok) {
+  let safeMsg = "Report unavailable";
+  try {
+    const asJson = await upstream.json();
+    const raw = asJson?.message || asJson?.error;
+    const isSensitive = /api token|developer section|modash|authorization|bearer|modash_api_key|marketer\.modash\.io/i.test(String(raw));
+    safeMsg = isSensitive ? "Report unavailable" : (raw || safeMsg);
+  } catch {
+    // ignore parse errors; fall back to generic
+  }
+  return NextResponse.json({ error: safeMsg }, { status: upstream.status, headers: { "content-type": "application/json" } });
+}
 
-
+// OK passthrough for valid reports
+const text = await upstream.text();
 return new NextResponse(text, {
 status: upstream.status,
 headers: { "content-type": contentType },

@@ -294,31 +294,31 @@ const Copyable: React.FC<{ value?: string; className?: string }> = ({ value, cla
 
 const Pill: React.FC<{ children: React.ReactNode; tone?: "default" | "success" | "danger" | "warning" | "muted" }>
   = ({ children, tone = "default" }) => (
-  <span
-    className={
-      `px-2 py-1 rounded-full text-xs font-medium ` +
-      (tone === "success" ? "bg-green-100 text-green-700" :
-       tone === "danger" ? "bg-red-100 text-red-700" :
-       tone === "warning" ? "bg-yellow-100 text-yellow-800" :
-       tone === "muted" ? "bg-slate-100 text-slate-700" :
-       "bg-blue-100 text-blue-700")
-    }
-  >{children}</span>
-);
+    <span
+      className={
+        `px-2 py-1 rounded-full text-xs font-medium ` +
+        (tone === "success" ? "bg-green-100 text-green-700" :
+          tone === "danger" ? "bg-red-100 text-red-700" :
+            tone === "warning" ? "bg-yellow-100 text-yellow-800" :
+              tone === "muted" ? "bg-slate-100 text-slate-700" :
+                "bg-blue-100 text-blue-700")
+      }
+    >{children}</span>
+  );
 
 const Section: React.FC<{ title: React.ReactNode; subtitle?: React.ReactNode; right?: React.ReactNode; className?: string; children?: React.ReactNode }>
   = ({ title, subtitle, right, className, children }) => (
-  <Card className={`p-6 bg-white/80 backdrop-blur-sm border-0 shadow-xl ${className ?? ""}`}>
-    <div className="flex items-start justify-between gap-4 mb-4">
-      <div>
-        <h3 className="text-xl font-bold text-slate-900 flex items-center gap-2">{title}</h3>
-        {subtitle && <p className="text-slate-600 text-sm mt-1">{subtitle}</p>}
+    <Card className={`p-6 bg-white/80 backdrop-blur-sm border-0 shadow-xl ${className ?? ""}`}>
+      <div className="flex items-start justify-between gap-4 mb-4">
+        <div>
+          <h3 className="text-xl font-bold text-slate-900 flex items-center gap-2">{title}</h3>
+          {subtitle && <p className="text-slate-600 text-sm mt-1">{subtitle}</p>}
+        </div>
+        {right}
       </div>
-      {right}
-    </div>
-    {children}
-  </Card>
-);
+      {children}
+    </Card>
+  );
 
 const KVRow: React.FC<{ label: string; value?: React.ReactNode }> = ({ label, value }) => (
   <div className="grid grid-cols-3 gap-2 py-2">
@@ -447,13 +447,13 @@ export default function AdminInfluencerView() {
                 </Pill>
                 {data.otpVerified && (
                   <Pill tone="success" >
-                    <span className="inline-flex items-center gap-1"><CheckCircle className="h-3 w-3"/> OTP Verified</span>
+                    <span className="inline-flex items-center gap-1"><CheckCircle className="h-3 w-3" /> OTP Verified</span>
                   </Pill>
                 )}
                 {data.lockUntil ? (
-                  <Pill tone="warning"><span className="inline-flex items-center gap-1"><Lock className="h-3 w-3"/> Locked</span></Pill>
+                  <Pill tone="warning"><span className="inline-flex items-center gap-1"><Lock className="h-3 w-3" /> Locked</span></Pill>
                 ) : (
-                  <Pill tone="muted"><span className="inline-flex items-center gap-1"><Unlock className="h-3 w-3"/> Unlocked</span></Pill>
+                  <Pill tone="muted"><span className="inline-flex items-center gap-1"><Unlock className="h-3 w-3" /> Unlocked</span></Pill>
                 )}
                 {data.primaryPlatform && (
                   <Badge className="bg-gradient-to-r from-blue-500 to-indigo-500 text-white">Primary: {String(data.primaryPlatform).toUpperCase()}</Badge>
@@ -461,13 +461,13 @@ export default function AdminInfluencerView() {
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 text-sm">
-                <div className="flex items-center gap-2 text-slate-700 bg-slate-50 p-2 rounded-lg"><Mail className="h-4 w-4 text-blue-600"/><Copyable value={data.email} /></div>
-                <div className="flex items-center gap-2 text-slate-700 bg-slate-50 p-2 rounded-lg"><Phone className="h-4 w-4 text-green-600"/><span>{data.phone || "—"}</span></div>
-                <div className="flex items-center gap-2 text-slate-700 bg-slate-50 p-2 rounded-lg"><MapPin className="h-4 w-4 text-red-600"/><span>{[data.city, data.country].filter(Boolean).join(", ") || "—"}</span></div>
-                <div className="flex items-center gap-2 text-slate-700 bg-slate-50 p-2 rounded-lg"><Calendar className="h-4 w-4 text-purple-600"/><span>{fmtDate(data.dateOfBirth)}{data.dateOfBirth ? ` • ${ageFromDob(data.dateOfBirth)} yrs` : ""}</span></div>
-                <div className="flex items-center gap-2 text-slate-700 bg-slate-50 p-2 rounded-lg"><Users className="h-4 w-4 text-orange-600"/><span>{data.gender || "—"}</span></div>
-                <div className="flex items-center gap-2 text-slate-700 bg-slate-50 p-2 rounded-lg"><Flag className="h-4 w-4 text-indigo-600"/>
-                  <span className="truncate" title={data.languages?.map(l=>l.name).join(", ")}>{data.languages?.length ? data.languages.map(l=>l.name).join(", ") : "—"}</span>
+                <div className="flex items-center gap-2 text-slate-700 bg-slate-50 p-2 rounded-lg"><Mail className="h-4 w-4 text-blue-600" /><Copyable value={data.email} /></div>
+                <div className="flex items-center gap-2 text-slate-700 bg-slate-50 p-2 rounded-lg"><Phone className="h-4 w-4 text-green-600" /><span>{data.phone || "—"}</span></div>
+                <div className="flex items-center gap-2 text-slate-700 bg-slate-50 p-2 rounded-lg"><MapPin className="h-4 w-4 text-red-600" /><span>{[data.city, data.country].filter(Boolean).join(", ") || "—"}</span></div>
+                <div className="flex items-center gap-2 text-slate-700 bg-slate-50 p-2 rounded-lg"><Calendar className="h-4 w-4 text-purple-600" /><span>{fmtDate(data.dateOfBirth)}{data.dateOfBirth ? ` • ${ageFromDob(data.dateOfBirth)} yrs` : ""}</span></div>
+                <div className="flex items-center gap-2 text-slate-700 bg-slate-50 p-2 rounded-lg"><Users className="h-4 w-4 text-orange-600" /><span>{data.gender || "—"}</span></div>
+                <div className="flex items-center gap-2 text-slate-700 bg-slate-50 p-2 rounded-lg"><Flag className="h-4 w-4 text-indigo-600" />
+                  <span className="truncate" title={data.languages?.map(l => l.name).join(", ")}>{data.languages?.length ? data.languages.map(l => l.name).join(", ") : "—"}</span>
                 </div>
               </div>
 
@@ -488,7 +488,6 @@ export default function AdminInfluencerView() {
             <TabsTrigger value="onboarding" className="data-[state=active]:bg-blue-500 data-[state=active]:text-white">Onboarding</TabsTrigger>
             <TabsTrigger value="payments" className="data-[state=active]:bg-blue-500 data-[state=active]:text-white">Payments</TabsTrigger>
             <TabsTrigger value="subscription" className="data-[state=active]:bg-blue-500 data-[state=active]:text-white">Subscription</TabsTrigger>
-            <TabsTrigger value="raw" className="data-[state=active]:bg-blue-500 data-[state=active]:text-white">Raw</TabsTrigger>
           </TabsList>
 
           {/* ------------------------------ Social Tab ------------------------------ */}
@@ -497,11 +496,11 @@ export default function AdminInfluencerView() {
               data.socialProfiles.map((p, idx) => (
                 <Section
                   key={`${p.provider}-${idx}`}
-                  title={<><Globe className="h-5 w-5"/> <span className="capitalize">{p.provider}</span> {p.isVerified && <Badge variant="secondary" className="ml-2 bg-blue-100 text-blue-700"><CheckCircle className="h-3 w-3 mr-1"/>Verified</Badge>} {data.primaryPlatform === p.provider && <Badge className="ml-2 bg-gradient-to-r from-blue-500 to-indigo-500 text-white">Primary</Badge>}</>}
+                  title={<><Globe className="h-5 w-5" /> <span className="capitalize">{p.provider}</span> {p.isVerified && <Badge variant="secondary" className="ml-2 bg-blue-100 text-blue-700"><CheckCircle className="h-3 w-3 mr-1" />Verified</Badge>} {data.primaryPlatform === p.provider && <Badge className="ml-2 bg-gradient-to-r from-blue-500 to-indigo-500 text-white">Primary</Badge>}</>}
                   subtitle={p.bio}
                   right={p.url ? (
                     <a href={p.url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-800 inline-flex items-center gap-1">
-                      View <ExternalLink className="h-4 w-4"/>
+                      View <ExternalLink className="h-4 w-4" />
                     </a>
                   ) : undefined}
                 >
@@ -527,7 +526,7 @@ export default function AdminInfluencerView() {
                   {/* Meta */}
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-4">
                     <Card className="p-4">
-                      <div className="font-semibold mb-2 flex items-center gap-2"><Info className="h-4 w-4"/>Account</div>
+                      <div className="font-semibold mb-2 flex items-center gap-2"><Info className="h-4 w-4" />Account</div>
                       <KVRow label="Username" value={p.username ? `@${p.username}` : "—"} />
                       <KVRow label="Full Name" value={p.fullname} />
                       <KVRow label="Handle" value={p.handle} />
@@ -535,7 +534,7 @@ export default function AdminInfluencerView() {
                       <KVRow label="Private" value={p.isPrivate ? <Pill tone="warning">Yes</Pill> : <span>No</span>} />
                     </Card>
                     <Card className="p-4">
-                      <div className="font-semibold mb-2 flex items-center gap-2"><MapPin className="h-4 w-4"/>Localization</div>
+                      <div className="font-semibold mb-2 flex items-center gap-2"><MapPin className="h-4 w-4" />Localization</div>
                       <KVRow label="City" value={p.city} />
                       <KVRow label="State" value={p.state} />
                       <KVRow label="Country" value={p.country} />
@@ -544,7 +543,7 @@ export default function AdminInfluencerView() {
                       <KVRow label="Gender" value={p.gender} />
                     </Card>
                     <Card className="p-4">
-                      <div className="font-semibold mb-2 flex items-center gap-2"><BarChart2 className="h-4 w-4"/>Summary</div>
+                      <div className="font-semibold mb-2 flex items-center gap-2"><BarChart2 className="h-4 w-4" />Summary</div>
                       <KVRow label="Posts" value={fmtNum(p.postsCount)} />
                       <KVRow label="Total Likes" value={fmtNum(p.totalLikes)} />
                       <KVRow label="Total Views" value={fmtNum(p.totalViews)} />
@@ -556,7 +555,7 @@ export default function AdminInfluencerView() {
                   {/* Categories / Tags */}
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
                     <Card className="p-4">
-                      <div className="font-semibold mb-3 flex items-center gap-2"><Tag className="h-4 w-4"/>Categories</div>
+                      <div className="font-semibold mb-3 flex items-center gap-2"><Tag className="h-4 w-4" />Categories</div>
                       {p.categories?.length ? (
                         <div className="flex flex-wrap gap-2">
                           {p.categories.map((c, i) => (
@@ -568,7 +567,7 @@ export default function AdminInfluencerView() {
                       ) : <div className="text-sm text-slate-500">No categories</div>}
                     </Card>
                     <Card className="p-4">
-                      <div className="font-semibold mb-3 flex items-center gap-2"><HashIcon className="h-4 w-4"/>Hashtags & Mentions</div>
+                      <div className="font-semibold mb-3 flex items-center gap-2"><HashIcon className="h-4 w-4" />Hashtags & Mentions</div>
                       <div className="flex flex-wrap gap-2">
                         {p.hashtags?.map((h, i) => (
                           <Badge key={`h-${i}`} variant="secondary" className="bg-slate-100 text-slate-800">#{h.tag} {h.weight ? `(${h.weight})` : ""}</Badge>
@@ -583,14 +582,14 @@ export default function AdminInfluencerView() {
                   {/* Audience */}
                   <Accordion type="single" collapsible className="mt-4">
                     <AccordionItem value="audience">
-                      <AccordionTrigger className="text-left"><div className="font-semibold flex items-center gap-2"><Users className="h-4 w-4"/> Audience Insights</div></AccordionTrigger>
+                      <AccordionTrigger className="text-left"><div className="font-semibold flex items-center gap-2"><Users className="h-4 w-4" /> Audience Insights</div></AccordionTrigger>
                       <AccordionContent>
                         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
                           <Card className="p-4">
                             <div className="font-semibold mb-2">Overview</div>
                             <KVRow label="Credibility" value={data?.socialProfiles?.[idx]?.audience?.credibility ?? "—"} />
                             <KVRow label="Notable %" value={data?.socialProfiles?.[idx]?.audience?.notable ?? "—"} />
-                            <KVRow label="Top Languages" value={data?.socialProfiles?.[idx]?.audience?.languages?.slice(0,5).map(a=>`${a.name ?? a.code}${a.weight?` (${a.weight})`:''}`).join(", ") || "—"} />
+                            <KVRow label="Top Languages" value={data?.socialProfiles?.[idx]?.audience?.languages?.slice(0, 5).map(a => `${a.name ?? a.code}${a.weight ? ` (${a.weight})` : ''}`).join(", ") || "—"} />
                           </Card>
                           <Card className="p-4">
                             <div className="font-semibold mb-2">Top Countries</div>
@@ -599,7 +598,7 @@ export default function AdminInfluencerView() {
                                 <TableRow><TableHead>Country</TableHead><TableHead className="text-right">Weight</TableHead></TableRow>
                               </TableHeader>
                               <TableBody>
-                                {(data?.socialProfiles?.[idx]?.audience?.geoCountries ?? []).slice(0,8).map((c,i)=> (
+                                {(data?.socialProfiles?.[idx]?.audience?.geoCountries ?? []).slice(0, 8).map((c, i) => (
                                   <TableRow key={i}><TableCell>{c.name ?? c.code}</TableCell><TableCell className="text-right">{c.weight}</TableCell></TableRow>
                                 ))}
                               </TableBody>
@@ -612,7 +611,7 @@ export default function AdminInfluencerView() {
                                 <TableRow><TableHead>Age</TableHead><TableHead className="text-right">Weight</TableHead></TableRow>
                               </TableHeader>
                               <TableBody>
-                                {(data?.socialProfiles?.[idx]?.audience?.ages ?? []).map((a,i)=> (
+                                {(data?.socialProfiles?.[idx]?.audience?.ages ?? []).map((a, i) => (
                                   <TableRow key={i}><TableCell>{a.code ?? a.name}</TableCell><TableCell className="text-right">{a.weight}</TableCell></TableRow>
                                 ))}
                               </TableBody>
@@ -651,7 +650,7 @@ export default function AdminInfluencerView() {
                                   <TableCell className="text-right">{fmtNum(post.comments)}</TableCell>
                                   <TableCell className="text-right">{fmtNum(post.views)}</TableCell>
                                   <TableCell>
-                                    {post.url && <a href={post.url} target="_blank" className="text-blue-600 hover:text-blue-800 inline-flex items-center gap-1">Open <ArrowUpRight className="h-4 w-4"/></a>}
+                                    {post.url && <a href={post.url} target="_blank" className="text-blue-600 hover:text-blue-800 inline-flex items-center gap-1">Open <ArrowUpRight className="h-4 w-4" /></a>}
                                   </TableCell>
                                 </TableRow>
                               ))}
@@ -682,7 +681,7 @@ export default function AdminInfluencerView() {
                                   <TableCell className="text-right">{fmtNum(post.comments)}</TableCell>
                                   <TableCell className="text-right">{fmtNum(post.views)}</TableCell>
                                   <TableCell>
-                                    {post.url && <a href={post.url} target="_blank" className="text-blue-600 hover:text-blue-800 inline-flex items-center gap-1">Open <ArrowUpRight className="h-4 w-4"/></a>}
+                                    {post.url && <a href={post.url} target="_blank" className="text-blue-600 hover:text-blue-800 inline-flex items-center gap-1">Open <ArrowUpRight className="h-4 w-4" /></a>}
                                   </TableCell>
                                 </TableRow>
                               ))}
@@ -696,7 +695,7 @@ export default function AdminInfluencerView() {
                   {/* Paid / Sponsored */}
                   <Accordion type="single" collapsible className="mt-4">
                     <AccordionItem value="paid">
-                      <AccordionTrigger><div className="font-semibold flex items-center gap-2"><CreditCard className="h-4 w-4"/> Sponsored Performance</div></AccordionTrigger>
+                      <AccordionTrigger><div className="font-semibold flex items-center gap-2"><CreditCard className="h-4 w-4" /> Sponsored Performance</div></AccordionTrigger>
                       <AccordionContent>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           <Card className="p-4">
@@ -723,7 +722,7 @@ export default function AdminInfluencerView() {
           {/* ----------------------------- Onboarding Tab ----------------------------- */}
           <TabsContent value="onboarding">
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <Section title={<><Star className="h-5 w-5"/> Preferences</>}>
+              <Section title={<><Star className="h-5 w-5" /> Preferences</>}>
                 <div className="space-y-4">
                   <div>
                     <div className="text-sm text-slate-600 mb-2 font-medium">Formats</div>
@@ -747,7 +746,7 @@ export default function AdminInfluencerView() {
                 </div>
               </Section>
 
-              <Section title={<><Package className="h-5 w-5"/> Work Details</>}>
+              <Section title={<><Package className="h-5 w-5" /> Work Details</>}>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <Card className="p-4 bg-blue-50/60">
                     <div className="text-sm text-slate-600">Project Length</div>
@@ -758,7 +757,7 @@ export default function AdminInfluencerView() {
                     <div className="font-semibold text-slate-900">{data.onboarding?.capacity || "—"}</div>
                   </Card>
                 </div>
-                <Separator className="my-4"/>
+                <Separator className="my-4" />
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <Card className="p-4">
                     <div className="text-xs text-slate-600">Allowlisting</div>
@@ -777,13 +776,11 @@ export default function AdminInfluencerView() {
                     )) : <span className="text-slate-500">—</span>}</div>
                   </Card>
                 </div>
-                <Separator className="my-4"/>
+                <Separator className="my-4" />
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <Card className="p-4">
                     <div className="font-semibold mb-2">Category</div>
                     <KVRow label="Category Name" value={data.onboarding?.categoryName || "—"} />
-                    <KVRow label="Category ID" value={data.onboarding?.categoryId !== undefined ? String(data.onboarding.categoryId) : "—"} />
-                    <Separator className="my-3" />
                     <div className="text-sm text-slate-600 mb-2">Subcategories</div>
                     {data.onboarding?.subcategories?.length ? (
                       <div className="flex flex-wrap gap-2">
@@ -838,7 +835,7 @@ export default function AdminInfluencerView() {
 
           {/* ------------------------------ Payments Tab ----------------------------- */}
           <TabsContent value="payments">
-            <Section title={<><CreditCard className="h-5 w-5"/> Payment Methods</>} subtitle="Only one default payment method is allowed (enforced by validation).">
+            <Section title={<><CreditCard className="h-5 w-5" /> Payment Methods</>} subtitle="Only one default payment method is allowed (enforced by validation).">
               {data.paymentMethods?.length ? (
                 <Table>
                   <TableHeader>
@@ -885,7 +882,7 @@ export default function AdminInfluencerView() {
 
           {/* ---------------------------- Subscription Tab --------------------------- */}
           <TabsContent value="subscription">
-            <Section title={<><ShieldCheck className="h-5 w-5"/> Subscription</>}>
+            <Section title={<><ShieldCheck className="h-5 w-5" /> Subscription</>}>
               <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
                 <div className="space-y-1">
                   <div className="text-sm text-slate-600">Plan</div>
@@ -923,7 +920,7 @@ export default function AdminInfluencerView() {
                           <TableCell>
                             <div className="flex items-center gap-2">
                               <div className="w-24 h-2 bg-slate-200 rounded-full overflow-hidden">
-                                <div className={`h-full ${pct>80?"bg-red-500":pct>50?"bg-yellow-500":"bg-green-500"}`} style={{ width: `${pct}%` }} />
+                                <div className={`h-full ${pct > 80 ? "bg-red-500" : pct > 50 ? "bg-yellow-500" : "bg-green-500"}`} style={{ width: `${pct}%` }} />
                               </div>
                               <span className="text-xs text-slate-600">{pct.toFixed(0)}%</span>
                             </div>
@@ -937,14 +934,6 @@ export default function AdminInfluencerView() {
             </Section>
           </TabsContent>
 
-          {/* ---------------------------------- Raw ---------------------------------- */}
-          <TabsContent value="raw">
-            <Section title={<><FileText className="h-5 w-5"/> Document JSON</>} subtitle="Useful for debugging mismatches between API and UI.">
-              <ScrollArea className="h-[500px] bg-slate-50 rounded border">
-                <pre className="text-xs p-4 whitespace-pre-wrap break-all">{JSON.stringify(data, null, 2)}</pre>
-              </ScrollArea>
-            </Section>
-          </TabsContent>
         </Tabs>
 
         <Card className="p-4 bg-white/60 backdrop-blur-sm text-sm text-slate-600 shadow-lg border-0">

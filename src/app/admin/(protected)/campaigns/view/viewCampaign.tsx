@@ -20,15 +20,22 @@ import { HiOutlinePhotograph, HiOutlineRefresh } from "react-icons/hi";
 
 interface CampaignData {
   _id: string;
+  brandId?: string;
+  brandName?: string;
   productOrServiceName: string;
   description: string;
   images: string[];
   targetAudience: {
     age: { MinAge: number; MaxAge: number };
-    gender: number;
-    location: string;
+    gender: 0 | 1 | 2; // 0 = Female, 1 = Male, 2 = All
+    locations: { countryId: string; countryName: string }[];
   };
-  interestId: { _id: string; name: string }[];
+  // interestId removed
+  categories: {
+    // IDs removed per request
+    categoryName: string;
+    subcategoryName: string;
+  }[];
   goal: string;
   budget: number;
   timeline: { startDate: string; endDate: string };
@@ -37,6 +44,9 @@ interface CampaignData {
   additionalNotes?: string;
   isActive: number;
   createdAt: string;
+  applicantCount?: number;
+  hasApplied?: number;
+  campaignsId?: string;
 }
 
 export default function ViewCampaignPage() {
@@ -72,6 +82,9 @@ export default function ViewCampaignPage() {
       day: "numeric",
       year: "numeric",
     });
+
+  const genderLabel = (g: 0 | 1 | 2) =>
+    g === 0 ? "Female" : g === 1 ? "Male" : "All";
 
   if (loading) {
     return (
@@ -136,12 +149,7 @@ export default function ViewCampaignPage() {
           >
             <HiOutlineRefresh className="h-5 w-5" />
           </Button>
-          <Button
-            variant="secondary"
-            onClick={() => router.push(`/admin/campaigns/edit?id=${c._id}`)}
-          >
-            Edit
-          </Button>
+         
         </div>
       </div>
 
@@ -154,6 +162,12 @@ export default function ViewCampaignPage() {
           </CardTitle>
         </CardHeader>
         <CardContent className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+          {c.brandName && (
+            <div>
+              <p className="text-sm font-medium text-gray-600">Brand</p>
+              <p className="mt-1 text-gray-800">{c.brandName}</p>
+            </div>
+          )}
           <div>
             <p className="text-sm font-medium text-gray-600">Name</p>
             <p className="mt-1 text-gray-800">{c.productOrServiceName}</p>
@@ -204,29 +218,44 @@ export default function ViewCampaignPage() {
           <div>
             <p className="text-sm font-medium text-gray-600">Gender</p>
             <p className="mt-1 text-gray-800">
-              {c.targetAudience.gender === 0
-                ? "Female"
-                : c.targetAudience.gender === 1
-                ? "Male"
-                : "All"}
-            </p>
-          </div>
-          <div>
-            <p className="text-sm font-medium text-gray-600">Location</p>
-            <p className="mt-1 text-gray-800">
-              {c.targetAudience.location}
+              {genderLabel(c.targetAudience.gender)}
             </p>
           </div>
           <div className="md:col-span-3">
-            <p className="text-sm font-medium text-gray-600">Interests</p>
+            <p className="text-sm font-medium text-gray-600">Locations</p>
             <div className="mt-2 flex flex-wrap gap-2">
-              {c.interestId.map((i) => (
-                <Badge key={i._id} variant="secondary">
-                  {i.name}
+              {c.targetAudience.locations.map((loc) => (
+                <Badge key={loc.countryId} variant="secondary">
+                  {loc.countryName}
                 </Badge>
               ))}
             </div>
           </div>
+        </CardContent>
+      </Card>
+
+      {/* Categories (IDs removed) */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <HiOutlineDocument className="h-6 w-6 text-indigo-500" />
+            Categories
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {c.categories && c.categories.length > 0 ? (
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              {c.categories.map((cat, idx) => (
+                <div key={idx} className="rounded-lg border p-3">
+                  <div className="text-sm font-medium text-gray-900">
+                    {cat.categoryName} → {cat.subcategoryName}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-gray-700">No categories added.</p>
+          )}
         </CardContent>
       </Card>
 
@@ -252,15 +281,11 @@ export default function ViewCampaignPage() {
           </div>
           <div className="flex items-center gap-2">
             <HiOutlineCalendar className="h-5 w-5 text-gray-500" />
-            <p className="text-gray-800">
-              {formatDate(c.timeline.startDate)}
-            </p>
+            <p className="text-gray-800">{formatDate(c.timeline.startDate)}</p>
           </div>
           <div className="flex items-center gap-2">
             <HiOutlineCalendar className="h-5 w-5 text-gray-500" />
-            <p className="text-gray-800">
-              {formatDate(c.timeline.endDate)}
-            </p>
+            <p className="text-gray-800">{formatDate(c.timeline.endDate)}</p>
           </div>
         </CardContent>
       </Card>

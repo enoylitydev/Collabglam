@@ -1,14 +1,13 @@
 /* eslint-disable @next/next/no-img-element */
 "use client";
 
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useMemo, useState, ChangeEvent } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import api, { post } from "@/lib/api";
 import Swal from "sweetalert2";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
-import { FloatingLabelInput } from "@/components/common/FloatingLabelInput";
 import {
   Table,
   TableHeader,
@@ -18,29 +17,34 @@ import {
   TableCell,
 } from "@/components/ui/table";
 import {
-  HiOutlineCalendar,
   HiChevronLeft,
   HiChevronRight,
   HiOutlineChevronDown,
   HiOutlineChevronUp,
   HiSearch,
+  HiDocumentText,
+  HiClipboardList,
+  HiEye,
+  HiPaperAirplane,
 } from "react-icons/hi";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 
-// Gradient constants
-const TABLE_GRADIENT_FROM = "#FFA135";
-const TABLE_GRADIENT_TO = "#FF7236";
+// ───────────────────────────────────────────────────────────────────────────────
+// THEME (black & white)
+// ───────────────────────────────────────────────────────────────────────────────
+const GRADIENT_FROM = "#FFA135";
+const GRADIENT_TO = "#FF7236"; // gray-600
 
+// ───────────────────────────────────────────────────────────────────────────────
+/** TYPES */
+// ───────────────────────────────────────────────────────────────────────────────
 interface Influencer {
-  _id: string;
-  name: string;
-  socialMedia: string;
-  categoryName: string;
-  audienceRange: string;
-  createdAt: string;
   influencerId: string;
-  // newly-annotated fields:
+  name: string;
+  primaryPlatform?: "instagram" | "tiktok" | "youtube" | string | null;
+  handle: string | null;
+  category: string | null;
+  audienceSize: number;
+  createdAt?: string;
   isAssigned: number;
   isContracted: number;
   contractId: string | null;
@@ -57,29 +61,100 @@ interface Meta {
   totalPages: number;
 }
 
-const PAGE_SIZE_OPTIONS = [10, 20, 50, 100];
+interface PartyConfirm {
+  confirmed?: boolean;
+  byUserId?: string;
+  at?: string;
+}
+interface PartySign {
+  signed?: boolean;
+  byUserId?: string;
+  name?: string;
+  email?: string;
+  at?: string;
+}
+interface ContractMeta {
+  contractId: string;
+  campaignId: string;
+  status:
+  | "draft"
+  | "sent"
+  | "viewed"
+  | "negotiation"
+  | "finalize"
+  | "signing"
+  | "locked";
+  lastSentAt?: string;
+  lockedAt?: string | null;
+  confirmations?: { brand?: PartyConfirm; influencer?: PartyConfirm };
+  signatures?: { brand?: PartySign; influencer?: PartySign; collabglam?: PartySign };
+  isEdit?: boolean;
+  isEditBy?: "brand" | "influencer" | "admin" | string;
+  editedFields?: string[];
+  lastEdit?: { isEdit: boolean; by: string; at: string; fields: string[] } | null;
+}
 
-// at top of file
+// ───────────────────────────────────────────────────────────────────────────────
+// UTILITIES
+// ───────────────────────────────────────────────────────────────────────────────
 const toast = (opts: { icon: "success" | "error"; title: string; text?: string }) =>
   Swal.fire({
     ...opts,
     showConfirmButton: false,
-    timer: 1500,
+    timer: 1400,
     timerProgressBar: true,
     background: "white",
-    customClass: {
-      popup: "rounded-lg border border-gray-200",
-      icon: "bg-gradient-to-r from-[#FFA135] to-[#FF7236] bg-clip-text text-transparent",
-    },
+    customClass: { popup: "rounded-lg border border-gray-200" },
   });
+
+const formatAudience = (n: number) => {
+  if (!n && n !== 0) return "—";
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
+  return String(n);
+};
+
+const buildHandleUrl = (platform?: string | null, handle?: string | null) => {
+  if (!handle) return null;
+  const raw = handle.startsWith("@") ? handle.slice(1) : handle;
+  switch ((platform || "").toLowerCase()) {
+    case "instagram":
+      return `https://instagram.com/${raw}`;
+    case "tiktok":
+      return `https://www.tiktok.com/@${raw}`;
+    case "youtube":
+      return `https://www.youtube.com/@${raw}`;
+    default:
+      return `https://www.youtube.com/@${raw}`;
+  }
+};
+
+const mapPlatformToApi = (p?: string | null) => {
+  switch ((p || "").toLowerCase()) {
+    case "instagram":
+      return "Instagram";
+    case "tiktok":
+      return "TikTok";
+    case "youtube":
+      return "YouTube";
+    default:
+      return "YouTube";
+  }
+};
+
+// ───────────────────────────────────────────────────────────────────────────────
+// PAGE
+// ───────────────────────────────────────────────────────────────────────────────
+const PAGE_SIZE_OPTIONS = [10, 20, 50, 100] as const;
+type PanelMode = "initiate" | "view" | "edit";
 
 export default function AppliedInfluencersPage() {
   const searchParams = useSearchParams();
   const campaignId = searchParams.get("id");
-  const campaignName = searchParams.get("name");
+  const campaignName = searchParams.get("name") || "";
   const router = useRouter();
 
-  // ── Data & Pagination State ───────────────────────────────────────────
+  // Data & Pagination
   const [influencers, setInfluencers] = useState<Influencer[]>([]);
   const [applicantCount, setApplicantCount] = useState(0);
   const [meta, setMeta] = useState<Meta>({
@@ -91,49 +166,65 @@ export default function AppliedInfluencersPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // ── UI State ─────────────────────────────────────────────────────────
+  // UI state
   const [page, setPage] = useState(1);
   const [limit] = useState(PAGE_SIZE_OPTIONS[0]);
   const [searchTerm, setSearchTerm] = useState("");
-  const [sortField, setSortField] = useState<keyof Influencer>("createdAt");
+  const [sortField, setSortField] = useState<keyof Influencer>("name");
   const [sortOrder, setSortOrder] = useState<1 | 0>(1);
 
-  // ── Contract & Milestone Modals ───────────────────────────────────────
-  const [showContractModal, setShowContractModal] = useState(false);
+  // Right Panel (Contract)
+  const [showContractPanel, setShowContractPanel] = useState(false);
+  const [panelMode, setPanelMode] = useState<PanelMode>("initiate");
   const [selectedInf, setSelectedInf] = useState<Influencer | null>(null);
-  const [contractForm, setContractForm] = useState({
-    effectiveDate: new Date().toISOString().slice(0, 10),
-    brandName: "",
-    brandAddress: "",
-    influencerName: "",
-    influencerAddress: "",
-    influencerHandle: "",
-    feeAmount: "",
-    paymentTerms: "",
-  });
+  const [selectedContractMeta, setSelectedContractMeta] = useState<ContractMeta | null>(null);
   const [pdfUrl, setPdfUrl] = useState<string>("");
 
-  const [showMilestoneModal, setShowMilestoneModal] = useState(false);
-  const [milestoneForm, setMilestoneForm] = useState({
-    title: "",
-    amount: "",
-    description: "",
-  });
+  // Cache of latest contract meta for influencers on current page
+  const [metaCache, setMetaCache] = useState<Record<string, ContractMeta | null>>({});
+  const [metaCacheLoading, setMetaCacheLoading] = useState(false);
 
-  // ── Helpers ───────────────────────────────────────────────────────────
-  const formatDate = (d: string) =>
-    new Intl.DateTimeFormat("en-US", {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-    }).format(new Date(d));
+  // Form aligned to backend BRAND payload
+  const [campaignTitle, setCampaignTitle] = useState(campaignName);
+  const [platforms, setPlatforms] = useState<string[]>([]);
+  const [goLiveStart, setGoLiveStart] = useState("");
+  const [goLiveEnd, setGoLiveEnd] = useState("");
+  const [totalFee, setTotalFee] = useState("");
+  const [currency, setCurrency] = useState("USD");
+  const [milestoneSplit, setMilestoneSplit] = useState("50/50");
+  const [revisionsIncluded, setRevisionsIncluded] = useState(1);
 
-  const formatCurrency = (n: number) =>
-    new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency: "USD",
-    }).format(n);
+  // Deliverable fields (single item)
+  const [dType, setDType] = useState("Scope");
+  const [dQuantity, setDQuantity] = useState(1);
+  const [dFormat, setDFormat] = useState("Text");
+  const [dDurationSec, setDDurationSec] = useState(0);
+  const [dDraftRequired, setDDraftRequired] = useState(false);
+  const [dMinLiveHours, setDMinLiveHours] = useState(0);
+  const [dTags, setDTags] = useState<string[]>([]);
+  const [dHandles, setDHandles] = useState<string[]>([]);
+  const [dCaptions, setDCaptions] = useState("");
+  const [dLinks, setDLinks] = useState<string[]>([]);
 
+  // Requested Effective Date (Brand intent — display token)
+  const [requestedEffDate, setRequestedEffDate] = useState<string>("");
+  const [requestedEffTz, setRequestedEffTz] = useState<string>("Europe/Amsterdam");
+
+  // Signature upload state (PNG/JPG ≤ 50 KB)
+  const [signatureDataUrl, setSignatureDataUrl] = useState<string>("");
+
+  // (optional) cached signer info
+  const signerName =
+    (typeof window !== "undefined" &&
+      (localStorage.getItem("brandContactName") ||
+        localStorage.getItem("brandName") ||
+        "")) || "";
+  const signerEmail =
+    (typeof window !== "undefined" && (localStorage.getItem("brandEmail") || "")) || "";
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // Helpers
+  // ───────────────────────────────────────────────────────────────────────────
   const toggleSort = (field: keyof Influencer) => {
     setPage(1);
     if (sortField === field) setSortOrder((o) => (o === 1 ? 0 : 1));
@@ -142,6 +233,7 @@ export default function AppliedInfluencersPage() {
       setSortOrder(1);
     }
   };
+
   const SortIndicator = ({ field }: { field: keyof Influencer }) =>
     sortField === field ? (
       sortOrder === 1 ? (
@@ -151,7 +243,20 @@ export default function AppliedInfluencersPage() {
       )
     ) : null;
 
-  // ── Fetch Applicants ──────────────────────────────────────────────────
+  const tzOptions = useMemo(
+    () => [
+      { value: "Europe/Amsterdam", label: "Europe/Amsterdam" },
+      { value: "UTC", label: "UTC" },
+      { value: "America/Los_Angeles", label: "America/Los_Angeles" },
+      { value: "America/New_York", label: "America/New_York" },
+      { value: "Asia/Kolkata", label: "Asia/Kolkata" },
+    ],
+    []
+  );
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // Data loading
+  // ───────────────────────────────────────────────────────────────────────────
   const fetchApplicants = async () => {
     if (!campaignId) return;
     setLoading(true);
@@ -170,9 +275,9 @@ export default function AppliedInfluencersPage() {
         sortOrder,
       });
 
-      setInfluencers(res.influencers);
-      setApplicantCount(res.applicantCount);
-      setMeta(res.meta);
+      setInfluencers(res.influencers || []);
+      setApplicantCount(res.applicantCount || 0);
+      setMeta(res.meta || { total: 0, page: 1, limit, totalPages: 1 });
     } catch {
       setError("Failed to load applicants.");
     } finally {
@@ -182,199 +287,529 @@ export default function AppliedInfluencersPage() {
 
   useEffect(() => {
     fetchApplicants();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [campaignId, page, searchTerm, sortField, sortOrder]);
 
-  // ── Milestone Handlers ───────────────────────────────────────────────
-  const handleAddMilestone = (inf: Influencer) => {
-    setSelectedInf(inf);
-    setMilestoneForm({ title: "", amount: "", description: "" });
-    setShowMilestoneModal(true);
-  };
-  const handleSaveMilestone = async () => {
-    if (!selectedInf) return;
+  const getLatestContractFor = async (inf: Influencer): Promise<ContractMeta | null> => {
+    const brandId = typeof window !== "undefined" ? localStorage.getItem("brandId") : null;
+    if (!brandId) return null;
     try {
-      await post("milestone/create", {
-        influencerId: selectedInf.influencerId,
-        campaignId,
-        milestoneTitle: milestoneForm.title,
-        amount: Number(milestoneForm.amount),
-        milestoneDescription: milestoneForm.description,
-        brandId: localStorage.getItem("brandId"),
+      const res = await post<{ contracts: ContractMeta[] }>("/contract/getContract", {
+        brandId,
+        influencerId: inf.influencerId,
       });
-      toast({ icon: "success", title: "Added!", text: "Milestone has been added." });
-      setShowMilestoneModal(false);
-      fetchApplicants();
+      const list = (res.contracts || []).filter(
+        (c: any) => String(c.campaignId) === String(campaignId)
+      );
+      return list.length ? list[0] : null;
     } catch {
-      toast({ icon: "error", title: "Error", text: "Failed to add milestone." });
+      return null;
     }
   };
 
-  // ── Contract Handlers ───────────────────────────────────────────────
-  const openContractModal = (inf: Influencer) => {
-    setSelectedInf(inf);
-    setContractForm({
-      effectiveDate: new Date().toISOString().slice(0, 10),
-      brandName: "",
-      brandAddress: "",
-      influencerName: inf.name,
-      influencerAddress: "",
-      influencerHandle: "",
-      feeAmount: String(inf.feeAmount || ""),
-      paymentTerms: "",
-    });
-    setPdfUrl("");
-    setShowContractModal(true);
+  const loadMetaCache = async (list: Influencer[]) => {
+    if (!list.length) {
+      setMetaCache({});
+      return;
+    }
+    setMetaCacheLoading(true);
+    try {
+      const metas = await Promise.all(list.map((inf) => getLatestContractFor(inf)));
+      const next: Record<string, ContractMeta | null> = {};
+      list.forEach((inf, i) => (next[inf.influencerId] = metas[i] || null));
+      setMetaCache(next);
+    } finally {
+      setMetaCacheLoading(false);
+    }
   };
+
+  useEffect(() => {
+    loadMetaCache(influencers);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [influencers]);
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // Contract panel openers (modes)
+  // ───────────────────────────────────────────────────────────────────────────
+  // Replace existing prefillFormFor and openContractPanel with this code:
+
+  /** Helper: convert ISO/Date-ish -> yyyy-mm-dd (or empty string) */
+  const toInputDate = (v?: string | Date | null) => {
+    if (!v) return "";
+    const d = new Date(v);
+    if (Number.isNaN(d.getTime())) return "";
+    // YYYY-MM-DD
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const dd = String(d.getDate()).padStart(2, "0");
+    return `${yyyy}-${mm}-${dd}`;
+  };
+
+  const prefillFormFor = (inf: Influencer, meta?: ContractMeta | null) => {
+    // Defaults from influencer / campaign
+    setCampaignTitle(campaignName || inf?.name || "");
+    setPlatforms(inf?.primaryPlatform ? [mapPlatformToApi(inf.primaryPlatform) as string] : []);
+    setGoLiveStart("");
+    setGoLiveEnd("");
+    setTotalFee(String(inf.feeAmount || 5000));
+    setCurrency("USD");
+    setMilestoneSplit("50/50");
+    setRevisionsIncluded(1);
+
+    // Deliverable defaults
+    setDType("Scope");
+    setDQuantity(1);
+    setDFormat("Text");
+    setDDurationSec(0);
+    setDDraftRequired(false);
+    setDMinLiveHours(0);
+    setDTags([]);
+    setDHandles(inf.handle ? [inf.handle] : []);
+    setDCaptions("");
+    setDLinks([]);
+
+    setRequestedEffDate("");
+    setRequestedEffTz("Europe/Amsterdam");
+    setSignatureDataUrl("");
+
+    // If a contract meta exists, override defaults with contract values
+    if (meta) {
+      // brand-level fields may live at meta.brand OR top-level meta depending on server shape
+      const brand = (meta as any).brand ?? (meta as any);
+
+      if (brand) {
+        if (typeof brand.campaignTitle === "string") setCampaignTitle(String(brand.campaignTitle));
+        if (Array.isArray(brand.platforms) && brand.platforms.length) {
+          // normalise platform strings
+          setPlatforms((brand.platforms as string[]).map((p) => String(p || "")));
+        }
+        if (brand.goLive) {
+          // brand.goLive.start/end might be Date objects or ISO strings
+          setGoLiveStart(toInputDate((brand.goLive as any).start));
+          setGoLiveEnd(toInputDate((brand.goLive as any).end));
+        }
+        if (brand.totalFee !== undefined && brand.totalFee !== null) setTotalFee(String(brand.totalFee));
+        if (brand.currency) setCurrency(String(brand.currency));
+        if (brand.milestoneSplit) setMilestoneSplit(String(brand.milestoneSplit));
+        if (brand.revisionsIncluded !== undefined && brand.revisionsIncluded !== null)
+          setRevisionsIncluded(Number(brand.revisionsIncluded));
+
+        // requested effective dates (brand-level)
+        if (brand.requestedEffectiveDate) setRequestedEffDate(toInputDate(brand.requestedEffectiveDate));
+        if (brand.requestedEffectiveDateTimezone) setRequestedEffTz(String(brand.requestedEffectiveDateTimezone));
+      }
+
+      // Deliverables: pick first expanded item if present
+      const expanded = (meta as any).deliverablesExpanded ?? (brand && brand.deliverablesExpanded) ?? undefined;
+      if (Array.isArray(expanded) && expanded.length) {
+        const first = expanded[0];
+        if (first.type) setDType(String(first.type));
+        if (first.quantity !== undefined && first.quantity !== null) setDQuantity(Number(first.quantity));
+        if (first.format) setDFormat(String(first.format));
+        if (first.durationSec !== undefined && first.durationSec !== null) setDDurationSec(Number(first.durationSec));
+        if (first.draftRequired !== undefined) setDDraftRequired(Boolean(first.draftRequired));
+        if (first.minLiveHours !== undefined && first.minLiveHours !== null) setDMinLiveHours(Number(first.minLiveHours));
+        if (Array.isArray(first.tags)) setDTags(first.tags.map((t: any) => String(t)));
+        if (Array.isArray(first.handles)) setDHandles(first.handles.map((h: any) => String(h)));
+        if (first.captions) setDCaptions(String(first.captions));
+        if (Array.isArray(first.links)) setDLinks(first.links.map((l: any) => String(l)));
+      }
+
+      // Signature preview — common locations: meta.signatures.brand.sigImageDataUrl OR meta.signatures.brand.sigImage OR meta.brand.signature
+      const sig =
+        (meta as any).signatures?.brand?.sigImageDataUrl ||
+        (meta as any).signatures?.brand?.sigImage ||
+        (brand && (brand.signatureImageDataUrl || brand.signature)) ||
+        "";
+
+      if (sig) setSignatureDataUrl(String(sig));
+    }
+  };
+
+  const openContractPanel = async (inf: Influencer, override?: PanelMode) => {
+    setSelectedInf(inf);
+    setPdfUrl("");
+    setSelectedContractMeta(null);
+
+    // try to find cached meta or fetch
+    const cached = metaCache[inf.influencerId] ?? null;
+    const meta = cached ?? (await getLatestContractFor(inf));
+    setSelectedContractMeta(meta);
+
+    // Prefill using both influencer and meta (if present)
+    prefillFormFor(inf, meta);
+
+    let mode: PanelMode = "initiate";
+    if (meta?.contractId) {
+      const influencerConfirmed = !!meta?.confirmations?.influencer?.confirmed;
+      const locked = meta?.status === "locked";
+      mode = locked ? "view" : influencerConfirmed ? "edit" : "view";
+    }
+    setPanelMode(override || mode);
+    setShowContractPanel(true);
+
+    // Fetch contract preview PDF if available (same as before)
+    if (meta?.contractId) {
+      try {
+        const res = await api.get("/contract/preview", {
+          params: { contractId: meta.contractId },
+          responseType: "blob",
+        });
+        const url = URL.createObjectURL(res.data);
+        setPdfUrl(url);
+      } catch (e: any) {
+        toast({ icon: "error", title: "Preview Error", text: e?.message || "Failed to load preview." });
+      }
+    }
+  };
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // Build Brand payload (initiate / edit)
+  // ───────────────────────────────────────────────────────────────────────────
+  const buildBrand = () => {
+    const goLive =
+      goLiveStart || goLiveEnd
+        ? {
+          start: goLiveStart ? new Date(goLiveStart) : undefined,
+          end: goLiveEnd ? new Date(goLiveEnd) : undefined,
+        }
+        : undefined;
+
+    return {
+      campaignTitle,
+      platforms,
+      ...(goLive ? { goLive } : {}),
+      totalFee: Number(totalFee) || 0,
+      currency,
+      milestoneSplit,
+      revisionsIncluded: Number(revisionsIncluded) || 0,
+      deliverablesPresetKey: "ui-manual",
+      deliverablesExpanded: [
+        {
+          type: dType,
+          quantity: Number(dQuantity) || 0,
+          format: dFormat,
+          durationSec: Number(dDurationSec) || 0,
+          postingWindow: goLive || { start: undefined, end: undefined },
+          draftRequired: Boolean(dDraftRequired),
+          minLiveHours: Number(dMinLiveHours) || 0,
+          tags: dTags,
+          handles: dHandles,
+          captions: dCaptions,
+          links: dLinks,
+          disclosures: "",
+        },
+      ],
+    };
+  };
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // Signature upload
+  // ───────────────────────────────────────────────────────────────────────────
+  const handleSignatureFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!/image\/(png|jpeg)/i.test(file.type)) {
+      toast({ icon: "error", title: "Invalid file", text: "Please upload a PNG or JPG." });
+      return;
+    }
+    if (file.size > 50 * 1024) {
+      toast({ icon: "error", title: "Too large", text: "Signature must be ≤ 50 KB." });
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => setSignatureDataUrl(reader.result as string);
+    reader.readAsDataURL(file);
+  };
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // Actions: View / Send / Edit / Preview / Sign
+  // ───────────────────────────────────────────────────────────────────────────
+  const handleViewExistingContract = async (inf?: Influencer) => {
+    const target = inf || selectedInf;
+    if (!target) return;
+    const meta = metaCache[target.influencerId] ?? (await getLatestContractFor(target));
+    if (!meta?.contractId) {
+      return toast({ icon: "error", title: "No Contract", text: "Please send the contract first." });
+    }
+    try {
+      const res = await api.get("/contract/preview", {
+        params: { contractId: meta.contractId },
+        responseType: "blob",
+      } as any);
+      const url = URL.createObjectURL(res.data);
+      window.open(url, "_blank");
+    } catch (e: any) {
+      toast({
+        icon: "error",
+        title: "View Failed",
+        text: e?.response?.data?.message || e?.message || "Unable to open contract.",
+      });
+    }
+  };
+
+  // PREVIEW (server renders a PDF preview of current inputs)
   const handleGeneratePreview = async () => {
     if (!selectedInf) return;
+    if (!platforms.length) {
+      return toast({ icon: "error", title: "Missing Platforms", text: "Select at least one platform." });
+    }
     try {
-      const payload = {
+      const payload: any = {
         brandId: localStorage.getItem("brandId"),
         campaignId,
         influencerId: selectedInf.influencerId,
-        ...contractForm,
-        feeAmount: Number(contractForm.feeAmount),
-        type: 0,
+        brand: buildBrand(),
+        preview: true,
       };
-      const res = await api.post("/contract/sendContract", payload, {
-        responseType: "blob",
-      });
+      if (requestedEffDate) payload.requestedEffectiveDate = requestedEffDate;
+      if (requestedEffTz) payload.requestedEffectiveDateTimezone = requestedEffTz;
+
+      const res = await api.post("/contract/initiate", payload, { responseType: "blob" });
       const url = URL.createObjectURL(res.data);
       setPdfUrl(url);
       window.open(url, "_blank");
     } catch (e: any) {
-      toast({ icon: "error", title: "Error", text: e.message || "Failed to generate preview." });
+      toast({
+        icon: "error",
+        title: "Preview Error",
+        text: e?.response?.data?.message || e.message || "Failed to generate preview.",
+      });
     }
   };
-  const handleSendContract = async () => {
+
+  // SEND (first time) or UPDATE (after influencer confirm)
+  const handleSendOrUpdate = async () => {
     if (!selectedInf) return;
     try {
-      await post("/contract/sendContract", {
-        brandId: localStorage.getItem("brandId"),
-        campaignId,
-        influencerId: selectedInf.influencerId,
-        ...contractForm,
-        feeAmount: Number(contractForm.feeAmount),
-        type: 1,
+      const brand = buildBrand();
+      const brandId = localStorage.getItem("brandId")!;
+      const meta = selectedContractMeta;
+
+      // First-time send
+      if (!meta?.contractId) {
+        const payload: any = {
+          brandId,
+          campaignId,
+          influencerId: selectedInf.influencerId,
+          brand,
+        };
+        if (requestedEffDate) payload.requestedEffectiveDate = requestedEffDate;
+        if (requestedEffTz) payload.requestedEffectiveDateTimezone = requestedEffTz;
+
+        await post("/contract/initiate", payload);
+        toast({ icon: "success", title: "Sent!", text: "Contract sent to influencer." });
+        setShowContractPanel(false);
+        fetchApplicants();
+        loadMetaCache(influencers);
+        return;
+      }
+
+      // Existing → only allow edit/update after influencer confirms
+      const influencerConfirmed = !!meta?.confirmations?.influencer?.confirmed;
+      const locked = meta?.status === "locked";
+      if (!influencerConfirmed || locked) {
+        return toast({
+          icon: "error",
+          title: "Editing Disabled",
+          text: locked
+            ? "Contract is locked and no longer editable."
+            : "Edits are allowed only after the influencer confirms.",
+        });
+      }
+
+      // /contract/brand/update expects requestedEffectiveDate(*) inside brandUpdates
+      const brandUpdates: any = { ...brand };
+      if (requestedEffDate) brandUpdates.requestedEffectiveDate = requestedEffDate;
+      if (requestedEffTz) brandUpdates.requestedEffectiveDateTimezone = requestedEffTz;
+
+      await post("/contract/brand/update", {
+        contractId: meta.contractId,
+        brandId,
+        brandUpdates,
       });
-      toast({ icon: "success", title: "Sent!", text: "Contract sent to influencer." });
-      setShowContractModal(false);
+
+      toast({ icon: "success", title: "Updated", text: "Contract updated." });
+      setShowContractPanel(false);
       fetchApplicants();
+      loadMetaCache(influencers);
     } catch (e: any) {
-      toast({ icon: "error", title: "Error", text: e.message || "Failed to send contract." });
+      const msg = e?.response?.data?.message || e.message || "Failed to send/update contract.";
+      toast({ icon: "error", title: "Error", text: msg });
     }
   };
 
-  // ── Rendered Table Rows ──────────────────────────────────────────────
+  // SIGN (Brand)
+  const handleSignAsBrand = async () => {
+    const meta = selectedContractMeta;
+    if (!meta?.contractId) {
+      toast({ icon: "error", title: "No Contract", text: "Send the contract first." });
+      return;
+    }
+    if (!signatureDataUrl) {
+      toast({ icon: "error", title: "No signature", text: "Upload a signature image first." });
+      return;
+    }
+    try {
+      await post("/contract/sign", {
+        contractId: meta.contractId,
+        role: "brand",
+        name: signerName,
+        email: signerEmail,
+        signatureImageDataUrl: signatureDataUrl,
+      });
+      toast({ icon: "success", title: "Signed", text: "Signature recorded." });
+      setShowContractPanel(false);
+      fetchApplicants();
+      loadMetaCache(influencers);
+    } catch (e: any) {
+      toast({
+        icon: "error",
+        title: "Sign failed",
+        text: e?.response?.data?.message || e.message || "Could not sign contract.",
+      });
+    }
+  };
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // Rows
+  // ───────────────────────────────────────────────────────────────────────────
   const rows = useMemo(
     () =>
-      influencers.map((inf, idx) => (
-        <TableRow
-          key={inf._id}
-          className={`${idx % 2 === 0 ? "bg-white" : "bg-gray-50"} transition-colors`}
-          onMouseEnter={(e) =>
-            (e.currentTarget.style.backgroundImage = `linear-gradient(to right, ${TABLE_GRADIENT_FROM}11, ${TABLE_GRADIENT_TO}11)`)
-          }
-          onMouseLeave={(e) => (e.currentTarget.style.backgroundImage = "")}
-        >
-          <TableCell>{inf.name}</TableCell>
-          <TableCell>{inf.socialMedia}</TableCell>
-          <TableCell>
-            <Badge variant="secondary" className="capitalize">
-              {inf.categoryName}
-            </Badge>
-          </TableCell>
-          <TableCell>{inf.audienceRange}</TableCell>
-          <TableCell className="whitespace-nowrap">
-            <HiOutlineCalendar className="inline mr-1" />
-            {new Date(inf.createdAt).toLocaleDateString()}
-          </TableCell>
-          <TableCell className="text-center">
-            {inf.isRejected === 1 ? (
-              <>
-                <Badge className="bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white shadow-none">
-                  Rejected
+      influencers.map((inf, idx) => {
+        const href = buildHandleUrl(inf.primaryPlatform, inf.handle);
+        const meta = metaCache[inf.influencerId] || null;
+        const hasContract = !!(meta?.contractId || inf.contractId || inf.isAssigned);
+        const influencerConfirmed = !!meta?.confirmations?.influencer?.confirmed;
+        const locked = meta ? meta.status === "locked" : false;
+
+        return (
+          <TableRow
+            key={inf.influencerId}
+            className={`${idx % 2 === 0 ? "bg-white" : "bg-gray-50"} transition-colors`}
+            onMouseEnter={(e) =>
+              (e.currentTarget.style.backgroundImage = `linear-gradient(to right, ${GRADIENT_FROM}11, ${GRADIENT_TO}11)`)
+            }
+            onMouseLeave={(e) => (e.currentTarget.style.backgroundImage = "")}
+          >
+            <TableCell className="font-medium">{inf.name}</TableCell>
+
+            <TableCell className="whitespace-nowrap">
+              {href ? (
+                <a
+                  href={href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-black hover:underline"
+                  title="Open profile"
+                >
+                  {inf.handle || "—"}
+                </a>
+              ) : (
+                <span className="text-gray-500">—</span>
+              )}
+            </TableCell>
+
+            <TableCell>
+              <Badge variant="secondary" className="capitalize bg-gray-200 text-gray-800">
+                {inf.category || "—"}
+              </Badge>
+            </TableCell>
+
+            <TableCell>{formatAudience(inf.audienceSize)}</TableCell>
+
+            <TableCell className="whitespace-nowrap">
+              {inf.createdAt ? new Date(inf.createdAt).toLocaleDateString() : "—"}
+            </TableCell>
+
+            <TableCell className="text-center">
+              {inf.isRejected === 1 ? (
+                <div className="space-y-1">
+                  <Badge className="bg-black text-white shadow-none">Rejected</Badge>
+                  <p className="text-xs text-gray-500">{inf.rejectedReason || "No reason provided"}</p>
+                </div>
+              ) : hasContract ? (
+                <Badge variant="secondary" className="bg-gray-100 text-gray-800">
+                  Contract {locked ? "Locked" : influencerConfirmed ? "Ready to Edit" : "Sent"}
                 </Badge>
-                <p className="text-xs text-gray-500">{inf.rejectedReason || "No reason provided"}</p>
-              </>
-            ) : inf.isAccepted === 1 ? (
-              <p>Working</p>
-            ) : inf.isContracted === 1 ? (
-              <p>Contract Sent</p>
-            ) : (
-              <p>Applied for Work</p>
-            )}
-          </TableCell>
-          <TableCell className="flex space-x-2 justify-center">
-            <Button
-              size="sm"
-              variant="outline"
-              className="bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white"
-              onClick={() => router.push(`/brand/influencers?id=${inf.influencerId}`)}
-            >
-              View
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              className="bg-gradient-to-r from-[#FF8C00] via-[#FF5E7E] to-[#D12E53] text-white"
-              onClick={() => router.push("/brand/messages")}
-            >
-              Message
-            </Button>
+              ) : (
+                <Badge variant="secondary" className="bg-gray-200 text-gray-800">
+                  Applied
+                </Badge>
+              )}
+            </TableCell>
 
-            {/* Send / Resend Contract */}
-            {!inf.isContracted && !inf.isRejected && (
+            <TableCell className="flex flex-wrap gap-2 justify-center">
               <Button
                 size="sm"
                 variant="outline"
-                className="bg-green-500 text-white"
-                onClick={() => openContractModal(inf)}
+                className="bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white hover:from-[#FF7236] hover:to-[#FFA135] shadow-none"
+                onClick={() => router.push(`/brand/influencers?id=${inf.influencerId}`)}
+                title="View profile"
               >
-                Send Contract
+                View
               </Button>
-            )}
-            {inf.isRejected === 1 && (
-              <Button
-                size="sm"
-                variant="outline"
-                className="bg-green-500 text-white"
-                onClick={() => openContractModal(inf)}
-              >
-                Resend Contract
-              </Button>
-            )}
 
-            {/* Add Milestone */}
-            {inf.isAccepted === 1 && (
-              <Button
-                size="sm"
-                variant="outline"
-                className="bg-green-500 text-white"
-                onClick={() => handleAddMilestone(inf)}
-              >
-                Add Milestone
-              </Button>
-            )}
-          </TableCell>
-        </TableRow>
-      )),
-    [influencers, router]
+              {!hasContract && inf.isRejected !== 1 && (
+                <Button
+                  size="sm"
+                  className="bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white hover:from-[#FF7236] hover:to-[#FFA135] shadow-none"
+                  onClick={() => openContractPanel(inf, "initiate")}
+                  title="Send contract"
+                >
+                  <HiPaperAirplane className="mr-1 h-4 w-4" />
+                  Send Contract
+                </Button>
+              )}
+
+              {hasContract && (
+                <>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white hover:from-[#FF7236] hover:to-[#FFA135] shadow-none"
+                    onClick={() => handleViewExistingContract(inf)}
+                    title="View contract"
+                    disabled={metaCacheLoading && !meta}
+                  >
+                    <HiEye className="mr-1 h-4 w-4" />
+                    View Contract
+                  </Button>
+
+                  {influencerConfirmed && !locked && (
+                    <Button
+                      size="sm"
+                      className="bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white hover:from-[#FF7236] hover:to-[#FFA135] shadow-none"
+                      onClick={() => openContractPanel(inf, "edit")}
+                      title="Edit contract"
+                    >
+                      Edit Contract
+                    </Button>
+                  )}
+                </>
+              )}
+            </TableCell>
+          </TableRow>
+        );
+      }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [influencers, metaCache, metaCacheLoading]
   );
 
+  // ───────────────────────────────────────────────────────────────────────────
+  // RENDER
+  // ───────────────────────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen p-4 md:p-8 space-y-8">
       {/* Header */}
-      <header className="flex items-center justify-between p-4 rounded-md">
-        <h1 className="text-3xl font-bold">
-          Campaign: {campaignName || "Unknown Campaign"}
-        </h1>
-        <Button size="sm" variant="outline" className="bg-gray-200" onClick={() => router.back()}>
+      <header className="flex items-center justify-between p-2 md:p-4 rounded-md">
+        <h1 className="text-3xl font-bold">Campaign: {campaignName || "Unknown Campaign"}</h1>
+        <Button size="sm" variant="outline" className="bg-gray-200 text-black" onClick={() => router.back()}>
           Back
         </Button>
       </header>
 
-      {/* Search box */}
+      {/* Search */}
       <div className="mb-6 max-w-md">
         <div className="relative bg-white rounded-lg">
           <HiSearch className="absolute inset-y-0 left-3 my-auto text-gray-400" size={20} />
@@ -386,7 +821,7 @@ export default function AppliedInfluencersPage() {
               setSearchTerm(e.target.value);
               setPage(1);
             }}
-            className="w-full pl-10 pr-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
+            className="w-full pl-10 pr-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-black text-sm"
           />
         </div>
       </div>
@@ -398,30 +833,30 @@ export default function AppliedInfluencersPage() {
         <ErrorMessage>{error}</ErrorMessage>
       ) : (
         <div className="bg-white rounded-md shadow-sm overflow-x-auto">
-          <Table className="min-w-[900px]">
+          <Table className="min-w-[1024px]">
             <TableHeader
-              style={{ backgroundImage: `linear-gradient(to right, ${TABLE_GRADIENT_FROM}, ${TABLE_GRADIENT_TO})` }}
+              style={{ backgroundImage: `linear-gradient(to right, ${GRADIENT_FROM}, ${GRADIENT_TO})` }}
               className="text-white"
             >
-              <tr>
+              <TableRow>
                 <TableHead onClick={() => toggleSort("name")} className="cursor-pointer font-semibold">
                   {applicantCount} Applied <SortIndicator field="name" />
                 </TableHead>
-                <TableHead onClick={() => toggleSort("socialMedia")} className="cursor-pointer font-semibold">
-                  Social Handle <SortIndicator field="socialMedia" />
+                <TableHead onClick={() => toggleSort("handle")} className="cursor-pointer font-semibold">
+                  Social Handle <SortIndicator field="handle" />
                 </TableHead>
-                <TableHead onClick={() => toggleSort("categoryName")} className="cursor-pointer font-semibold">
-                  Category <SortIndicator field="categoryName" />
+                <TableHead onClick={() => toggleSort("category")} className="cursor-pointer font-semibold">
+                  Category <SortIndicator field="category" />
                 </TableHead>
-                <TableHead onClick={() => toggleSort("audienceRange")} className="cursor-pointer font-semibold">
-                  Audience <SortIndicator field="audienceRange" />
+                <TableHead onClick={() => toggleSort("audienceSize")} className="cursor-pointer font-semibold">
+                  Audience <SortIndicator field="audienceSize" />
                 </TableHead>
                 <TableHead onClick={() => toggleSort("createdAt")} className="cursor-pointer font-semibold">
                   Date <SortIndicator field="createdAt" />
                 </TableHead>
                 <TableHead className="font-semibold">Status</TableHead>
                 <TableHead className="text-center font-semibold">Actions</TableHead>
-              </tr>
+              </TableRow>
             </TableHeader>
             <TableBody>{rows}</TableBody>
           </Table>
@@ -431,160 +866,298 @@ export default function AppliedInfluencersPage() {
       {/* Pagination */}
       {meta.totalPages > 1 && (
         <div className="flex justify-center md:justify-end items-center gap-2">
-          <Button variant="outline" size="icon" disabled={page === 1} onClick={() => setPage((p) => Math.max(p - 1, 1))}>
+          <Button
+            variant="outline"
+            size="icon"
+            disabled={page === 1}
+            onClick={() => setPage((p) => Math.max(p - 1, 1))}
+            className="text-black"
+          >
             <HiChevronLeft />
           </Button>
           <span className="text-sm">
             Page <strong>{page}</strong> of {meta.totalPages}
           </span>
-          <Button variant="outline" size="icon" disabled={page === meta.totalPages} onClick={() => setPage((p) => Math.min(p + 1, meta.totalPages))}>
+          <Button
+            variant="outline"
+            size="icon"
+            disabled={page === meta.totalPages}
+            onClick={() => setPage((p) => Math.min(p + 1, meta.totalPages))}
+            className="text-black"
+          >
             <HiChevronRight />
           </Button>
         </div>
       )}
 
-      {/* Contract Modal */}
-      {showContractModal && selectedInf && (
-        <div className="fixed inset-0 backdrop-blur-sm bg-opacity-30 flex items-center justify-center z-50">
-          <div
-            className="max-w-lg bg-white rounded-lg p-6 w-full max-h-[90vh] overflow-auto border-2 border-transparent"
-            style={{ borderImage: `linear-gradient(to right, ${TABLE_GRADIENT_FROM}, ${TABLE_GRADIENT_TO}) 1` }}
-          >
-            {!pdfUrl ? (
-              <>
-                <h2 className="text-xl font-semibold mb-4">Contract Details</h2>
-                <div className="space-y-4">
-                  <FloatingLabelInput
-                    id="effectiveDate"
-                    label="Effective Date"
-                    type="date"
-                    value={contractForm.effectiveDate}
-                    onChange={(e) => setContractForm((f) => ({ ...f, effectiveDate: e.target.value }))}
-                  />
-                  <FloatingLabelInput
-                    id="brandName"
-                    label="Brand Legal Name"
-                    value={contractForm.brandName}
-                    onChange={(e) => setContractForm((f) => ({ ...f, brandName: e.target.value }))}
-                  />
-                  <FloatingLabelInput
-                    id="brandAddress"
-                    label="Brand Address"
-                    value={contractForm.brandAddress}
-                    onChange={(e) => setContractForm((f) => ({ ...f, brandAddress: e.target.value }))}
-                  />
-                  <FloatingLabelInput
-                    id="influencerName"
-                    label="Influencer Legal Name"
-                    value={contractForm.influencerName}
-                    onChange={(e) => setContractForm((f) => ({ ...f, influencerName: e.target.value }))}
-                  />
-                  <FloatingLabelInput
-                    id="influencerAddress"
-                    label="Influencer Address"
-                    value={contractForm.influencerAddress}
-                    onChange={(e) => setContractForm((f) => ({ ...f, influencerAddress: e.target.value }))}
-                  />
-                  <FloatingLabelInput
-                    id="influencerHandle"
-                    label="Influencer Handle"
-                    value={contractForm.influencerHandle}
-                    onChange={(e) => setContractForm((f) => ({ ...f, influencerHandle: e.target.value }))}
-                  />
-                  <FloatingLabelInput
-                    id="feeAmount"
-                    label="Budget (USD)"
-                    value={contractForm.feeAmount}
-                    onChange={(e) => setContractForm((f) => ({ ...f, feeAmount: e.target.value }))}
-                  />
-                  <div className="space-y-1">
-                    <Label htmlFor="paymentTerms">Contract Deliverable Terms</Label>
-                    <Textarea
-                      id="paymentTerms"
-                      rows={4}
-                      value={contractForm.paymentTerms}
-                      onChange={(e) => setContractForm((f) => ({ ...f, paymentTerms: e.target.value }))}
-                      placeholder="e.g. 5 deliverables…"
-                      className="focus:ring-[#FFA135]/50"
+      {/* Sliding Right Sidebar (Contract Panel) */}
+      <ContractSidebar
+        isOpen={showContractPanel}
+        onClose={() => {
+          if (pdfUrl) URL.revokeObjectURL(pdfUrl);
+          setPdfUrl("");
+          setShowContractPanel(false);
+          setSelectedContractMeta(null);
+        }}
+        title={panelMode === "initiate" ? "Send Contract" : panelMode === "edit" ? "Edit Contract" : "View Contract"}
+        subtitle={selectedInf ? `${campaignTitle || "Agreement"} • ${selectedInf.name}` : campaignTitle || "Agreement"}
+        previewUrl={pdfUrl}
+      >
+        {/* VIEW MODE */}
+        {panelMode === "view" && (
+          <SidebarSection title="Contract" icon={<HiDocumentText className="w-4 h-4" />}>
+            <div className="space-y-3">
+              <p className="text-sm text-gray-600">
+                {selectedContractMeta?.confirmations?.influencer?.confirmed
+                  ? "Influencer confirmed. You may edit from the list using the Edit button."
+                  : "Awaiting influencer confirmation. You can only view the contract for now."}
+              </p>
+              <Button className="bg-white border-2 text-black" variant="outline" onClick={() => handleViewExistingContract()}>
+                <HiEye className="mr-2 h-5 w-5" />
+                Open PDF
+              </Button>
+            </div>
+          </SidebarSection>
+        )}
+
+        {/* INITIATE / EDIT MODE */}
+        {(panelMode === "initiate" || panelMode === "edit") && (
+          <>
+            <SidebarSection title="Campaign Details" icon={<HiDocumentText className="w-4 h-4" />}>
+              <div className="space-y-4">
+                <FloatingLabelInput
+                  id="campaignTitle"
+                  label="Campaign Title"
+                  value={campaignTitle}
+                  onChange={(e) => setCampaignTitle(e.target.value)}
+                />
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-3">Platforms</label>
+                  <PlatformSelector platforms={platforms} onChange={setPlatforms} />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label htmlFor="goLiveStart" className="block text-xs font-medium text-gray-600 mb-1.5">
+                      Go Live Start
+                    </label>
+                    <input
+                      id="goLiveStart"
+                      type="date"
+                      value={goLiveStart}
+                      onChange={(e) => setGoLiveStart(e.target.value)}
+                      className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-lg text-sm transition-all duration-200 focus:border-black focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="goLiveEnd" className="block text-xs font-medium text-gray-600 mb-1.5">
+                      Go Live End
+                    </label>
+                    <input
+                      id="goLiveEnd"
+                      type="date"
+                      value={goLiveEnd}
+                      onChange={(e) => setGoLiveEnd(e.target.value)}
+                      className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-lg text-sm transition-all duration-200 focus:border-black focus:outline-none"
                     />
                   </div>
                 </div>
-                <div className="mt-6 flex justify-end space-x-2">
-                  <Button onClick={handleGeneratePreview} className="bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white">
-                    Generate Preview
-                  </Button>
-                  <Button variant="outline" onClick={() => setShowContractModal(false)}>
-                    Cancel
-                  </Button>
-                </div>
-              </>
-            ) : (
-              <>
-                <h2 className="text-xl font-semibold mb-4">Contract Preview</h2>
-                <iframe src={pdfUrl} className="w-full h-[60vh] rounded-md border" title="PDF Preview" />
-                <div className="mt-6 flex justify-end space-x-2">
-                  <Button
-                    variant="outline"
-                    onClick={() => {
-                      URL.revokeObjectURL(pdfUrl);
-                      setPdfUrl("");
-                    }}
-                  >
-                    Back
-                  </Button>
-                  <Button onClick={handleSendContract} className="bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white">
-                    Send Contract
-                  </Button>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-      )}
 
-      {/* Milestone Modal */}
-      {showMilestoneModal && selectedInf && (
-        <div className="fixed inset-0 backdrop-blur-sm bg-opacity-30 flex items-center justify-center z-50">
-          <div
-            className="max-w-lg bg-white rounded-lg p-6 w-full max-h-[90vh] overflow-auto border-2 border-transparent"
-            style={{ borderImage: `linear-gradient(to right, ${TABLE_GRADIENT_FROM}, ${TABLE_GRADIENT_TO}) 1` }}
-          >
-            <h2 className="text-xl font-semibold mb-4">Add Milestone</h2>
-            <div className="space-y-4">
-              <FloatingLabelInput
-                id="milestoneTitle"
-                label="Title"
-                value={milestoneForm.title}
-                onChange={(e) => setMilestoneForm((f) => ({ ...f, title: e.target.value }))}
-              />
-              <FloatingLabelInput
-                id="milestoneAmount"
-                label="Amount"
-                value={milestoneForm.amount}
-                onChange={(e) => setMilestoneForm((f) => ({ ...f, amount: e.target.value }))}
-              />
-              <FloatingLabelInput
-                id="milestoneDesc"
-                label="Description"
-                value={milestoneForm.description}
-                onChange={(e) => setMilestoneForm((f) => ({ ...f, description: e.target.value }))}
-              />
-            </div>
-            <div className="mt-6 flex justify-end space-x-2">
-              <Button variant="outline" onClick={() => setShowMilestoneModal(false)}>
-                Cancel
+                {/* Fees: keep 2-col grid + Currency (backend requires it) */}
+                <div className="grid grid-cols-2 gap-3">
+                  <FloatingLabelInput
+                    id="totalFee"
+                    label="Total Fee"
+                    value={totalFee}
+                    onChange={(e) => setTotalFee(e.target.value)}
+                    type="number"
+                  />
+                  <Select
+                    id="currency"
+                    label="Currency"
+                    value={currency}
+                    onChange={(e) => setCurrency(e.target.value)}
+                    options={[
+                      { value: "USD", label: "USD" },
+                      { value: "EUR", label: "EUR" },
+                      { value: "INR", label: "INR" },
+                      { value: "GBP", label: "GBP" },
+                    ]}
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <FloatingLabelInput
+                    id="milestoneSplit"
+                    label="Milestone Split"
+                    value={milestoneSplit}
+                    onChange={(e) => setMilestoneSplit(e.target.value)}
+                  />
+                  <NumberInput
+                    id="revisionsIncluded"
+                    label="Revisions Included"
+                    value={revisionsIncluded}
+                    onChange={setRevisionsIncluded}
+                    min={0}
+                  />
+                </div>
+
+                {/* Requested Effective Date (display token) */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label htmlFor="requestedEffDate" className="block text-xs font-medium text-gray-600 mb-1.5">
+                      Requested Effective Date (display)
+                    </label>
+                    <input
+                      id="requestedEffDate"
+                      type="date"
+                      value={requestedEffDate}
+                      onChange={(e) => setRequestedEffDate(e.target.value)}
+                      className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-lg text-sm transition-all duration-200 focus:border-black focus:outline-none"
+                    />
+                  </div>
+                  <Select
+                    id="requestedEffTz"
+                    label="Timezone"
+                    value={requestedEffTz}
+                    onChange={(e) => setRequestedEffTz(e.target.value)}
+                    options={tzOptions}
+                  />
+                </div>
+
+                {/* Signature upload (compact, black & white) */}
+                <div className="space-y-2">
+                  <label className="block text-sm font-medium text-gray-700">
+                    Upload Signature (PNG/JPG ≤ 50 KB)
+                  </label>
+                  <input
+                    type="file"
+                    accept="image/png,image/jpeg"
+                    onChange={handleSignatureFileChange}
+                    className="block w-full text-sm text-gray-700"
+                  />
+                  {signatureDataUrl && (
+                    <img
+                      src={signatureDataUrl}
+                      alt="Signature preview"
+                      className="h-12 mt-2 border border-gray-200 rounded bg-white"
+                    />
+                  )}
+                </div>
+              </div>
+            </SidebarSection>
+
+            <SidebarSection title="Deliverables" icon={<HiClipboardList className="w-4 h-4" />}>
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-3">
+                  <FloatingLabelInput id="dType" label="Type" value={dType} onChange={(e) => setDType(e.target.value)} />
+                  <Select
+                    id="dFormat"
+                    label="Format"
+                    value={dFormat}
+                    onChange={(e) => setDFormat(e.target.value)}
+                    options={[
+                      { value: "Text", label: "Text" },
+                      { value: "MP4", label: "MP4" },
+                      { value: "Short", label: "Short" },
+                      { value: "Story", label: "Story" },
+                      { value: "Reel", label: "Reel" },
+                      { value: "Image", label: "Image" },
+                    ]}
+                  />
+                </div>
+
+                <div className="grid grid-cols-3 gap-3">
+                  <NumberInput id="quantity" label="Quantity" value={dQuantity} onChange={setDQuantity} min={1} />
+                  <NumberInput id="duration" label="Duration (sec)" value={dDurationSec} onChange={setDDurationSec} min={0} />
+                  <NumberInput id="minlive" label="Min Live (hrs)" value={dMinLiveHours} onChange={setDMinLiveHours} min={0} />
+                </div>
+
+                <Checkbox id="draftRequired" label="Draft Required" checked={dDraftRequired} onChange={setDDraftRequired} />
+
+                <TextArea
+                  id="captions"
+                  label="Captions / Notes"
+                  value={dCaptions}
+                  onChange={(e) => setDCaptions(e.target.value)}
+                  rows={3}
+                  placeholder="Guidelines, hashtags, instructions..."
+                />
+
+                <div className="grid grid-cols-2 gap-4">
+                  <ChipInput label="Tags" items={dTags} setItems={setDTags} placeholder="#tag" />
+                  <ChipInput
+                    label="Links"
+                    items={dLinks}
+                    setItems={setDLinks}
+                    placeholder="https://"
+                    validator={(s) => /^https?:\/\/.+/i.test(s)}
+                  />
+                </div>
+
+                <div className="text-sm text-gray-600">
+                  <span className="font-medium">Handles: </span>
+                  {dHandles.length ? dHandles.join(", ") : "—"}
+                </div>
+              </div>
+            </SidebarSection>
+
+            {/* Footer Actions */}
+            <div className="sticky bottom-0 -mx-6 -mb-6 bg-white border-t border-gray-200 p-6 flex flex-wrap justify-end gap-3">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  if (pdfUrl) URL.revokeObjectURL(pdfUrl);
+                  setPdfUrl("");
+                  setShowContractPanel(false);
+                }}
+                className="px-6 text-black"
+              >
+                Close
               </Button>
-              <Button onClick={handleSaveMilestone} className="bg-green-600 text-white">
-                Add
+
+              <Button
+                onClick={handleGeneratePreview}
+                className="px-6 bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white hover:from-[#FF7236] hover:to-[#FFA135] shadow-none"
+                disabled={!platforms.length || !campaignTitle.trim()}
+                title={!platforms.length ? "Select at least one platform" : ""}
+              >
+                <HiEye className="w-5 h-5 mr-2" />
+                Preview
               </Button>
+
+              <Button
+                onClick={handleSendOrUpdate}
+                className="px-6 bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white hover:from-[#FF7236] hover:to-[#FFA135] shadow-none"
+                title={panelMode === "initiate" ? "Send contract" : "Update contract"}
+              >
+                <HiPaperAirplane className="w-5 h-5 mr-2" />
+                {panelMode === "initiate" ? "Send Contract" : "Update Contract"}
+              </Button>
+
+              {selectedContractMeta?.confirmations?.influencer?.confirmed &&
+                selectedContractMeta?.status !== "locked" && (
+                  <Button
+                    onClick={handleSignAsBrand}
+                    className="px-6 bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white hover:from-[#FF7236] hover:to-[#FFA135] shadow-none"
+                    title="Sign as Brand"
+                  >
+                    Sign as Brand
+                  </Button>
+
+                )}
             </div>
-          </div>
-        </div>
-      )}
+          </>
+        )}
+      </ContractSidebar>
     </div>
   );
 }
 
+// ───────────────────────────────────────────────────────────────────────────────
+// SUPPORT UI
+// ───────────────────────────────────────────────────────────────────────────────
 const LoadingSkeleton = ({ rows }: { rows: number }) => (
   <div className="p-6 space-y-2">
     {Array.from({ length: rows }).map((_, i) => (
@@ -594,5 +1167,385 @@ const LoadingSkeleton = ({ rows }: { rows: number }) => (
 );
 
 const ErrorMessage: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-  <p className="p-6 text-center text-destructive">{children}</p>
+  <p className="p-6 text-center text-red-600">{children}</p>
 );
+
+// ───────────────────────────────────────────────────────────────────────────────
+// INLINE: FormComponents.tsx (kept here for a single-file drop-in)
+// ───────────────────────────────────────────────────────────────────────────────
+export function FloatingLabelInput({
+  id,
+  label,
+  value,
+  onChange,
+  type = "text",
+  ...props
+}: {
+  id: string;
+  label: string;
+  value: string;
+  onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  type?: string;
+  [key: string]: any;
+}) {
+  const [focused, setFocused] = useState(false);
+  const hasValue = value !== "";
+
+  return (
+    <div className="relative">
+      <input
+        id={id}
+        type={type}
+        value={value}
+        onChange={onChange}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
+        className="w-full px-4 pt-6 pb-2 border-2 border-gray-200 rounded-lg text-sm transition-all duration-200 focus:border-black focus:outline-none peer"
+        placeholder=" "
+        {...props}
+      />
+      <label
+        htmlFor={id}
+        className={`absolute left-4 transition-all duration-200 pointer-events-none ${focused || hasValue
+          ? "top-2 text-xs text-black font-medium"
+          : "top-1/2 -translate-y-1/2 text-sm text-gray-500"
+          }`}
+      >
+        {label}
+      </label>
+    </div>
+  );
+}
+
+type SelectProps = {
+  id: string;
+  label: string;
+  value: string;
+  onChange: (e: ChangeEvent<HTMLSelectElement>) => void;
+  options: { value: string; label: string }[] | { value: string; label: string }[][];
+  disabled?: boolean;
+};
+
+export function Select({
+  id,
+  label,
+  value,
+  onChange,
+  options,
+  disabled = false,
+}: SelectProps) {
+  const flat = (Array.isArray(options[0]) ? (options as any).flat() : (options as any)) as {
+    value: string;
+    label: string;
+  }[];
+  return (
+    <div className="space-y-1.5">
+      <label htmlFor={id} className="text-sm font-medium text-gray-700">
+        {label}
+      </label>
+      <select
+        id={id}
+        value={value}
+        onChange={onChange}
+        disabled={disabled}
+        className={`w-full px-3 py-2.5 border-2 rounded-lg text-sm focus:outline-none ${disabled ? "opacity-60 cursor-not-allowed" : "focus:border-black border-gray-200"
+          }`}
+      >
+        {flat.map((o) => (
+          <option key={o.value} value={o.value}>
+            {o.label}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
+export function NumberInput({
+  id,
+  label,
+  value,
+  onChange,
+  min = 0,
+  ...props
+}: {
+  id: string;
+  label: string;
+  value: number;
+  onChange: (val: number) => void;
+  min?: number;
+  [key: string]: any;
+}) {
+  return (
+    <div className="relative">
+      <input
+        id={id}
+        type="number"
+        min={min}
+        value={value}
+        onChange={(e) => onChange(Math.max(min, Number(e.target.value || min)))}
+        className="w-full px-4 pt-6 pb-2 border-2 border-gray-200 rounded-lg text-sm transition-all duration-200 focus:border-black focus:outline-none"
+        {...props}
+      />
+      <label htmlFor={id} className="absolute left-4 top-2 text-xs text-black font-medium pointer-events-none">
+        {label}
+      </label>
+    </div>
+  );
+}
+
+type CheckboxProps = {
+  id: string;
+  label: string;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+  disabled?: boolean;
+};
+
+export function Checkbox({ id, label, checked, onChange, disabled = false }: CheckboxProps) {
+  return (
+    <label htmlFor={id} className={`flex items-center gap-2 ${disabled ? "opacity-60 cursor-not-allowed" : ""}`}>
+      <input id={id} type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} disabled={disabled} className="h-4 w-4" />
+      <span className="text-sm text-gray-700">{label}</span>
+    </label>
+  );
+}
+
+type PlatformSelectorProps = {
+  platforms: string[];
+  onChange: (platforms: string[]) => void;
+  disabled?: boolean;
+};
+
+export function PlatformSelector({ platforms, onChange, disabled = false }: PlatformSelectorProps) {
+  const toggle = (p: string) => {
+    if (disabled) return;
+    const next = platforms.includes(p) ? platforms.filter((x) => x !== p) : [...platforms, p];
+    onChange(next);
+  };
+
+  const opts = ["YouTube", "Instagram", "TikTok"];
+
+  return (
+    <div className="flex flex-wrap gap-2">
+      {opts.map((p) => {
+        const active = platforms.includes(p);
+        return (
+          <button
+            key={p}
+            type="button"
+            onClick={() => toggle(p)}
+            disabled={disabled}
+            aria-disabled={disabled}
+            className={`px-3 py-1.5 rounded-lg border text-sm ${active ? "border-black bg-gray-100" : "border-gray-300 bg-white"
+              } ${disabled ? "opacity-60 cursor-not-allowed" : ""}`}
+          >
+            {p}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+type ChipInputProps = {
+  label: string;
+  items: string[];
+  setItems: (items: string[]) => void;
+  placeholder?: string;
+  validator?: (s: string) => boolean;
+  disabled?: boolean;
+};
+
+export function ChipInput({ label, items, setItems, placeholder, validator, disabled = false }: ChipInputProps) {
+  const [val, setVal] = useState("");
+
+  const add = () => {
+    if (disabled) return;
+    const v = val.trim();
+    if (!v) return;
+    if (validator && !validator(v)) return;
+    setItems([...items, v]);
+    setVal("");
+  };
+
+  const remove = (ix: number) => {
+    if (disabled) return;
+    setItems(items.filter((_, i) => i !== ix));
+  };
+
+  return (
+    <div className="space-y-1.5">
+      <div className="text-sm font-medium text-gray-700">{label}</div>
+      <div className={`flex flex-wrap gap-2 rounded-lg border-2 p-2 ${disabled ? "opacity-60 cursor-not-allowed" : "border-gray-200"}`}>
+        {items.map((t, i) => (
+          <span key={`${t}-${i}`} className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-gray-100 text-xs">
+            {t}
+            <button
+              type="button"
+              onClick={() => remove(i)}
+              disabled={disabled}
+              className="text-gray-500 hover:text-gray-700 disabled:cursor-not-allowed"
+              aria-label="Remove"
+            >
+              ×
+            </button>
+          </span>
+        ))}
+        <input
+          value={val}
+          onChange={(e) => setVal(e.target.value)}
+          onKeyDown={(e) => (e.key === "Enter" ? (e.preventDefault(), add()) : undefined)}
+          placeholder={placeholder}
+          disabled={disabled}
+          className="flex-1 min-w-[120px] border-0 outline-none text-sm bg-transparent"
+        />
+        <button type="button" onClick={add} disabled={disabled} className="px-2 py-1 text-xs border rounded">
+          Add
+        </button>
+      </div>
+    </div>
+  );
+}
+
+type TextAreaProps = {
+  id: string;
+  label: string;
+  value: string;
+  onChange: (e: ChangeEvent<HTMLTextAreaElement>) => void;
+  rows?: number;
+  placeholder?: string;
+  disabled?: boolean;
+};
+
+export function TextArea({ id, label, value, onChange, rows = 3, placeholder, disabled = false }: TextAreaProps) {
+  return (
+    <div className="space-y-1.5">
+      <label htmlFor={id} className="text-sm font-medium text-gray-700">
+        {label}
+      </label>
+      <textarea
+        id={id}
+        value={value}
+        onChange={onChange}
+        rows={rows}
+        placeholder={placeholder}
+        disabled={disabled}
+        className={`w-full px-3 py-2.5 border-2 rounded-lg text-sm focus:outline-none ${disabled ? "opacity-60 cursor-not-allowed" : "focus:border-black border-gray-200"
+          }`}
+      />
+    </div>
+  );
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+// INLINE: ContractSidebar.tsx (single-file drop-in)
+// ───────────────────────────────────────────────────────────────────────────────
+function ContractSidebar({
+  isOpen,
+  onClose,
+  children,
+  title = "Initiate Contract",
+  subtitle = "New Agreement",
+  previewUrl, // Add previewUrl to load the contract preview
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  children: React.ReactNode;
+  title?: string;
+  subtitle?: string;
+  previewUrl?: string; // URL of the preview file (PDF, etc.)
+}) {
+  return (
+    <div className={`fixed inset-0 z-50 ${isOpen ? "" : "pointer-events-none"}`}>
+      {/* Backdrop */}
+      <div
+        className={`absolute inset-0 bg-black/50 backdrop-blur-[2px] transition-opacity duration-300 ${isOpen ? "opacity-100" : "opacity-0"
+          }`}
+        onClick={onClose}
+      />
+
+      {/* Panel */}
+      <div
+        className={`absolute right-0 top-0 h-full w-full bg-white shadow-2xl transform transition-transform duration-300 ease-out ${isOpen ? "translate-x-0" : "translate-x-full"
+          }`}
+      >
+        {/* Header */}
+        <div className="relative h-36 overflow-hidden">
+          <div
+            className="absolute inset-0 opacity-10"
+            style={{
+              backgroundImage: `linear-gradient(135deg, ${GRADIENT_FROM} 0%, ${GRADIENT_TO} 100%)`,
+              clipPath: "polygon(0 0, 100% 0, 100% 65%, 0 100%)",
+            }}
+          />
+          <div
+            className="absolute inset-0"
+            style={{
+              background: `linear-gradient(135deg, ${GRADIENT_FROM} 0%, ${GRADIENT_TO} 100%)`,
+              clipPath: "polygon(0 0, 100% 0, 100% 78%, 0 92%)",
+            }}
+          />
+
+          <div className="relative z-10 p-6 text-white flex items-start justify-between h-full">
+            <div className="flex items-start gap-4">
+              <div className="w-12 h-12 rounded-2xl bg-white/15 backdrop-blur-md flex items-center justify-center mt-1 shadow-sm">
+                <HiDocumentText className="w-6 h-6 text-white" />
+              </div>
+              <div>
+                <div className="text-[11px] tracking-wide font-semibold uppercase/relaxed opacity-95 mb-1">{title}</div>
+                <div className="text-2xl font-extrabold leading-tight">{subtitle}</div>
+              </div>
+            </div>
+
+            <button
+              className="w-10 h-10 rounded-full bg-white/15 hover:bg-white/25 backdrop-blur-sm flex items-center justify-center transition-all duration-150 hover:scale-110"
+              onClick={onClose}
+              aria-label="Close"
+              title="Close"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+
+        {/* Body with two sections */}
+        <div className="flex h-[calc(100%-9rem)]">
+          {/* Left side: Preview of the contract */}
+          {previewUrl && (
+            <div className="w-1/2 p-6 overflow-auto">
+              <iframe
+                src={previewUrl}
+                width="100%"
+                height="100%"
+                className="border-0"
+                title="Contract Preview"
+              />
+            </div>
+          )}
+
+          {/* Right side: Form for sending/editing contract */}
+          <div className="w-full sm:w-1/2 h-full px-6 space-y-5 overflow-auto">
+            {children}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SidebarSection({ title, children, icon }: { title: string; children: React.ReactNode; icon?: React.ReactNode }) {
+  return (
+    <div className="bg-gradient-to-br from-white to-gray-50 rounded-xl border border-gray-100 shadow-sm p-5 transition-all duration-200 hover:shadow-md">
+      <div className="flex items-center gap-2 mb-4 pb-3 border-b border-gray-100">
+        {icon && (
+          <div className="w-8 h-8 rounded-lg bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white flex items-center justify-center">
+            {icon}
+          </div>
+        )}
+        <div className="font-semibold text-gray-800">{title}</div>
+      </div>
+      {children}
+    </div>
+  );
+}

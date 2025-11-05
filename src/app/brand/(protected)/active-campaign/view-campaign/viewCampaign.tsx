@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 import {
   HiOutlinePhotograph,
   HiOutlineCalendar,
@@ -18,24 +18,37 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
-import { useRouter } from "next/navigation";
+
+interface AudienceLocation {
+  countryId: string;
+  countryName: string;
+  _id?: string;
+}
+
+interface CategoryItem {
+  categoryId: string;      // ObjectId (string)
+  categoryName: string;
+  subcategoryId: string;   // UUID/string
+  subcategoryName: string;
+}
 
 interface CampaignData {
   _id: string;
   productOrServiceName: string;
   description: string;
-  images: string[];
+  images?: string[];
   targetAudience: {
     age: { MinAge: number; MaxAge: number };
-    gender: number;
-    location: string;
+    gender: number; // 0=Female, 1=Male, 2=All
+    locations?: AudienceLocation[];
   };
-  interestId: { _id: string; name: string }[];
+  // ✨ categories replaces interestId
+  categories?: CategoryItem[];
   goal: string;
   budget: number;
-  timeline: { startDate: string; endDate: string };
+  timeline: { startDate?: string; endDate?: string };
   creativeBriefText?: string;
-  creativeBrief: string[];
+  creativeBrief?: string[];
   additionalNotes?: string;
   isActive: number;
   createdAt: string;
@@ -85,33 +98,29 @@ export default function ViewCampaignPage() {
   }
 
   const c = campaign;
-  const interests = c.interestId.map(i => i.name).join(", ");
 
   return (
     <div className="min-h-full p-8 space-y-8">
-<header className="flex items-center justify-between p-4 rounded-md">
-      <h1 className="text-3xl font-bold text-gray-800">
-        Campaign Details
-      </h1>
-
-      <div className="flex items-center space-x-2">
-        <Button
-          size="sm"
-          variant="outline"
-          className="bg-white text-gray-800 hover:bg-gray-100"
-          onClick={() => router.back()}
-        >
-          Back
-        </Button>
-      </div>
-    </header>
-
+      <header className="flex items-center justify-between p-4 rounded-md">
+        <h1 className="text-3xl font-bold text-gray-800">Campaign Details</h1>
+        <div className="flex items-center space-x-2">
+          <Button
+            size="sm"
+            variant="outline"
+            className="bg-white text-gray-800 hover:bg-gray-100"
+            onClick={() => router.back()}
+          >
+            Back
+          </Button>
+        </div>
+      </header>
 
       {/* Product Info */}
       <Card className="bg-white">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-xl font-medium">
-            <HiOutlinePhotograph className="h-6 w-6 text-orange-500" /> Detailed view of <span className="font-">{c.productOrServiceName}</span>
+            <HiOutlinePhotograph className="h-6 w-6 text-orange-500" />
+            Detailed view of <span className="font-">{c.productOrServiceName}</span>
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -124,7 +133,7 @@ export default function ViewCampaignPage() {
               <p className="text-sm font-medium text-gray-600">Description</p>
               <p className="mt-1 whitespace-pre-wrap text-gray-800">{c.description}</p>
             </div>
-            {c.images?.length > 0 && (
+            {Array.isArray(c.images) && c.images.length > 0 && (
               <div className="md:col-span-3">
                 <p className="text-sm font-medium text-gray-600">Images</p>
                 <div className="mt-2 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
@@ -152,27 +161,55 @@ export default function ViewCampaignPage() {
             <div>
               <p className="text-sm font-medium text-gray-600">Age</p>
               <p className="mt-1 text-gray-800">
-                {c.targetAudience.age.MinAge}–{c.targetAudience.age.MaxAge}
+                {c.targetAudience?.age?.MinAge ?? 0}–{c.targetAudience?.age?.MaxAge ?? 0}
               </p>
             </div>
             <div>
               <p className="text-sm font-medium text-gray-600">Gender</p>
               <p className="mt-1 text-gray-800">
-                {c.targetAudience.gender === 0 ? "Female" : c.targetAudience.gender === 1 ? "Male" : "All"}
+                {c.targetAudience?.gender === 0
+                  ? "Female"
+                  : c.targetAudience?.gender === 1
+                  ? "Male"
+                  : "All"}
               </p>
             </div>
-            <div>
-              <p className="text-sm font-medium text-gray-600">Location</p>
-              <p className="mt-1 text-gray-800">{c.targetAudience.location}</p>
-            </div>
             <div className="md:col-span-3">
-              <p className="text-sm font-medium text-gray-600">Interests</p>
+              <p className="text-sm font-medium text-gray-600">Locations</p>
+              <div className="mt-1 flex flex-wrap gap-2">
+                {(c.targetAudience?.locations ?? []).length > 0 ? (
+                  (c.targetAudience?.locations ?? []).map((loc) => (
+                    <Badge
+                      key={loc.countryId}
+                      variant="outline"
+                      className="bg-orange-50 text-orange-700"
+                    >
+                      {loc.countryName}
+                    </Badge>
+                  ))
+                ) : (
+                  <span className="text-gray-700">—</span>
+                )}
+              </div>
+            </div>
+
+            {/* Categories */}
+            <div className="md:col-span-3">
+              <p className="text-sm font-medium text-gray-600">Categories</p>
               <div className="mt-2 flex flex-wrap gap-2">
-                {c.interestId.map(i => (
-                  <Badge key={i._id} variant="outline" className="bg-orange-50 text-orange-700">
-                    {i.name}
-                  </Badge>
-                ))}
+                {(c.categories ?? []).length > 0 ? (
+                  (c.categories ?? []).map((cat, idx) => (
+                    <Badge
+                      key={`${cat.subcategoryId}-${idx}`}
+                      variant="outline"
+                      className="bg-orange-50 text-orange-700"
+                    >
+                      {cat.categoryName} • {cat.subcategoryName}
+                    </Badge>
+                  ))
+                ) : (
+                  <span className="text-gray-700">—</span>
+                )}
               </div>
             </div>
           </div>
@@ -194,26 +231,34 @@ export default function ViewCampaignPage() {
             </div>
             <div>
               <p className="text-sm font-medium text-gray-600">Budget</p>
-              <p className="mt-1 text-gray-800">${c.budget.toLocaleString()}</p>
+              <p className="mt-1 text-gray-800">${Number(c.budget || 0).toLocaleString()}</p>
             </div>
-            <div className="flex items-center gap-3">
-              <Tooltip>
-                <TooltipTrigger>
-                  <HiOutlineCalendar className="h-5 w-5 text-gray-500" />
-                </TooltipTrigger>
-                <TooltipContent>Start Date</TooltipContent>
-              </Tooltip>
-              <p className="text-gray-800">{new Date(c.timeline.startDate).toLocaleDateString()}</p>
-            </div>
-            <div className="flex items-center gap-3">
-              <Tooltip>
-                <TooltipTrigger>
-                  <HiOutlineCalendar className="h-5 w-5 text-gray-500" />
-                </TooltipTrigger>
-                <TooltipContent>End Date</TooltipContent>
-              </Tooltip>
-              <p className="text-gray-800">{new Date(c.timeline.endDate).toLocaleDateString()}</p>
-            </div>
+            {c.timeline?.startDate && (
+              <div className="flex items-center gap-3">
+                <Tooltip>
+                  <TooltipTrigger>
+                    <HiOutlineCalendar className="h-5 w-5 text-gray-500" />
+                  </TooltipTrigger>
+                  <TooltipContent>Start Date</TooltipContent>
+                </Tooltip>
+                <p className="text-gray-800">
+                  {new Date(c.timeline.startDate).toLocaleDateString()}
+                </p>
+              </div>
+            )}
+            {c.timeline?.endDate && (
+              <div className="flex items-center gap-3">
+                <Tooltip>
+                  <TooltipTrigger>
+                    <HiOutlineCalendar className="h-5 w-5 text-gray-500" />
+                  </TooltipTrigger>
+                  <TooltipContent>End Date</TooltipContent>
+                </Tooltip>
+                <p className="text-gray-800">
+                  {new Date(c.timeline.endDate).toLocaleDateString()}
+                </p>
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -232,7 +277,7 @@ export default function ViewCampaignPage() {
               <p className="whitespace-pre-wrap text-gray-800">{c.creativeBriefText}</p>
             </div>
           )}
-          {c.creativeBrief.length > 0 && (
+          {Array.isArray(c.creativeBrief) && c.creativeBrief.length > 0 && (
             <div>
               <p className="text-sm font-medium text-gray-600">Files</p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
