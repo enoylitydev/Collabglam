@@ -5,7 +5,6 @@ import { useParams, useRouter } from "next/navigation";
 import { get, post } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Badge } from "@/components/ui/badge";
 
 type Comment = {
   commentId: string;
@@ -19,7 +18,6 @@ type Dispute = {
   disputeId: string;
   subject: string;
   description: string;
-  priority: "low" | "medium" | "high";
   status: "open" | "in_review" | "awaiting_user" | "resolved" | "rejected";
   campaignId?: string | null;
   brandId: string;
@@ -104,7 +102,6 @@ export default function BrandDisputeDetailPage() {
               )}
             </div>
             <div className="flex items-center gap-2">
-              <Badge variant={d.priority === "high" ? "destructive" : d.priority === "low" ? "secondary" : "default"}>{d.priority}</Badge>
               <span className={`px-2 py-1 rounded text-xs font-medium ${statusTone(d.status)}`}>{d.status.replace("_", " ")}</span>
             </div>
           </div>

@@ -25,7 +25,25 @@ const api2 = axios.create({
 // Attach auth token to both clients
 const attachAuth = (config: any) => {
   if (typeof window !== 'undefined') {
-    const token = localStorage.getItem('token')
+    const path = window.location?.pathname || ''
+    let token: string | null = null
+
+    // Role-scoped tokens
+    if (path.startsWith('/brand')) {
+      token = localStorage.getItem('brand_token')
+    } else if (path.startsWith('/influencer')) {
+      token = localStorage.getItem('influencer_token')
+    } else if (path.startsWith('/admin')) {
+      token = localStorage.getItem('admin_token')
+    }
+
+    // Fallbacks for non-role pages or legacy storage
+    if (!token) token = localStorage.getItem('brand_token')
+    if (!token) token = localStorage.getItem('influencer_token')
+    if (!token) token = localStorage.getItem('admin_token')
+    // Final legacy fallback (compat)
+    if (!token) token = localStorage.getItem('token')
+
     if (token) {
       config.headers!['Authorization'] = `Bearer ${token}`
     }

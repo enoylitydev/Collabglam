@@ -29,7 +29,10 @@ export default function AdminLoginPage() {
         "/admin/login",
         { email, password }
       );
-      localStorage.setItem("token", data.token);
+      // Use role-scoped token storage for admin
+      localStorage.setItem("admin_token", data.token);
+      // Clear any legacy generic token to avoid cross-role mixups
+      localStorage.removeItem("token");
       localStorage.setItem("adminId", data.admin.adminId);
       localStorage.setItem("userType", "admin");
       localStorage.setItem("userEmail", data.admin.email || email);

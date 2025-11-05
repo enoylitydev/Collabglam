@@ -16,7 +16,6 @@ export default function NewBrandDisputePage() {
   const [influencerId, setInfluencerId] = useState("");
   const [subject, setSubject] = useState("");
   const [description, setDescription] = useState("");
-  const [priority, setPriority] = useState("medium");
   const [relatedType, setRelatedType] = useState("other");
   const [relatedId, setRelatedId] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -46,7 +45,6 @@ export default function NewBrandDisputePage() {
         influencerId,
         subject,
         description,
-        priority,
         related: { type: relatedType as any, id: relatedId || undefined },
       };
       await post("/dispute/create", body);
@@ -81,25 +79,12 @@ export default function NewBrandDisputePage() {
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm font-medium mb-1">Priority</label>
-            <Select value={priority} onValueChange={(v) => setPriority(v)}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="low">Low</SelectItem>
-                <SelectItem value="medium">Medium</SelectItem>
-                <SelectItem value="high">High</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div>
             <label className="block text-sm font-medium mb-1">Related Type</label>
             <Select value={relatedType} onValueChange={(v) => setRelatedType(v)}>
-              <SelectTrigger>
+              <SelectTrigger className="!bg-white">
                 <SelectValue />
               </SelectTrigger>
-              <SelectContent>
+              <SelectContent className="!bg-white">
                 <SelectItem value="other">Other</SelectItem>
                 <SelectItem value="contract">Contract</SelectItem>
                 <SelectItem value="milestone">Milestone</SelectItem>
@@ -116,7 +101,13 @@ export default function NewBrandDisputePage() {
         )}
         <div className="flex gap-3 justify-end">
           <Button variant="outline" onClick={() => router.back()} disabled={submitting}>Cancel</Button>
-          <Button onClick={submit} disabled={submitting}>Create Dispute</Button>
+          <Button
+            className="bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white"
+            onClick={submit}
+            disabled={submitting}
+          >
+            Create Dispute
+          </Button>
         </div>
       </div>
     </div>

@@ -5,7 +5,8 @@ import { post } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
+import { useRouter } from "next/navigation";
 
 type Comment = {
   commentId: string;
@@ -19,11 +20,12 @@ type Dispute = {
   disputeId: string;
   subject: string;
   description?: string;
-  priority: "low" | "medium" | "high";
   status: "open" | "in_review" | "awaiting_user" | "resolved" | "rejected";
   campaignId: string;
   brandId: string;
   influencerId: string;
+  brandName?: string | null;
+  influencerName?: string | null;
   assignedTo?: { adminId?: string | null; name?: string | null } | null;
   comments?: Comment[];
   createdAt: string;
@@ -48,21 +50,17 @@ const statusOptions = [
 ];
 
 export default function AdminDisputesPage() {
+  const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [rows, setRows] = useState<Dispute[]>([]);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [status, setStatus] = useState<string>("");
-  const [search, setSearch] = useState<string>("");
-  const [expanded, setExpanded] = useState<string | null>(null);
-
-  const [pendingStatus, setPendingStatus] = useState<Record<string, Dispute["status"]>>({});
-  const [resolutionNote, setResolutionNote] = useState<Record<string, string>>({});
-  const truncate = (s?: string, n: number = 140) => {
-    const v = s || '';
-    return v.length > n ? v.slice(0, n) + '…' : (v || '—');
-  };
+  const [appliedBy, setAppliedBy] = useState<string>("all");
+  const [searchInput, setSearchInput] = useState<string>("");
+  const [appliedSearch, setAppliedSearch] = useState<string>("");
+  // List page shows summary only; details and actions move to detail page
 
   const load = async () => {
     setLoading(true);
@@ -70,7 +68,8 @@ export default function AdminDisputesPage() {
     try {
       const body: any = { page, limit: 10 };
       if (status && status !== "all") body.status = status;
-      if (search.trim()) body.search = search.trim();
+      if (appliedSearch.trim()) body.search = appliedSearch.trim();
+      if (appliedBy && appliedBy !== "all") body.appliedBy = appliedBy;
       const data = await post<ListResp>("/dispute/admin/list", body);
       setRows(data.disputes || []);
       setTotalPages(data.totalPages || 1);
@@ -84,27 +83,9 @@ export default function AdminDisputesPage() {
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page]);
+  }, [page, status, appliedBy, appliedSearch]);
 
-  const assignToMe = async (disputeId: string) => {
-    try {
-      await post("/dispute/admin/assign", { disputeId });
-      await load();
-    } catch (e) {}
-  };
-
-  const updateStatus = async (disputeId: string) => {
-    try {
-      const s = pendingStatus[disputeId];
-      if (!s) return;
-      await post("/dispute/admin/update-status", {
-        disputeId,
-        status: s,
-        resolution: resolutionNote[disputeId] || undefined,
-      });
-      await load();
-    } catch (e) {}
-  };
+  // (removed client-side brand/influencer filters)
 
   const StatusBadge = ({ s }: { s: Dispute["status"] }) => {
     const tone = {
@@ -124,23 +105,62 @@ export default function AdminDisputesPage() {
       </div>
       <div className="flex gap-3 mb-4">
         <div className="w-48">
-          <Select value={status} onValueChange={(v) => setStatus(v)}>
-            <SelectTrigger>
+          <Select value={status} onValueChange={(v) => { setStatus(v); setPage(1); }}>
+            <SelectTrigger className="!bg-white">
               <SelectValue placeholder="Status" />
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent className="!bg-white">
               {statusOptions.map((o) => (
                 <SelectItem key={o.value || "all"} value={o.value}>{o.label}</SelectItem>
               ))}
             </SelectContent>
           </Select>
         </div>
+        <div className="flex items-center gap-3 px-3 py-2 border rounded !bg-white">
+          <span className="text-sm text-gray-700">Applied</span>
+          {(() => {
+            const brandChecked = appliedBy === 'Brand' || appliedBy === 'all';
+            const influencerChecked = appliedBy === 'Influencer' || appliedBy === 'all';
+            const nextFrom = (b: boolean, i: boolean) => (b && i) || (!b && !i) ? 'all' : (b ? 'Brand' : 'Influencer');
+            return (
+              <>
+                <label className="flex items-center gap-2 text-sm">
+                  <Checkbox
+                    checked={brandChecked}
+                    onCheckedChange={(val) => {
+                      const b = Boolean(val);
+                      const i = influencerChecked;
+                      setAppliedBy(nextFrom(b, i));
+                      setPage(1);
+                    }}
+                  />
+                  Brand
+                </label>
+                <label className="flex items-center gap-2 text-sm">
+                  <Checkbox
+                    checked={influencerChecked}
+                    onCheckedChange={(val) => {
+                      const b = brandChecked;
+                      const i = Boolean(val);
+                      setAppliedBy(nextFrom(b, i));
+                      setPage(1);
+                    }}
+                  />
+                  Influencer
+                </label>
+              </>
+            );
+          })()}
+        </div>
         <Input
           placeholder="Search subject/description"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          value={searchInput}
+          onChange={(e) => setSearchInput(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') { setPage(1); setAppliedSearch(searchInput); }
+          }}
         />
-        <Button onClick={() => { setPage(1); load(); }}>Search</Button>
+        <Button onClick={() => { setPage(1); setAppliedSearch(searchInput); }}>Search</Button>
       </div>
 
       {loading ? (
@@ -156,90 +176,24 @@ export default function AdminDisputesPage() {
               <tr>
                 <th className="text-left p-3">Subject</th>
                 <th className="text-left p-3">Campaign</th>
-                <th className="text-left p-3">Description</th>
                 <th className="text-left p-3">Brand</th>
                 <th className="text-left p-3">Influencer</th>
-                <th className="text-left p-3">Priority</th>
                 <th className="text-left p-3">Status</th>
-                <th className="text-left p-3">Assigned</th>
-                <th className="text-left p-3">Actions</th>
               </tr>
             </thead>
             <tbody>
               {rows.map((d) => (
-                <>
-                  <tr key={d.disputeId} className="border-t align-top">
-                    <td className="p-3 font-medium">{d.subject}</td>
-                    <td className="p-3 font-mono text-xs">{d.campaignId || '—'}</td>
-                    <td className="p-3 text-gray-700">{truncate(d.description, 160)}</td>
-                    <td className="p-3 font-mono text-xs">{d.brandId}</td>
-                    <td className="p-3 font-mono text-xs">{d.influencerId}</td>
-                    <td className="p-3">
-                      <Badge variant={d.priority === "high" ? "destructive" : d.priority === "low" ? "secondary" : "default"}>
-                        {d.priority}
-                      </Badge>
-                    </td>
-                    <td className="p-3"><StatusBadge s={d.status} /></td>
-                    <td className="p-3">{d.assignedTo?.name || d.assignedTo?.adminId || <span className="text-gray-400">—</span>}</td>
-                    <td className="p-3 w-[340px]">
-                      <div className="flex flex-col gap-2">
-                        <div className="flex gap-2 flex-wrap">
-                          <Button size="sm" variant="outline" onClick={() => assignToMe(d.disputeId)}>Assign to me</Button>
-                          <div className="w-44">
-                            <Select value={pendingStatus[d.disputeId] || ""} onValueChange={(v) => setPendingStatus((s) => ({ ...s, [d.disputeId]: v as Dispute["status"] }))}>
-                              <SelectTrigger>
-                                <SelectValue placeholder="Set status" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {statusOptions.filter(o => o.value !== "all").map((o) => (
-                                  <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          </div>
-                          <Button size="sm" onClick={() => updateStatus(d.disputeId)}>Update</Button>
-                          <Button size="sm" variant="link" onClick={() => setExpanded(expanded === d.disputeId ? null : d.disputeId)}>
-                            {expanded === d.disputeId ? 'Hide details' : 'Details'}
-                          </Button>
-                        </div>
-                        <Input
-                          placeholder="Resolution note (optional)"
-                          value={resolutionNote[d.disputeId] || ""}
-                          onChange={(e) => setResolutionNote((r) => ({ ...r, [d.disputeId]: e.target.value }))}
-                        />
-                      </div>
-                    </td>
-                  </tr>
-                  {expanded === d.disputeId && (
-                    <tr>
-                      <td colSpan={9} className="bg-gray-50 p-4">
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                          <div className="md:col-span-1">
-                            <h3 className="font-semibold mb-2">Description</h3>
-                            <p className="text-gray-800 whitespace-pre-wrap">{d.description || '—'}</p>
-                          </div>
-                          <div className="md:col-span-2">
-                            <h3 className="font-semibold mb-2">Comments</h3>
-                            {d.comments && d.comments.length > 0 ? (
-                              <ul className="space-y-3">
-                                {d.comments.map(c => (
-                                  <li key={c.commentId} className="p-3 rounded border bg-white">
-                                    <div className="text-xs text-gray-600 mb-1">
-                                      <span className="font-medium">{c.authorRole}</span> • {new Date(c.createdAt).toLocaleString()}
-                                    </div>
-                                    <div className="text-gray-900 whitespace-pre-wrap">{c.text}</div>
-                                  </li>
-                                ))}
-                              </ul>
-                            ) : (
-                              <p className="text-gray-600">No comments yet.</p>
-                            )}
-                          </div>
-                        </div>
-                      </td>
-                    </tr>
-                  )}
-                </>
+                <tr
+                  key={d.disputeId}
+                  className="border-t align-top cursor-pointer hover:bg-gray-50"
+                  onClick={() => router.push(`/admin/disputes/${d.disputeId}`)}
+                >
+                  <td className="p-3 font-medium">{d.subject}</td>
+                  <td className="p-3 font-mono text-xs">{d.campaignId || '—'}</td>
+                  <td className="p-3">{d.brandName || <span className="font-mono text-xs">{d.brandId}</span>}</td>
+                  <td className="p-3">{d.influencerName || <span className="font-mono text-xs">{d.influencerId}</span>}</td>
+                  <td className="p-3"><StatusBadge s={d.status} /></td>
+                </tr>
               ))}
             </tbody>
           </table>

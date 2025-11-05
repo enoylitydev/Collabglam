@@ -47,6 +47,8 @@ export default function BrandSidebar({ isOpen, onClose }: BrandSidebarProps) {
   const router = useRouter();
 
   const handleLogout = () => {
+    // Remove role-scoped and legacy tokens
+    localStorage.removeItem('brand_token');
     localStorage.removeItem('token');
     router.push('/');
   };

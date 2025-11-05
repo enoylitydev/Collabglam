@@ -76,6 +76,8 @@ export default function InfluencerSidebar({ isOpen, onClose }: InfluencerSidebar
   };
 
   const handleLogout = () => {
+    // Remove role-scoped and legacy tokens
+    localStorage.removeItem("influencer_token");
     localStorage.removeItem("token");
     router.push("/");
   };

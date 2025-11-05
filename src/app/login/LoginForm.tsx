@@ -38,7 +38,10 @@ export function LoginForm({ role, onForgotPassword, onSuccess }: LoginFormProps)
           '/brand/login',
           { email: formData.email, password: formData.password }
         );
-        localStorage.setItem('token', data.token);
+        // Use role-scoped token storage
+        localStorage.setItem('brand_token', data.token);
+        // Clear any legacy generic token to avoid cross-role mixups
+        localStorage.removeItem('token');
         localStorage.setItem('brandId', data.brandId);
         localStorage.setItem('userType', 'brand');
         localStorage.setItem('userEmail', formData.email);
@@ -49,7 +52,10 @@ export function LoginForm({ role, onForgotPassword, onSuccess }: LoginFormProps)
           '/influencer/login',
           { email: formData.email, password: formData.password }
         );
-        localStorage.setItem('token', data.token);
+        // Use role-scoped token storage
+        localStorage.setItem('influencer_token', data.token);
+        // Clear any legacy generic token to avoid cross-role mixups
+        localStorage.removeItem('token');
         localStorage.setItem('influencerId', data.influencerId);
         localStorage.setItem('categoryId', data.categoryId);
         localStorage.setItem('userType', 'influencer');

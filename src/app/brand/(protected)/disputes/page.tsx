@@ -7,13 +7,11 @@ import { post } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Badge } from "@/components/ui/badge";
 
 type Dispute = {
   disputeId: string;
   subject: string;
   description?: string;
-  priority: "low" | "medium" | "high";
   status: "open" | "in_review" | "awaiting_user" | "resolved" | "rejected";
   campaignId?: string | null;
   brandId: string;
@@ -48,7 +46,8 @@ export default function BrandDisputesPage() {
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [status, setStatus] = useState<string>("all");
-  const [search, setSearch] = useState<string>("");
+  const [searchInput, setSearchInput] = useState<string>("");
+  const [appliedSearch, setAppliedSearch] = useState<string>("");
 
   const load = async () => {
     setLoading(true);
@@ -56,7 +55,7 @@ export default function BrandDisputesPage() {
     try {
       const body: any = { page, limit: 10 };
       if (status && status !== "all") body.status = status;
-      if (search.trim()) body.search = search.trim();
+      if (appliedSearch.trim()) body.search = appliedSearch.trim();
       const data = await post<ListResp>("/dispute/my", body);
       setRows(data.disputes || []);
       setTotalPages(data.totalPages || 1);
@@ -67,10 +66,21 @@ export default function BrandDisputesPage() {
     }
   };
 
+  // Guard: ensure userType is brand
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const userType = localStorage.getItem('userType');
+      if (userType !== 'brand') {
+        router.replace('/login');
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page]);
+  }, [page, status, appliedSearch]);
 
   const StatusBadge = ({ s }: { s: Dispute["status"] }) => {
     const tone = {
@@ -87,28 +97,42 @@ export default function BrandDisputesPage() {
     <div className="p-6 max-w-6xl mx-auto">
       <div className="flex items-center justify-between mb-4">
         <h1 className="text-2xl font-semibold">Disputes</h1>
-        <Button onClick={() => router.push("/brand/disputes/new")}>New Dispute</Button>
+        <Button
+          className="bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white"
+          onClick={() => router.push("/brand/disputes/new")}
+        >
+          New Dispute
+        </Button>
       </div>
 
       <div className="flex gap-3 mb-4">
         <div className="w-48">
-          <Select value={status} onValueChange={(v) => setStatus(v)}>
-            <SelectTrigger>
+          <Select value={status} onValueChange={(v) => { setStatus(v); setPage(1); }}>
+            <SelectTrigger className="!bg-white">
               <SelectValue placeholder="Status" />
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent className="!bg-white">
               {statusOptions.map((o) => (
                 <SelectItem key={o.value || "all"} value={o.value}>{o.label}</SelectItem>
               ))}
             </SelectContent>
           </Select>
         </div>
+        {/* Removed 'Applied by' filter for brand view */}
         <Input
           placeholder="Search subject/description"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          value={searchInput}
+          onChange={(e) => setSearchInput(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') { setPage(1); setAppliedSearch(searchInput); }
+          }}
         />
-        <Button onClick={() => { setPage(1); load(); }}>Search</Button>
+        <Button
+          className="bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white"
+          onClick={() => { setPage(1); setAppliedSearch(searchInput); }}
+        >
+          Search
+        </Button>
       </div>
 
       {loading ? (
@@ -124,7 +148,6 @@ export default function BrandDisputesPage() {
               <tr>
                 <th className="text-left p-3">Subject</th>
                 <th className="text-left p-3">Campaign</th>
-                <th className="text-left p-3">Priority</th>
                 <th className="text-left p-3">Status</th>
                 <th className="text-left p-3">Updated</th>
                 <th className="text-left p-3"></th>
@@ -135,11 +158,6 @@ export default function BrandDisputesPage() {
                 <tr key={d.disputeId} className="border-t">
                   <td className="p-3 font-medium">{d.subject}</td>
                   <td className="p-3 font-mono text-xs">{d.campaignId || '—'}</td>
-                  <td className="p-3">
-                    <Badge variant={d.priority === "high" ? "destructive" : d.priority === "low" ? "secondary" : "default"}>
-                      {d.priority}
-                    </Badge>
-                  </td>
                   <td className="p-3">
                     <StatusBadge s={d.status} />
                   </td>
