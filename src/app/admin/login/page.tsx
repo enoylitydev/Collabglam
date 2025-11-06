@@ -4,18 +4,12 @@
 import { useState } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import {
-  Card,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-  CardContent,
-  CardFooter,
-} from "@/components/ui/card";
+import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { HiEye, HiEyeSlash } from "react-icons/hi2";
+import { post } from "@/lib/api";
 
 export default function AdminLoginPage() {
   const [email, setEmail] = useState("");
@@ -30,18 +24,21 @@ export default function AdminLoginPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/admin/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
-      });
-      if (!res.ok) {
-        const { message } = await res.json();
-        throw new Error(message || "Invalid credentials");
-      }
+      // Call backend and store JWT in localStorage like other roles
+      const data = await post<{ token: string; admin: { adminId: string; email: string } }>(
+        "/admin/login",
+        { email, password }
+      );
+      // Use role-scoped token storage for admin
+      localStorage.setItem("admin_token", data.token);
+      // Clear any legacy generic token to avoid cross-role mixups
+      localStorage.removeItem("token");
+      localStorage.setItem("adminId", data.admin.adminId);
+      localStorage.setItem("userType", "admin");
+      localStorage.setItem("userEmail", data.admin.email || email);
       router.replace("/admin");
     } catch (err: any) {
-      setError(err.message);
+      setError(err?.response?.data?.message || err?.message || "Invalid credentials");
     } finally {
       setLoading(false);
     }

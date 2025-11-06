@@ -835,7 +835,11 @@ export default function BrandProfilePage() {
                         setBrand((b) => (b ? { ...b, email: newEmail } : b));
                         setForm((f) => (f ? { ...f, email: newEmail } : f));
                         setEmailFlow("verified");
-                        if (token) localStorage.setItem("token", token);
+                        if (token) {
+                          // Maintain role-scoped token for brand
+                          localStorage.setItem("brand_token", token);
+                          localStorage.removeItem("token");
+                        }
                       }}
                       onStateChange={setEmailFlow}
                     />
