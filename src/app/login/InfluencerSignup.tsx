@@ -4,6 +4,7 @@ import { FloatingLabelInput } from '@/components/common/FloatingLabelInput';
 import { Button } from './Button';
 import { ProgressIndicator } from './ProgressIndicator';
 import Select, { GroupBase, MultiValue, SingleValue } from 'react-select';
+import { rsStyles, rsTheme } from '../styles/reactSelectStyles'
 import type { Country } from './types';
 import { get, post } from '@/lib/api';
 import { useRouter } from 'next/navigation';
@@ -51,39 +52,7 @@ const genders = ['Female', 'Male', 'Non-binary', 'Prefer not to say'];
 // flip to true if you want to allow proceeding without Modash payload
 const ALLOW_SELF_REPORT_FALLBACK = false;
 
-// Reusable react-select theme configured to Tailwind amber accents
-const rsTheme = (theme: any) => ({
-  ...theme,
-  colors: {
-    ...theme.colors,
-    primary: '#f59e0b',
-    primary25: '#fef3c7',
-    primary50: '#fde68a',
-    neutral20: '#d1d5db',
-    neutral30: '#f59e0b',
-  },
-});
-
-// Reusable react-select styles (mobile-first, accessible focus)
-const rsStyles = {
-  control: (base: any, state: any) => ({
-    ...base,
-    minHeight: 44,
-    borderWidth: 2,
-    borderColor: state.isFocused ? '#f59e0b' : '#d1d5db',
-    boxShadow: 'none',
-    ':hover': { borderColor: '#f59e0b' },
-    backgroundColor: '#F9FAFB', // gray-50
-  }),
-  multiValue: (base: any) => ({ ...base, backgroundColor: '#FEF3C7' }), // amber-100
-  multiValueLabel: (base: any) => ({ ...base, color: '#92400e' }), // amber-800
-  multiValueRemove: (base: any) => ({
-    ...base,
-    color: '#f59e0b',
-    ':hover': { backgroundColor: '#FDE68A', color: '#92400e' },
-  }),
-  menu: (base: any) => ({ ...base, zIndex: 40 }),
-} as const;
+// Reusable react-select theme and styles are imported from '../styles/reactSelectStyles' and used directly.
 
 // =========================
 // Component
@@ -267,7 +236,7 @@ export default function InfluencerSignup({ onSuccess, onStepChange }: { onSucces
   // ===== Step 1 — Basic + Email (auto-send OTP on continue)
   const completeBasicDetails = () => {
     setShowBasicHints(false);
-    if (!formData.fullName || !formData.email || !formData.countryId || !formData.gender) {
+    if (!formData.fullName || !formData.email || !formData.countryId) {
       setShowBasicHints(true);
       // Do not show generic banner error; rely on inline hints
       setError('');
@@ -347,6 +316,7 @@ export default function InfluencerSignup({ onSuccess, onStepChange }: { onSucces
       await post('/influencer/verify-otp', { email: formData.email, role: 'Influencer', otp: formData.otp });
       setOtpVerified(true);
       setError('');
+      setStep('platform');
     } catch (err: any) {
       setError(err?.response?.data?.message || err?.message || 'Invalid or expired OTP');
     } finally {
@@ -354,40 +324,6 @@ export default function InfluencerSignup({ onSuccess, onStepChange }: { onSucces
     }
   };
 
-  const handleChangeEmail = () => {
-    setStep('basic');
-    setOtpSent(false);
-    setOtpVerified(false);
-    setResendIn(0);
-    setFormData((prev) => ({ ...prev, otp: '' }));
-    setShowVerifyOtpHint(false);
-  };
-
-  const proceedToPlatform = () => {
-    setShowPwdHints(true);
-    if (!otpVerified) {
-      setError('Please verify your email first');
-      return;
-    }
-    if (!formData.password || !formData.confirmPassword) {
-      setError('Please enter your password');
-      return;
-    }
-    if (formData.password.length < 8) {
-      setError('Password must be at least 8 characters long');
-      return;
-    }
-    if (formData.password !== formData.confirmPassword) {
-      setError('Passwords do not match');
-      return;
-    }
-    if (!formData.agreedToTerms) {
-      setError('Please agree to the Terms & Privacy Policy');
-      return;
-    }
-    setError('');
-    setStep('platform');
-  };
 
   // ===== Multi-platform helpers
   const urlByPlatform = (p: Provider, h: string) => {
@@ -416,7 +352,7 @@ export default function InfluencerSignup({ onSuccess, onStepChange }: { onSucces
   const setProvider = (p: Provider, patch: Partial<ProviderState>) =>
     setPlatforms((s) => ({ ...s, [p]: { ...s[p], ...patch } }));
 
-  
+
 
   const resolveProfile = async (provider: Provider) => {
     const s = platforms[provider];
@@ -613,15 +549,17 @@ export default function InfluencerSignup({ onSuccess, onStepChange }: { onSucces
     <div className="min-h-screen flex flex-col">
       {/* Header area */}
       <div className="sticky top-0 z-20 bg-white/80 backdrop-blur border-b">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl flex items-center justify-center ring-1 ring-gray-200 overflow-hidden">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex items-center justify-between gap-3 justify-center">
+          <div className="flex items-center gap-3 justify-center">
+            <div className="w-10 h-10 rounded-xl flex items-center ring-1 ring-gray-200 overflow-hidden">
               <img src='./logo.png' alt="Logo" loading="lazy" className="w-full h-full object-contain" />
             </div>
-            <div className="leading-tight">
-              <h1 className="text-base sm:text-lg font-semibold text-gray-900">Influencer Signup</h1>
-              <p className="hidden sm:block text-xs text-gray-500">Grow with brand collaborations tailored to you</p>
+            <div className="flex items-center justify-content: center">
+              <h1 className="text-base sm:text-lg font-semibold text-gray-900">
+                Influencer Signup
+              </h1>
             </div>
+
           </div>
         </div>
         <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 pb-3">
@@ -632,15 +570,6 @@ export default function InfluencerSignup({ onSuccess, onStepChange }: { onSucces
       {/* Content */}
       <main className="flex-1 w-full">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-          <div className="text-center space-y-2 mb-4">
-            <p className="text-sm text-gray-600">
-              {step === 'basic' && 'Let’s get to know you 💫'}
-              {step === 'verify' && 'Secure your account 🔐'}
-              {step === 'platform' && 'Where do you shine online? ✨'}
-              {step === 'quick' && 'Optional: A few quick questions to personalize your experience'}
-            </p>
-          </div>
-
           {error && (
             <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm mb-4" role="alert" aria-live="polite">
               {error}
@@ -650,7 +579,6 @@ export default function InfluencerSignup({ onSuccess, onStepChange }: { onSucces
           {/* STEP 1 — BASIC + EMAIL (react-select everywhere) */}
           {step === 'basic' && (
             <div className="space-y-5 animate-fadeIn">
-              <p className="text-sm text-gray-600 text-center">Just a few quick details to start your creator journey</p>
 
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="sm:col-span-2 space-y-1">
@@ -686,9 +614,9 @@ export default function InfluencerSignup({ onSuccess, onStepChange }: { onSucces
                 </div>
 
                 <div className="grid sm:grid-cols-1 gap-4">
-                    <div className="space-y-1">
-                      <div className="relative">
-                        <FloatingLabelInput
+                  <div className="space-y-1">
+                    <div className="relative">
+                      <FloatingLabelInput
                         id="inf-password"
                         label="Password"
                         type={passwordVisible ? 'text' : 'password'}
@@ -699,24 +627,24 @@ export default function InfluencerSignup({ onSuccess, onStepChange }: { onSucces
                         minLength={8}
                         autoComplete="new-password"
                         style={{ paddingRight: 40 }}
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setPasswordVisible((v) => !v)}
-                          className="absolute inset-y-0 right-3 my-auto text-gray-500 hover:text-gray-700"
-                          aria-label={passwordVisible ? 'Hide password' : 'Show password'}
-                        >
-                          {passwordVisible ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                        </button>
-                      </div>
-                      {missingPwd.password && (
-                        <p className="text-xs text-red-600">this feild is required</p>
-                      )}
-                      {showPwdHints && !!formData.password && formData.password.length < 8 && (
-                        <p className="text-xs text-red-600">Password must be at least 8 characters</p>
-                      )}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setPasswordVisible((v) => !v)}
+                        className="absolute inset-y-0 right-3 my-auto text-gray-500 hover:text-gray-700"
+                        aria-label={passwordVisible ? 'Hide password' : 'Show password'}
+                      >
+                        {passwordVisible ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                      </button>
                     </div>
+                    {missingPwd.password && (
+                      <p className="text-xs text-red-600">this feild is required</p>
+                    )}
+                    {showPwdHints && !!formData.password && formData.password.length < 8 && (
+                      <p className="text-xs text-red-600">Password must be at least 8 characters</p>
+                    )}
                   </div>
+                </div>
 
                 {/* <div className="grid sm:grid-cols-3 gap-4 sm:col-span-2">
                   <div className="sm:col-span-1 space-y-1">
@@ -763,17 +691,20 @@ export default function InfluencerSignup({ onSuccess, onStepChange }: { onSucces
                 <div className="grid sm:grid-cols-1 gap-4 ">
                   <div className="space-y-1">
                     <Select
+                      className=""
                       instanceId="gender"
                       inputId="gender"
                       options={genderOptions}
                       value={findOption(genderOptions, formData.gender)}
-                      onChange={(opt: SingleValue<Option>) => setFormData((p) => ({ ...p, gender: opt?.value || '' }))}
-                      placeholder="Select gender"
+                      onChange={(opt: SingleValue<Option>) =>
+                        setFormData((p) => ({ ...p, gender: opt?.value || '' }))
+                      }
+                      placeholder="Select Gender(Optional)"
                       styles={rsStyles as any}
                       theme={rsTheme}
                     />
                     {missingBasic.gender && (
-                      <p className="text-xs text-red-600">this feild is required</p>
+                      <p className="text-xs text-red-600">this field is required</p>
                     )}
                   </div>
                   {/* <div className="sm:col-span-1 space-y-1">
@@ -835,25 +766,25 @@ export default function InfluencerSignup({ onSuccess, onStepChange }: { onSucces
                 <div className=" grid sm:grid-cols-1 gap-4">
                   <div className="space-y-1">
                     <Select
-                    instanceId="languages"
-                    isMulti
-                    closeMenuOnSelect={false}
-                    options={languageOptions}
-                    value={findMulti(languageOptions, formData.selectedLanguages)} // stores IDs
-                    onChange={(opts: MultiValue<Option>) =>
-                      setFormData((p) => ({ ...p, selectedLanguages: opts.map((o) => o.value) }))
-                    }
-                    styles={rsStyles as any}
-                    theme={rsTheme}
-                    placeholder={langLoading ? 'Loading…' : 'Languages you create content in'}
-                    isLoading={langLoading}
-                  />
-                  {langError && <p className="text-xs text-red-600 mt-2" aria-live="polite">{langError}</p>}
+                      instanceId="languages"
+                      isMulti
+                      closeMenuOnSelect={false}
+                      options={languageOptions}
+                      value={findMulti(languageOptions, formData.selectedLanguages)} // stores IDs
+                      onChange={(opts: MultiValue<Option>) =>
+                        setFormData((p) => ({ ...p, selectedLanguages: opts.map((o) => o.value) }))
+                      }
+                      styles={rsStyles as any}
+                      theme={rsTheme}
+                      placeholder={langLoading ? 'Loading…' : 'Languages you create content in'}
+                      isLoading={langLoading}
+                    />
+                    {langError && <p className="text-xs text-red-600 mt-2" aria-live="polite">{langError}</p>}
                   </div>
 
                 </div>
               </div>
-                  <p className="text-xs text-gray-500 mt-2">We’ll use this to tailor briefs.</p>
+              <p className="text-xs text-gray-500 mt-2">We’ll use this to tailor briefs.</p>
 
               <div className="flex flex-col-reverse sm:flex-row gap-3 sm:justify-end">
                 {/* <p className="text-xs text-gray-500 text-center sm:text-left">You can edit this anytime</p> */}
@@ -878,74 +809,54 @@ export default function InfluencerSignup({ onSuccess, onStepChange }: { onSucces
 
               {!otpVerified && (
                 <>
-
                   <div className="space-y-1">
                     <FloatingLabelInput
-                    id="inf-otp"
-                    label="Enter 6-Digit Code"
-                    type="text"
-                    inputMode="numeric"
-                    maxLength={6}
-                    value={formData.otp}
-                    onChange={(e) => setFormData({ ...formData, otp: e.target.value.replace(/\D/g, '') })}
-                    required
-                    autoComplete="one-time-code"
+                      id="inf-otp"
+                      label="Enter 6-Digit Code"
+                      type="text"
+                      inputMode="numeric"
+                      maxLength={6}
+                      value={formData.otp}
+                      onChange={(e) => setFormData({ ...formData, otp: e.target.value.replace(/\D/g, '') })}
+                      required
+                      autoComplete="one-time-code"
                     />
                     {showVerifyOtpHint && !formData.otp && (
                       <p className="text-xs text-red-600">this feild is required</p>
                     )}
                   </div>
 
-                  <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
-                    <Button onClick={sendOTP} loading={loading} variant="influencer" className="w-full sm:w-auto px-6">
-                      {otpSent ? 'Resend Code' : 'Send Verification Code'}
-                    </Button>
-                    {otpSent && (
-                      <span className="self-center text-sm text-gray-600">
-                        {resendIn > 0 ? `Resend in ${resendIn}s` : 'You can resend now'}
-                      </span>
-                    )}
-                  </div>
-
-                  
-                  <div className="flex flex-col sm:flex-row gap-2">
-                    <Button onClick={verifyOTP} loading={loading} variant="influencer">
+                  <div className="flex flex-col sm:flex-row gap-2 cursor-pointer">
+                    <Button onClick={verifyOTP} loading={loading} variant="influencer" className="cursor-pointer">
                       Verify Code
                     </Button>
-                    <button onClick={handleChangeEmail} className="text-sm text-gray-600 hover:text-gray-900 underline">
-                      Change email
+                  </div>
+                  <div className="flex flex-col sm:flex-row gap-2 sm:items-center justify-end">
+                    <button
+                      onClick={sendOTP}
+                      disabled={resendIn > 0}
+                      className={`text-sm sm:text-base font-medium underline text-gray-500 hover:text-gray-700 transition-colors duration-200 disabled:text-gray-400 disabled:cursor-not-allowed cursor-pointer`}
+                    >
+                      {otpSent
+                        ? resendIn > 0
+                          ? `Resend in ${resendIn}s` // Countdown text
+                          : 'Resend Code' // Active resend
+                        : 'Sending Verification Code'}
                     </button>
+
+
+
                   </div>
                 </>
               )}
 
               {otpVerified && (
-                <>
-                  <p className="text-sm text-gray-600 text-center">Perfect — your email’s verified! Let’s secure your account.</p>
-                  <div className="space-y-1">
-                    <label className="flex items-start space-x-3 cursor-pointer group">
-                      <input
-                      type="checkbox"
-                      checked={formData.agreedToTerms}
-                      onChange={(e) => setFormData({ ...formData, agreedToTerms: e.target.checked })}
-                      className="mt-1 w-5 h-5 rounded border-gray-300 text-yellow-600 focus:ring-yellow-500"
-                      required
-                      />
-                      <span className="text-sm text-gray-600 group-hover:text-gray-900">
-                        I agree to the <a href="#" className="font-semibold text-yellow-600 hover:text-yellow-700">Terms & Privacy Policy</a>
-                      </span>
-                    </label>
-                    {missingPwd.agreedToTerms && (
-                      <p className="text-xs text-red-600">this feild is required</p>
-                    )}
-                  </div>
-
-                  <div className="flex justify-end">
-                    <Button onClick={proceedToPlatform} variant="influencer">
-                      Continue
-                    </Button>
-                  </div>
-                </>
+                <div className="text-center p-4 bg-green-50 rounded-lg border border-green-200">
+                  <CheckCircle2 className="w-8 h-8 text-green-600 mx-auto mb-2" />
+                  <p className="text-sm text-gray-700 mb-2">
+                    Your email <strong>{formData.email}</strong> has been verified!
+                  </p>
+                </div>
               )}
             </div>
           )}
@@ -953,12 +864,6 @@ export default function InfluencerSignup({ onSuccess, onStepChange }: { onSucces
           {/* STEP 3 — PLATFORM (multi-select + preferred) */}
           {step === 'platform' && (
             <div className="space-y-6 animate-fadeIn">
-              <div className="text-center">
-                <p className="text-sm text-gray-600">
-                  Choose your <strong>preferred</strong> platform and optionally add the others. We’ll verify each with read-only checks.
-                </p>
-              </div>
-
               {/* NEW: Multi-select for platforms */}
               <div className="space-y-2">
                 <label className="block text-sm font-medium text-gray-700">Platforms</label>
@@ -977,19 +882,14 @@ export default function InfluencerSignup({ onSuccess, onStepChange }: { onSucces
                 {showPlatformHints && includedPlatforms.length === 0 && (
                   <p className="text-xs text-red-600">this feild is required</p>
                 )}
-                <p className="text-xs text-gray-500">Add platforms here; cards will appear below.</p>
+                <p className="text-xs text-gray-500">We only fetch public stats for matching & we will never post on your behalf.</p>
               </div>
 
-              {/* If none selected, show a friendly nudge */}
-              {includedPlatforms.length === 0 && (
-                <div className="p-4 border border-amber-200 bg-amber-50 text-amber-900 rounded-lg text-sm">
-                  Pick at least one platform to continue. You can still add more later.
-                </div>
-              )}
+
 
               {/* Only render cards for included platforms */}
               {includedPlatforms.length > 0 && (
-                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 mt-4">
                   {includedPlatforms.map((p) => {
                     const s = platforms[p];
                     const isPrimary = primaryProvider === p;
@@ -999,8 +899,10 @@ export default function InfluencerSignup({ onSuccess, onStepChange }: { onSucces
                       <div
                         key={p}
                         className={[
-                          'p-4 rounded-xl border-2 transition-all bg-white',
-                          isPrimary ? 'border-yellow-600 shadow-[0_0_0_3px_rgba(245,158,11,0.15)]' : 'border-gray-200 hover:border-gray-300'
+                          'p-4 rounded-xl border-2 transition-all bg-white mt-6',
+                          isPrimary
+                            ? 'border-yellow-600 shadow-[0_0_0_3px_rgba(245,158,11,0.15)]'
+                            : 'border-gray-200 hover:border-gray-300',
                         ].join(' ')}
                       >
                         {/* Header */}
@@ -1052,13 +954,13 @@ export default function InfluencerSignup({ onSuccess, onStepChange }: { onSucces
                         {/* Handle input */}
                         <div className="space-y-1">
                           <FloatingLabelInput
-                          id={`handle-${p}`}
-                          label={`${label} Handle`}
-                          type="text"
-                          placeholder="@yourhandle"
-                          value={s.handle}
-                          onChange={(e) => setProvider(p, { handle: e.target.value, error: '', payload: null, preview: null })}
-                          required
+                            id={`handle-${p}`}
+                            label={`${label} Handle`}
+                            type="text"
+                            placeholder="@yourhandle"
+                            value={s.handle}
+                            onChange={(e) => setProvider(p, { handle: e.target.value, error: '', payload: null, preview: null })}
+                            required
                           />
                           {showPlatformHints && !s.handle.replace(/^@/, '').trim() && (
                             <p className="text-xs text-red-600">this feild is required</p>
@@ -1119,11 +1021,6 @@ export default function InfluencerSignup({ onSuccess, onStepChange }: { onSucces
                 </div>
               )}
 
-              <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                <p className="text-sm text-blue-900">
-                  <strong>Read-only verification:</strong> We only fetch public stats for matching. We will never post on your behalf.
-                </p>
-              </div>
 
               <div className="flex justify-end">
                 <Button
@@ -1174,7 +1071,7 @@ function QuickQuestions({
   email?: string;
   onComplete: (answers?: any) => void;
 }) {
-  type BudgetRange = '₹5k–10k' | '₹10k–25k' | '₹25k–50k' | '₹50k–1L' | '₹1L+';
+  type BudgetRange = 'Below $2k' | '$5k–7k' | '$7k–10k' | 'Above $10k';
   type ApiSubcategory = { subcategoryId: string; name: string };
   type ApiCategory = { _id: string; name: string; subcategories?: ApiSubcategory[] };
   type ApiCategoryResponse = { count?: number; categories?: ApiCategory[] };
@@ -1183,7 +1080,7 @@ function QuickQuestions({
     () => ['Reels/Shorts', 'Stories', 'Static', 'Long-form', 'Tutorials', 'Live', 'Reviews', 'Unboxing'].map((f) => ({ value: f, label: f })),
     []
   );
-  const budgetRanges: BudgetRange[] = ['₹5k–10k', '₹10k–25k', '₹25k–50k', '₹50k–1L', '₹1L+'];
+  const budgetRanges: BudgetRange[] = ['Below $2k', '$5k–7k', '$7k–10k', 'Above $10k'];
   const budgetOptions: Option[] = useMemo(() => budgetRanges.map((b) => ({ value: b, label: b })), []);
   const projectLengthOptions: Option[] = useMemo(
     () => ['One-off (<2 wks)', 'Short (2–8 wks)', 'Long-term (3–6 m)', 'Retainer (6+ m)'].map((p) => ({ value: p, label: p })),
@@ -1193,7 +1090,7 @@ function QuickQuestions({
 
   // moved to react-select (multi) per request
   const collabTypeStrings = ['Paid', 'Product Gifting', 'Ambassador', 'Event'];
-  const cadenceStrings = ['Single Deliverable', 'Weekly Series', 'Always-on'];
+  const cadenceStrings = ['Single Deliverable', 'Weekly Deliverable', 'Monthly Deliverable', 'Quarterly Deliverable'];
 
   const [qStep, setQStep] = useState<1 | 2 | 3>(1);
   const [saving, setSaving] = useState(false);
@@ -1450,24 +1347,13 @@ function QuickQuestions({
         </div>
       </div>
 
-      {/* Skip option (global) */}
-      <div className="flex justify-end">
-        <button
-          type="button"
-          onClick={() => onComplete()}
-          className="text-sm text-gray-600 underline hover:text-gray-800"
-        >
-          Skip for now
-        </button>
-      </div>
-
       {err && <div className="p-3 text-sm rounded-md border border-red-200 bg-red-50 text-red-700" aria-live="polite">{err}</div>}
 
       {/* ===== SUBSTEP 1 — all react-select */}
       {qStep === 1 && (
         <div className="space-y-6">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Which formats do you create?</label>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Which content do you create?</label>
             <Select
               instanceId="formats"
               isMulti
@@ -1481,38 +1367,58 @@ function QuickQuestions({
             />
             <p className={helperText}>We’ll use this to match you with the right briefs.</p>
           </div>
-
           {answers.formats.length > 0 && (
-            <div className="space-y-3">
-              <label className="block text-sm font-medium text-gray-700">Pick a budget range for each selected format</label>
-              <div className="grid md:grid-cols-2 gap-3">
+            <div className="space-y-4">
+              <label className="block text-sm font-medium text-gray-700">
+                Pick a budget range for each selected format
+              </label>
+
+              {/* Grid with 2 columns on medium screens and above */}
+              <div className="grid md:grid-cols-2 gap-4">
                 {answers.formats.map((f) => (
-                  <div key={f} className="grid grid-cols-5 gap-3 items-center">
-                    <span className="col-span-2 text-sm text-gray-700 truncate" title={f}>
-                      {f}
-                    </span>
-                    <div className="col-span-3">
-                      <Select
-                        instanceId={`budget-${f}`}
-                        options={budgetOptions}
-                        value={optionFromId(budgetOptions, answers.budgets[f] || '')}
-                        onChange={(opt: SingleValue<Option>) =>
-                          setAnswers((prev) => ({ ...prev, budgets: { ...prev.budgets, [f]: (opt?.value as BudgetRange) || ('' as any) } }))
-                        }
-                        styles={styles}
-                        theme={theme}
-                        placeholder="Select range"
-                      />
-                    </div>
+                  <div
+                    key={f}
+                    className=" rounded-lg  border-gray-200 bg-white duration-200"
+                  >
+                    <h3 className="block text-sm font-medium text-gray-700 mb-2 ">{f}</h3>
+
+                    <Select
+                      instanceId={`budget-${f}`}
+                      options={budgetOptions}
+                      value={optionFromId(budgetOptions, answers.budgets[f] || '')}
+                      onChange={(opt: SingleValue<Option>) =>
+                        setAnswers((prev) => ({
+                          ...prev,
+                          budgets: {
+                            ...prev.budgets,
+                            [f]: (opt?.value as BudgetRange) || ('' as any),
+                          },
+                        }))
+                      }
+                      styles={styles}
+                      theme={theme}
+                      placeholder="Select your budget range"
+                    />
                   </div>
                 ))}
               </div>
             </div>
           )}
 
+
+
           <div className="grid sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Preferred project length</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">Preferred project length
+                <div className="relative group">
+                  <span className="inline-flex items-center justify-center w-5 h-4 text-s font-semibold text-gray-600 border border-gray-400 rounded-full cursor-default">
+                    i
+                  </span>
+                  <div className="absolute left-1 -translate-x-1 mt-2 w-48 text-s text-gray-700 bg-white border border-gray-300 rounded-lg shadow-lg opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity duration-200 p-1 z-10">
+                    Project Duration
+                  </div>
+                </div>
+              </label>
               <Select
                 instanceId="project-length"
                 options={projectLengthOptions}
@@ -1525,7 +1431,19 @@ function QuickQuestions({
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Capacity right now</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
+                Capacity right now
+                {/* Info icon with tooltip */}
+                <div className="relative group">
+                  <span className="inline-flex items-center justify-center w-5 h-4 text-s font-semibold text-gray-600 border border-gray-400 rounded-full cursor-default">
+                    i
+                  </span>
+                  <div className="absolute left-1 -translate-x-1 mt-2 w-48 text-xs text-gray-700 bg-white border border-gray-300 rounded-lg shadow-lg opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity duration-200 p-1 z-10">
+                    It represents your Project Occupancy.
+                  </div>
+                </div>
+              </label>
+
               <Select
                 instanceId="capacity"
                 options={capacityOptions}
@@ -1539,9 +1457,19 @@ function QuickQuestions({
           </div>
 
           <div className="flex justify-end">
-            <Button onClick={next} variant="influencer" disabled={!validStep1}>
+            <Button onClick={next} variant="influencer" disabled={!validStep1} className='cursor-pointer'>
               Next
             </Button>
+          </div>
+          {/* Skip option (global) */}
+          <div className="flex justify-end">
+            <button
+              type="button"
+              onClick={() => onComplete()}
+              className="text-sm text-gray-600 underline hover:text-gray-800 cursor-pointer"
+            >
+              Skip for now
+            </button>
           </div>
         </div>
       )}
@@ -1551,12 +1479,16 @@ function QuickQuestions({
         <div className="space-y-6">
           <div>
             <div className="flex items-center justify-between mb-2">
-              <label className="block text-sm font-medium text-gray-700">Category (single select)</label>
-              <div className="flex gap-2">
-                <Button variant="outline" className="py-1 px-3 !w-auto" onClick={() => clearAll('categoryId')} disabled={catLoading && !answers.categoryId}>
-                  Clear
-                </Button>
-              </div>
+              <label className="block text-sm font-medium text-gray-700 flex items-center gap-2">Category (single select)
+                <div className="relative group">
+                  <span className="inline-flex items-center justify-center w-5 h-4 text-s font-semibold text-gray-600 border border-gray-400 rounded-full cursor-default">
+                    i
+                  </span>
+                  <div className="absolute left-1 -translate-x-1 mt-2 w-48 text-xs text-gray-700 bg-white border border-gray-300 rounded-lg shadow-lg opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity duration-200 p-1 z-10">
+                    Pick one category to unlock its subcategories.
+                  </div>
+                </div>
+              </label>
             </div>
 
             <Select
@@ -1578,20 +1510,20 @@ function QuickQuestions({
               placeholder={catLoading ? 'Loading…' : 'Select a category'}
             />
             {catError && <p className="text-sm text-red-600 mt-1" aria-live="polite">{catError}</p>}
-            {!catError && <p className={helperText}>Pick one category to unlock its subcategories.</p>}
           </div>
 
           <div>
             <div className="flex items-center justify-between mb-2">
-              <label className="block text-sm font-medium text-gray-700">Subcategories (multi-select)</label>
-              <div className="flex gap-2">
-                <Button variant="outline" className="py-1 px-3 !w-auto" onClick={() => selectAll('subcategories')} disabled={subcategoryOptions.length === 0}>
-                  Select All
-                </Button>
-                <Button variant="outline" className="py-1 px-3 !w-auto" onClick={() => clearAll('subcategories')} disabled={subcategoryOptions.length === 0}>
-                  Clear
-                </Button>
-              </div>
+              <label className="block text-sm font-medium text-gray-700 flex items-center gap-2">Subcategories (multi-select)
+                <div className="relative group">
+                  <span className="inline-flex items-center justify-center w-5 h-4 text-s font-semibold text-gray-600 border border-gray-400 rounded-full cursor-default">
+                    i
+                  </span>
+                  <div className="absolute left-1 -translate-x-1 mt-2 w-48 text-xs text-gray-700 bg-white border border-gray-300 rounded-lg shadow-lg opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity duration-200 p-1 z-10">
+                    These depend on the category you selected above.
+                  </div>
+                </div>
+              </label>
             </div>
 
             <Select
@@ -1605,7 +1537,6 @@ function QuickQuestions({
               theme={theme}
               placeholder={subcategoryOptions.length ? 'Select subcategories' : 'Select a category first'}
             />
-            <p className={helperText}>These depend on the category you selected above.</p>
           </div>
 
           <div className="grid md:grid-cols-2 gap-4">
@@ -1627,7 +1558,7 @@ function QuickQuestions({
 
             <div>
               <div className="flex items-center justify-between mb-2">
-                <label className="block text-sm font-medium text-gray-700">Cadence you like</label>
+                <label className="block text-sm font-medium text-gray-700">Product Delivery</label>
               </div>
               <Select
                 isMulti
@@ -1642,21 +1573,21 @@ function QuickQuestions({
             </div>
           </div>
 
-          <label className="flex items-center gap-3">
-            <input
-              type="checkbox"
-              checked={answers.allowlisting}
-              onChange={(e) => setAnswers((prev) => ({ ...prev, allowlisting: e.target.checked }))}
-              className="w-5 h-5 rounded border-gray-300 text-yellow-600 focus:ring-yellow-500"
-            />
-            <span className="text-sm text-gray-700">Allowlisting / paid boosts ok</span>
-          </label>
-
-          <div className="flex justify-between">
-            <Button onClick={back} variant="outline">
+          <div className="flex justify-between items-center gap-4">
+            <Button
+              onClick={back}
+              variant="outline"
+              className="cursor-pointer"
+            >
               Back
             </Button>
-            <Button onClick={next} variant="influencer" disabled={!validStep2}>
+
+            <Button
+              onClick={next}
+              variant="influencer"
+              disabled={!validStep2}
+              className="cursor-pointer"
+            >
               Next
             </Button>
           </div>
@@ -1666,28 +1597,49 @@ function QuickQuestions({
       {/* ===== SUBSTEP 3 — Prompts via grouped react-select ===== */}
       {qStep === 3 && (
         <div className="space-y-6">
+          {/* Instruction Banner */}
           <div className="p-4 rounded-lg border border-yellow-200 bg-yellow-50 text-sm text-yellow-900">
             Pick up to <strong>3</strong> prompts total — max <strong>1 per group</strong> — and answer briefly.
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Select prompts</label>
-            <Select<Option, true, GroupBase<Option>>
-              instanceId="prompts"
-              isMulti
-              closeMenuOnSelect={false}
-              options={promptGroups as any}
-              value={selectedPromptOptions}
-              onChange={(opts) => onChangePrompts(opts as Option[])}
-              styles={styles}
-              theme={theme}
-              placeholder="Choose up to 3 prompts (1 per group)"
-            />
+          {/* === Prompt Selectors (Content → Audience → Brand) === */}
+          <div className="space-y-5">
+            {(['Content', 'Audience', 'Brand'] as const).map((grp) => {
+              const options = storyPrompts[grp].map((t) => ({ value: t, label: t }));
+              const sel = answers.selectedPrompts.find((s) => s.group === grp)?.prompt || '';
+              const selectedOption = options.find((o) => o.value === sel) || null;
+
+              return (
+                <div key={grp} className="p-4 rounded-xl border-gray-200 bg-white duration-200">
+                  <label className="block text-sm font-semibold text-gray-800 mb-2">
+                    {grp} Prompt
+                  </label>
+                  <Select
+                    instanceId={`prompt-${grp}`}
+                    options={options}
+                    value={selectedOption}
+                    onChange={(opt: SingleValue<{ value: string; label: string }>) => {
+                      const prompt = opt?.value || '';
+                      setAnswers((prev) => {
+                        const filtered = prev.selectedPrompts.filter((s) => s.group !== grp);
+                        if (!prompt) return { ...prev, selectedPrompts: filtered };
+                        return { ...prev, selectedPrompts: [...filtered, { group: grp, prompt }] };
+                      });
+                    }}
+                    styles={styles}
+                    theme={theme}
+                    placeholder={`Choose a ${grp.toLowerCase()} prompt`}
+                    isClearable
+                  />
+                  <p className="mt-2 text-xs text-gray-500">Select only one prompt for this category.</p>
+                </div>
+              );
+            })}
           </div>
 
-          {/* Render answer boxes for selected prompts */}
+          {/* === Answers for Selected Prompts === */}
           {answers.selectedPrompts.map(({ group, prompt }) => (
-            <div key={prompt} className="space-y-2">
+            <div key={prompt} className="space-y-2 mt-4">
               <div className="text-sm font-medium text-gray-800">{group}</div>
               <div className="text-sm text-gray-700">{prompt}</div>
               <textarea
@@ -1702,29 +1654,51 @@ function QuickQuestions({
                 placeholder="Your short answer (10–500 chars)"
                 className="w-full px-3 py-2 border-2 border-gray-300 rounded-lg bg-gray-50 focus:bg-white focus:border-yellow-500 focus:outline-none text-sm"
               />
-              <div className="text-xs text-gray-500 text-right">{(answers.promptAnswers[prompt]?.length ?? 0)}/500</div>
+              <div className="text-xs text-gray-500 text-right">
+                {(answers.promptAnswers[prompt]?.length ?? 0)}/500
+              </div>
             </div>
           ))}
 
-          <div className="flex items-center justify-between">
-            <div className="text-xs text-gray-500">Selected: {answers.selectedPrompts.length} / 3</div>
-            <div className="flex gap-2">
-              <Button onClick={back} variant="outline">
-                Back
-              </Button>
+          {/* === Footer Buttons === */}
+          <div className="flex items-center justify-between mt-6">
+            <div className="text-xs text-gray-500">
+              Selected: {answers.selectedPrompts.length} / 3
+            </div>
+
+            <div className="flex items-center gap-4">
+              {/* Finish as primary button */}
               <Button
-                type="button"
-                variant="outline"
-                className="py-1 px-3 !w-auto"
-                onClick={() => onComplete()}
+                onClick={finish}
+                loading={saving}
+                variant="influencer"
+                disabled={!validStep3}
+                className="cursor-pointer"
               >
-                Skip for now
-              </Button>
-              <Button onClick={finish} loading={saving} variant="influencer" disabled={!validStep3}>
                 Finish
               </Button>
+              {/* Back as text button */}
+              <button
+                type="button"
+                onClick={back}
+                className="text-sm text-gray-600 font-semibold underline hover:text-gray-800 transition-colors duration-200 cursor-pointer"
+              >
+                Back
+              </button>
+
+              {/* Skip for now as text button */}
+              <button
+                type="button"
+                onClick={() => onComplete()}
+                className="text-sm text-gray-600 font-semibold underline hover:text-gray-800 transition-colors duration-200 cursor-pointer"
+              >
+                Skip
+              </button>
+
+
             </div>
           </div>
+
         </div>
       )}
     </div>
