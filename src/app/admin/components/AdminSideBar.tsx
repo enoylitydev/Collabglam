@@ -23,6 +23,7 @@ const navItems = [
   { label: "Influencers", href: "/admin/influencers", icon: Users },
   { label: "All Campaigns", href: "/admin/campaigns", icon: List },
   { label: "Subscriptions", href: "/admin/subscriptions", icon: DollarSign },
+  { label: "Disputes", href: "/admin/disputes", icon: FileText },
   { label: "Messages", href: "/admin/messages", icon: MessageCircleIcon },
   { label: "E-Mails", href: "/admin/emails", icon: MailCheckIcon },
   { label: "Influencer-Email", href: "/admin/influencerdetails", icon: MailCheckIcon },
