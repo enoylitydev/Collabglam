@@ -171,11 +171,11 @@ export default function InfluencerSignup({ onSuccess, onStepChange }: { onSucces
     fullName: '',
     email: '',
     otp: '',
-    phone: '',
-    dateOfBirth: '',
+    // phone: '',
+    // dateOfBirth: '',
     countryId: '',
-    city: '',
-    callingCodeId: '',
+    // city: '',
+    // callingCodeId: '',
     gender: '',
     selectedLanguages: [] as string[],
     password: '',
@@ -242,13 +242,13 @@ export default function InfluencerSignup({ onSuccess, onStepChange }: { onSucces
     [countries]
   );
 
-  const callingCodeOptions: Option[] = useMemo(
-    () =>
-      countries
-        .map((c) => ({ value: c._id, label: c.callingCode, meta: { flag: c.flag } }))
-        .sort((a, b) => a.label.localeCompare(b.label)),
-    [countries]
-  );
+  // const callingCodeOptions: Option[] = useMemo(
+  //   () =>
+  //     countries
+  //       .map((c) => ({ value: c._id, label: c.callingCode, meta: { flag: c.flag } }))
+  //       .sort((a, b) => a.label.localeCompare(b.label)),
+  //   [countries]
+  // );
 
   const formatOptionLabelCountry = useCallback((opt: Option) => (
     <div className="flex items-center gap-2">
@@ -257,17 +257,17 @@ export default function InfluencerSignup({ onSuccess, onStepChange }: { onSucces
     </div>
   ), []);
 
-  const formatOptionLabelCalling = useCallback((opt: Option) => (
-    <div className="flex items-center gap-2">
-      <span className="text-lg leading-none">{opt.meta?.flag ?? '🏳️'}</span>
-      <span>{opt.label}</span>
-    </div>
-  ), []);
+  // const formatOptionLabelCalling = useCallback((opt: Option) => (
+  //   <div className="flex items-center gap-2">
+  //     <span className="text-lg leading-none">{opt.meta?.flag ?? '🏳️'}</span>
+  //     <span>{opt.label}</span>
+  //   </div>
+  // ), []);
 
   // ===== Step 1 — Basic + Email (auto-send OTP on continue)
   const completeBasicDetails = () => {
     setShowBasicHints(false);
-    if (!formData.fullName || !formData.email || !formData.phone || !formData.dateOfBirth || !formData.countryId || !formData.callingCodeId || !formData.gender) {
+    if (!formData.fullName || !formData.email || !formData.countryId || !formData.gender) {
       setShowBasicHints(true);
       // Do not show generic banner error; rely on inline hints
       setError('');
@@ -276,9 +276,9 @@ export default function InfluencerSignup({ onSuccess, onStepChange }: { onSucces
         [
           ['inf-name', !formData.fullName],
           ['inf-email', !formData.email],
-          ['calling-code', !formData.callingCodeId],
-          ['inf-phone', !formData.phone],
-          ['inf-dob', !formData.dateOfBirth],
+          // ['calling-code', !formData.callingCodeId],
+          // ['inf-phone', !formData.phone],
+          // ['inf-dob', !formData.dateOfBirth],
           ['gender', !formData.gender],
           ['country', !formData.countryId],
         ] as const
@@ -287,24 +287,24 @@ export default function InfluencerSignup({ onSuccess, onStepChange }: { onSucces
       return;
     }
     // DOB must be 2013-12-31 or earlier
-    if (!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(formData.dateOfBirth)) {
-      setError('Please enter a valid date of birth');
-      return;
-    }
-    const cutoff = '2013-12-31';
+    // if (!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(formData.dateOfBirth)) {
+    //   setError('Please enter a valid date of birth');
+    //   return;
+    // }
+    // const cutoff = '2013-12-31';
     // compare ISO strings (YYYY-MM-DD) lexicographically
-    if (formData.dateOfBirth > cutoff) {
-      setError('Date of birth must be on or before 2013');
-      return;
-    }
+    // if (formData.dateOfBirth > cutoff) {
+    //   setError('Date of birth must be on or before 2013');
+    //   return;
+    // }
     // Enforce 10-digit mobile without country code
-    const phoneDigits = (formData.phone || '').replace(/\D/g, '');
-    if (phoneDigits.length !== 10) {
-      setError('Please enter a valid 10-digit mobile number (exclude country code).');
-      return;
-    }
+    // const phoneDigits = (formData.phone || '').replace(/\D/g, '');
+    // if (phoneDigits.length !== 10) {
+    //   setError('Please enter a valid 10-digit mobile number (exclude country code).');
+    //   return;
+    // }
     // Persist normalized digits
-    setFormData((prev) => ({ ...prev, phone: phoneDigits }));
+    // setFormData((prev) => ({ ...prev, phone: phoneDigits }));
     setError('');
     setStep('verify');
     setOtpSent(false);
@@ -516,13 +516,13 @@ export default function InfluencerSignup({ onSuccess, onStepChange }: { onSucces
         name: formData.fullName,
         email: formData.email,
         password: formData.password,
-        phone: (formData.phone || '').replace(/\D/g, ''),
+        // phone: (formData.phone || '').replace(/\D/g, ''),
         countryId: formData.countryId,
-        callingId: formData.callingCodeId,
+        // callingId: formData.callingCodeId,
         // NEW: pass basics & languages
-        city: formData.city,
+        // city: formData.city,
         gender: formData.gender,
-        dateOfBirth: formData.dateOfBirth,        // "YYYY-MM-DD"
+        // dateOfBirth: formData.dateOfBirth,        // "YYYY-MM-DD"
         selectedLanguages: formData.selectedLanguages, // Language _ids
         // Platforms + preferred
         platforms: platformsPayload,
@@ -597,9 +597,9 @@ export default function InfluencerSignup({ onSuccess, onStepChange }: { onSucces
   const missingBasic = {
     fullName: showBasicHints && !formData.fullName,
     email: showBasicHints && !formData.email,
-    phone: showBasicHints && !formData.phone,
-    dateOfBirth: showBasicHints && !formData.dateOfBirth,
-    callingCodeId: showBasicHints && !formData.callingCodeId,
+    // phone: showBasicHints && !formData.phone,
+    // dateOfBirth: showBasicHints && !formData.dateOfBirth,
+    // callingCodeId: showBasicHints && !formData.callingCodeId,
     countryId: showBasicHints && !formData.countryId,
     gender: showBasicHints && !formData.gender,
   } as const;
@@ -672,7 +672,7 @@ export default function InfluencerSignup({ onSuccess, onStepChange }: { onSucces
                 <div className="sm:col-span-2 space-y-1">
                   <FloatingLabelInput
                     id="inf-email"
-                    label="Work Email"
+                    label="Email"
                     type="email"
                     placeholder="We'll verify this next"
                     value={formData.email}
@@ -685,7 +685,40 @@ export default function InfluencerSignup({ onSuccess, onStepChange }: { onSucces
                   )}
                 </div>
 
-                <div className="grid sm:grid-cols-3 gap-4 sm:col-span-2">
+                <div className="grid sm:grid-cols-1 gap-4">
+                    <div className="space-y-1">
+                      <div className="relative">
+                        <FloatingLabelInput
+                        id="inf-password"
+                        label="Password"
+                        type={passwordVisible ? 'text' : 'password'}
+                        placeholder="≥8 chars, 1 number, 1 letter"
+                        value={formData.password}
+                        onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                        required
+                        minLength={8}
+                        autoComplete="new-password"
+                        style={{ paddingRight: 40 }}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setPasswordVisible((v) => !v)}
+                          className="absolute inset-y-0 right-3 my-auto text-gray-500 hover:text-gray-700"
+                          aria-label={passwordVisible ? 'Hide password' : 'Show password'}
+                        >
+                          {passwordVisible ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                        </button>
+                      </div>
+                      {missingPwd.password && (
+                        <p className="text-xs text-red-600">this feild is required</p>
+                      )}
+                      {showPwdHints && !!formData.password && formData.password.length < 8 && (
+                        <p className="text-xs text-red-600">Password must be at least 8 characters</p>
+                      )}
+                    </div>
+                  </div>
+
+                {/* <div className="grid sm:grid-cols-3 gap-4 sm:col-span-2">
                   <div className="sm:col-span-1 space-y-1">
                     <Select
                       instanceId="calling-code"
@@ -725,10 +758,25 @@ export default function InfluencerSignup({ onSuccess, onStepChange }: { onSucces
                     <p className="text-xs text-red-600">this feild is required</p>
                   )}
                   </div>
-                </div>
+                </div> */}
 
-                <div className="grid sm:grid-cols-2 gap-4 sm:col-span-2">
-                  <div className="sm:col-span-1 space-y-1">
+                <div className="grid sm:grid-cols-1 gap-4 ">
+                  <div className="space-y-1">
+                    <Select
+                      instanceId="gender"
+                      inputId="gender"
+                      options={genderOptions}
+                      value={findOption(genderOptions, formData.gender)}
+                      onChange={(opt: SingleValue<Option>) => setFormData((p) => ({ ...p, gender: opt?.value || '' }))}
+                      placeholder="Select gender"
+                      styles={rsStyles as any}
+                      theme={rsTheme}
+                    />
+                    {missingBasic.gender && (
+                      <p className="text-xs text-red-600">this feild is required</p>
+                    )}
+                  </div>
+                  {/* <div className="sm:col-span-1 space-y-1">
                     <FloatingLabelInput
                       id="inf-dob"
                       label="Date of Birth"
@@ -751,27 +799,11 @@ export default function InfluencerSignup({ onSuccess, onStepChange }: { onSucces
                     {missingBasic.dateOfBirth && (
                       <p className="text-xs text-red-600">this feild is required</p>
                     )}
-                    <p className="text-xs text-gray-500 -mt-3">Never shown publicly</p>
-                  </div>
-                  <div className="sm:col-span-1 space-y-1">
-                    <Select
-                      instanceId="gender"
-                      inputId="gender"
-                      options={genderOptions}
-                      value={findOption(genderOptions, formData.gender)}
-                      onChange={(opt: SingleValue<Option>) => setFormData((p) => ({ ...p, gender: opt?.value || '' }))}
-                      placeholder="Select gender"
-                      styles={rsStyles as any}
-                      theme={rsTheme}
-                    />
-                    {missingBasic.gender && (
-                      <p className="text-xs text-red-600">this feild is required</p>
-                    )}
-                  </div>
+                  </div> */}
                 </div>
 
-                <div className="grid sm:grid-cols-2 gap-4 sm:col-span-2">
-                  <div className="sm:col-span-1 space-y-1">
+                <div className="grid sm:grid-cols-2 gap-4">
+                  <div className="sm:col-span-2 space-y-1">
                     <Select
                       instanceId="country"
                       inputId="country"
@@ -787,7 +819,7 @@ export default function InfluencerSignup({ onSuccess, onStepChange }: { onSucces
                       <p className="text-xs text-red-600">this feild is required</p>
                     )}
                   </div>
-                  <div className="sm:col-span-1">
+                  {/* <div className="sm:col-span-1">
                     <FloatingLabelInput
                       id="inf-city"
                       label="City (Optional)"
@@ -797,12 +829,12 @@ export default function InfluencerSignup({ onSuccess, onStepChange }: { onSucces
                       onChange={(e) => setFormData({ ...formData, city: e.target.value })}
                       autoComplete="address-level2"
                     />
-                  </div>
+                  </div> */}
                 </div>
 
-                <div className="sm:col-span-2">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Languages you create content in</label>
-                  <Select
+                <div className=" grid sm:grid-cols-1 gap-4">
+                  <div className="space-y-1">
+                    <Select
                     instanceId="languages"
                     isMulti
                     closeMenuOnSelect={false}
@@ -813,13 +845,15 @@ export default function InfluencerSignup({ onSuccess, onStepChange }: { onSucces
                     }
                     styles={rsStyles as any}
                     theme={rsTheme}
-                    placeholder={langLoading ? 'Loading…' : 'Select languages'}
+                    placeholder={langLoading ? 'Loading…' : 'Languages you create content in'}
                     isLoading={langLoading}
                   />
                   {langError && <p className="text-xs text-red-600 mt-2" aria-live="polite">{langError}</p>}
-                  <p className="text-xs text-gray-500 mt-2">We’ll use this to tailor briefs.</p>
+                  </div>
+
                 </div>
               </div>
+                  <p className="text-xs text-gray-500 mt-2">We’ll use this to tailor briefs.</p>
 
               <div className="flex flex-col-reverse sm:flex-row gap-3 sm:justify-end">
                 {/* <p className="text-xs text-gray-500 text-center sm:text-left">You can edit this anytime</p> */}
@@ -888,66 +922,6 @@ export default function InfluencerSignup({ onSuccess, onStepChange }: { onSucces
               {otpVerified && (
                 <>
                   <p className="text-sm text-gray-600 text-center">Perfect — your email’s verified! Let’s secure your account.</p>
-
-                  <div className="grid sm:grid-cols-2 gap-4">
-                    <div className="space-y-1">
-                      <div className="relative">
-                        <FloatingLabelInput
-                        id="inf-password"
-                        label="Password"
-                        type={passwordVisible ? 'text' : 'password'}
-                        placeholder="≥8 chars, 1 number, 1 letter"
-                        value={formData.password}
-                        onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                        required
-                        minLength={8}
-                        autoComplete="new-password"
-                        style={{ paddingRight: 40 }}
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setPasswordVisible((v) => !v)}
-                          className="absolute inset-y-0 right-3 my-auto text-gray-500 hover:text-gray-700"
-                          aria-label={passwordVisible ? 'Hide password' : 'Show password'}
-                        >
-                          {passwordVisible ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                        </button>
-                      </div>
-                      {missingPwd.password && (
-                        <p className="text-xs text-red-600">this feild is required</p>
-                      )}
-                      {showPwdHints && !!formData.password && formData.password.length < 8 && (
-                        <p className="text-xs text-red-600">Password must be at least 8 characters</p>
-                      )}
-                    </div>
-
-                    <div className="space-y-1">
-                      <div className="relative">
-                        <FloatingLabelInput
-                        id="inf-confirm-password"
-                        label="Confirm Password"
-                        type={confirmPasswordVisible ? 'text' : 'password'}
-                        value={formData.confirmPassword}
-                        onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
-                        required
-                        autoComplete="new-password"
-                        style={{ paddingRight: 40 }}
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setConfirmPasswordVisible((v) => !v)}
-                          className="absolute inset-y-0 right-3 my-auto text-gray-500 hover:text-gray-700"
-                          aria-label={confirmPasswordVisible ? 'Hide password' : 'Show password'}
-                        >
-                          {confirmPasswordVisible ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                        </button>
-                      </div>
-                      {missingPwd.confirmPassword && (
-                        <p className="text-xs text-red-600">this feild is required</p>
-                      )}
-                    </div>
-                  </div>
-
                   <div className="space-y-1">
                     <label className="flex items-start space-x-3 cursor-pointer group">
                       <input
