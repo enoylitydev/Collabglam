@@ -6,41 +6,41 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import api, { post } from "@/lib/api";
 import Swal from "sweetalert2";
-import {
-  HiOutlineEye,
-  HiChevronLeft,
-  HiChevronRight,
-  HiX,
-} from "react-icons/hi";
+import { HiOutlineEye, HiChevronLeft, HiChevronRight, HiX } from "react-icons/hi";
 
-// ── Types ───────────────────────────────────────────────────────────────
-interface RejectedContract {
-  contractId: string;
-  rejectedReason: string;
-  campaign: {
-    campaignsId: string;
-    brandName: string;
-    productOrServiceName: string;
-    description: string;
-    budget: number;
-    timeline: { startDate: string; endDate: string };
-  };
+// ── Types (new API) ─────────────────────────────────────────────────────
+interface RejectedCampaign {
+  campaignsId: string;
+  brandName: string;
+  productOrServiceName: string;
+  description: string;
+  budget: number;
+  timeline?: { startDate?: string | Date; endDate?: string | Date };
+
+  // joined convenience fields from API
+  contractId: string | null;
+  feeAmount?: number;
+  isRejected: 1 | 0;
+  rejectedAt?: string | Date | null;
+  rejectionReason?: string;
 }
 
-interface ContractsResponse {
+interface ApiResponse {
   meta: { total: number; page: number; limit: number; totalPages: number };
-  contracts: RejectedContract[];
+  campaigns: RejectedCampaign[];
 }
 
 // ── Component ───────────────────────────────────────────────────────────
-export default function InfluencerDashboard() {
-  const [contracts, setContracts] = useState<RejectedContract[]>([]);
+export default function InfluencerRejectedCampaigns() {
+  const [campaigns, setCampaigns] = useState<RejectedCampaign[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const itemsPerPage = 10;
+
+  const [searchTerm, setSearchTerm] = useState("");
 
   const [showPdfModal, setShowPdfModal] = useState(false);
   const [pdfUrl, setPdfUrl] = useState("");
@@ -50,20 +50,23 @@ export default function InfluencerDashboard() {
     typeof window !== "undefined" ? localStorage.getItem("influencerId") : null;
 
   // ── Formatters ─────────────────────────────────────────────────────────
-  const formatDate = (d: string) =>
-    new Intl.DateTimeFormat("en-US", {
+  const formatDate = (d?: string | Date | null) => {
+    if (!d) return "—";
+    const dt = typeof d === "string" ? new Date(d) : d;
+    if (isNaN(dt as unknown as number)) return "—";
+    return new Intl.DateTimeFormat("en-US", {
       month: "short",
       day: "numeric",
       year: "numeric",
-    }).format(new Date(d));
+    }).format(dt);
+  };
 
-  const formatCurrency = (n: number) =>
-    new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency: "USD",
-    }).format(n);
+  const formatCurrency = (n?: number) =>
+    new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(
+      Number(n ?? 0)
+    );
 
-  // ── Fetch rejected contracts ───────────────────────────────────────────
+  // ── Fetch rejected (new endpoint/shape) ────────────────────────────────
   const fetchRejected = useCallback(async () => {
     if (!influencerId) {
       setError("No influencer ID found.");
@@ -73,19 +76,20 @@ export default function InfluencerDashboard() {
     setLoading(true);
     setError(null);
     try {
-      const res = await post<ContractsResponse>("/contract/rejectedByInfluencer", {
+      const res = await post<ApiResponse>("/campaign/rejectedbyinf", {
         influencerId,
+        search: searchTerm.trim() || undefined,
         page,
         limit: itemsPerPage,
       });
-      setContracts(res.contracts);
-      setTotalPages(res.meta.totalPages);
+      setCampaigns(res.campaigns || []);
+      setTotalPages(res.meta?.totalPages || 1);
     } catch (e: any) {
-      setError(e.message || "Failed to load rejected campaigns.");
+      setError(e?.message || "Failed to load rejected campaigns.");
     } finally {
       setLoading(false);
     }
-  }, [influencerId, page]);
+  }, [influencerId, page, searchTerm]);
 
   useEffect(() => {
     fetchRejected();
@@ -98,27 +102,35 @@ export default function InfluencerDashboard() {
   };
 
   // ── View PDF ───────────────────────────────────────────────────────────
-  const handleViewContract = async (contractId: string) => {
+  const handleViewContract = async (contractId: string | null) => {
+    if (!contractId) return;
     try {
-      const res = await api.post(
-        "/contract/view",
-        { contractId },
-        { responseType: "blob" }
-      );
+      const res = await api.post("/contract/viewPdf", { contractId }, { responseType: "blob" });
       const url = URL.createObjectURL(res.data);
       setPdfUrl(url);
       setViewingContractId(contractId);
       setShowPdfModal(true);
     } catch (e: any) {
-      Swal.fire("Error", e.message || "Failed to load contract PDF.", "error");
+      Swal.fire("Error", e?.message || "Failed to load contract PDF.", "error");
     }
   };
 
   return (
     <div className="p-6 min-h-screen space-y-8">
       {/* Header */}
-      <header className="flex items-center justify-between">
-        <h1 className="text-3xl font-semibold">Previous Campaigns</h1>
+      <header className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <h1 className="text-3xl font-semibold">Rejected Campaigns</h1>
+        <form onSubmit={handleSearchSubmit} className="flex items-center gap-2 w-full sm:w-auto">
+          <Input
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            placeholder="Search brand, product, category..."
+            className="w-full sm:w-72"
+          />
+          <Button type="submit" variant="outline" className="bg-gray-100 hover:bg-gray-200">
+            Search
+          </Button>
+        </form>
       </header>
 
       {/* Table */}
@@ -130,7 +142,7 @@ export default function InfluencerDashboard() {
         </div>
       ) : error ? (
         <p className="text-red-600 text-center">{error}</p>
-      ) : contracts.length === 0 ? (
+      ) : campaigns.length === 0 ? (
         <p className="text-gray-600 text-center">No rejected campaigns found.</p>
       ) : (
         <div className="overflow-x-auto bg-white rounded-md shadow-sm">
@@ -142,49 +154,41 @@ export default function InfluencerDashboard() {
                 <th className="px-6 py-3 text-right">Budget</th>
                 <th className="px-6 py-3 text-center">Timeline</th>
                 <th className="px-6 py-3 text-left">Reason</th>
+                <th className="px-6 py-3 text-left">Rejected On</th>
                 <th className="px-6 py-3 text-center">Actions</th>
               </tr>
             </thead>
             <tbody>
-              {contracts.map((c, idx) => {
-                const camp = c.campaign;
-                return (
-                  <tr
-                    key={c.contractId}
-                    className={idx % 2 === 0 ? "bg-white" : "bg-gray-50"}
-                  >
-                    <td className="px-6 py-4">
-                      <div className="font-medium">{camp.productOrServiceName}</div>
-                      <div className="text-gray-600 line-clamp-1">
-                        {camp.description}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">{camp.brandName}</td>
-                    <td className="px-6 py-4 text-right">
-                      {formatCurrency(camp.budget)}
-                    </td>
-                    <td className="px-6 py-4 text-center">
-                      {formatDate(camp.timeline.startDate)} –{" "}
-                      {formatDate(camp.timeline.endDate)}
-                    </td>
-<td className="px-6 py-4">
-  {c.rejectedReason || "No Reason Provided"}
-</td>
-
-                    <td className="px-6 py-4 flex justify-center space-x-2">
+              {campaigns.map((c, idx) => (
+                <tr key={c.contractId || c.campaignsId} className={idx % 2 === 0 ? "bg-white" : "bg-gray-50"}>
+                  <td className="px-6 py-4">
+                    <div className="font-medium">{c.productOrServiceName}</div>
+                    <div className="text-gray-600 line-clamp-1">{c.description}</div>
+                  </td>
+                  <td className="px-6 py-4">{c.brandName}</td>
+                  <td className="px-6 py-4 text-right">{formatCurrency(c.budget)}</td>
+                  <td className="px-6 py-4 text-center">
+                    {formatDate(c.timeline?.startDate)} – {formatDate(c.timeline?.endDate)}
+                  </td>
+                  <td className="px-6 py-4">{c.rejectionReason || "No Reason Provided"}</td>
+                  <td className="px-6 py-4">{formatDate(c.rejectedAt)}</td>
+                  <td className="px-6 py-4">
+                    <div className="flex justify-center">
                       <Button
                         size="sm"
                         variant="outline"
-                        className="bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-800"
+                        disabled={!c.contractId}
+                        title={!c.contractId ? "No contract PDF available" : "View contract"}
+                        className="bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-800 disabled:opacity-50"
                         onClick={() => handleViewContract(c.contractId)}
                       >
                         <HiOutlineEye className="inline mr-1" />
                         View Contract
                       </Button>
-                    </td>
-                  </tr>
-                );
-              })}
+                    </div>
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
 
@@ -225,11 +229,7 @@ export default function InfluencerDashboard() {
             >
               <HiX size={24} />
             </button>
-            <iframe
-              src={pdfUrl}
-              className="w-full h-full"
-              title="Contract PDF"
-            />
+            <iframe src={pdfUrl} className="w-full h-full" title="Contract PDF" />
           </div>
         </div>
       )}

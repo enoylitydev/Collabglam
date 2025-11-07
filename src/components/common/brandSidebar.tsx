@@ -31,6 +31,7 @@ const menuItems: MenuItem[] = [
   { name: 'Active Campaign', href: '/brand/active-campaign', icon: HiCheckCircle },
   { name: 'Previous Campaigns', href: '/brand/prev-campaign', icon: HiClipboardList },
   { name: 'Browse Influencers', href: '/brand/browse-influencer', icon: HiUsers },
+  { name: 'Disputes', href: '/brand/disputes', icon: HiClipboardList },
   { name: 'Messages', href: '/brand/messages', icon: SendIcon },
   { name: 'My Subscriptions', href: '/brand/subscriptions', icon: HiCreditCard },
 ];
@@ -46,6 +47,8 @@ export default function BrandSidebar({ isOpen, onClose }: BrandSidebarProps) {
   const router = useRouter();
 
   const handleLogout = () => {
+    // Remove role-scoped and legacy tokens
+    localStorage.removeItem('brand_token');
     localStorage.removeItem('token');
     router.push('/');
   };

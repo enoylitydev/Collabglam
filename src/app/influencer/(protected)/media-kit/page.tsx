@@ -111,6 +111,9 @@ export default function MediaKitPage({ influencerId: propId }: { influencerId?: 
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
 
+  // NEW: selected platform for viewing the MediaKit
+  const [selectedPlatform, setSelectedPlatform] = useState<string | null>(null);
+
   /* Resolve influencerId */
   useEffect(() => {
     if (propId) { setResolvedId(propId); return; }
@@ -134,6 +137,13 @@ export default function MediaKitPage({ influencerId: propId }: { influencerId?: 
           website: res.mediaKit.website ?? "",
           mediaKitPdf: res.mediaKit.mediaKitPdf ?? "",
         });
+
+        // Default the selection to primary platform, else first connected profile
+        setSelectedPlatform(
+          res.mediaKit.primaryPlatform ??
+          res.mediaKit.socialProfiles?.[0]?.provider ??
+          null
+        );
       } catch {
         setError("Failed to load media kit. Please try again.");
       } finally {
@@ -142,10 +152,12 @@ export default function MediaKitPage({ influencerId: propId }: { influencerId?: 
     })();
   }, [resolvedId]);
 
+  // Honor selectedPlatform when computing the primary view
   const primary = useMemo<SocialProfile | undefined>(() => {
     if (!mediaKit?.socialProfiles?.length) return undefined;
-    return mediaKit.socialProfiles.find(p => p.provider === mediaKit.primaryPlatform) ?? mediaKit.socialProfiles[0];
-  }, [mediaKit]);
+    const pref = selectedPlatform ?? mediaKit.primaryPlatform;
+    return mediaKit.socialProfiles.find(p => p.provider === pref) ?? mediaKit.socialProfiles[0];
+  }, [mediaKit, selectedPlatform]);
 
   const hashtags = useMemo(() => toHashtagStrings(primary?.hashtags), [primary]);
   const mentions = useMemo(() => toMentionStrings(primary?.mentions), [primary]);
@@ -240,10 +252,10 @@ export default function MediaKitPage({ influencerId: propId }: { influencerId?: 
               </div>
 
               <div className="flex flex-wrap gap-3 justify-center lg:justify-start">
-                {mediaKit?.primaryPlatform && (
+                {selectedPlatform && (
                   <div className="inline-flex items-center gap-2 px-4 py-2 bg-white rounded-full border-2 border-[#FFBF00]/30 shadow-sm">
-                    {getPlatformIcon(mediaKit.primaryPlatform)}
-                    <span className="font-semibold capitalize text-gray-900">{mediaKit.primaryPlatform}</span>
+                    {getPlatformIcon(selectedPlatform)}
+                    <span className="font-semibold capitalize text-gray-900">{selectedPlatform}</span>
                   </div>
                 )}
                 {primary?.accountType && (
@@ -255,12 +267,23 @@ export default function MediaKitPage({ influencerId: propId }: { influencerId?: 
               </div>
             </div>
 
-            <button
-              onClick={() => setIsEditing(true)}
-              className={`${activeClass(false)} px-6 py-3 rounded-xl transition-all duration-200 flex items-center gap-2 whitespace-nowrap`}
-            >
-              <Edit className="w-5 h-5" /> Edit MediaKit
-            </button>
+            {/* RIGHT: Platform selector (replaces Edit MediaKit button) */}
+            <div className="w-full lg:w-auto flex items-center justify-center lg:justify-end">
+              <div className="flex items-center gap-2">
+                <label className="text-sm font-medium text-gray-700">Select Platform</label>
+                <select
+                  value={selectedPlatform ?? ""}
+                  onChange={(e) => setSelectedPlatform(e.target.value)}
+                  className="px-4 py-3 rounded-xl border text-sm font-medium transition-all duration-200 bg-white hover:bg-gradient-to-r hover:from-[#FFBF00]/10 hover:to-[#FFDB58]/10"
+                >
+                  {(mediaKit?.socialProfiles ?? []).map((p, i) => (
+                    <option key={`${p.provider}-${i}`} value={p.provider}>
+                      {p.provider.charAt(0).toUpperCase() + p.provider.slice(1)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -610,7 +633,7 @@ export default function MediaKitPage({ influencerId: propId }: { influencerId?: 
                 <textarea
                   rows={6}
                   className="w-full px-3 py-2 rounded-lg border focus:outline-none focus:ring-2 focus:ring-[#FFBF00]/40"
-                  placeholder="Instagram Post: ₹25,000&#10;Reel: ₹35,000"
+                  placeholder={"Instagram Post: ₹25,000\nReel: ₹35,000"}
                   value={form.rateCard}
                   onChange={(e) => setForm({ ...form, rateCard: e.target.value })}
                 />

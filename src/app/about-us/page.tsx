@@ -31,7 +31,12 @@ export default function AboutPage() {
     'outline-none focus:ring-0 focus-visible:ring-0';
 
   useEffect(() => {
-    const token = localStorage.getItem('token');
+    // Consider any role token as logged-in
+    const token =
+      localStorage.getItem('brand_token') ||
+      localStorage.getItem('influencer_token') ||
+      localStorage.getItem('admin_token') ||
+      localStorage.getItem('token'); // legacy fallback
     const clientId = localStorage.getItem('clientId');
     setIsLoggedIn(!!token && !!clientId);
   }, []);
