@@ -97,19 +97,19 @@ const toCategoryStrings = (arr?: CategoryLink[]) =>
 /* --------------------------- Component ---------------------------- */
 export default function MediaKitPage({ influencerId: propId }: { influencerId?: string }) {
   const [activeTab, setActiveTab] = useState<"overview" | "social" | "audience" | "collaboration" | "rates" | "contact">("overview");
-  const [isEditing, setIsEditing] = useState(false);
+  // const [isEditing, setIsEditing] = useState(false); // EDIT DISABLED
   const [resolvedId, setResolvedId] = useState<string | null>(propId ?? null);
 
   const [mediaKit, setMediaKit] = useState<MediaKit | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Edit form state
-  const [form, setForm] = useState<{ rateCard: string; additionalNotes: string; website: string; mediaKitPdf: string }>({
-    rateCard: "", additionalNotes: "", website: "", mediaKitPdf: ""
-  });
-  const [saving, setSaving] = useState(false);
-  const [saveMsg, setSaveMsg] = useState<string | null>(null);
+  // Edit form state (DISABLED)
+  // const [form, setForm] = useState<{ rateCard: string; additionalNotes: string; website: string; mediaKitPdf: string }>({
+  //   rateCard: "", additionalNotes: "", website: "", mediaKitPdf: ""
+  // });
+  // const [saving, setSaving] = useState(false);
+  // const [saveMsg, setSaveMsg] = useState<string | null>(null);
 
   // NEW: selected platform for viewing the MediaKit
   const [selectedPlatform, setSelectedPlatform] = useState<string | null>(null);
@@ -131,12 +131,13 @@ export default function MediaKitPage({ influencerId: propId }: { influencerId?: 
       try {
         const res = (await post("/media-kit/influencer", { influencerId: resolvedId })) as LoadResponse;
         setMediaKit(res.mediaKit);
-        setForm({
-          rateCard: res.mediaKit.rateCard ?? "",
-          additionalNotes: res.mediaKit.additionalNotes ?? "",
-          website: res.mediaKit.website ?? "",
-          mediaKitPdf: res.mediaKit.mediaKitPdf ?? "",
-        });
+        // EDIT DISABLED: prefill form state removed
+        // setForm({
+        //   rateCard: res.mediaKit.rateCard ?? "",
+        //   additionalNotes: res.mediaKit.additionalNotes ?? "",
+        //   website: res.mediaKit.website ?? "",
+        //   mediaKitPdf: res.mediaKit.mediaKitPdf ?? "",
+        // });
 
         // Default the selection to primary platform, else first connected profile
         setSelectedPlatform(
@@ -164,23 +165,23 @@ export default function MediaKitPage({ influencerId: propId }: { influencerId?: 
   const categories = useMemo(() => toCategoryStrings(primary?.categories), [primary]);
   const affinities = useMemo(() => toAffinityStrings(primary?.brandAffinity), [primary]);
 
-  /* Save updates */
-  const handleSave = async () => {
-    if (!mediaKit) return;
-    setSaving(true); setSaveMsg(null);
-    try {
-      const payload = { mediaKitId: mediaKit.mediaKitId, ...form };
-      const res = (await post("/media-kit/update", payload)) as UpdateResponse;
-      setMediaKit(res.mediaKit);
-      setIsEditing(false);
-      setSaveMsg("MediaKit updated successfully.");
-      setTimeout(() => setSaveMsg(null), 2500);
-    } catch {
-      setSaveMsg("Failed to update. Please try again.");
-    } finally {
-      setSaving(false);
-    }
-  };
+  // Save updates (DISABLED)
+  // const handleSave = async () => {
+  //   if (!mediaKit) return;
+  //   setSaving(true); setSaveMsg(null);
+  //   try {
+  //     const payload = { mediaKitId: mediaKit.mediaKitId, ...form };
+  //     const res = (await post("/media-kit/update", payload)) as UpdateResponse;
+  //     setMediaKit(res.mediaKit);
+  //     setIsEditing(false);
+  //     setSaveMsg("MediaKit updated successfully.");
+  //     setTimeout(() => setSaveMsg(null), 2500);
+  //   } catch {
+  //     setSaveMsg("Failed to update. Please try again.");
+  //   } finally {
+  //     setSaving(false);
+  //   }
+  // };
 
   /* --------------------------- Frames ---------------------------- */
   if (loading && !mediaKit) {
@@ -447,10 +448,15 @@ export default function MediaKitPage({ influencerId: propId }: { influencerId?: 
                   <ChipSection title="Collaboration Types" chips={mediaKit.onboarding.collabTypes} tone="outline" />
                 )}
 
-                {mediaKit.onboarding.budgets && mediaKit.onboarding.budgets.length > 0 && (
+                {mediaKit.onboarding.cadences && mediaKit.onboarding.cadences.length > 0 && (
+                  <ChipSection title="Cadences" chips={mediaKit.onboarding.cadences} tone="outline" />
+                )}
+
+                {/* Budgets moved to RATES tab */}
+                {/* {mediaKit.onboarding.budgets && mediaKit.onboarding.budgets.length > 0 && (
                   <div className="rounded-2xl border bg-white overflow-hidden">
                     <div className="p-4 border-b font-semibold flex items-center gap-2">
-                      <DollarSign className="w-4 h-4 text-[#FFBF00]" /> Budgets
+                      <DollarSign className="w-4 h-4 text[#FFBF00]" /> Budgets
                     </div>
                     <div className="p-4 overflow-x-auto">
                       <table className="w-full text-sm">
@@ -471,11 +477,7 @@ export default function MediaKitPage({ influencerId: propId }: { influencerId?: 
                       </table>
                     </div>
                   </div>
-                )}
-
-                {mediaKit.onboarding.cadences && mediaKit.onboarding.cadences.length > 0 && (
-                  <ChipSection title="Cadences" chips={mediaKit.onboarding.cadences} tone="outline" />
-                )}
+                )} */}
               </div>
             </div>
           </div>
@@ -484,7 +486,7 @@ export default function MediaKitPage({ influencerId: propId }: { influencerId?: 
         {/* RATES */}
         {activeTab === "rates" && (
           <div className="space-y-6">
-            <div className="bg-white rounded-2xl shadow-sm border overflow-hidden">
+            {/* <div className="bg-white rounded-2xl shadow-sm border overflow-hidden">
               <div className="p-6 border-b bg-gradient-to-r from-[#FFBF00]/5 to-[#FFDB58]/5 flex items-center justify-between">
                 <div>
                   <h3 className="text-xl font-bold text-gray-900 flex items-center gap-2">
@@ -492,14 +494,15 @@ export default function MediaKitPage({ influencerId: propId }: { influencerId?: 
                     Rate Card
                   </h3>
                   <p className="text-gray-600 mt-1">Standard pricing for collaborations</p>
-                </div>
-                <button
+                </div> */}
+                {/* EDIT DISABLED */}
+                {/* <button
                   onClick={() => setIsEditing(true)}
                   className="px-4 py-2 rounded-xl border hover:border-[#FFBF00]/50 hover:bg-gradient-to-r hover:from-[#FFBF00]/5 hover:to-[#FFDB58]/5 transition-all text-sm font-medium"
                 >
                   Edit
-                </button>
-              </div>
+                </button> */}
+              {/* </div>
               <div className="p-6">
                 {mediaKit?.rateCard ? (
                   <div className="space-y-3">
@@ -517,7 +520,38 @@ export default function MediaKitPage({ influencerId: propId }: { influencerId?: 
                   <p className="text-gray-500 italic">No rate card available</p>
                 )}
               </div>
-            </div>
+            </div> */}
+
+            {/* NEW: Budgets moved here from Collaboration */}
+            {mediaKit?.onboarding?.budgets && mediaKit.onboarding.budgets.length > 0 && (
+              <div className="bg-white rounded-2xl shadow-sm border overflow-hidden">
+                <div className="p-6 border-b bg-gradient-to-r from-[#FFBF00]/5 to-[#FFDB58]/5">
+                  <h3 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+                    <DollarSign className="w-6 h-6 text-[#FFBF00]" />
+                    Rate Card
+                  </h3>
+                  <p className="text-gray-600 mt-1">Typical brand budget ranges</p>
+                </div>
+                <div className="p-6 overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-left text-gray-600">
+                        <th className="py-2">Format</th>
+                        <th className="py-2">Range</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {mediaKit.onboarding.budgets.map((b, i) => (
+                        <tr key={i} className="border-t">
+                          <td className="py-2">{b.format}</td>
+                          <td className="py-2">{b.range}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
 
             {mediaKit?.additionalNotes && (
               <div className="bg-white rounded-2xl shadow-sm border p-6">
@@ -596,7 +630,8 @@ export default function MediaKitPage({ influencerId: propId }: { influencerId?: 
         )}
       </div>
 
-      {/* Edit Drawer / Modal */}
+      {/* Edit Drawer / Modal - TEMPORARILY DISABLED */}
+      {/**
       {isEditing && (
         <div className="fixed inset-0 z-50">
           <div className="absolute inset-0 bg-black/30" onClick={() => setIsEditing(false)} />
@@ -670,6 +705,7 @@ export default function MediaKitPage({ influencerId: propId }: { influencerId?: 
           </div>
         </div>
       )}
+      **/}
     </div>
   );
 }
@@ -840,11 +876,11 @@ function getPlatformIcon(platform: string) {
 }
 
 /* ----------------------------- Fields ----------------------------- */
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <label className="block">
-      <span className="text-sm font-medium text-gray-700">{label}</span>
-      <div className="mt-2">{children}</div>
-    </label>
-  );
-}
+// function Field({ label, children }: { label: string; children: React.ReactNode }) {
+//   return (
+//     <label className="block">
+//       <span className="text-sm font-medium text-gray-700">{label}</span>
+//       <div className="mt-2">{children}</div>
+//     </label>
+//   );
+// }

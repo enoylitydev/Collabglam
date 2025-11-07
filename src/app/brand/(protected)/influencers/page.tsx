@@ -412,7 +412,7 @@ export default function MediaKitPage({ influencerId: propId }: { influencerId?: 
                   <ChipSection title="Collaboration Types" chips={mediaKit.onboarding.collabTypes} tone="outline" />
                 )}
 
-                {mediaKit.onboarding.budgets && mediaKit.onboarding.budgets.length > 0 && (
+                {/* {mediaKit.onboarding.budgets && mediaKit.onboarding.budgets.length > 0 && (
                   <div className="rounded-2xl border bg-white overflow-hidden">
                     <div className="p-4 border-b font-semibold flex items-center gap-2">
                       <DollarSign className="w-4 h-4 text-[#FFA135]" /> Budgets
@@ -436,7 +436,7 @@ export default function MediaKitPage({ influencerId: propId }: { influencerId?: 
                       </table>
                     </div>
                   </div>
-                )}
+                )} */}
 
                 {mediaKit.onboarding.cadences && mediaKit.onboarding.cadences.length > 0 && (
                   <ChipSection title="Cadences" chips={mediaKit.onboarding.cadences} tone="outline" />
@@ -448,61 +448,91 @@ export default function MediaKitPage({ influencerId: propId }: { influencerId?: 
 
         {/* RATES */}
         {activeTab === "rates" && (
-          <div className="space-y-6">
-            <div className="bg-white rounded-2xl shadow-sm border overflow-hidden">
-              <div className="p-6 border-b bg-gradient-to-r from-[#FFA135]/5 to-[#FF7236]/5 flex items-center justify-between">
-                <div>
-                  <h3 className="text-xl font-bold text-gray-900 flex items-center gap-2">
-                    <DollarSign className="w-6 h-6 text-[#FFA135]" />
-                    Rate Card
-                  </h3>
-                  <p className="text-gray-600 mt-1">Standard pricing for collaborations</p>
-                </div>
-                {/* Read-only: no Edit button */}
-              </div>
-              <div className="p-6">
-                {mediaKit?.rateCard ? (
-                  <div className="space-y-3">
-                    {mediaKit.rateCard.split("\n").map((line, i) => {
-                      const [label, price] = line.split(":");
-                      return (
-                        <div key={i} className="flex items-center justify-between p-4 bg-gray-50 rounded-xl border hover:border-[#FFA135]/30 transition-colors">
-                          <span className="font-medium text-gray-900">{(label ?? "").trim()}</span>
-                          <span className="text-xl font-bold text-[#FFA135]">{(price ?? "").trim()}</span>
+                  <div className="space-y-6">
+                    {/* <div className="bg-white rounded-2xl shadow-sm border overflow-hidden">
+                      <div className="p-6 border-b bg-gradient-to-r from-[#FFBF00]/5 to-[#FFDB58]/5 flex items-center justify-between">
+                        <div>
+                          <h3 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+                            <DollarSign className="w-6 h-6 text-[#FFBF00]" />
+                            Rate Card
+                          </h3>
+                          <p className="text-gray-600 mt-1">Standard pricing for collaborations</p>
                         </div>
-                      );
-                    })}
+                      </div>
+                      <div className="p-6">
+                        {mediaKit?.rateCard ? (
+                          <div className="space-y-3">
+                            {mediaKit.rateCard.split("\n").map((line, i) => {
+                              const [label, price] = line.split(":");
+                              return (
+                                <div key={i} className="flex items-center justify-between p-4 bg-gray-50 rounded-xl border hover:border-[#FFBF00]/30 transition-colors">
+                                  <span className="font-medium text-gray-900">{(label ?? "").trim()}</span>
+                                  <span className="text-xl font-bold text-[#FFBF00]">{(price ?? "").trim()}</span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <p className="text-gray-500 italic">No rate card available</p>
+                        )}
+                      </div>
+                    </div> */}
+        
+                    {/* NEW: Budgets moved here from Collaboration */}
+                    {mediaKit?.onboarding?.budgets && mediaKit.onboarding.budgets.length > 0 && (
+                      <div className="bg-white rounded-2xl shadow-sm border overflow-hidden">
+                        <div className="p-6 border-b bg-gradient-to-r from-[#FFBF00]/5 to-[#FFDB58]/5">
+                          <h3 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+                            <DollarSign className="w-6 h-6 text-[#FFBF00]" />
+                            Rate Card
+                          </h3>
+                          <p className="text-gray-600 mt-1">Typical brand budget ranges</p>
+                        </div>
+                        <div className="p-6 overflow-x-auto">
+                          <table className="w-full text-sm">
+                            <thead>
+                              <tr className="text-left text-gray-600">
+                                <th className="py-2">Format</th>
+                                <th className="py-2">Range</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {mediaKit.onboarding.budgets.map((b, i) => (
+                                <tr key={i} className="border-t">
+                                  <td className="py-2">{b.format}</td>
+                                  <td className="py-2">{b.range}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
+        
+                    {mediaKit?.additionalNotes && (
+                      <div className="bg-white rounded-2xl shadow-sm border p-6">
+                        <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
+                          <FileText className="w-5 h-5 text-[#FFBF00]" />
+                          Additional Notes
+                        </h3>
+                        <p className="text-gray-700 leading-relaxed whitespace-pre-wrap">{mediaKit.additionalNotes}</p>
+                      </div>
+                    )}
+        
+                    {mediaKit?.mediaKitPdf && (
+                      <div className="bg-white rounded-2xl shadow-sm border p-6">
+                        <a
+                          href={mediaKit.mediaKitPdf}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-2 font-semibold text-gray-900 underline"
+                        >
+                          <FileText className="w-5 h-5" /> View MediaKit PDF <ExternalLink className="w-4 h-4" />
+                        </a>
+                      </div>
+                    )}
                   </div>
-                ) : (
-                  <p className="text-gray-500 italic">No rate card available</p>
                 )}
-              </div>
-            </div>
-
-            {mediaKit?.additionalNotes && (
-              <div className="bg-white rounded-2xl shadow-sm border p-6">
-                <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
-                  <FileText className="w-5 h-5 text-[#FFA135]" />
-                  Additional Notes
-                </h3>
-                <p className="text-gray-700 leading-relaxed whitespace-pre-wrap">{mediaKit.additionalNotes}</p>
-              </div>
-            )}
-
-            {mediaKit?.mediaKitPdf && (
-              <div className="bg-white rounded-2xl shadow-sm border p-6">
-                <a
-                  href={mediaKit.mediaKitPdf}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-2 font-semibold text-gray-900 underline"
-                >
-                  <FileText className="w-5 h-5" /> View MediaKit PDF <ExternalLink className="w-4 h-4" />
-                </a>
-              </div>
-            )}
-          </div>
-        )}
       </div>
     </div>
   );

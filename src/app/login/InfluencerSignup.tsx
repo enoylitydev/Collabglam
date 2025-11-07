@@ -1668,15 +1668,6 @@ function QuickQuestions({
 
             <div className="flex items-center gap-4">
               {/* Finish as primary button */}
-              <Button
-                onClick={finish}
-                loading={saving}
-                variant="influencer"
-                disabled={!validStep3}
-                className="cursor-pointer"
-              >
-                Finish
-              </Button>
               {/* Back as text button */}
               <button
                 type="button"
@@ -1694,6 +1685,15 @@ function QuickQuestions({
               >
                 Skip
               </button>
+              <Button
+                onClick={finish}
+                loading={saving}
+                variant="influencer"
+                disabled={!validStep3}
+                className="cursor-pointer"
+              >
+                Finish
+              </Button>
 
 
             </div>
