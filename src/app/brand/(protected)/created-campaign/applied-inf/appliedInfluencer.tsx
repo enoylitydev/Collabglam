@@ -27,6 +27,7 @@ import {
   HiPaperAirplane,
   HiCheck,
   HiInformationCircle,
+  HiChatAlt2,
 } from "react-icons/hi";
 import ReactSelect from "react-select";
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip";
@@ -409,6 +410,36 @@ export default function AppliedInfluencersPage() {
     })();
     return () => { alive = false };
   }, []);
+
+  const handleViewMessage = async (inf?: Influencer) => {
+    const target = inf || selectedInf;
+    if (!target) return;
+
+    const brandId = typeof window !== "undefined" ? localStorage.getItem("brandId") : null;
+    if (!brandId) {
+      return toast({ icon: "error", title: "Not ready", text: "Missing brandId. Please sign in as a brand." });
+    }
+
+    try {
+      // Create (or return existing) 1:1 room
+      const res: any = await post("/chat/room", {
+        brandId,
+        influencerId: target.influencerId,
+      });
+
+      const roomId = res?.roomId || res?.data?.roomId;
+      if (!roomId) throw new Error("Room could not be created");
+
+      // Redirect to messages with roomId
+      router.push(`/brand/messages/${encodeURIComponent(roomId)}`);
+    } catch (e: any) {
+      toast({
+        icon: "error",
+        title: "Open chat failed",
+        text: e?.response?.data?.message || e?.message || "Could not open messages.",
+      });
+    }
+  };
 
   /* ---------------- Applicants load ---------------- */
   const fetchApplicants = useCallback(async (search?: string) => {
@@ -903,81 +934,107 @@ export default function AppliedInfluencersPage() {
     );
   };
 
-  const RowActions = ({ inf, meta, hasContract, rejected, iConfirmed, bConfirmed, bSigned, locked }: any) => (
-    <div className="text-center space-x-2 whitespace-nowrap">
-      <Button size="sm" variant="outline" className="border-black text-black" onClick={() => router.push(`/brand/influencers?id=${inf.influencerId}`)}>
+  const RowActions = ({ inf, meta, hasContract, rejected, iConfirmed, bConfirmed, bSigned, locked, nowrap = false, }: any) => (
+    <div
+      className={[
+        "items-center gap-2 md:gap-2 lg:gap-2",
+        "whitespace-nowrap",
+        nowrap ? "inline-flex flex-nowrap" : "flex flex-wrap justify-center",
+      ].join(" ")}
+    >
+      <ActionButton
+        icon={HiChatAlt2}
+        title="View Messages"
+        variant="outline"
+        onClick={() => handleViewMessage(inf)}
+      >
+        View Messages
+      </ActionButton>
+
+      <ActionButton
+        title="View Influencer"
+        variant="outline"
+        onClick={() => router.push(`/brand/influencers?id=${inf.influencerId}`)}
+      >
         View Influencer
-      </Button>
+      </ActionButton>
 
       {!hasContract && !rejected && (
-        <Button
-          size="sm"
-          className="bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white hover:from-[#FF7236] hover:to-[#FFA135] shadow-none"
-          onClick={() => openSidebar(inf, "send")}
+        <ActionButton
+          icon={HiPaperAirplane}
           title="Send contract"
+          variant="grad"
+          onClick={() => openSidebar(inf, "send")}
         >
-          <HiPaperAirplane className="mr-1 h-4 w-4" /> Send Contract
-        </Button>
+          Send Contract
+        </ActionButton>
       )}
 
       {hasContract && rejected && !locked && !wasResent(meta) && (
-        <Button
-          size="sm"
-          className="bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white hover:from-[#FF7236] hover:to-[#FFA135] shadow-none"
-          onClick={() => openSidebar(inf, "edit")}
+        <ActionButton
           title="Resend contract"
+          variant="grad"
+          onClick={() => openSidebar(inf, "edit")}
         >
           Resend Contract
-        </Button>
+        </ActionButton>
       )}
 
       {hasContract && (
-        <Button
-          size="sm"
-          variant="outline"
-          className="bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white hover:from-[#FF7236] hover:to-[#FFA135] shadow-none"
-          onClick={() => handleViewContract(inf)}
+        <ActionButton
+          icon={HiEye}
           title="View contract"
+          variant="grad"
           disabled={metaCacheLoading && !meta}
+          onClick={() => handleViewContract(inf)}
         >
-          <HiEye className="mr-1 h-4 w-4" /> View Contract
-        </Button>
+          View Contract
+        </ActionButton>
       )}
 
       {hasContract && !rejected && !iConfirmed && !locked && !bConfirmed && (
-        <Button size="sm" variant="outline" className="border-black text-black" onClick={() => handleBrandAccept(inf)}>
-          <HiCheck className="mr-1 h-4 w-4" /> Brand Accept
-        </Button>
+        <ActionButton
+          icon={HiCheck}
+          title="Brand Accept"
+          variant="outline"
+          onClick={() => handleBrandAccept(inf)}
+        >
+          Brand Accept
+        </ActionButton>
       )}
 
       {hasContract && iConfirmed && !bConfirmed && !locked && (
         <>
-          <Button
-            size="sm"
-            className="bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white hover:from-[#FF7236] hover:to-[#FFA135] shadow-none"
-            onClick={() => openSidebar(inf, "edit")}
+          <ActionButton
             title="Edit contract"
+            variant="grad"
+            onClick={() => openSidebar(inf, "edit")}
           >
             Edit Contract
-          </Button>
-          <Button size="sm" variant="outline" className="border-black text-black" onClick={() => handleBrandAccept(inf)}>
-            <HiCheck className="mr-1 h-4 w-4" /> Brand Accept
-          </Button>
+          </ActionButton>
+          <ActionButton
+            icon={HiCheck}
+            title="Brand Accept"
+            variant="outline"
+            onClick={() => handleBrandAccept(inf)}
+          >
+            Brand Accept
+          </ActionButton>
         </>
       )}
 
       {hasContract && bConfirmed && !bSigned && !locked && (
-        <Button
-          size="sm"
-          className="bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white hover:from-[#FF7236] hover:to-[#FFA135] shadow-none"
-          onClick={() => openSignModal(meta)}
+        <ActionButton
           title="Sign as Brand"
+          variant="grad"
+          onClick={() => openSignModal(meta)}
         >
           Sign as Brand
-        </Button>
+        </ActionButton>
       )}
     </div>
   );
+
 
   const rows = useMemo(() => (
     influencers.map((inf, idx) => {
@@ -1025,16 +1082,17 @@ export default function AppliedInfluencersPage() {
 
           {/* ACTIONS */}
           <TableCell className="text-center">
-            <RowActions
-              inf={inf}
-              meta={meta}
-              hasContract={hasContract}
-              rejected={rejected}
-              iConfirmed={iConfirmed}
-              bConfirmed={bConfirmed}
-              bSigned={bSigned}
-              locked={locked}
-            />
+              <RowActions
+                inf={inf}
+                meta={meta}
+                hasContract={hasContract}
+                rejected={rejected}
+                iConfirmed={iConfirmed}
+                bConfirmed={bConfirmed}
+                bSigned={bSigned}
+                locked={locked}
+                nowrap
+              />
           </TableCell>
         </TableRow>
       );
@@ -1090,7 +1148,7 @@ export default function AppliedInfluencersPage() {
 
   return (
     <TooltipProvider delayDuration={150}>
-      <div className="min-h-screen p-4 md:p-8 space-y-6 md:space-y-8 max-w-[1200px] mx-auto">
+      <div className="min-h-screen p-4 md:p-8 space-y-6 md:space-y-8 max-w-7xl mx-auto">
         <header className="flex items-center justify-between p-2 md:p-4 rounded-md sticky top-0 z-20 backdrop-blur supports-[backdrop-filter]:bg-white/70 bg-white/90 border-b border-gray-100">
           <h1 className="text-xl md:text-3xl font-bold truncate">Campaign: {campaignName || "Unknown Campaign"}</h1>
           <div className="flex items-center gap-2">
@@ -1150,7 +1208,7 @@ export default function AppliedInfluencersPage() {
                         Date <SortIndicator field="createdAt" />
                       </TableHead>
                       <TableHead className="font-semibold">Status</TableHead>
-                      <TableHead className="text-center font-semibold">Actions</TableHead>
+                      <TableHead className="text-center font-semibold w-[560px]">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>{rows}</TableBody>
@@ -1909,3 +1967,61 @@ export function NumberInputTop({ id, label, value, onChange, min = 0, error, inf
     </div>
   );
 }
+
+const BTN_GRAD =
+  "bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white hover:from-[#FF7236] hover:to-[#FFA135] shadow-none";
+const BTN_OUTLINE = "border-gray-300 text-black";
+const BTN_BASE = "h-9 px-3 rounded-lg"; // same height for all action buttons
+
+
+function ActionButton({
+  onClick,
+  title,
+  disabled,
+  variant = "outline",
+  icon: Icon,
+  children,
+  className = "",
+}: {
+  onClick?: () => void;
+  title?: string;
+  disabled?: boolean;
+  variant?: "outline" | "grad" | "default";
+  icon?: React.ComponentType<React.SVGProps<SVGSVGElement>>;
+  children: React.ReactNode;
+  className?: string;
+}) {
+  const base = `${BTN_BASE} ${className}`;
+  const variantClass =
+    variant === "grad"
+      ? BTN_GRAD
+      : variant === "outline"
+        ? `border ${BTN_OUTLINE} bg-white`
+        : "bg-white text-black";
+
+  const BtnInner = (
+    <Button
+      size="sm"
+      onClick={onClick}
+      disabled={disabled}
+      className={`${base} ${variantClass}`}
+      variant="outline"
+    >
+      {Icon ? <Icon className="mr-1 h-4 w-4" /> : null}
+      {/* Text hidden on very small screens so rows stay tidy, visible on md+ */}
+      <span className="hidden sm:inline">{children}</span>
+    </Button>
+  );
+
+  return title ? (
+    <Tooltip>
+      <TooltipTrigger asChild>{BtnInner}</TooltipTrigger>
+      <TooltipContent side="top" className="text-xs">
+        {title}
+      </TooltipContent>
+    </Tooltip>
+  ) : (
+    BtnInner
+  );
+}
+

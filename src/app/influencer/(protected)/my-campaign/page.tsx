@@ -24,6 +24,7 @@ import {
   HiDocumentText,
   HiOutlineClipboardList,
   HiOutlineEye,
+  HiOutlineEyeOff,
   HiX,
 } from "react-icons/hi";
 import api, { post } from "@/lib/api"; // expects axios instance + helper post()
@@ -252,8 +253,8 @@ function Checkbox({ label, checked, onChange, disabled = false }: {
   return (
     <label
       className={`flex items-center gap-3 p-3 rounded-lg border-2 transition-all duration-200 ${disabled
-          ? "border-gray-200 opacity-60 cursor-not-allowed"
-          : "border-gray-200 hover:border-[#FFBF00] hover:bg-yellow-50/50 cursor-pointer"
+        ? "border-gray-200 opacity-60 cursor-not-allowed"
+        : "border-gray-200 hover:border-[#FFBF00] hover:bg-yellow-50/50 cursor-pointer"
         }`}
     >
       <input
@@ -367,12 +368,25 @@ function InfluencerContractModal({ open, onClose, contractId, campaign, readOnly
   // Resolve to resent child if present
   const [effectiveContractId, setEffectiveContractId] = useState<string>(contractId);
   const [meta, setMeta] = useState<ContractMeta | null>(null);
+  const [showTax, setShowTax] = useState(false)
 
   const influencerConfirmed = !!(
     meta?.confirmations?.influencer?.confirmed || meta?.flags?.isInfluencerConfirm
   );
 
   const isLocked = !!meta?.lockedAt || meta?.status === "locked" || !!meta?.flags?.isLocked;
+
+  const isValidTaxId = (value: string, taxFormType?: ServerInfluencer["taxFormType"]) => {
+    const v = (value || "").trim();
+    if (!v) return true; // empty is allowed (optional field)
+    if (taxFormType === "W-9") {
+      // Accept SSN (XXX-XX-XXXX), EIN (XX-XXXXXXX), or 9 straight digits
+      const re = /^(?:\d{3}-\d{2}-\d{4}|\d{2}-\d{7}|\d{9})$/;
+      return re.test(v);
+    }
+    // W-8BEN / W-8BEN-E: IDs vary by country; accept 4–30 of [A-Z0-9 -/]
+    return /^[A-Za-z0-9 \-\/]{4,30}$/.test(v);
+  };
 
   const canEdit = useMemo(() => {
     if (readOnly) return false;
@@ -419,6 +433,28 @@ function InfluencerContractModal({ open, onClose, contractId, campaign, readOnly
     };
   };
 
+  const contractInfluencerToLocal = (ci: any, prev: LocalInfluencer): LocalInfluencer =>
+    sanitizeLocal({
+      ...prev,
+      legalName: ci.legalName ?? prev.legalName,
+      email: ci.email ?? prev.email,
+      phone: ci.phone ?? prev.phone,
+      addressLine1: ci.addressLine1 ?? prev.addressLine1,
+      addressLine2: ci.addressLine2 ?? prev.addressLine2,
+      city: ci.city ?? prev.city,
+      state: ci.state ?? prev.state,
+      zip: ci.postalCode ?? ci.zip ?? prev.zip, // server uses postalCode
+      country: ci.country ?? prev.country,
+      taxId: ci.taxId ?? prev.taxId,
+      taxFormType: (ci.taxFormType as any) ?? prev.taxFormType,
+      notes: ci.notes ?? prev.notes,
+      dataAccess: {
+        insightsReadOnly: ci?.dataAccess?.insightsReadOnly ?? prev.dataAccess.insightsReadOnly,
+        whitelisting: ci?.dataAccess?.whitelisting ?? prev.dataAccess.whitelisting,
+        sparkAds: ci?.dataAccess?.sparkAds ?? prev.dataAccess.sparkAds,
+      },
+    });
+
   const fetchInfluencerLite = useCallback(async () => {
     try {
       const influencerId = typeof window !== "undefined" ? localStorage.getItem("influencerId") : null;
@@ -437,7 +473,6 @@ function InfluencerContractModal({ open, onClose, contractId, campaign, readOnly
       const influencerId = typeof window !== "undefined" ? localStorage.getItem("influencerId") : null;
       if (!influencerId) throw new Error("No influencer ID found in localStorage.");
 
-      // NOTE: expects plural `contracts`
       const list = await post<{ success?: boolean; contracts: any[] }>("/contract/getContract", {
         brandId: campaign.brandId,
         influencerId,
@@ -446,13 +481,11 @@ function InfluencerContractModal({ open, onClose, contractId, campaign, readOnly
 
       const arr = Array.isArray((list as any)?.contracts) ? (list as any).contracts : [];
 
-      // Find by provided contractId or by campaignId fallback
       let c: any =
         arr.find((x: any) => String(x.contractId) === String(contractId)) ||
         arr.find((x: any) => String(x.campaignId) === String(campaign.id)) ||
         null;
 
-      // Prefer resent child if superseded
       if (c?.supersededBy) {
         const child = arr.find((x: any) => String(x.contractId) === String(c.supersededBy));
         if (child) c = child;
@@ -471,6 +504,11 @@ function InfluencerContractModal({ open, onClose, contractId, campaign, readOnly
           isResendChild: !!(c.flags?.isResendChild || c.statusFlags?.isResendChild),
           supersededBy: c.supersededBy,
         });
+
+        // NEW: prefill on edit open ONLY
+        if (!readOnly && c.influencer && Object.keys(c.influencer).length) {
+          setLocal((prev) => contractInfluencerToLocal(c.influencer, prev));
+        }
       } else {
         setMeta(null);
         setEffectiveContractId(contractId);
@@ -479,7 +517,7 @@ function InfluencerContractModal({ open, onClose, contractId, campaign, readOnly
       setMeta(null);
       setEffectiveContractId(contractId);
     }
-  }, [campaign.brandId, campaign.id, contractId]);
+  }, [campaign.brandId, campaign.id, contractId, readOnly]);
 
   // initial open: load lite + meta
   useEffect(() => {
@@ -534,42 +572,57 @@ function InfluencerContractModal({ open, onClose, contractId, campaign, readOnly
     }
   };
 
-const acceptOrSave = async () => {
-  setIsWorking(true);
-  try {
-    const sp = sanitizeLocal(local);
-    const payload: ServerInfluencer = toServerInfluencer(sp);
+  const acceptOrSave = async () => {
 
-    if (!influencerConfirmed) {
-      const ok = await askConfirm("Accept Contract?", "Your details will be submitted to the brand.");
-      if (!ok) return;
-      await post("/contract/influencer/confirm", {
-        contractId: effectiveContractId,
-        influencer: payload,
+    setIsWorking(true);
+    try {
+      const sp = sanitizeLocal(local);
+      const payload: ServerInfluencer = toServerInfluencer(sp);
+
+      // Validate Tax ID before submit
+      if (!isValidTaxId(sp.taxId, sp.taxFormType)) {
+        setIsWorking(false);
+        toast({
+          icon: "error",
+          title: "Invalid Tax ID",
+          text:
+            sp.taxFormType === "W-9"
+              ? "Enter a valid SSN (XXX-XX-XXXX), EIN (XX-XXXXXXX), or 9 digits."
+              : "Enter a valid Tax ID (4–30 characters; letters, numbers, spaces, '-' or '/').",
+        });
+        return;
+      }
+
+      if (!influencerConfirmed) {
+        const ok = await askConfirm("Accept Contract?", "Your details will be submitted to the brand.");
+        if (!ok) return;
+        await post("/contract/influencer/confirm", {
+          contractId: effectiveContractId,
+          influencer: payload,
+        });
+        toast({ icon: "success", title: "Accepted", text: "Details saved. Contract accepted." });
+      } else {
+        await post("/contract/influencer/update", {
+          contractId: effectiveContractId,
+          influencerUpdates: payload,
+        });
+        toast({ icon: "success", title: "Saved", text: "Your changes were saved." });
+      }
+
+      await fetchContractMeta();
+      onAfterAction && onAfterAction();
+      setMode("view");
+      await generatePreview(true);
+    } catch (e: any) {
+      toast({
+        icon: "error",
+        title: "Error",
+        text: e?.response?.data?.message || e?.message || "Failed to save.",
       });
-      toast({ icon: "success", title: "Accepted", text: "Details saved. Contract accepted." });
-    } else {
-      await post("/contract/influencer/update", {
-        contractId: effectiveContractId,
-        influencerUpdates: payload,
-      });
-      toast({ icon: "success", title: "Saved", text: "Your changes were saved." });
+    } finally {
+      setIsWorking(false);
     }
-
-    await fetchContractMeta();
-    onAfterAction && onAfterAction();
-    setMode("view");
-    await generatePreview(true);
-  } catch (e: any) {
-    toast({
-      icon: "error",
-      title: "Error",
-      text: e?.response?.data?.message || e?.message || "Failed to save.",
-    });
-  } finally {
-    setIsWorking(false);
-  }
-};
+  };
 
 
   const openSignature = () => {
@@ -751,6 +804,47 @@ const acceptOrSave = async () => {
                         <option value="W-8BEN-E">W-8BEN-E</option>
                       </select>
                     </div>
+
+                    {/* Tax ID (secure) */}
+                    <div className="relative">
+                      <label
+                        htmlFor="taxId"
+                        className="absolute left-4 top-2 text-xs text-[#FFBF00] font-medium pointer-events-none"
+                      >
+                        Tax ID {local.taxFormType === "W-9" ? "(SSN/EIN)" : ""}
+                      </label>
+
+                      {/* note the pr-12 so the icon button has space */}
+                      <input
+                        id="taxId"
+                        type={showTax ? "text" : "password"}
+                        value={local.taxId}
+                        onChange={(e) => setLocal((p) => ({ ...p, taxId: e.target.value }))}
+                        disabled={!canEdit}
+                        className={`w-full px-4 pt-6 pb-2 pr-12 border-2 rounded-lg text-sm transition-all duration-200 focus:outline-none ${!canEdit ? "border-gray-200 opacity-60 cursor-not-allowed" : "border-gray-200 focus:border-[#FFBF00]"
+                          }`}
+                        placeholder=" "
+                        autoComplete="off"
+                      />
+
+                      <button
+                        type="button"
+                        onClick={() => setShowTax((s) => !s)}
+                        disabled={!canEdit}
+                        aria-label={showTax ? "Hide Tax ID" : "Show Tax ID"}
+                        aria-controls="taxId"
+                        aria-pressed={showTax}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 grid place-items-center w-9 h-9 rounded-md border bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#FFBF00] disabled:opacity-50"
+                        title={showTax ? "Hide Tax ID" : "Show Tax ID"}
+                      >
+                        {showTax ? (
+                          <HiOutlineEyeOff className="w-5 h-5 text-gray-600" />
+                        ) : (
+                          <HiOutlineEye className="w-5 h-5 text-gray-600" />
+                        )}
+                      </button>
+                    </div>
+
 
                     {/* Address composition */}
                     <Input id="addressLine1" label="Address Line 1" value={local.addressLine1} onChange={(v) => setLocal((p) => ({ ...p, addressLine1: v }))} disabled={!canEdit} />
