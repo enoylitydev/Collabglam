@@ -95,7 +95,7 @@ const toCategoryStrings = (arr?: CategoryLink[]) =>
 
 /* --------------------------- Component ---------------------------- */
 export default function MediaKitPage({ influencerId: propId }: { influencerId?: string }) {
-  const [activeTab, setActiveTab] = useState<"overview" | "social" | "audience" | "collaboration" | "rates" | "contact">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "social" | "audience" | "collaboration" | "rates">("overview");
   const [resolvedId, setResolvedId] = useState<string | null>(propId ?? null);
 
   const [mediaKit, setMediaKit] = useState<MediaKit | null>(null);
@@ -274,7 +274,7 @@ export default function MediaKitPage({ influencerId: propId }: { influencerId?: 
         {/* Tabs */}
         <div className="bg-white rounded-2xl shadow-sm border p-2 mb-8">
           <div className="flex flex-wrap gap-2">
-            {(["overview", "social", "audience", "collaboration", "rates", "contact"] as const).map((tab) => (
+            {(["overview", "social", "audience", "collaboration", "rates"] as const).map((tab) => (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
@@ -503,57 +503,6 @@ export default function MediaKitPage({ influencerId: propId }: { influencerId?: 
             )}
           </div>
         )}
-
-        {/* CONTACT */}
-        {activeTab === "contact" && (
-          <div className="space-y-6">
-            <div className="bg-white rounded-2xl shadow-sm border overflow-hidden">
-              <div className="p-6 border-b bg-gradient-to-r from-[#FFA135]/5 to-[#FF7236]/5">
-                <h3 className="text-xl font-bold text-gray-900 flex items-center gap-2">
-                  <Mail className="w-6 h-6 text-[#FFA135]" />
-                  Get in Touch
-                </h3>
-                <p className="text-gray-600 mt-1">Let's collaborate on something amazing</p>
-              </div>
-              <div className="p-6 space-y-4">
-                {mediaKit?.email && (
-                  <ContactItem
-                    icon={<Mail className="w-5 h-5" />}
-                    label="Email"
-                    value={mediaKit.email}
-                    href={`mailto:${mediaKit.email}`}
-                  />
-                )}
-                {mediaKit?.phone && (
-                  <ContactItem
-                    icon={<Phone className="w-5 h-5" />}
-                    label="Phone"
-                    value={`${mediaKit.callingcode ?? ""} ${mediaKit.phone}`}
-                    href={`tel:${mediaKit.phone}`}
-                  />
-                )}
-                {mediaKit?.website && (
-                  <ContactItem
-                    icon={<LinkIcon className="w-5 h-5" />}
-                    label="Website"
-                    value={mediaKit.website}
-                    href={mediaKit.website}
-                    external
-                  />
-                )}
-                {primary?.url && (
-                  <ContactItem
-                    icon={getPlatformIcon(primary.provider)}
-                    label={`${primary.provider.charAt(0).toUpperCase() + primary.provider.slice(1)} Profile`}
-                    value={`@${primary.username}`}
-                    href={primary.url}
-                    external
-                  />
-                )}
-              </div>
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );
@@ -664,26 +613,6 @@ function AudienceCard({ title, data }: { title: string; data: AudienceItem[] }) 
         ))}
       </div>
     </div>
-  );
-}
-
-function ContactItem({ icon, label, value, href, external }: { icon: React.ReactNode; label: string; value: string; href: string; external?: boolean }) {
-  return (
-    <a
-      href={href}
-      target={external ? "_blank" : undefined}
-      rel={external ? "noopener noreferrer" : undefined}
-      className="flex items-center gap-4 p-4 rounded-xl border hover:border-[#FFA135]/50 hover:bg-gradient-to-r hover:from-[#FFA135]/5 hover:to-[#FF7236]/5 transition-all group"
-    >
-      <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#FFA135] to-[#FF7236] flex items-center justify-center text-white flex-shrink-0">
-        {icon}
-      </div>
-      <div className="flex-1 min-w-0">
-        <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">{label}</p>
-        <p className="text-sm font-semibold text-gray-900 mt-0.5 truncate group-hover:text-[#FFA135] transition-colors">{value}</p>
-      </div>
-      {external && <ExternalLink className="w-4 h-4 text-gray-400 group-hover:text-[#FFA135] transition-colors" />}
-    </a>
   );
 }
 

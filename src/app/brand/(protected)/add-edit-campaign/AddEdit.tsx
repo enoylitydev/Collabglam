@@ -505,7 +505,7 @@ export default function CampaignFormPage() {
       <div className="min-h-screen">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8 pb-32">
           <div className="mb-8">
-            <h1 className="text-4xl font-bold bg-gradient-to-r from-[#FFA135] to-[#FF7236] bg-clip-text text-transparent mb-2">
+            <h1 className="text-4xl font-semibold text-black mb-2">
               {isEditMode ? "Edit Campaign" : "Create New Campaign"}
             </h1>
             <p className="text-gray-600 text-lg">

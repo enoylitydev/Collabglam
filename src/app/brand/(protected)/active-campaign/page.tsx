@@ -102,8 +102,8 @@ export default function BrandActiveCampaignsPage() {
         const list: RawCampaign[] = Array.isArray(res?.campaigns)
           ? res!.campaigns!
           : Array.isArray(res?.data)
-          ? res!.data!
-          : [];
+            ? res!.data!
+            : [];
 
         // If backend already returns only active, you can drop this filter
         const active = list.filter((c) => c.isActive === 1);
@@ -256,7 +256,7 @@ function TableView({ data, formatDate, formatCurrency }: TableViewProps) {
             <tr>
               {["Campaign", "Budget", "Status", "Timeline", "Influencers Working", "Actions"].map(
                 (h) => (
-                  <th key={h} className="px-6 py-3 font-medium whitespace-nowrap">
+                  <th key={h} className="px-6 py-3 text-center font-medium whitespace-nowrap">
                     {h}
                   </th>
                 )
@@ -280,24 +280,23 @@ function TableView({ data, formatDate, formatCurrency }: TableViewProps) {
                   <div className="font-medium text-gray-900">{c.productOrServiceName}</div>
                   <div className="text-gray-600 line-clamp-1">{c.description}</div>
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap align-top">{formatCurrency(c.budget)}</td>
-                <td className="px-6 py-4 whitespace-nowrap align-top">
+                <td className="px-6 py-4 text-center whitespace-nowrap align-top">{formatCurrency(c.budget)}</td>
+                <td className="px-6 py-4 whitespace-nowrap align-top text-center">
                   <span
-                    className={`inline-flex items-center px-2 py-1 text-xs font-semibold rounded-full ${
-                      c.isActive === 1
+                    className={`inline-flex items-center justify-center px-2 py-1 text-xs font-semibold rounded-full ${c.isActive === 1
                         ? "bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white"
                         : "bg-red-100 text-red-800"
-                    }`}
+                      }`}
                   >
                     {c.isActive === 1 ? "Active" : "Inactive"}
                   </span>
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap align-top">
+                <td className="px-6 py-4 whitespace-nowrap text-center align-top">
                   {formatDate(c.timeline.startDate)} – {formatDate(c.timeline.endDate)}
                 </td>
                 <td className="px-6 py-4 text-center align-top">{c.applicantCount ?? "0"}</td>
-                <td className="px-6 py-4 whitespace-nowrap align-top">
-                  <div className="flex items-center space-x-2">
+                <td className="px-6 py-4 whitespace-nowrap items-center align-top">
+                  <div className="flex items-center justify-center space-x-2">
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <Link

@@ -629,11 +629,11 @@ export default function MediaKitPage({ influencerId: propId }: { influencerId?: 
                 />
               </Field>
 
-              <Field label="Rate Card (one item per line, e.g. `Instagram Post: ₹25,000`)">
+              <Field label="Rate Card (one item per line, e.g. `Instagram Post: $25,000`)">
                 <textarea
                   rows={6}
                   className="w-full px-3 py-2 rounded-lg border focus:outline-none focus:ring-2 focus:ring-[#FFBF00]/40"
-                  placeholder={"Instagram Post: ₹25,000\nReel: ₹35,000"}
+                  placeholder={"Instagram Post: $25,000\nReel: $35,000"}
                   value={form.rateCard}
                   onChange={(e) => setForm({ ...form, rateCard: e.target.value })}
                 />

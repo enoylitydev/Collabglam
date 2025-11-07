@@ -147,7 +147,7 @@ const getCategoryLabel = (inf: any) => {
   const fromObj = (o?: any) => (o && typeof o.name === "string" && o.name.trim()) ? o.name : "";
 
   // single-name sources
-  const direct = pick(inf.categoryName, inf.category_name, inf.categoryTitle, inf.primaryCategory, inf.niche, inf.vertical);
+  const direct = pick(inf.category, inf.category_name, inf.categoryTitle, inf.primaryCategory, inf.niche, inf.vertical);
   if (direct) return direct;
 
   // object forms
@@ -247,7 +247,7 @@ export default function AppliedInfluencersPage() {
   };
 
   const SortIndicator = ({ field }: { field: keyof Influencer }) =>
-    sortField === field ? (sortOrder === 1 ? <HiOutlineChevronDown className="inline ml-1 w-4 h-4" /> : <HiOutlineChevronUp className="inline ml-1 w-4 h-4" />) : null;
+    sortField === field ? (sortOrder === 1 ? <HiOutlineChevronDown className="inline ml-1 w-4 h-4 align-middle" /> : <HiOutlineChevronUp className="inline ml-1 w-4 h-4 align-middle" />) : null;
 
   /* ---------------- Currency & Timezone lists ---------------- */
   useEffect(() => {
@@ -602,8 +602,8 @@ export default function AppliedInfluencersPage() {
 
       return (
         <TableRow key={inf.influencerId} className={`${idx % 2 === 0 ? "bg-white" : "bg-gray-50"}`}>
-          <TableCell className="font-medium">{inf.name}</TableCell>
-          <TableCell className="whitespace-nowrap">
+          <TableCell className="font-medium align-center">{inf.name}</TableCell>
+          <TableCell className="whitespace-nowrap align-middle">
             {href ? (
               <a href={href} target="_blank" rel="noopener noreferrer" className="text-black hover:underline" title="Open profile">
                 {inf.handle || "—"}
@@ -612,13 +612,13 @@ export default function AppliedInfluencersPage() {
               <span className="text-gray-500">—</span>
             )}
           </TableCell>
-          <TableCell>
+          <TableCell className="align-center">
             <Badge variant="secondary" className="capitalize bg-gray-200 text-gray-800">{getCategoryLabel(inf)}</Badge>
           </TableCell>
-          <TableCell>{formatAudience(inf.audienceSize)}</TableCell>
-          <TableCell className="whitespace-nowrap">{inf.createdAt ? new Date(inf.createdAt).toLocaleDateString() : "—"}</TableCell>
+          <TableCell className="align-center">{formatAudience(inf.audienceSize)}</TableCell>
+          <TableCell className="whitespace-nowrap align-middle">{inf.createdAt ? new Date(inf.createdAt).toLocaleDateString() : "—"}</TableCell>
 
-          <TableCell className="text-center">
+          <TableCell className="text-center align-middle">
             {rejected ? (
               <div className="space-y-1">
                 <Badge className="bg-black text-white shadow-none">Rejected</Badge>
@@ -630,10 +630,17 @@ export default function AppliedInfluencersPage() {
           </TableCell>
 
           {/* ACTIONS */}
-          <TableCell className="text-center space-x-2 whitespace-nowrap">
+          <TableCell className="text-center space-x-2 whitespace-nowrap align-middle">
             {/* Always allow viewing influencer */}
-            {href && (
-              <Button size="sm" variant="outline" className="border-black text-black" onClick={() => window.open(href, "_blank")}>
+            {inf?.influencerId && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="border-black text-black"
+                onClick={() =>
+                  router.push(`/brand/influencers?id=${encodeURIComponent(String(inf.influencerId))}`)
+                }
+              >
                 View Influencer
               </Button>
             )}
@@ -730,7 +737,7 @@ export default function AppliedInfluencersPage() {
             type="text"
             placeholder="Search influencers..."
             value={searchTerm}
-            onChange={(e) => { setSearchTerm(e.target.value); setPage(1); }}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => { setSearchTerm(e.target.value); setPage(1); }}
             className="w-full pl-10 pr-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-black text-sm"
           />
         </div>
@@ -741,26 +748,26 @@ export default function AppliedInfluencersPage() {
           <Table className="min-w-[1100px]">
             <TableHeader
               style={{ backgroundImage: `linear-gradient(to right, ${GRADIENT_FROM}, ${GRADIENT_TO})` }}
-              className="text-white"
+              className="text-white text-center"
             >
               <TableRow>
-                <TableHead onClick={() => toggleSort("name")} className="cursor-pointer font-semibold">
+                <TableHead onClick={() => toggleSort("name")} className="cursor-pointer font-semibold text-center">
                   {applicantCount} Applied <SortIndicator field="name" />
                 </TableHead>
-                <TableHead onClick={() => toggleSort("handle")} className="cursor-pointer font-semibold">
+                <TableHead onClick={() => toggleSort("handle")} className="cursor-pointer font-semibold text-center">
                   Social Handle <SortIndicator field="handle" />
                 </TableHead>
-                <TableHead onClick={() => toggleSort("category")} className="cursor-pointer font-semibold">
+                <TableHead onClick={() => toggleSort("category")} className="cursor-pointer font-semibold text-center">
                   Category <SortIndicator field="category" />
                 </TableHead>
-                <TableHead onClick={() => toggleSort("audienceSize")} className="cursor-pointer font-semibold">
+                <TableHead onClick={() => toggleSort("audienceSize")} className="cursor-pointer font-semibold text-center">
                   Audience <SortIndicator field="audienceSize" />
                 </TableHead>
-                <TableHead onClick={() => toggleSort("createdAt")} className="cursor-pointer font-semibold">
+                <TableHead onClick={() => toggleSort("createdAt")} className="cursor-pointer font-semibold text-center">
                   Date <SortIndicator field="createdAt" />
                 </TableHead>
-                <TableHead className="font-semibold">Status</TableHead>
-                <TableHead className="text-center font-semibold">Actions</TableHead>
+                <TableHead className="font-semibold text-center">Status</TableHead>
+                <TableHead className="text-center font-semibold whitespace-nowrap">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>{rows}</TableBody>
@@ -805,7 +812,7 @@ export default function AppliedInfluencersPage() {
       >
         <SidebarSection title="Campaign Details" icon={<HiDocumentText className="w-4 h-4" />}>
           <div className="space-y-4">
-            <FloatingLabelInput id="campaignTitle" label="Campaign Title" value={campaignTitle} onChange={(e) => { setCampaignTitle(e.target.value); clearPreview(); }} />
+            <FloatingLabelInput id="campaignTitle" label="Campaign Title" value={campaignTitle} onChange={(e: React.ChangeEvent<HTMLInputElement>) => { setCampaignTitle(e.target.value); clearPreview(); }} />
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-3">Platforms</label>
               <PlatformSelector platforms={platforms} onChange={(v: string[]) => { setPlatforms(v); clearPreview(); }} />
@@ -813,15 +820,15 @@ export default function AppliedInfluencersPage() {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label htmlFor="goLiveStart" className="block text-xs font-medium text-gray-600 mb-1.5">Go Live Start</label>
-                <input id="goLiveStart" type="date" value={goLiveStart} onChange={(e) => { setGoLiveStart(e.target.value); clearPreview(); }} className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-lg text-sm transition-all duration-200 focus:border-black focus:outline-none" />
+                <input id="goLiveStart" type="date" value={goLiveStart} onChange={(e: React.ChangeEvent<HTMLInputElement>) => { setGoLiveStart(e.target.value); clearPreview(); }} className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-lg text-sm transition-all duration-200 focus:border-black focus:outline-none" />
               </div>
               <div>
                 <label htmlFor="goLiveEnd" className="block text-xs font-medium text-gray-600 mb-1.5">Go Live End</label>
-                <input id="goLiveEnd" type="date" value={goLiveEnd} onChange={(e) => { setGoLiveEnd(e.target.value); clearPreview(); }} className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-lg text-sm transition-all duration-200 focus:border-black focus:outline-none" />
+                <input id="goLiveEnd" type="date" value={goLiveEnd} onChange={(e: React.ChangeEvent<HTMLInputElement>) => { setGoLiveEnd(e.target.value); clearPreview(); }} className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-lg text-sm transition-all duration-200 focus:border-black focus:outline-none" />
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <FloatingLabelInput id="totalFee" label="Total Fee" value={totalFee} onChange={(e) => { setTotalFee(e.target.value); clearPreview(); }} type="number" />
+              <FloatingLabelInput id="totalFee" label="Total Fee" value={totalFee} onChange={(e: React.ChangeEvent<HTMLInputElement>) => { setTotalFee(e.target.value); clearPreview(); }} type="number" />
               <div>
                 <label className="text-sm font-medium text-gray-700 mb-2 block">Currency</label>
                 <ReactSelect
@@ -838,13 +845,13 @@ export default function AppliedInfluencersPage() {
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <FloatingLabelInput id="milestoneSplit" label="Milestone Split" value={milestoneSplit} onChange={(e) => { setMilestoneSplit(e.target.value); clearPreview(); }} />
+              <FloatingLabelInput id="milestoneSplit" label="Milestone Split" value={milestoneSplit} onChange={(e: React.ChangeEvent<HTMLInputElement>) => { setMilestoneSplit(e.target.value); clearPreview(); }} />
               <NumberInput id="revisionsIncluded" label="Revisions Included" value={revisionsIncluded} onChange={(v: number) => { setRevisionsIncluded(v); clearPreview(); }} min={0} />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label htmlFor="requestedEffDate" className="block text-xs font-medium text-gray-600 mb-1.5">Requested Effective Date (display)</label>
-                <input id="requestedEffDate" type="date" value={requestedEffDate} onChange={(e) => { setRequestedEffDate(e.target.value); clearPreview(); }} className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-lg text-sm transition-all duration-200 focus:border-black focus:outline-none" />
+                <input id="requestedEffDate" type="date" value={requestedEffDate} onChange={(e: React.ChangeEvent<HTMLInputElement>) => { setRequestedEffDate(e.target.value); clearPreview(); }} className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-lg text-sm transition-all duration-200 focus:border-black focus:outline-none" />
               </div>
               <div>
                 <label className="text-sm font-medium text-gray-700 mb-2 block">Timezone</label>
@@ -867,7 +874,7 @@ export default function AppliedInfluencersPage() {
         <SidebarSection title="Deliverables" icon={<HiClipboardList className="w-4 h-4" />}>
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-3">
-              <FloatingLabelInput id="dType" label="Type" value={dType} onChange={(e) => { setDType(e.target.value); clearPreview(); }} />
+              <FloatingLabelInput id="dType" label="Type" value={dType} onChange={(e: React.ChangeEvent<HTMLInputElement>) => { setDType(e.target.value); clearPreview(); }} />
               <Select
                 id="dFormat"
                 label="Format"
@@ -993,7 +1000,7 @@ export function Select({ id, label, value, onChange, options, disabled = false }
 export function NumberInput({ id, label, value, onChange, min = 0, ...props }: any) {
   return (
     <div className="relative">
-      <input id={id} type="number" min={min} value={value} onChange={(e) => onChange(Math.max(min, Number(e.target.value || min)))} className="w-full px-4 pt-6 pb-2 border-2 border-gray-200 rounded-lg text-sm transition-all duration-200 focus:border-black focus:outline-none" {...props} />
+      <input id={id} type="number" min={min} value={value} onChange={(e: React.ChangeEvent<HTMLInputElement>) => onChange(Math.max(min, Number(e.target.value || min)))} className="w-full px-4 pt-6 pb-2 border-2 border-gray-200 rounded-lg text-sm transition-all duration-200 focus:border-black focus:outline-none" {...props} />
       <label htmlFor={id} className="absolute left-4 top-2 text-xs text-black font-medium pointer-events-none">{label}</label>
     </div>
   );
@@ -1002,7 +1009,7 @@ export function NumberInput({ id, label, value, onChange, min = 0, ...props }: a
 export function Checkbox({ id, label, checked, onChange, disabled = false }: any) {
   return (
     <label htmlFor={id} className={`flex items-center gap-2 ${disabled ? "opacity-60 cursor-not-allowed" : ""}`}>
-      <input id={id} type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} disabled={disabled} className="h-4 w-4" />
+      <input id={id} type="checkbox" checked={checked} onChange={(e: React.ChangeEvent<HTMLInputElement>) => onChange(e.target.checked)} disabled={disabled} className="h-4 w-4" />
       <span className="text-sm text-gray-700">{label}</span>
     </label>
   );
@@ -1048,7 +1055,7 @@ export function ChipInput({ label, items, setItems, placeholder, validator, disa
             </span>
           ))}
         </div>
-        <input value={val} onChange={(e) => setVal(e.target.value)} onKeyDown={(e) => (e.key === "Enter" ? (e.preventDefault(), add()) : undefined)} placeholder={placeholder} disabled={disabled} className="flex-1 min-w-[120px] border-0 outline-none text-sm bg-transparent" />
+        <input value={val} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setVal(e.target.value)} onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) => (e.key === "Enter" ? (e.preventDefault(), add()) : undefined)} placeholder={placeholder} disabled={disabled} className="flex-1 min-w-[120px] border-0 outline-none text-sm bg-transparent" />
         <button type="button" onClick={add} disabled={disabled} className="px-2 py-1 text-xs border rounded">Add</button>
       </div>
     </div>
@@ -1128,7 +1135,7 @@ function SignatureModal({ isOpen, onClose, onSigned }: { isOpen: boolean; onClos
         <div className="p-5 space-y-4">
           <p className="text-sm text-gray-700">Upload your signature image (PNG/JPG up to <strong>50 KB</strong>).</p>
           <div className="space-y-2">
-            <input type="file" accept="image/png,image/jpeg" onChange={(e) => handleFile(e.target.files?.[0])} className="block w-full text-sm text-gray-700" />
+            <input type="file" accept="image/png,image/jpeg" onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleFile(e.target.files?.[0])} className="block w-full text-sm text-gray-700" />
             {error && <div className="text-xs text-red-600">{error}</div>}
           </div>
           {sigDataUrl && (
