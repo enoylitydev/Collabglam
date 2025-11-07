@@ -1,16 +1,20 @@
 "use client";
 
-// =============================================================================
-// COMPLETE REWRITE — Compliant contract flow for influencers
-// - PDF view strictly via POST /contract/viewPdf (no /preview anywhere)
-// - Influencer confirm/update wired to /contract/influencer/* endpoints
-// - Signature upload (PNG/JPG ≤ 50 KB) via dedicated modal; sends data URL to /contract/sign
-// - Uses plural endpoints /contract/* and expects plural key `contracts` from /contract/getContract
-// - Resolves resend children and sets `effectiveContractId`
-// - EDIT MODE: Split layout — LEFT PDF, RIGHT form
-// - UI: Hide Edit tab entirely when editing isn’t allowed; force View
-// - Extra: honors flags like canEditInfluencerFields/canSignInfluencer and lock state
-// =============================================================================
+/**
+ * =============================================================================
+ * COMPLETE REWRITE — Compliant contract flow for influencers (Next.js/React)
+ *
+ * ✅ PDF view strictly via POST /contract/viewPdf (no /preview anywhere)
+ * ✅ Influencer confirm/update wired to /contract/influencer/* endpoints
+ * ✅ Signature upload (PNG/JPG ≤ 50 KB) via dedicated modal; sends data URL to /contract/sign
+ * ✅ Uses plural endpoints /contract/* and expects plural key `contracts` from /contract/getContract
+ * ✅ Resolves resend children and sets `effectiveContractId`
+ * ✅ EDIT MODE: Split layout — LEFT PDF, RIGHT form
+ * ✅ UI: Hide Edit tab entirely when editing isn’t allowed; force View
+ * ✅ Honors flags: canEditInfluencerFields, canSignInfluencer, and lock state
+ * ✅ Adds influencer-editable fields requested: Shipping Address, Tax Form Type, Data/Access consents
+ * =============================================================================
+ */
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -22,7 +26,7 @@ import {
   HiOutlineEye,
   HiX,
 } from "react-icons/hi";
-import api, { post } from "@/lib/api";
+import api, { post } from "@/lib/api"; // expects axios instance + helper post()
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
@@ -80,15 +84,33 @@ interface CampaignsResponse {
   campaigns: any[];
 }
 
-// Data-access flags within influencer form
-export type DataAccess = {
-  allowAnalytics?: boolean;
-  allowPaidAds?: boolean;
-  allowContentReuse?: boolean;
+// Server-shaped influencer fields (matches backend ALLOWED_INFLUENCER_KEYS)
+export type ServerInfluencer = {
+  // acceptance details (persisted & rendered on contract)
+  legalName?: string;
+  email?: string;
+  phone?: string;
+  taxId?: string;
+  addressLine1?: string;
+  addressLine2?: string;
+  city?: string;
+  state?: string;
+  postalCode?: string; // NOTE: backend uses "postalCode"
+  country?: string;
+  notes?: string;
+
+  // existing fields
+  shippingAddress?: string; // pretty-composed single string
+  taxFormType?: "W-9" | "W-8BEN" | "W-8BEN-E";
+  dataAccess?: {
+    insightsReadOnly?: boolean;
+    whitelisting?: boolean;
+    sparkAds?: boolean;
+  };
 };
 
-// Influencer "purple" model captured in confirm/update
-export type Purple = {
+// Local UI model (we compose to ServerInfluencer when posting)
+export type LocalInfluencer = {
   legalName: string;
   email: string;
   phone: string;
@@ -98,12 +120,13 @@ export type Purple = {
   state: string;
   zip: string;
   country: string;
-  taxId: string;
+  taxId: string; // local-only (not posted)
+  taxFormType?: ServerInfluencer["taxFormType"];
   notes: string;
-  dataAccess: DataAccess;
+  dataAccess: NonNullable<ServerInfluencer["dataAccess"]>;
 };
 
-const emptyPurple: Purple = {
+const emptyLocal: LocalInfluencer = {
   legalName: "",
   email: "",
   phone: "",
@@ -114,34 +137,59 @@ const emptyPurple: Purple = {
   zip: "",
   country: "",
   taxId: "",
+  taxFormType: "W-9",
   notes: "",
-  dataAccess: {},
+  dataAccess: { insightsReadOnly: true, whitelisting: false, sparkAds: false },
 };
 
-const sanitizePurple = (p: Purple): Purple => ({
-  legalName: (p.legalName || "").trim(),
-  email: (p.email || "").trim(),
-  phone: (p.phone || "").trim(),
-  addressLine1: (p.addressLine1 || "").trim(),
-  addressLine2: (p.addressLine2 || "").trim(),
-  city: (p.city || "").trim(),
-  state: (p.state || "").trim(),
-  zip: (p.zip || "").trim(),
-  country: (p.country || "").trim(),
-  taxId: (p.taxId || "").trim(),
-  notes: (p.notes || "").trim(),
-  dataAccess: p.dataAccess ?? {},
+const trim = (s?: string) => (s || "").trim();
+const sanitizeLocal = (p: LocalInfluencer): LocalInfluencer => ({
+  ...p,
+  legalName: trim(p.legalName),
+  email: trim(p.email),
+  phone: trim(p.phone),
+  addressLine1: trim(p.addressLine1),
+  addressLine2: trim(p.addressLine2),
+  city: trim(p.city),
+  state: trim(p.state),
+  zip: trim(p.zip),
+  country: trim(p.country),
+  taxId: trim(p.taxId),
+  notes: trim(p.notes),
 });
 
+const composeShippingAddress = (p: LocalInfluencer) =>
+  [p.addressLine1, p.addressLine2, [p.city, p.state].filter(Boolean).join(", "), p.zip, p.country]
+    .filter(Boolean)
+    .join(", ");
+
+const toServerInfluencer = (sp: LocalInfluencer): ServerInfluencer => ({
+  // acceptance fields (these feed [[Influencer.AcceptanceDetailsTableHTML]] and tokens)
+  legalName: sp.legalName,
+  email: sp.email,
+  phone: sp.phone,
+  taxId: sp.taxId || undefined,
+  addressLine1: sp.addressLine1,
+  addressLine2: sp.addressLine2,
+  city: sp.city,
+  state: sp.state,
+  postalCode: sp.zip, // <-- map Local "zip" to API "postalCode"
+  country: sp.country,
+  notes: sp.notes,
+
+  // convenience + consents
+  shippingAddress: composeShippingAddress(sp),
+  taxFormType: sp.taxFormType,
+  dataAccess: {
+    insightsReadOnly: !!sp.dataAccess.insightsReadOnly,
+    whitelisting: !!sp.dataAccess.whitelisting,
+    sparkAds: !!sp.dataAccess.sparkAds,
+  },
+});
+
+
 /* ─────────────────────────── Small form components ────────────────────────── */
-function Input({
-  id,
-  label,
-  value,
-  onChange,
-  type = "text",
-  disabled = false,
-}: {
+function Input({ id, label, value, onChange, type = "text", disabled = false }: {
   id: string;
   label: string;
   value: string;
@@ -157,9 +205,8 @@ function Input({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         disabled={disabled}
-        className={`w-full px-4 pt-6 pb-2 border-2 rounded-lg text-sm transition-all duration-200 focus:outline-none ${
-          disabled ? "border-gray-200 opacity-60 cursor-not-allowed" : "border-gray-200 focus:border-[#FFBF00]"
-        }`}
+        className={`w-full px-4 pt-6 pb-2 border-2 rounded-lg text-sm transition-all duration-200 focus:outline-none ${disabled ? "border-gray-200 opacity-60 cursor-not-allowed" : "border-gray-200 focus:border-[#FFBF00]"
+          }`}
         placeholder=" "
       />
       <label htmlFor={id} className="absolute left-4 top-2 text-xs text-[#FFBF00] font-medium pointer-events-none">
@@ -169,14 +216,7 @@ function Input({
   );
 }
 
-function Textarea({
-  id,
-  label,
-  value,
-  onChange,
-  rows = 3,
-  disabled = false,
-}: {
+function Textarea({ id, label, value, onChange, rows = 3, disabled = false }: {
   id: string;
   label: string;
   value: string;
@@ -192,9 +232,8 @@ function Textarea({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         disabled={disabled}
-        className={`w-full px-4 pt-6 pb-2 border-2 rounded-lg text-sm transition-all duration-200 focus:outline-none ${
-          disabled ? "border-gray-200 opacity-60 cursor-not-allowed" : "border-gray-200 focus:border-[#FFBF00]"
-        }`}
+        className={`w-full px-4 pt-6 pb-2 border-2 rounded-lg text-sm transition-all duration-200 focus:outline-none ${disabled ? "border-gray-200 opacity-60 cursor-not-allowed" : "border-gray-200 focus:border-[#FFBF00]"
+          }`}
         placeholder=" "
       />
       <label htmlFor={id} className="absolute left-4 top-2 text-xs text-[#FFBF00] font-medium pointer-events-none">
@@ -204,12 +243,7 @@ function Textarea({
   );
 }
 
-function Checkbox({
-  label,
-  checked,
-  onChange,
-  disabled = false,
-}: {
+function Checkbox({ label, checked, onChange, disabled = false }: {
   label: string;
   checked: boolean;
   onChange: (checked: boolean) => void;
@@ -217,11 +251,10 @@ function Checkbox({
 }) {
   return (
     <label
-      className={`flex items-center gap-3 p-3 rounded-lg border-2 transition-all duration-200 ${
-        disabled
+      className={`flex items-center gap-3 p-3 rounded-lg border-2 transition-all duration-200 ${disabled
           ? "border-gray-200 opacity-60 cursor-not-allowed"
           : "border-gray-200 hover:border-[#FFBF00] hover:bg-yellow-50/50 cursor-pointer"
-      }`}
+        }`}
     >
       <input
         type="checkbox"
@@ -236,12 +269,7 @@ function Checkbox({
 }
 
 /* ───────────────────────────── Signature Modal ────────────────────────────── */
-function SignatureModal({
-  open,
-  onClose,
-  onSubmit,
-  title = "Add Signature",
-}: {
+function SignatureModal({ open, onClose, onSubmit, title = "Add Signature" }: {
   open: boolean;
   onClose: () => void;
   onSubmit: (signatureDataUrl: string) => Promise<void> | void;
@@ -311,14 +339,7 @@ function SignatureModal({
 }
 
 /* ───────────────────── Contract Modal: Accept / Edit / Sign ───────────────── */
-function InfluencerContractModal({
-  open,
-  onClose,
-  contractId,
-  campaign,
-  readOnly = false,
-  onAfterAction,
-}: {
+function InfluencerContractModal({ open, onClose, contractId, campaign, readOnly = false, onAfterAction, }: {
   open: boolean;
   onClose: () => void;
   contractId: string;
@@ -338,12 +359,12 @@ function InfluencerContractModal({
     supersededBy?: string;
   };
 
-  const [purple, setPurple] = useState<Purple>(emptyPurple);
+  const [local, setLocal] = useState<LocalInfluencer>(emptyLocal);
   const [previewUrl, setPreviewUrl] = useState<string>("");
   const [isWorking, setIsWorking] = useState(false);
   const [liteLoaded, setLiteLoaded] = useState(false);
 
-  // We may receive an outdated contractId; resolve to latest (resent child)
+  // Resolve to resent child if present
   const [effectiveContractId, setEffectiveContractId] = useState<string>(contractId);
   const [meta, setMeta] = useState<ContractMeta | null>(null);
 
@@ -356,9 +377,10 @@ function InfluencerContractModal({
   const canEdit = useMemo(() => {
     if (readOnly) return false;
     if (isLocked) return false;
+    if (!influencerConfirmed) return true; // allow before acceptance
     if (meta?.flags?.canEditInfluencerFields === false) return false;
     return true;
-  }, [readOnly, isLocked, meta?.flags?.canEditInfluencerFields]);
+  }, [readOnly, isLocked, influencerConfirmed, meta?.flags?.canEditInfluencerFields]);
 
   const [mode, setMode] = useState<"view" | "edit">(readOnly ? "view" : "edit");
 
@@ -370,8 +392,8 @@ function InfluencerContractModal({
   // Signature modal state
   const [showSignModal, setShowSignModal] = useState(false);
 
-  /* Prefill purple from influencer lite */
-  const toPurpleFromLite = (lite: any): Purple => {
+  /* Prefill UI model from influencer lite */
+  const toLocalFromLite = (lite: any): LocalInfluencer => {
     const primary = (lite?.primaryPlatform || "").toLowerCase();
     const profiles: any[] = Array.isArray(lite?.socialProfiles) ? lite.socialProfiles : [];
     const match = profiles.find((p) => (p?.provider || "").toLowerCase() === primary) || profiles[0] || {};
@@ -387,11 +409,12 @@ function InfluencerContractModal({
       zip: "",
       country: lite?.country || "",
       taxId: "",
+      taxFormType: "W-9",
       notes: "",
       dataAccess: {
-        allowAnalytics: true,
-        allowPaidAds: !!lite?.onboarding?.allowlisting,
-        allowContentReuse: false,
+        insightsReadOnly: true,
+        whitelisting: !!lite?.onboarding?.allowlisting,
+        sparkAds: false,
       },
     };
   };
@@ -401,7 +424,7 @@ function InfluencerContractModal({
       const influencerId = typeof window !== "undefined" ? localStorage.getItem("influencerId") : null;
       if (!influencerId) throw new Error("No influencer ID found in localStorage.");
       const res = await api.get("/influencer/lite", { params: { influencerId } });
-      setPurple(toPurpleFromLite(res.data?.influencer || {}));
+      setLocal(toLocalFromLite(res.data?.influencer || {}));
     } catch (e: any) {
       console.warn("lite fetch failed", e?.message);
     } finally {
@@ -414,9 +437,11 @@ function InfluencerContractModal({
       const influencerId = typeof window !== "undefined" ? localStorage.getItem("influencerId") : null;
       if (!influencerId) throw new Error("No influencer ID found in localStorage.");
 
+      // NOTE: expects plural `contracts`
       const list = await post<{ success?: boolean; contracts: any[] }>("/contract/getContract", {
         brandId: campaign.brandId,
         influencerId,
+        campaignId: campaign.id,
       });
 
       const arr = Array.isArray((list as any)?.contracts) ? (list as any).contracts : [];
@@ -427,7 +452,7 @@ function InfluencerContractModal({
         arr.find((x: any) => String(x.campaignId) === String(campaign.id)) ||
         null;
 
-      // If this contract was superseded, prefer the resent child
+      // Prefer resent child if superseded
       if (c?.supersededBy) {
         const child = arr.find((x: any) => String(x.contractId) === String(c.supersededBy));
         if (child) c = child;
@@ -477,14 +502,14 @@ function InfluencerContractModal({
   useEffect(() => {
     if (!open) return;
     if (readOnly) setMode("view");
-    else setMode(influencerConfirmed ? "view" : "edit");
+    else if (!influencerConfirmed) setMode("edit");
   }, [open, readOnly, influencerConfirmed]);
 
   // Ensure a preview exists when switching to either view OR edit (via /contract/viewPdf)
   useEffect(() => {
     if (!open) return;
     if ((mode === "view" || mode === "edit") && !previewUrl) {
-      generatePreview(true).catch(() => {});
+      generatePreview(true).catch(() => { });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, open]);
@@ -492,7 +517,6 @@ function InfluencerContractModal({
   const generatePreview = async (silent = false) => {
     setIsWorking(true);
     try {
-      // VIEW-ONLY: always via /contract/viewPdf
       const res = await api.post(
         "/contract/viewPdf",
         { contractId: effectiveContractId },
@@ -510,36 +534,43 @@ function InfluencerContractModal({
     }
   };
 
-  const acceptOrSave = async () => {
-    setIsWorking(true);
-    try {
-      if (!influencerConfirmed) {
-        const ok = await askConfirm("Accept Contract?", "Your details will be submitted to the brand.");
-        if (!ok) return;
-        // ACCEPT by confirming details
-        await post("/contract/influencer/confirm", {
-          contractId: effectiveContractId,
-          influencer: sanitizePurple(purple),
-        });
-        toast({ icon: "success", title: "Accepted", text: "Details saved. Contract accepted." });
-      } else {
-        // EDIT after acceptance
-        await post("/contract/influencer/update", {
-          contractId: effectiveContractId,
-          influencerUpdates: sanitizePurple(purple),
-        });
-        toast({ icon: "success", title: "Saved", text: "Your changes were saved." });
-      }
-      await fetchContractMeta();
-      onAfterAction && onAfterAction();
-      setMode("view");
-      await generatePreview(true);
-    } catch (e: any) {
-      toast({ icon: "error", title: "Error", text: e?.response?.data?.message || e?.message || "Failed to save." });
-    } finally {
-      setIsWorking(false);
+const acceptOrSave = async () => {
+  setIsWorking(true);
+  try {
+    const sp = sanitizeLocal(local);
+    const payload: ServerInfluencer = toServerInfluencer(sp);
+
+    if (!influencerConfirmed) {
+      const ok = await askConfirm("Accept Contract?", "Your details will be submitted to the brand.");
+      if (!ok) return;
+      await post("/contract/influencer/confirm", {
+        contractId: effectiveContractId,
+        influencer: payload,
+      });
+      toast({ icon: "success", title: "Accepted", text: "Details saved. Contract accepted." });
+    } else {
+      await post("/contract/influencer/update", {
+        contractId: effectiveContractId,
+        influencerUpdates: payload,
+      });
+      toast({ icon: "success", title: "Saved", text: "Your changes were saved." });
     }
-  };
+
+    await fetchContractMeta();
+    onAfterAction && onAfterAction();
+    setMode("view");
+    await generatePreview(true);
+  } catch (e: any) {
+    toast({
+      icon: "error",
+      title: "Error",
+      text: e?.response?.data?.message || e?.message || "Failed to save.",
+    });
+  } finally {
+    setIsWorking(false);
+  }
+};
+
 
   const openSignature = () => {
     if (isLocked) return;
@@ -560,8 +591,8 @@ function InfluencerContractModal({
       await post("/contract/sign", {
         contractId: effectiveContractId,
         role: "influencer",
-        name: purple.legalName,
-        email: purple.email,
+        name: local.legalName,
+        email: local.email,
         signatureImageDataUrl: signatureDataUrl,
       });
       toast({ icon: "success", title: "Signed", text: "Signature recorded." });
@@ -629,9 +660,8 @@ function InfluencerContractModal({
         {/* Minimal meta line */}
         <div className="px-5 pt-3 flex flex-wrap gap-2 text-[11px]">
           {meta?.status && (
-            <span className={`px-2 py-1 rounded-full border ${
-              isLocked ? "bg-emerald-50 border-emerald-200 text-emerald-700" : "bg-yellow-50 border-yellow-200 text-yellow-700"
-            }`}>
+            <span className={`px-2 py-1 rounded-full border ${isLocked ? "bg-emerald-50 border-emerald-200 text-emerald-700" : "bg-yellow-50 border-yellow-200 text-yellow-700"
+              }`}>
               Status: {meta.status.toUpperCase()}
             </span>
           )}
@@ -699,29 +729,51 @@ function InfluencerContractModal({
                   <div className="font-semibold text-gray-800 mb-3">{influencerConfirmed ? "Edit Your Details" : "Fill Your Details to Accept"}</div>
 
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-                    <Input id="legalName" label="Legal Name" value={purple.legalName} onChange={(v) => setPurple((p) => ({ ...p, legalName: v }))} disabled={!canEdit} />
-                    <Input id="email" label="Email" value={purple.email} onChange={(v) => setPurple((p) => ({ ...p, email: v }))} disabled={!canEdit} />
-                    <Input id="phone" label="Phone" value={purple.phone} onChange={(v) => setPurple((p) => ({ ...p, phone: v }))} disabled={!canEdit} />
-                    <Input id="taxId" label="Tax ID (optional)" value={purple.taxId} onChange={(v) => setPurple((p) => ({ ...p, taxId: v }))} disabled={!canEdit} />
-                    <Input id="addressLine1" label="Address Line 1" value={purple.addressLine1} onChange={(v) => setPurple((p) => ({ ...p, addressLine1: v }))} disabled={!canEdit} />
-                    <Input id="addressLine2" label="Address Line 2" value={purple.addressLine2} onChange={(v) => setPurple((p) => ({ ...p, addressLine2: v }))} disabled={!canEdit} />
-                    <Input id="city" label="City" value={purple.city} onChange={(v) => setPurple((p) => ({ ...p, city: v }))} disabled={!canEdit} />
-                    <Input id="state" label="State" value={purple.state} onChange={(v) => setPurple((p) => ({ ...p, state: v }))} disabled={!canEdit} />
-                    <Input id="zip" label="ZIP / Postal Code" value={purple.zip} onChange={(v) => setPurple((p) => ({ ...p, zip: v }))} disabled={!canEdit} />
-                    <Input id="country" label="Country" value={purple.country} onChange={(v) => setPurple((p) => ({ ...p, country: v }))} disabled={!canEdit} />
+                    <Input id="legalName" label="Legal Name" value={local.legalName} onChange={(v) => setLocal((p) => ({ ...p, legalName: v }))} disabled={!canEdit} />
+                    <Input id="email" label="Email" value={local.email} onChange={(v) => setLocal((p) => ({ ...p, email: v }))} disabled={!canEdit} />
+                    <Input id="phone" label="Phone" value={local.phone} onChange={(v) => setLocal((p) => ({ ...p, phone: v }))} disabled={!canEdit} />
+
+                    {/* Tax Form Type selector */}
+                    <div className="relative">
+                      <label htmlFor="taxFormType" className="absolute left-4 top-2 text-xs text-[#FFBF00] font-medium pointer-events-none">
+                        Tax Form Type
+                      </label>
+                      <select
+                        id="taxFormType"
+                        disabled={!canEdit}
+                        value={local.taxFormType}
+                        onChange={(e) => setLocal((p) => ({ ...p, taxFormType: e.target.value as any }))}
+                        className={`w-full px-4 pt-6 pb-2 border-2 rounded-lg text-sm transition-all duration-200 focus:outline-none ${!canEdit ? "border-gray-200 opacity-60 cursor-not-allowed" : "border-gray-200 focus:border-[#FFBF00]"
+                          }`}
+                      >
+                        <option value="W-9">W-9</option>
+                        <option value="W-8BEN">W-8BEN</option>
+                        <option value="W-8BEN-E">W-8BEN-E</option>
+                      </select>
+                    </div>
+
+                    {/* Address composition */}
+                    <Input id="addressLine1" label="Address Line 1" value={local.addressLine1} onChange={(v) => setLocal((p) => ({ ...p, addressLine1: v }))} disabled={!canEdit} />
+                    <Input id="addressLine2" label="Address Line 2" value={local.addressLine2} onChange={(v) => setLocal((p) => ({ ...p, addressLine2: v }))} disabled={!canEdit} />
+                    <Input id="city" label="City" value={local.city} onChange={(v) => setLocal((p) => ({ ...p, city: v }))} disabled={!canEdit} />
+                    <Input id="state" label="State" value={local.state} onChange={(v) => setLocal((p) => ({ ...p, state: v }))} disabled={!canEdit} />
+                    <Input id="zip" label="ZIP / Postal Code" value={local.zip} onChange={(v) => setLocal((p) => ({ ...p, zip: v }))} disabled={!canEdit} />
+                    <Input id="country" label="Country" value={local.country} onChange={(v) => setLocal((p) => ({ ...p, country: v }))} disabled={!canEdit} />
                   </div>
 
                   <div className="mt-3">
-                    <Textarea id="notes" label="Notes (optional)" value={purple.notes} onChange={(v) => setPurple((p) => ({ ...p, notes: v }))} rows={3} disabled={!canEdit} />
+                    <Textarea id="notes" label="Notes (optional)" value={local.notes} onChange={(v) => setLocal((p) => ({ ...p, notes: v }))} rows={3} disabled={!canEdit} />
                   </div>
 
+                  {/* Data/Access Consents — matches contract template spec */}
                   <div className="mt-4">
-                    <div className="text-sm font-medium text-gray-800 mb-2">Data Access</div>
+                    <div className="text-sm font-medium text-gray-800 mb-2">Data / Access Consents</div>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-                      <Checkbox label="Allow Analytics" checked={!!purple.dataAccess.allowAnalytics} onChange={(checked) => setPurple((p) => ({ ...p, dataAccess: { ...p.dataAccess, allowAnalytics: checked } }))} disabled={!canEdit} />
-                      <Checkbox label="Allow Paid Ads" checked={!!purple.dataAccess.allowPaidAds} onChange={(checked) => setPurple((p) => ({ ...p, dataAccess: { ...p.dataAccess, allowPaidAds: checked } }))} disabled={!canEdit} />
-                      <Checkbox label="Allow Content Reuse" checked={!!purple.dataAccess.allowContentReuse} onChange={(checked) => setPurple((p) => ({ ...p, dataAccess: { ...p.dataAccess, allowContentReuse: checked } }))} disabled={!canEdit} />
+                      <Checkbox label="Read-Only Insights Access" checked={!!local.dataAccess.insightsReadOnly} onChange={(checked) => setLocal((p) => ({ ...p, dataAccess: { ...p.dataAccess, insightsReadOnly: checked } }))} disabled={!canEdit} />
+                      <Checkbox label="Whitelisting Access" checked={!!local.dataAccess.whitelisting} onChange={(checked) => setLocal((p) => ({ ...p, dataAccess: { ...p.dataAccess, whitelisting: checked } }))} disabled={!canEdit} />
+                      <Checkbox label="Spark Ads Access" checked={!!local.dataAccess.sparkAds} onChange={(checked) => setLocal((p) => ({ ...p, dataAccess: { ...p.dataAccess, sparkAds: checked } }))} disabled={!canEdit} />
                     </div>
+                    <div className="text-xs text-gray-500 mt-1">Consents appear in Parties block / Section 12(e) and Schedule K references inside the contract.</div>
                   </div>
 
                   <div className="mt-5 flex flex-wrap gap-2">
@@ -770,94 +822,6 @@ function InfluencerContractModal({
   );
 }
 
-/* ───────────────────────────── Overlay (brand/influencer) ─────────────────── */
-export function ContractEditorOverlay({
-  contractId,
-  role,
-  onClose,
-  onAfterSave,
-  readOnly = false,
-  accentGradientClass = "bg-gradient-to-r from-[#FFBF00] to-[#FFDB58]",
-}: {
-  contractId: string;
-  role: "brand" | "influencer";
-  onClose: () => void;
-  onAfterSave?: () => void;
-  readOnly?: boolean;
-  accentGradientClass?: string;
-}) {
-  const [pdfUrl, setPdfUrl] = useState<string>("");
-  const [busy, setBusy] = useState(false);
-  const [signOpen, setSignOpen] = useState(false);
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const res = await api.post("/contract/viewPdf", { contractId }, { responseType: "blob" });
-        const url = URL.createObjectURL(res.data);
-        setPdfUrl(url);
-      } catch (e: any) {
-        toast({ icon: "error", title: "Load error", text: e?.message || "Failed to load PDF" });
-      }
-    })();
-    return () => {
-      if (pdfUrl) URL.revokeObjectURL(pdfUrl);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [contractId]);
-
-  const signWithSignature = async (sig: string) => {
-    try {
-      setBusy(true);
-      await post("/contract/sign", { contractId, role, signatureImageDataUrl: sig });
-      toast({ icon: "success", title: "Signed", text: "Signature recorded" });
-      onAfterSave && onAfterSave();
-      setSignOpen(false);
-      onClose();
-    } catch (e: any) {
-      toast({ icon: "error", title: "Sign error", text: e?.response?.data?.message || e?.message || "Failed to sign" });
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 z-50">
-      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
-      <div className="absolute right-0 top-0 h-full w-full lg:w-[900px] bg-white shadow-2xl border-l flex flex-col">
-        <div className={`p-4 flex items-center justify-between border-b text-gray-900 ${accentGradientClass}`}>
-          <div className="font-semibold text-gray-900">Contract — {role}</div>
-          <button onClick={onClose} className="p-2 rounded bg-white/20 hover:bg-white/30">
-            <HiX className="w-5 h-5 text-gray-900" />
-          </button>
-        </div>
-
-        <div className="flex-1 overflow-auto p-4">
-          {pdfUrl ? (
-            <iframe className="w-full h:[78vh] lg:h-[78vh] h-[70vh] rounded border" src={pdfUrl} />
-          ) : (
-            <div className="p-6 text-gray-500">Loading PDF…</div>
-          )}
-        </div>
-
-        {!readOnly && (
-          <div className="p-4 border-t flex items-center gap-3 justify-between">
-            <div className="text-xs text-gray-600">Upload your signature in the next step.</div>
-            <div className="flex gap-2">
-              <Button variant="outline" onClick={onClose}>Close</Button>
-              <Button onClick={() => setSignOpen(true)} disabled={busy} className={`text-gray-900 px-4 py-2 rounded-md shadow-sm hover:brightness-95 ${accentGradientClass} ${busy ? "opacity-60 cursor-not-allowed" : ""}`}>
-                {busy ? "Opening…" : "Sign"}
-              </Button>
-            </div>
-          </div>
-        )}
-      </div>
-
-      <SignatureModal open={signOpen} onClose={() => setSignOpen(false)} title={`Sign as ${role === "brand" ? "Brand" : "Influencer"}`} onSubmit={signWithSignature} />
-    </div>
-  );
-}
-
 /* ─────────────────────────── Reject button (compact) ───────────────────────── */
 function RejectButton({ contractId, onDone }: { contractId: string; onDone: () => void }) {
   const [open, setOpen] = useState(false);
@@ -902,19 +866,7 @@ function RejectButton({ contractId, onDone }: { contractId: string; onDone: () =
 }
 
 /* ─────────────────────────── Reusable Campaign Table ───────────────────────── */
-function CampaignTable({
-  data,
-  loading,
-  error,
-  emptyMessage,
-  page,
-  totalPages,
-  onPrev,
-  onNext,
-  showMilestones = false,
-  onOpenEditor,
-  onRefreshAll,
-}: {
+function CampaignTable({ data, loading, error, emptyMessage, page, totalPages, onPrev, onNext, showMilestones = false, onOpenEditor, onRefreshAll, }: {
   data: Campaign[];
   loading: boolean;
   error: string | null;
@@ -965,9 +917,8 @@ function CampaignTable({
   const DataRows = () => (
     <tbody>
       {data.map((c, idx) => {
-        const isExpanded = expandedId === c.id;
         const accepted = c.isAccepted === 1;
-
+        const isExpanded = expandedId === c.id;
         return (
           <React.Fragment key={c.id}>
             <tr className={idx % 2 === 0 ? "bg-white" : "bg-gray-50"}>
@@ -980,7 +931,6 @@ function CampaignTable({
               <td className="px-6 py-4 text-center">
                 {formatDate(c.timeline.startDate)} – {formatDate(c.timeline.endDate)}
               </td>
-
               <td className="px-6 py-4 text-center">
                 {c.hasApplied === 1 && !accepted && !c.isContracted ? (
                   <Badge className="bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-800 shadow-none">Brand Reviewing</Badge>
@@ -990,7 +940,6 @@ function CampaignTable({
                   <Badge className="bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-800 shadow-none">Accepted</Badge>
                 )}
               </td>
-
               <td className="px-6 py-4 flex justify-center gap-2 whitespace-nowrap">
                 {c.isContracted === 1 && !accepted ? (
                   <>
@@ -1005,10 +954,7 @@ function CampaignTable({
                     <Button variant="outline" onClick={() => onOpenEditor(c, true)} className="bg-white" title="View contract">
                       View Contract
                     </Button>
-                    <RejectButton
-                      contractId={c.contractId}
-                      onDone={onRefreshAll}
-                    />
+                    <RejectButton contractId={c.contractId} onDone={onRefreshAll} />
                   </>
                 ) : accepted ? (
                   <>
@@ -1028,7 +974,7 @@ function CampaignTable({
                   <Button
                     variant="outline"
                     className="bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-900"
-                    onClick={() => window.location.assign(`/influencer/my-campaign/view-campaign?id=${c.id}`)}
+                    onClick={() => (window.location.href = `/influencer/my-campaign/view-campaign?id=${c.id}`)}
                   >
                     View Campaign
                   </Button>
@@ -1223,7 +1169,6 @@ export default function MyCampaignsPage() {
     setEditorOpen(true);
   };
 
-  // single refresh callback to reuse in children
   const refreshAll = () => {
     fetchActiveCampaigns();
     fetchAppliedCampaigns();

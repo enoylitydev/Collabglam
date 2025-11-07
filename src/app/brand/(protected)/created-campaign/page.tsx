@@ -285,6 +285,10 @@ function TableView({
                           <Link
                             href={`/brand/created-campaign/applied-inf?id=${c.id}&name=${encodeURIComponent(
                               c.productOrServiceName
+                            )}&budget=${c.budget}&timeline=${encodeURIComponent(
+                              `${formatDate(c.timeline.startDate)} – ${formatDate(
+                                c.timeline.endDate
+                              )}`
                             )}`}
                             className="relative flex items-center p-2 bg-gray-100 text-gray-800 rounded-full hover:bg-gray-200 focus:outline-none"
                           >
