@@ -147,7 +147,7 @@ const mapPlatformToApi = (p?: string | null) => {
 const getCategoryLabel = (inf: any) => {
   const pick = (...vals: any[]) => vals.find(v => typeof v === "string" && v.trim());
   const fromObj = (o?: any) => (o && typeof o.name === "string" && o.name.trim()) ? o.name : "";
-  const direct = pick(inf.categoryName, inf.category_name, inf.categoryTitle, inf.primaryCategory, inf.niche, inf.vertical);
+  const direct = pick(inf.category, inf.category_name, inf.categoryTitle, inf.primaryCategory, inf.niche, inf.vertical);
   if (direct) return direct;
   const obj = fromObj(inf.category) || fromObj(inf.primary_category) || fromObj(inf.influencerCategory);
   if (obj) return obj;
