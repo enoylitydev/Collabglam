@@ -20,6 +20,7 @@ type Dispute = {
   description: string;
   status: "open" | "in_review" | "awaiting_user" | "resolved" | "rejected";
   campaignId?: string | null;
+  campaignName?: string | null;
   brandId: string;
   influencerId: string;
   assignedTo?: { adminId?: string | null; name?: string | null } | null;
@@ -95,8 +96,8 @@ export default function InfluencerDisputeDetailPage() {
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-2xl font-semibold">{d.subject}</h1>
-              {d.campaignId ? (
-                <p className="text-gray-600">Campaign: <span className="font-mono text-xs">{d.campaignId}</span></p>
+              {d.campaignName ? (
+                <p className="text-gray-600">Campaign: {d.campaignName}</p>
               ) : (
                 <p className="text-gray-600">No campaign linked</p>
               )}

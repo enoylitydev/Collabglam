@@ -26,6 +26,7 @@ type Dispute = {
   influencerId: string;
   brandName?: string | null;
   influencerName?: string | null;
+    createdBy?: { id?: string; role?: "Brand" | "Influencer" };
   assignedTo?: { adminId?: string | null; name?: string | null } | null;
   comments?: Comment[];
   createdAt: string;
@@ -160,7 +161,7 @@ export default function AdminDisputesPage() {
             if (e.key === 'Enter') { setPage(1); setAppliedSearch(searchInput); }
           }}
         />
-        <Button onClick={() => { setPage(1); setAppliedSearch(searchInput); }}>Search</Button>
+        <Button className="border" onClick={() => { setPage(1); setAppliedSearch(searchInput); }}>Search</Button>
       </div>
 
       {loading ? (
@@ -170,7 +171,7 @@ export default function AdminDisputesPage() {
       ) : rows.length === 0 ? (
         <p className="text-gray-600">No disputes found.</p>
       ) : (
-        <div className="overflow-x-auto rounded border bg-white">
+        <div className="overflow-x-auto rounded-[16px] border bg-white">
           <table className="min-w-full text-sm">
             <thead className="bg-gray-50">
               <tr>
@@ -178,6 +179,7 @@ export default function AdminDisputesPage() {
                 <th className="text-left p-3">Campaign</th>
                 <th className="text-left p-3">Brand</th>
                 <th className="text-left p-3">Influencer</th>
+                <th className="text-left p-3">Applied By</th>
                 <th className="text-left p-3">Status</th>
               </tr>
             </thead>
@@ -191,7 +193,16 @@ export default function AdminDisputesPage() {
                   <td className="p-3 font-medium">{d.subject}</td>
                   <td className="p-3 font-mono text-xs">{d.campaignId || '—'}</td>
                   <td className="p-3">{d.brandName || <span className="font-mono text-xs">{d.brandId}</span>}</td>
-                  <td className="p-3">{d.influencerName || <span className="font-mono text-xs">{d.influencerId}</span>}</td>
+                  <td className="p-3"><span className="font-mono text-xs">{d.influencerId}</span></td>
+                  <td className="p-3">
+                    {d.createdBy?.role ? (
+                      <span className="px-1.5 py-0.5 rounded bg-gray-100 text-gray-800 text-xs font-medium">
+                        {d.createdBy.role}
+                      </span>
+                    ) : (
+                      <span className="text-xs text-gray-500">—</span>
+                    )}
+                  </td>
                   <td className="p-3"><StatusBadge s={d.status} /></td>
                 </tr>
               ))}
