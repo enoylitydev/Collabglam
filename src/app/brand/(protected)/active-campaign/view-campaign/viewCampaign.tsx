@@ -13,6 +13,7 @@ import {
   HiOutlineEye,
 } from "react-icons/hi";
 import { get } from "@/lib/api";
+import { resolveFileList } from "@/lib/files";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -256,7 +257,7 @@ export default function ViewCampaignPage() {
               <p className="text-sm font-medium text-gray-600">Description</p>
               <p className="mt-1 whitespace-pre-wrap text-gray-800">{c.description}</p>
             </div>
-            {Array.isArray(c.images) && c.images.length > 0 && (
+            {imageUrls.length > 0 && (
               <div className="md:col-span-3">
                 <p className="text-sm font-medium text-gray-600">Images</p>
                 <div className="mt-2 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">

@@ -13,6 +13,7 @@ import {
   HiOutlineEye,
 } from "react-icons/hi";
 import { get } from "@/lib/api";
+import { resolveFileList } from "@/lib/files";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardContent, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";

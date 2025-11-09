@@ -14,6 +14,7 @@ type Dispute = {
   description?: string;
   status: "open" | "in_review" | "awaiting_user" | "resolved" | "rejected";
   campaignId?: string | null;
+  campaignName?: string | null;
   brandId: string;
   influencerId: string;
   assignedTo?: { adminId?: string | null; name?: string | null } | null;
@@ -65,18 +66,7 @@ export default function BrandDisputesPage() {
       setLoading(false);
     }
   };
-
-  // Guard: ensure userType is brand
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const userType = localStorage.getItem('userType');
-      if (userType !== 'brand') {
-        router.replace('/login');
-      }
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
+  
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -119,7 +109,7 @@ export default function BrandDisputesPage() {
           </Select>
         </div>
         {/* Removed 'Applied by' filter for brand view */}
-        <Input
+        <Input className="bg-white text-black"
           placeholder="Search subject/description"
           value={searchInput}
           onChange={(e) => setSearchInput(e.target.value)}
@@ -128,7 +118,7 @@ export default function BrandDisputesPage() {
           }}
         />
         <Button
-          className="bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white"
+          className="bg-white text-black border"
           onClick={() => { setPage(1); setAppliedSearch(searchInput); }}
         >
           Search
@@ -142,7 +132,7 @@ export default function BrandDisputesPage() {
       ) : rows.length === 0 ? (
         <p className="text-gray-600">No disputes found.</p>
       ) : (
-        <div className="overflow-x-auto rounded border bg-white">
+        <div className="overflow-x-auto rounded-[16px] border bg-white">
           <table className="min-w-full text-sm">
             <thead className="bg-gray-50">
               <tr>
@@ -157,13 +147,13 @@ export default function BrandDisputesPage() {
               {rows.map((d) => (
                 <tr key={d.disputeId} className="border-t">
                   <td className="p-3 font-medium">{d.subject}</td>
-                  <td className="p-3 font-mono text-xs">{d.campaignId || '—'}</td>
+                  <td className="p-3">{d.campaignName || '—'}</td>
                   <td className="p-3">
                     <StatusBadge s={d.status} />
                   </td>
                   <td className="p-3 text-gray-600">{new Date(d.updatedAt).toLocaleString()}</td>
                   <td className="p-3">
-                    <Link className="text-blue-600 hover:underline" href={`/brand/disputes/${d.disputeId}`}>View</Link>
+                    <Link className="text-black-600 hover:underline" href={`/brand/disputes/${d.disputeId}`}>View</Link>
                   </td>
                 </tr>
               ))}

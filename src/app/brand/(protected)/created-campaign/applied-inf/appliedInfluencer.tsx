@@ -29,14 +29,17 @@ import {
   HiInformationCircle,
   HiChatAlt2,
 } from "react-icons/hi";
-import ReactSelect from "react-select";
+// import ReactSelect from "react-select";
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip";
+import dynamic from "next/dynamic";
 
 /* ===============================================================
    THEME (colors preserved)
    =============================================================== */
 const GRADIENT_FROM = "#FFA135";
 const GRADIENT_TO = "#FF7236";
+
+const ReactSelect = dynamic(() => import("react-select"), { ssr: false });
 
 /* ===============================================================
    Types

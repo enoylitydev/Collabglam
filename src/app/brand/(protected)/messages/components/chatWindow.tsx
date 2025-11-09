@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { HiPaperAirplane, HiPaperClip, HiArrowDown, HiReply, HiX, HiDownload, HiOutlineEye } from 'react-icons/hi';
 import { post } from '@/lib/api';
 import { fileUrl, isPdfMime, isImageMime, isVideoMime, withDownload, downloadByHref } from '@/lib/files';
+import { resolveFileUrl } from "@/lib/files";
 
 // Types (aligned with backend)
 

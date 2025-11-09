@@ -94,6 +94,13 @@ interface CampaignEditPayload {
   additionalNotes: string;
 }
 
+interface DraftFilePayload {
+  name: string;
+  type: string;
+  lastModified: number;
+  dataUrl: string;
+}
+
 // ── helpers ─────────────────────────────────────────────────
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") || "";
@@ -111,6 +118,36 @@ const buildCountryOptions = (countries: Country[]): CountryOption[] =>
     label: `${c.flag} ${c.countryName}`,
     country: c,
   }));
+
+const fileToDraftPayload = (file: File): Promise<DraftFilePayload> =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () =>
+      resolve({
+        name: file.name,
+        type: file.type,
+        lastModified: file.lastModified,
+        dataUrl: reader.result as string,
+      });
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+
+const draftPayloadToFile = (draft: DraftFilePayload): File => {
+  const parts = draft.dataUrl.split(",");
+  if (parts.length < 2) throw new Error("Invalid data URL");
+  const binary = atob(parts[1]);
+  const len = binary.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i += 1) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  const mimeMatch = parts[0]?.match(/:(.*?);/);
+  return new File([bytes], draft.name, {
+    type: mimeMatch?.[1] || draft.type || "application/octet-stream",
+    lastModified: draft.lastModified,
+  });
+};
 
 const filterByCountryName = (
   option: FilterOptionOption<unknown>,
@@ -338,6 +375,14 @@ export default function CampaignFormPage() {
       setCreativeBriefText(draft.creativeBriefText || "");
       setUseFileUploadForBrief(Boolean(draft.useFileUploadForBrief));
       setAdditionalNotes(draft.additionalNotes || "");
+      if (Array.isArray(draft.productImages)) {
+        try {
+          const revived = draft.productImages.map((img: DraftFilePayload) => draftPayloadToFile(img));
+          setProductImages(revived);
+        } catch (err) {
+          console.error("Failed to restore draft images", err);
+        }
+      }
 
       setDraftLoaded(true);
       toast({ icon: "info", title: "Draft Loaded", text: "We restored your saved draft." });
@@ -400,8 +445,9 @@ export default function CampaignFormPage() {
   const fileSizeKB = (b: number) => `${(b / 1024).toFixed(1)} KB`;
 
   // ── Save Draft & Preview ─────────────────────────────────
-  const handleSaveDraft = () => {
+  const handleSaveDraft = async () => {
     try {
+      const serializedProductImages = await Promise.all(productImages.map((file) => fileToDraftPayload(file)));
       const draft = {
         productName,
         description,
@@ -416,10 +462,12 @@ export default function CampaignFormPage() {
         creativeBriefText,
         useFileUploadForBrief,
         additionalNotes,
+        productImages: serializedProductImages,
       };
       localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
       toast({ icon: "success", title: "Draft Saved", text: "You can continue later." });
-    } catch {
+    } catch (err) {
+      console.error("Failed to save campaign draft", err);
       toast({ icon: "error", title: "Could not save draft" });
     }
   };
