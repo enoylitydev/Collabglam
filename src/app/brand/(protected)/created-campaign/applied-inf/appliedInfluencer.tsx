@@ -1167,7 +1167,7 @@ export default function AppliedInfluencersPage() {
   return (
     <TooltipProvider delayDuration={150}>
       <div className="min-h-screen p-4 md:p-8 space-y-6 md:space-y-8 max-w-7xl mx-auto">
-        <header className="flex items-center justify-between p-2 md:p-4 rounded-md sticky top-0 z-20 backdrop-blur supports-[backdrop-filter]:bg-white/70 bg-white/90 border-b border-gray-100">
+        <header className="flex items-center justify-between p-2 md:p-4 rounded-md sticky top-0 backdrop-blur supports-[backdrop-filter]:bg-white/70 bg-white/90 border-b border-gray-100">
           <h1 className="text-xl md:text-3xl font-bold truncate">Campaign: {campaignTitle || "Unknown Campaign"}</h1>
           <div className="flex items-center gap-2">
             <Button size="sm" variant="outline" className="bg-gray-200 text-black" onClick={() => router.back()}>Back</Button>
