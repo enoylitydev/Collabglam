@@ -227,9 +227,9 @@ type FormErrors = Record<string, string>;
 export default function AppliedInfluencersPage() {
   const searchParams = useSearchParams();
   const campaignId = searchParams.get("id");
-  const campaignName = searchParams.get("name") || "";
-  const campaignBudgetParam = searchParams.get("budget");
-  const campaignTimelineParam = searchParams.get("timeline");
+  const [serverBudget, setServerBudget] = useState<number | null>(null);
+  const [serverTimeline, setServerTimeline] = useState<{ startDate?: string | Date; endDate?: string | Date } | null>(null);
+
   const router = useRouter();
 
   // Data & Pagination
@@ -260,11 +260,11 @@ export default function AppliedInfluencersPage() {
   const [metaCacheLoading, setMetaCacheLoading] = useState(false);
 
   // Form (brand)
-  const [campaignTitle, setCampaignTitle] = useState(campaignName);
+  const [campaignTitle, setCampaignTitle] = useState("");
   const [platforms, setPlatforms] = useState<string[]>([]);
   const [goLiveStart, setGoLiveStart] = useState("");
   const [goLiveEnd, setGoLiveEnd] = useState("");
-  const [totalFee, setTotalFee] = useState<string>(campaignBudgetParam || "");
+  const [totalFee, setTotalFee] = useState<string>("");
   const [currency, setCurrency] = useState("USD");
   const [milestoneSplit, setMilestoneSplit] = useState("50/50");
   const [revisionsIncluded, setRevisionsIncluded] = useState(1);
@@ -342,24 +342,43 @@ export default function AppliedInfluencersPage() {
   const draftMax = goLiveStart || "";
 
   /* ---------------- Seed from search params (budget + timeline) ---------------- */
-  useEffect(() => {
-    // budget
-    if (campaignBudgetParam && !totalFee) setTotalFee(campaignBudgetParam);
 
-    // timeline format example: "Nov 12, 2025 – Nov 19, 2025"
-    if (campaignTimelineParam && !goLiveStart && !goLiveEnd) {
-      const raw = campaignTimelineParam.trim();
-      const parts = raw.split(/\u2013|–|-/); // en dash or hyphen
-      if (parts.length >= 2) {
-        const start = toInputDate(new Date(parts[0].trim()));
-        const end = toInputDate(new Date(parts[1].trim()));
-        if (start) setGoLiveStart(start);
-        if (end) setGoLiveEnd(end);
-        if (!requestedEffDate && start) setRequestedEffDate(start);
+  useEffect(() => {
+    if (!campaignId) return;
+
+    (async () => {
+      try {
+        const res: any = await api.get("/campaign/campaignSummary", { params: { id: campaignId } });
+        const d = res?.data || res || {};
+        const name = d.campaignName || "";
+        const budgetNum =
+          typeof d.budget === "number" ? d.budget : Number(d.budget ?? NaN);
+
+        setCampaignTitle(name);
+
+        if (!Number.isNaN(budgetNum)) {
+          setServerBudget(budgetNum);
+          setTotalFee(String(budgetNum));       // seed the form
+        }
+
+        if (d.timeline) {
+          const start = d.timeline.startDate ? toInputDate(new Date(d.timeline.startDate)) : "";
+          const end = d.timeline.endDate ? toInputDate(new Date(d.timeline.endDate)) : "";
+          setServerTimeline(d.timeline);
+          if (start) setGoLiveStart(start);
+          if (end) setGoLiveEnd(end);
+          if (!requestedEffDate && start) setRequestedEffDate(start);
+        }
+      } catch (e: any) {
+        toast({
+          icon: "error",
+          title: "Failed to load campaign",
+          text: e?.response?.data?.message || e?.message || "Could not fetch campaign summary.",
+        });
       }
-    }
+    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [campaignBudgetParam, campaignTimelineParam]);
+  }, [campaignId]);
 
   /* ---------------- Debounce search for smoother UX ---------------- */
   useEffect(() => {
@@ -496,22 +515,21 @@ export default function AppliedInfluencersPage() {
 
   const prefillFormFor = (inf: Influencer, meta?: ContractMeta | null) => {
     clearErrors();
-    setCampaignTitle(campaignName || inf?.name || "");
+    setCampaignTitle((prev) => prev || inf?.name || "");
     setPlatforms(inf?.primaryPlatform ? [mapPlatformToApi(inf.primaryPlatform) as string] : []);
 
     // Prefer timeline from params when present
-    if (campaignTimelineParam) {
-      const parts = campaignTimelineParam.split(/\u2013|–|-/);
-      const start = parts[0] ? toInputDate(new Date(parts[0].trim())) : "";
-      const end = parts[1] ? toInputDate(new Date(parts[1].trim())) : "";
+    if (serverTimeline?.startDate || serverTimeline?.endDate) {
+      const start = serverTimeline?.startDate ? toInputDate(serverTimeline.startDate) : "";
+      const end = serverTimeline?.endDate ? toInputDate(serverTimeline.endDate) : "";
       setGoLiveStart(start);
       setGoLiveEnd(end);
     } else {
-      setGoLiveStart(""); setGoLiveEnd("");
+      setGoLiveStart("");
+      setGoLiveEnd("");
     }
 
-    // budget from params > influencer fee > fallback
-    const initialFee = campaignBudgetParam || String(inf.feeAmount || 5000);
+    const initialFee = String(serverBudget ?? inf.feeAmount ?? 5000);
     setTotalFee(initialFee);
     setCurrency("USD");
 
@@ -1082,17 +1100,17 @@ export default function AppliedInfluencersPage() {
 
           {/* ACTIONS */}
           <TableCell className="text-center">
-              <RowActions
-                inf={inf}
-                meta={meta}
-                hasContract={hasContract}
-                rejected={rejected}
-                iConfirmed={iConfirmed}
-                bConfirmed={bConfirmed}
-                bSigned={bSigned}
-                locked={locked}
-                nowrap
-              />
+            <RowActions
+              inf={inf}
+              meta={meta}
+              hasContract={hasContract}
+              rejected={rejected}
+              iConfirmed={iConfirmed}
+              bConfirmed={bConfirmed}
+              bSigned={bSigned}
+              locked={locked}
+              nowrap
+            />
           </TableCell>
         </TableRow>
       );
@@ -1149,8 +1167,8 @@ export default function AppliedInfluencersPage() {
   return (
     <TooltipProvider delayDuration={150}>
       <div className="min-h-screen p-4 md:p-8 space-y-6 md:space-y-8 max-w-7xl mx-auto">
-        <header className="flex items-center justify-between p-2 md:p-4 rounded-md sticky top-0  backdrop-blur supports-[backdrop-filter]:bg-white/70 bg-white/90 border-b border-gray-100">
-          <h1 className="text-xl md:text-3xl font-bold truncate">Campaign: {campaignName || "Unknown Campaign"}</h1>
+        <header className="flex items-center justify-between p-2 md:p-4 rounded-md sticky top-0 z-20 backdrop-blur supports-[backdrop-filter]:bg-white/70 bg-white/90 border-b border-gray-100">
+          <h1 className="text-xl md:text-3xl font-bold truncate">Campaign: {campaignTitle || "Unknown Campaign"}</h1>
           <div className="flex items-center gap-2">
             <Button size="sm" variant="outline" className="bg-gray-200 text-black" onClick={() => router.back()}>Back</Button>
           </div>
