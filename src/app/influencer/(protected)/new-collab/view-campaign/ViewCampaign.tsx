@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   HiOutlinePhotograph,
@@ -9,6 +9,7 @@ import {
   HiOutlineDocument,
 } from "react-icons/hi";
 import { post } from "@/lib/api";
+import { resolveFileList } from "@/lib/files";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -126,6 +127,15 @@ export default function ViewCampaignPage() {
     }
   };
 
+  const imageUrls = useMemo(
+    () => resolveFileList(campaign?.images ?? []),
+    [campaign?.images]
+  );
+  const creativeBriefUrls = useMemo(
+    () => resolveFileList(campaign?.creativeBrief ?? []),
+    [campaign?.creativeBrief]
+  );
+
   if (loading) {
     return (
       <div className="flex h-screen items-center justify-center bg-gray-100">
@@ -193,11 +203,11 @@ export default function ViewCampaignPage() {
               <p className="text-sm font-medium text-gray-600">Description</p>
               <p className="mt-1 text-gray-800 whitespace-pre-wrap">{c.description}</p>
             </div>
-            {c.images?.length > 0 && (
+            {imageUrls.length > 0 && (
               <div className="md:col-span-3">
                 <p className="text-sm font-medium text-gray-600">Images</p>
                 <div className="mt-2 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-                  {c.images.map((url, i) => (
+                  {imageUrls.map((url, i) => (
                     <div key={i} className="relative h-36 rounded-lg overflow-hidden border border-gray-300 shadow-sm">
                       <img src={url} alt={`img-${i}`} className="h-full w-full object-cover" />
                     </div>
@@ -302,11 +312,11 @@ export default function ViewCampaignPage() {
               <p className="whitespace-pre-wrap text-gray-800">{c.creativeBriefText}</p>
             </div>
           )}
-          {c.creativeBrief.length > 0 && (
+          {creativeBriefUrls.length > 0 && (
             <div>
               <p className="text-sm font-medium text-gray-600">Files</p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                {c.creativeBrief.map((url, i) => (
+                {creativeBriefUrls.map((url, i) => (
                   <a
                     key={i}
                     href={url}

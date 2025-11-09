@@ -1,8 +1,9 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { get } from "@/lib/api";
+import { resolveFileList } from "@/lib/files";
 import {
   HiChevronLeft,
   HiOutlineUserGroup,
@@ -85,6 +86,15 @@ export default function ViewCampaignPage() {
 
   const genderLabel = (g: 0 | 1 | 2) =>
     g === 0 ? "Female" : g === 1 ? "Male" : "All";
+
+  const imageUrls = useMemo(
+    () => resolveFileList(campaign?.images ?? []),
+    [campaign?.images]
+  );
+  const creativeBriefUrls = useMemo(
+    () => resolveFileList(campaign?.creativeBrief ?? []),
+    [campaign?.creativeBrief]
+  );
 
   if (loading) {
     return (
@@ -178,11 +188,11 @@ export default function ViewCampaignPage() {
               {c.description}
             </p>
           </div>
-          {c.images.length > 0 && (
+          {imageUrls.length > 0 && (
             <div className="md:col-span-3">
               <p className="text-sm font-medium text-gray-600">Images</p>
               <div className="mt-2 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-                {c.images.map((url, i) => (
+                {imageUrls.map((url, i) => (
                   <div
                     key={i}
                     className="relative h-36 overflow-hidden rounded-lg border"
@@ -308,11 +318,11 @@ export default function ViewCampaignPage() {
             </>
           )}
 
-          {c.creativeBrief.length > 0 && (
+          {creativeBriefUrls.length > 0 && (
             <>
               <p className="text-sm font-medium text-gray-600">Files</p>
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                {c.creativeBrief.map((url, i) => (
+                {creativeBriefUrls.map((url, i) => (
                   <a
                     key={i}
                     href={url}
