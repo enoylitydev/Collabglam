@@ -1958,7 +1958,7 @@ function InfoTip({ text }: { text: string }) {
           <HiInformationCircle className="w-4 h-4 text-gray-500" />
         </button>
       </TooltipTrigger>
-      <TooltipContent side="top" align="center" className="max-w-xs text-sm leading-relaxed">
+      <TooltipContent side="top" align="center" className="max-w-xs text-sm leading-relaxed bg-gray-800 text-white">
         <p>{text}</p>
       </TooltipContent>
     </Tooltip>
@@ -2034,7 +2034,7 @@ function ActionButton({
   return title ? (
     <Tooltip>
       <TooltipTrigger asChild>{BtnInner}</TooltipTrigger>
-      <TooltipContent side="top" className="text-xs">
+      <TooltipContent side="top" className="text-xs bg-gray-800 text-white max-w-xs">
         {title}
       </TooltipContent>
     </Tooltip>
