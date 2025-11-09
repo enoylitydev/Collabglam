@@ -6,115 +6,132 @@ import { post } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
-type BrandResult = { brandId: string; name: string };
-type Campaign = { campaignsId: string; productOrServiceName?: string };
+type AppliedCampaign = {
+  campaignsId: string;
+  productOrServiceName?: string;
+  brandId?: string;
+  brand?: { brandId?: string; name?: string };
+  brandName?: string;
+};
 
 export default function NewInfluencerDisputePage() {
   const router = useRouter();
   const [influencerId, setInfluencerId] = useState<string | null>(null);
 
-  // Brand search/selection
-  const [brandQuery, setBrandQuery] = useState("");
-  const [brandResults, setBrandResults] = useState<BrandResult[]>([]);
-  const [brandLoading, setBrandLoading] = useState(false);
-  const [brandNoResults, setBrandNoResults] = useState(false);
-  const [brandId, setBrandId] = useState("");
-  const [brandName, setBrandName] = useState("");
-
-  // Campaigns by selected brand
-  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+  // Applied campaigns (from backend)
+  const [campaigns, setCampaigns] = useState<AppliedCampaign[]>([]);
   const [loadingCampaigns, setLoadingCampaigns] = useState(false);
   const [campaignId, setCampaignId] = useState("");
 
-  // Form fields
+  // Brand (auto from campaign)
+  const [brandId, setBrandId] = useState("");
+  const [brandName, setBrandName] = useState("");
+  const [loadingBrand, setLoadingBrand] = useState(false);
+
+  // Form
   const [subject, setSubject] = useState("");
   const [description, setDescription] = useState("");
-  const [relatedType, setRelatedType] = useState("other");
-  const [relatedId, setRelatedId] = useState("");
+  const [relatedType] = useState("other");
+  const [relatedId] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const id = typeof window !== "undefined" ? localStorage.getItem("influencerId") : null;
+    const id =
+      typeof window !== "undefined"
+        ? localStorage.getItem("influencerId")
+        : null;
     setInfluencerId(id);
   }, []);
 
-  // Search brands as influencer types into brandQuery
+  // Load applied campaigns (backend: /campaign/applied)
   useEffect(() => {
-    const q = brandQuery.trim();
-    if (!q) {
-      setBrandResults([]);
-      setBrandNoResults(false);
-      return;
-    }
-
-    setBrandLoading(true);
-    setBrandNoResults(false);
-
-    const handler = setTimeout(async () => {
-      try {
-        const infId = typeof window !== "undefined" ? localStorage.getItem("influencerId") : null;
-        if (!infId) {
-          setBrandResults([]);
-          setBrandNoResults(true);
-          return;
-        }
-        const resp = await post<{ results?: BrandResult[]; message?: string }>(
-          "/influencer/searchBrand",
-          { search: q, influencerId: infId }
-        );
-        if (!resp?.results?.length) {
-          setBrandResults([]);
-          setBrandNoResults(true);
-        } else {
-          setBrandResults(resp.results);
-          setBrandNoResults(false);
-        }
-      } catch (e) {
-        setBrandResults([]);
-        setBrandNoResults(true);
-      } finally {
-        setBrandLoading(false);
-      }
-    }, 300);
-
-    return () => clearTimeout(handler);
-  }, [brandQuery]);
-
-  // When a brand is chosen, fetch its active campaigns via admin endpoint
-  const selectBrand = async (b: BrandResult) => {
-    setBrandId(b.brandId);
-    setBrandName(b.name);
-    setBrandQuery(b.name);
-    setBrandResults([]);
-    setBrandNoResults(false);
-    setCampaignId("");
-    setCampaigns([]);
-
-    try {
+    const load = async () => {
+      if (!influencerId) return;
       setLoadingCampaigns(true);
-      const data = await post<{ campaigns?: Campaign[] }>(
-        "/admin/campaign/getByBrandId",
-        { brandId: b.brandId, page: 1, limit: 1000, status: 1 }
-      );
-      setCampaigns(data?.campaigns || []);
-    } catch (e) {
-      setCampaigns([]);
-    } finally {
-      setLoadingCampaigns(false);
-    }
-  };
+      try {
+        const data = await post<{ meta?: any; campaigns?: AppliedCampaign[] }>(
+          "/campaign/applied",
+          { influencerId, page: 1, limit: 1000 }
+        );
+        setCampaigns(data?.campaigns || []);
+      } catch (e: any) {
+        setCampaigns([]);
+        setError(
+          e?.response?.data?.message ||
+            e?.message ||
+            "Failed to load applied campaigns"
+        );
+      } finally {
+        setLoadingCampaigns(false);
+      }
+    };
+    load();
+  }, [influencerId]);
 
-  const clearBrand = () => {
-    setBrandId("");
-    setBrandName("");
-    setBrandQuery("");
-    setBrandResults([]);
-    setCampaignId("");
-    setCampaigns([]);
-  };
+  const selectedCampaign = useMemo(
+    () => campaigns.find((c) => c.campaignsId === campaignId),
+    [campaigns, campaignId]
+  );
+
+  // Auto-fill brand from the selected campaign
+  useEffect(() => {
+    const fillBrand = async () => {
+      if (!selectedCampaign) {
+        setBrandId("");
+        setBrandName("");
+        return;
+      }
+
+      const inferredBrandId =
+        selectedCampaign.brandId || selectedCampaign.brand?.brandId || "";
+      const inferredBrandName =
+        selectedCampaign.brandName || selectedCampaign.brand?.name || "";
+
+      setBrandId(inferredBrandId);
+
+      if (inferredBrandName) {
+        setBrandName(inferredBrandName);
+        return;
+      }
+
+      if (inferredBrandId) {
+        setLoadingBrand(true);
+        try {
+          let name = "";
+          try {
+            const resA = await post<{ brand?: { name?: string } }>(
+              "/admin/brand/getById",
+              { brandId: inferredBrandId }
+            );
+            name = resA?.brand?.name || "";
+          } catch {
+            const resB = await post<{ brand?: { name?: string } }>(
+              "/brand/getById",
+              { brandId: inferredBrandId }
+            );
+            name = resB?.brand?.name || "";
+          }
+          setBrandName(name || inferredBrandId);
+        } catch {
+          setBrandName(inferredBrandId);
+        } finally {
+          setLoadingBrand(false);
+        }
+      } else {
+        setBrandName("");
+      }
+    };
+    fillBrand();
+  }, [selectedCampaign]);
 
   const submit = async () => {
     setError(null);
@@ -122,13 +139,18 @@ export default function NewInfluencerDisputePage() {
       setError("Missing influencer id (not logged in?)");
       return;
     }
+    if (!campaignId) {
+      setError("Please select a campaign you applied to.");
+      return;
+    }
     if (!brandId || !subject) {
-      setError("brandId and subject are required");
+      setError("Brand and subject are required.");
       return;
     }
 
     setSubmitting(true);
     try {
+      // payload unchanged
       const body: any = {
         campaignId: campaignId || undefined,
         brandId,
@@ -140,7 +162,9 @@ export default function NewInfluencerDisputePage() {
       await post("/dispute/create", body);
       router.push("/influencer/disputes");
     } catch (e: any) {
-      setError(e?.response?.data?.message || e?.message || "Failed to create dispute");
+      setError(
+        e?.response?.data?.message || e?.message || "Failed to create dispute"
+      );
     } finally {
       setSubmitting(false);
     }
@@ -149,105 +173,91 @@ export default function NewInfluencerDisputePage() {
   return (
     <div className="p-6 max-w-2xl mx-auto">
       <h1 className="text-2xl font-semibold mb-4">Raise a Dispute</h1>
-      <div className="space-y-4 bg-white p-4 rounded border">
+
+      <div className="space-y-4 bg-white p-6 rounded border">
         {error && <p className="text-red-600">{error}</p>}
 
-        {/* Brand search + select */}
-        <div className="relative">
-          <label className="block text-sm font-medium mb-1">Brand</label>
-          <div className="relative">
-            <Input
-              value={brandQuery}
-              onChange={(e) => setBrandQuery(e.target.value)}
-              placeholder="Search brand by name"
-              className="pr-10"
-            />
-            {brandLoading && (
-              <span className="absolute inset-y-0 right-3 my-auto h-4 w-4 rounded-full border-2 border-gray-300 border-t-transparent animate-spin" />
-            )}
-          </div>
-          {(brandResults.length > 0 || brandNoResults) && (
-            <ul className="absolute z-40 mt-1 w-full bg-white border rounded shadow max-h-60 overflow-auto">
-              {brandResults.map((b) => (
-                <li
-                  key={b.brandId}
-                  className="px-3 py-2 hover:bg-gray-100 cursor-pointer"
-                  onClick={() => selectBrand(b)}
-                >
-                  {b.name}
-                </li>
-              ))}
-              {brandNoResults && !brandLoading && (
-                <li className="px-3 py-2 text-gray-500 select-none">No result found</li>
-              )}
-            </ul>
-          )}
-          {brandId && (
-            <div className="mt-2 text-sm text-gray-600 flex items-center gap-2">
-              <span>Selected:</span>
-              <span className="font-medium">{brandName}</span>
-              <button type="button" onClick={clearBrand} className="text-blue-600 hover:underline">
-                Change
-              </button>
-            </div>
-          )}
-        </div>
-
-        {/* Campaign (optional) */}
+        {/* 1) Campaign */}
         <div>
           <label className="block text-sm font-medium mb-1">Campaign</label>
           <Select
-            disabled={!brandId || loadingCampaigns}
+            disabled={loadingCampaigns}
             value={campaignId}
             onValueChange={(v) => setCampaignId(v)}
           >
             <SelectTrigger className="!bg-white w-full">
-              <SelectValue placeholder={!brandId ? "Select a brand first" : (loadingCampaigns ? "Loading…" : "Select a campaign (optional)") } />
+              <SelectValue
+                placeholder={
+                  loadingCampaigns
+                    ? "Loading your applied campaigns…"
+                    : campaigns.length
+                    ? "Select a campaign"
+                    : "No applied campaigns found"
+                }
+              />
             </SelectTrigger>
             <SelectContent className="!bg-white max-h-64 overflow-auto w-[var(--radix-select-trigger-width)]">
-              {campaigns.map((c) => (
-                <SelectItem key={c.campaignsId} value={c.campaignsId}>
-                  <span className="block truncate max-w-[32rem]">
-                    {c.productOrServiceName || c.campaignsId}
-                  </span>
-                </SelectItem>
-              ))}
+              {campaigns.length > 0 ? (
+                campaigns.map((c) => (
+                  <SelectItem key={c.campaignsId} value={c.campaignsId}>
+                    <span className="block truncate max-w-[28rem]">
+                      {c.productOrServiceName || c.campaignsId}
+                    </span>
+                  </SelectItem>
+                ))
+              ) : (
+                <div className="px-2 py-2 text-sm text-gray-500">
+                  No applied campaigns found
+                </div>
+              )}
             </SelectContent>
           </Select>
         </div>
 
+        {/* 2) Brand (auto-filled, read-only) */}
+        <div>
+          <label className="block text-sm font-medium mb-1">Brand</label>
+          <Input
+            value={
+              loadingBrand
+                ? "Loading brand…"
+                : brandName || (brandId ? `Brand: ${brandId}` : "")
+            }
+            placeholder="Select a campaign to auto-fill"
+            readOnly
+            className="bg-gray-50"
+          />
+        </div>
+
+        {/* 3) Subject */}
         <div>
           <label className="block text-sm font-medium mb-1">Subject</label>
-          <Input value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="Short summary" />
+          <Input
+            value={subject}
+            onChange={(e) => setSubject(e.target.value)}
+            placeholder="Short summary"
+          />
         </div>
+
+        {/* 4) Description */}
         <div>
           <label className="block text-sm font-medium mb-1">Description</label>
-          <Textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Describe the issue" rows={4} />
+          <Textarea
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="Describe the issue"
+            rows={6}
+          />
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium mb-1">Related Type</label>
-            <Select value={relatedType} onValueChange={(v) => setRelatedType(v)}>
-              <SelectTrigger className="!bg-white">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent className="!bg-white">
-                <SelectItem value="other">Other</SelectItem>
-                <SelectItem value="contract">Contract</SelectItem>
-                <SelectItem value="milestone">Milestone</SelectItem>
-                <SelectItem value="payment">Payment</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
-        {relatedType !== "other" && (
-          <div>
-            <label className="block text-sm font-medium mb-1">Related ID</label>
-            <Input value={relatedId} onChange={(e) => setRelatedId(e.target.value)} placeholder="Optional related entity id" />
-          </div>
-        )}
-        <div className="flex gap-3 justify-end">
-          <Button variant="outline" onClick={() => router.back()} disabled={submitting}>Cancel</Button>
+
+        <div className="flex gap-3 justify-end pt-2">
+          <Button
+            variant="outline"
+            onClick={() => router.back()}
+            disabled={submitting}
+          >
+            Cancel
+          </Button>
           <Button
             className="bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-800"
             onClick={submit}

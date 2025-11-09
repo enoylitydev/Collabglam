@@ -50,7 +50,6 @@ export default function NewBrandDisputePage() {
         const data = await get<{ data: Campaign[] }>("/campaign/active", { brandId, page: 1, limit: 1000 });
         setCampaigns(data?.data || []);
       } catch (e: any) {
-        // keep page usable; show error banner
         setError(e?.message || "Failed to load campaigns");
       } finally {
         setLoadingCampaigns(false);
@@ -113,14 +112,13 @@ export default function NewBrandDisputePage() {
       <h1 className="text-2xl font-semibold mb-4">Raise a Dispute</h1>
       <div className="space-y-4 bg-white p-4 rounded border">
         {error && <p className="text-red-600">{error}</p>}
+
+        {/* Campaign */}
         <div>
           <label className="block text-sm font-medium mb-1">Campaign</label>
-          <Select
-            value={campaignId}
-            onValueChange={(v) => setCampaignId(v)}
-          >
+          <Select value={campaignId} onValueChange={(v) => setCampaignId(v)}>
             <SelectTrigger className="!bg-white w-full">
-              <SelectValue placeholder={loadingCampaigns ? "Loading campaigns…" : "Select a campaign (optional)"} />
+              <SelectValue placeholder={loadingCampaigns ? "Loading campaigns…" : "Select a campaign"} />
             </SelectTrigger>
             <SelectContent className="!bg-white max-h-64 overflow-auto w-[var(--radix-select-trigger-width)]">
               {campaigns.map((c) => (
@@ -133,6 +131,8 @@ export default function NewBrandDisputePage() {
             </SelectContent>
           </Select>
         </div>
+
+        {/* Applied Influencer */}
         <div>
           <label className="block text-sm font-medium mb-1">Applied Influencer</label>
           <Select
@@ -141,49 +141,49 @@ export default function NewBrandDisputePage() {
             onValueChange={(v) => setInfluencerId(v)}
           >
             <SelectTrigger className="!bg-white w-full">
-              <SelectValue placeholder={!campaignId ? "Select a campaign first" : (loadingApplicants ? "Loading…" : "Select an influencer") } />
+              <SelectValue
+                placeholder={
+                  !campaignId
+                    ? "Select a campaign first"
+                    : loadingApplicants
+                    ? "Loading…"
+                    : applicants.length
+                    ? "Select an influencer"
+                    : "No applied influencers in this campaign"
+                }
+              />
             </SelectTrigger>
             <SelectContent className="!bg-white max-h-64 overflow-auto w-[var(--radix-select-trigger-width)]">
-              {applicants.map((a) => (
-                <SelectItem key={a.influencerId} value={a.influencerId}>
-                  <span className="block truncate max-w-[32rem]">
-                    {a.name || a.influencerId} {a.handle ? `(${a.handle})` : ""}
-                  </span>
-                </SelectItem>
-              ))}
+              {applicants.length > 0 ? (
+                applicants.map((a) => (
+                  <SelectItem key={a.influencerId} value={a.influencerId}>
+                    <span className="block truncate max-w-[32rem]">
+                      {a.name || a.influencerId} {a.handle ? `(${a.handle})` : ""}
+                    </span>
+                  </SelectItem>
+                ))
+              ) : (
+                // Show a non-selectable row when empty
+                <div className="px-2 py-2 text-sm text-gray-500">
+                  No applied influencers in this campaign
+                </div>
+              )}
             </SelectContent>
           </Select>
         </div>
+
+        {/* Subject */}
         <div>
           <label className="block text-sm font-medium mb-1">Subject</label>
           <Input value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="Short summary" />
         </div>
+
+        {/* Description */}
         <div>
           <label className="block text-sm font-medium mb-1">Description</label>
           <Textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Describe the issue" rows={4} />
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium mb-1">Related Type</label>
-            <Select value={relatedType} onValueChange={(v) => setRelatedType(v)}>
-              <SelectTrigger className="!bg-white">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent className="!bg-white">
-                <SelectItem value="other">Other</SelectItem>
-                <SelectItem value="contract">Contract</SelectItem>
-                <SelectItem value="milestone">Milestone</SelectItem>
-                <SelectItem value="payment">Payment</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
-        {relatedType !== "other" && (
-          <div>
-            <label className="block text-sm font-medium mb-1">Related ID</label>
-            <Input value={relatedId} onChange={(e) => setRelatedId(e.target.value)} placeholder="Optional related entity id" />
-          </div>
-        )}
+
         <div className="flex gap-3 justify-end">
           <Button variant="outline" onClick={() => router.back()} disabled={submitting}>Cancel</Button>
           <Button

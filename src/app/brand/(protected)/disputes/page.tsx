@@ -66,18 +66,7 @@ export default function BrandDisputesPage() {
       setLoading(false);
     }
   };
-
-  // Guard: ensure userType is brand
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const userType = localStorage.getItem('userType');
-      if (userType !== 'brand') {
-        router.replace('/login');
-      }
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
+  
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
