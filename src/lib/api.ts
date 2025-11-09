@@ -1,12 +1,12 @@
 // lib/api.ts
 import axios, { AxiosRequestConfig } from 'axios'
 
-const BASE_URL  = process.env.NEXT_PUBLIC_API_URL  || 'http://localhost:5000'
-const BASE_URL2 = process.env.NEXT_PUBLIC_API_URL2 || 'http://localhost:7000'
+export const API_BASE_URL  = process.env.NEXT_PUBLIC_API_URL  || 'http://localhost:5000'
+export const API_BASE_URL2 = process.env.NEXT_PUBLIC_API_URL2 || 'http://localhost:7000'
 
 // Primary API (BASE_URL)
 const api = axios.create({
-  baseURL: BASE_URL,
+  baseURL: API_BASE_URL,
   withCredentials: true,
   headers: {
     'Content-Type': 'application/json',
@@ -15,7 +15,7 @@ const api = axios.create({
 
 // Secondary API (BASE_URL2)
 const api2 = axios.create({
-  baseURL: BASE_URL2,
+  baseURL: API_BASE_URL2,
   withCredentials: true,
   headers: {
     'Content-Type': 'application/json',

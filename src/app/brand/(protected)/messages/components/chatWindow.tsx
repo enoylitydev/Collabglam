@@ -14,6 +14,7 @@ import {
   HiX,
 } from "react-icons/hi";
 import { post } from "@/lib/api";
+import { resolveFileUrl } from "@/lib/files";
 
 /** ==== Types aligned to server ==== */
 type ReplySnapshot = {
@@ -84,14 +85,18 @@ const sanitizeAttachments = (list: any): Attachment[] => {
   if (!Array.isArray(list)) return [];
   return list.map((a) => ({
     attachmentId: asString(a?.attachmentId || a?.id || "", ""),
-    url: asString(a?.url, ""),
+    url: resolveFileUrl(
+      asString(a?.url, "") || asString(a?.path, "") || asString(a?.gridfsFilename, "")
+    ),
     originalName: asString(a?.originalName, ""),
     mimeType: asString(a?.mimeType, ""),
     size: typeof a?.size === "number" ? a.size : undefined,
     width: typeof a?.width === "number" ? a.width : null,
     height: typeof a?.height === "number" ? a.height : null,
     duration: typeof a?.duration === "number" ? a.duration : null,
-    thumbnailUrl: a?.thumbnailUrl ? asString(a.thumbnailUrl, "") : null,
+    thumbnailUrl: a?.thumbnailUrl
+      ? resolveFileUrl(asString(a.thumbnailUrl, ""))
+      : null,
     storage: a?.storage === "local" ? "local" : "remote",
     path: a?.path ? asString(a.path, "") : null,
   }));
