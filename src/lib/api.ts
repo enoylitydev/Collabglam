@@ -1,5 +1,10 @@
 // lib/api.ts
-import axios, { AxiosRequestConfig } from 'axios'
+import axios, {
+  AxiosRequestConfig,
+  type InternalAxiosRequestConfig,
+  type AxiosHeaders,
+  type AxiosRequestHeaders,
+} from 'axios'
 
 export const API_BASE_URL  = process.env.NEXT_PUBLIC_API_URL  || 'http://localhost:5000'
 export const API_BASE_URL2 = process.env.NEXT_PUBLIC_API_URL2 || 'http://localhost:7000'
@@ -11,15 +16,25 @@ const forceLogout = () => {
   if (typeof window === 'undefined') return
   try {
     localStorage.clear()
-    // in case you ever used sessionStorage anywhere:
     try { sessionStorage.clear() } catch {}
   } catch {}
   try {
     if (window.location.pathname !== '/login') {
-      // replace() avoids polluting history with a dead page
       window.location.replace('/login')
     }
   } catch {}
+}
+
+/** Public (no-auth) API paths – extend if you have custom routes */
+const PUBLIC_PATH_PATTERNS = [
+  /^\/?auth\/(login|register|signin|signup|refresh|verify|otp|forgot|reset)/i,
+  /^\/?(login|register|signin|signup|forgot-password|reset-password|verify-otp|otp)/i,
+  /^\/?public\//i,
+]
+const isPublicPath = (urlLike: unknown) => {
+  const url = (urlLike ?? '').toString()
+  const path = url.split('?')[0] || ''
+  return PUBLIC_PATH_PATTERNS.some(rx => rx.test(path))
 }
 
 // Primary API (BASE_URL)
@@ -30,7 +45,7 @@ const api = axios.create({
   timeout: 20000,
 })
 
-// Secondary API (BASE_URL2)
+// Secondary API (BASE_URL2) — use only via get2/post2
 const api2 = axios.create({
   baseURL: API_BASE_URL2,
   withCredentials: true,
@@ -38,21 +53,37 @@ const api2 = axios.create({
   timeout: 20000,
 })
 
-// ---- Attach single auth token to both clients; if missing => logout ----
-const attachAuth = (config: any) => {
-  if (typeof window !== 'undefined') {
-    let token: string | null = null
-    try {
-      token = localStorage.getItem(TOKEN_KEY)
-    } catch {}
+/**
+ * Attach Authorization to non-public requests if a token exists.
+ * IMPORTANT: Do NOT force logout here when the token is missing.
+ * Let the server respond; on 401 we handle below (except for public paths).
+ *
+ * NOTE: Interceptors must use InternalAxiosRequestConfig in Axios v1.
+ */
+const attachAuth = (config: InternalAxiosRequestConfig): InternalAxiosRequestConfig => {
+  const url = config?.url ?? ''
 
-    if (token) {
-      config.headers = config.headers || {}
-      config.headers['Authorization'] = `Bearer ${token}`
-    } else {
-      // No token anywhere -> force logout + redirect
-      forceLogout()
-      // allow request to proceed without auth (e.g., login endpoint)
+  // allow callers to explicitly skip via a custom flag
+  const skipAuth = (config as any).skipAuth as boolean | undefined
+  if (skipAuth || isPublicPath(url)) {
+    return config
+  }
+
+  if (typeof window !== 'undefined') {
+    try {
+      const token = localStorage.getItem(TOKEN_KEY)
+      if (token) {
+        // If AxiosHeaders (has set), prefer it:
+        const hdrs = config.headers as AxiosHeaders | AxiosRequestHeaders | undefined
+        if (hdrs && typeof (hdrs as any).set === 'function') {
+          (hdrs as AxiosHeaders).set('Authorization', `Bearer ${token}`)
+        } else {
+          // fallback to plain object merge
+          config.headers = { ...(hdrs as any), Authorization: `Bearer ${token}` } as AxiosRequestHeaders
+        }
+      }
+    } catch {
+      // ignore storage errors
     }
   }
   return config
@@ -60,33 +91,20 @@ const attachAuth = (config: any) => {
 api.interceptors.request.use(attachAuth)
 api2.interceptors.request.use(attachAuth)
 
-// ---- If API says 401 (expired/invalid token), force logout ----
+/**
+ * If API returns 401 for a protected endpoint, force logout.
+ * For PUBLIC endpoints (e.g., wrong login creds), DO NOT redirect.
+ */
 const onResponseError = (err: any) => {
   const status = err?.response?.status
-  if (status === 401) {
+  const url = err?.config?.url
+  if (status === 401 && !isPublicPath(url)) {
     forceLogout()
   }
   return Promise.reject(err)
 }
 api.interceptors.response.use((r) => r, onResponseError)
 api2.interceptors.response.use((r) => r, onResponseError)
-
-/** Helpers to decide fallback */
-const isNetworkishError = (err: any) => {
-  // No HTTP response -> CORS / DNS / mixed content / timeout / connection refused
-  if (!err || err.response) return false
-  return true
-}
-
-const shouldFallback = (err: any) => {
-  const status = err?.response?.status
-  const networkish = isNetworkishError(err)
-  return (
-    API_BASE_URL2 &&
-    API_BASE_URL2 !== API_BASE_URL &&
-    (networkish || status === 404 || status === 405)
-  )
-}
 
 // (Optional) warn loudly if running on HTTPS but API URL is HTTP (mixed content -> Network Error)
 if (typeof window !== 'undefined') {
@@ -102,54 +120,35 @@ if (typeof window !== 'undefined') {
   } catch {}
 }
 
-/** GET (BASE_URL) with fallback to BASE_URL2 on 404/405 or network errors */
+/** -------------------- NO-FALLBACK HELPERS (BASE_URL) -------------------- */
+/** GET (BASE_URL) */
 export const get = async <T = any>(url: string, params?: any): Promise<T> => {
-  try {
-    const res = await api.get<T>(url, { params })
-    return res.data
-  } catch (err: any) {
-    if (shouldFallback(err)) {
-      // eslint-disable-next-line no-console
-      console.warn(`[api:get] Primary failed for ${url} -> retrying on API_BASE_URL2`)
-      const res2 = await api2.get<T>(url, { params })
-      return res2.data
-    }
-    throw err
-  }
+  const res = await api.get<T>(url, { params })
+  return res.data
 }
 
-/** POST (BASE_URL) with fallback to BASE_URL2 on 404/405 or network errors */
-export const post = async <T = any>(url: string, data?: any, opts?: { signal?: AbortSignal }): Promise<T> => {
+/** POST (BASE_URL) */
+export const post = async <T = any>(
+  url: string,
+  data?: any,
+  opts?: { signal?: AbortSignal; skipAuth?: boolean }
+): Promise<T> => {
   const isFD = typeof FormData !== 'undefined' && data instanceof FormData
-  try {
-    if (isFD) {
-      const res = await api.post<T>(url, data, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-        signal: opts?.signal,
-      })
-      return res.data
-    }
-    const res = await api.post<T>(url, data, { signal: opts?.signal })
-    return res.data
-  } catch (err: any) {
-    if (shouldFallback(err)) {
-      // eslint-disable-next-line no-console
-      console.warn(`[api:post] Primary failed for ${url} -> retrying on API_BASE_URL2`)
-      if (isFD) {
-        const res2 = await api2.post<T>(url, data, {
-          headers: { 'Content-Type': 'multipart/form-data' },
-          signal: opts?.signal,
-        })
-        return res2.data
-      } else {
-        const res2 = await api2.post<T>(url, data, { signal: opts?.signal })
-        return res2.data
-      }
-    }
-    throw err
+  const baseConfig: AxiosRequestConfig = { signal: opts?.signal }
+
+  if (isFD) {
+    baseConfig.headers = { ...(baseConfig.headers || {}), 'Content-Type': 'multipart/form-data' }
   }
+
+  // Pass skipAuth through via `as any` so TS doesn't complain,
+  // interceptor will read it as (config as any).skipAuth
+  const cfg = opts?.skipAuth ? ({ ...baseConfig, skipAuth: true } as any) : baseConfig
+
+  const res = await api.post<T>(url, data, cfg)
+  return res.data
 }
 
+/** -------------------- DIRECT HELPERS (BASE_URL2) -------------------- */
 /** GET (BASE_URL2) */
 export const get2 = async <T = any>(url: string, params?: any): Promise<T> => {
   const res = await api2.get<T>(url, { params })
@@ -157,18 +156,25 @@ export const get2 = async <T = any>(url: string, params?: any): Promise<T> => {
 }
 
 /** POST (BASE_URL2) */
-export const post2 = async <T = any>(url: string, data?: any, opts?: { signal?: AbortSignal }): Promise<T> => {
-  if (typeof FormData !== 'undefined' && data instanceof FormData) {
-    const res = await api2.post<T>(url, data, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-      signal: opts?.signal,
-    })
-    return res.data
+export const post2 = async <T = any>(
+  url: string,
+  data?: any,
+  opts?: { signal?: AbortSignal; skipAuth?: boolean }
+): Promise<T> => {
+  const isFD = typeof FormData !== 'undefined' && data instanceof FormData
+  const baseConfig: AxiosRequestConfig = { signal: opts?.signal }
+
+  if (isFD) {
+    baseConfig.headers = { ...(baseConfig.headers || {}), 'Content-Type': 'multipart/form-data' }
   }
-  const res = await api2.post<T>(url, data, { signal: opts?.signal })
+
+  const cfg = opts?.skipAuth ? ({ ...baseConfig, skipAuth: true } as any) : baseConfig
+
+  const res = await api2.post<T>(url, data, cfg)
   return res.data
 }
 
+/** -------------------- DOWNLOAD HELPERS -------------------- */
 /** Download blob (BASE_URL) */
 export const downloadBlob = async (
   url: string,
@@ -180,7 +186,7 @@ export const downloadBlob = async (
   if (typeof FormData !== 'undefined' && data instanceof FormData) {
     response = await api.post<Blob>(url, data, {
       ...opts,
-      headers: { 'Content-Type': 'multipart/form-data' },
+      headers: { ...(opts.headers || {}), 'Content-Type': 'multipart/form-data' },
     })
   } else {
     response = await api.post<Blob>(url, data, opts)
@@ -199,12 +205,26 @@ export const downloadBlob2 = async (
   if (typeof FormData !== 'undefined' && data instanceof FormData) {
     response = await api2.post<Blob>(url, data, {
       ...opts,
-      headers: { 'Content-Type': 'multipart/form-data' },
+      headers: { ...(opts.headers || {}), 'Content-Type': 'multipart/form-data' },
     })
   } else {
     response = await api2.post<Blob>(url, data, opts)
   }
   return response.data
+}
+
+/** Optional: tiny helpers to manage the token consistently */
+export const setToken = (token: string) => {
+  if (typeof window === 'undefined') return
+  try { localStorage.setItem(TOKEN_KEY, token) } catch {}
+}
+export const getToken = (): string | null => {
+  if (typeof window === 'undefined') return null
+  try { return localStorage.getItem(TOKEN_KEY) } catch { return null }
+}
+export const clearToken = () => {
+  if (typeof window === 'undefined') return
+  try { localStorage.removeItem(TOKEN_KEY) } catch {}
 }
 
 export default api
