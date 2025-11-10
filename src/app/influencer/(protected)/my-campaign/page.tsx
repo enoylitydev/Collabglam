@@ -1261,7 +1261,7 @@ export default function MyCampaignsPage() {
   const [topSignContractId, setTopSignContractId] = useState<string>("");
 
   /* NEW: selection view */
-  const [view, setView] = useState<ViewKey>("active");
+  const [view, setView] = useState<ViewKey>("all");
 
   const itemsPerPage = 10;
 
