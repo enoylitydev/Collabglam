@@ -10,6 +10,9 @@ import {
   HiCreditCard,
   HiX,
   HiBell,
+  HiRefresh,
+  HiCheckCircle,
+  HiExclamationCircle,
 } from "react-icons/hi";
 import { get, post } from "@/lib/api";
 import { useRouter } from "next/navigation";
@@ -83,9 +86,10 @@ export default function BrandTopbar({ onSidebarOpen }: { onSidebarOpen: () => vo
   const notifRef = useRef<HTMLDivElement>(null);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [notifLoading, setNotifLoading] = useState(false);
+  const [notifError, setNotifError] = useState<string | null>(null);
   const [unreadCount, setUnreadCount] = useState(0);
 
-  // Search state
+  // Search state (kept, but unchanged)
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
@@ -211,55 +215,42 @@ export default function BrandTopbar({ onSidebarOpen }: { onSidebarOpen: () => vo
     }, 300);
   }, [searchQuery]);
 
-  // Notifications: fetch on load & refresh on open
+  // --- Notifications helpers ---
+  async function reloadNotifications() {
+    if (!brandId) return;
+    setNotifLoading(true);
+    setNotifError(null);
+    try {
+      const resp = await get<{ data?: any[]; unread?: number }>(
+        `/notifications/brand?recipientType=brand&brandId=${encodeURIComponent(brandId)}&limit=15`
+      );
+      const list = (resp?.data ?? []).map(normalizeNotif);
+      setNotifications(list);
+      setUnreadCount(
+        typeof resp?.unread === "number" ? resp.unread : list.filter((n) => !n.isRead).length
+      );
+    } catch (err) {
+      console.error("Failed to load notifications", err);
+      setNotifError("Could not load notifications. Please try again.");
+    } finally {
+      setNotifLoading(false);
+    }
+  }
+
+  // Notifications: fetch on load
   useEffect(() => {
     if (!brandId) return;
-    let cancelled = false;
-    (async () => {
-      setNotifLoading(true);
-      try {
-        const resp = await get<{ data?: any[]; unread?: number }>(
-          `/notifications/brand?recipientType=brand&brandId=${encodeURIComponent(brandId)}&limit=15`
-        );
-        if (cancelled) return;
-        const list = (resp?.data ?? []).map(normalizeNotif);
-        setNotifications(list);
-        setUnreadCount(
-          typeof resp?.unread === "number" ? resp.unread : list.filter((n) => !n.isRead).length
-        );
-      } catch (err) {
-        if (!cancelled) console.error("Failed to load notifications", err);
-      } finally {
-        if (!cancelled) setNotifLoading(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
+    reloadNotifications();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [brandId]);
 
+  // Refresh when dropdown opens
   useEffect(() => {
-    if (!notifOpen || !brandId) return;
-    (async () => {
-      setNotifLoading(true);
-      try {
-        const resp = await get<{ data?: any[]; unread?: number }>(
-          `/notifications/brand?recipientType=brand&brandId=${encodeURIComponent(brandId)}&limit=15`
-        );
-        const list = (resp?.data ?? []).map(normalizeNotif);
-        setNotifications(list);
-        setUnreadCount(
-          typeof resp?.unread === "number" ? resp.unread : list.filter((n) => !n.isRead).length
-        );
-      } catch (err) {
-        console.error("Refresh notifications failed", err);
-      } finally {
-        setNotifLoading(false);
-      }
-    })();
-  }, [notifOpen, brandId]);
+    if (notifOpen) reloadNotifications();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [notifOpen]);
 
-  // ✅ Mark single read via backend POST /brand/mark-read (optimistic), then navigate
+  // Mark single read (optimistic)
   async function onNotifClick(n: NotificationItem) {
     try {
       if (!n.isRead && brandId) {
@@ -268,6 +259,7 @@ export default function BrandTopbar({ onSidebarOpen }: { onSidebarOpen: () => vo
         await post(`notifications/brand/mark-read`, { id: n.id, brandId });
       }
     } catch (e) {
+      // rollback
       setNotifications((prev) => prev.map((x) => (x.id === n.id ? { ...x, isRead: n.isRead } : x)));
       if (!n.isRead) setUnreadCount((c) => c + 1);
     } finally {
@@ -276,8 +268,8 @@ export default function BrandTopbar({ onSidebarOpen }: { onSidebarOpen: () => vo
     }
   }
 
-  // (Optional helper, no UI change) mark all read via POST /brand/mark-all-read
-  async function markAllReadSilent() {
+  // Mark all read (with UI button)
+  async function markAllRead() {
     if (!brandId || notifications.length === 0) return;
     const hadUnread = notifications.some((n) => !n.isRead);
     setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
@@ -286,16 +278,7 @@ export default function BrandTopbar({ onSidebarOpen }: { onSidebarOpen: () => vo
       await post(`notifications/brand/mark-all-read`, { brandId });
     } catch (err) {
       // soft refresh on failure
-      try {
-        const resp = await get<{ data?: any[]; unread?: number }>(
-          `/notifications/brand?recipientType=brand&brandId=${encodeURIComponent(brandId)}&limit=15`
-        );
-        const list = (resp?.data ?? []).map(normalizeNotif);
-        setNotifications(list);
-        setUnreadCount(
-          typeof resp?.unread === "number" ? resp.unread : list.filter((n) => !n.isRead).length
-        );
-      } catch {}
+      await reloadNotifications();
     }
   }
 
@@ -347,16 +330,55 @@ export default function BrandTopbar({ onSidebarOpen }: { onSidebarOpen: () => vo
             </button>
 
             {notifOpen && (
-              <div className="absolute right-0 mt-2 w-96 max-w-[95vw] bg-white border border-gray-200 rounded-md shadow-lg z-10000">
+              <div className="absolute right-0 mt-2 w-96 max-w-[95vw] bg-white border border-gray-200 rounded-md shadow-lg z-[1000]">
                 <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
                   <p className="text-lg font-semibold text-gray-800">Notifications</p>
+
+                  <div className="flex items-center gap-3">
+                    {notifError ? (
+                      <button
+                        onClick={reloadNotifications}
+                        className="inline-flex items-center text-sm text-red-600 hover:underline"
+                        title="Retry loading"
+                      >
+                        <HiRefresh className="mr-1" /> Retry
+                      </button>
+                    ) : (
+                      <button
+                        onClick={markAllRead}
+                        disabled={notifLoading || unreadCount === 0}
+                        className="text-sm text-blue-600 hover:underline disabled:opacity-50"
+                        title="Mark all as read"
+                      >
+                        Mark all read
+                      </button>
+                    )}
+                  </div>
                 </div>
+
+                {notifError && (
+                  <div className="px-4 py-2 text-sm text-red-700 bg-red-50 border-b border-red-100 flex items-center gap-2">
+                    <HiExclamationCircle className="flex-shrink-0" />
+                    <span className="break-words">{notifError}</span>
+                  </div>
+                )}
 
                 <div className="max-h-96 overflow-auto">
                   {notifLoading ? (
-                    <div className="p-4 text-sm text-gray-500">Loading…</div>
+                    <ul className="divide-y divide-gray-100">
+                      {Array.from({ length: 4 }).map((_, i) => (
+                        <li key={i} className="px-4 py-3 animate-pulse">
+                          <div className="h-3 w-2/3 bg-gray-200 rounded mb-2" />
+                          <div className="h-3 w-1/2 bg-gray-200 rounded mb-1" />
+                          <div className="h-2 w-1/3 bg-gray-200 rounded" />
+                        </li>
+                      ))}
+                    </ul>
                   ) : notifications.length === 0 ? (
-                    <div className="p-4 text-sm text-gray-500">No notifications yet.</div>
+                    <div className="p-6 text-sm text-gray-500 flex items-center gap-2">
+                      <HiCheckCircle className="text-green-500" />
+                      You’re all caught up.
+                    </div>
                   ) : (
                     <ul className="divide-y divide-gray-100">
                       {notifications.map((n) => (
@@ -367,13 +389,27 @@ export default function BrandTopbar({ onSidebarOpen }: { onSidebarOpen: () => vo
                           }`}
                           onClick={() => onNotifClick(n)}
                         >
-                          <p className="text-sm font-medium text-gray-800">{n.title}</p>
-                          {n.message && (
-                            <p className="text-sm text-gray-600 mt-0.5">{n.message}</p>
-                          )}
-                          <p className="text-xs text-gray-400 mt-1">
-                            {formatWhen(n.createdAt)}
-                          </p>
+                          <div className="flex items-start gap-2">
+                            {!n.isRead && (
+                              <span
+                                className="mt-1 inline-block h-2 w-2 rounded-full bg-red-500 flex-shrink-0"
+                                aria-label="unread"
+                              />
+                            )}
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium text-gray-800 break-words">
+                                {n.title}
+                              </p>
+                              {n.message && (
+                                <p className="text-sm text-gray-600 mt-0.5 break-words whitespace-normal">
+                                  {n.message}
+                                </p>
+                              )}
+                              <p className="text-xs text-gray-400 mt-1">
+                                {formatWhen(n.createdAt)}
+                              </p>
+                            </div>
+                          </div>
                         </li>
                       ))}
                     </ul>
@@ -395,8 +431,7 @@ export default function BrandTopbar({ onSidebarOpen }: { onSidebarOpen: () => vo
           {/* Budget Remaining */}
           {!loading && !error && budgetRemaining !== null && (
             <button
-              onClick={() => router.push("/brand/milestone-history")}
-              className="flex items-center space-x-1 bg-gray-100 hover:bg-gray-200 px-3 py-1 rounded-md text-md cursor-pointer"
+              className="flex items-center space-x-1 bg-gray-100 hover:bg-gray-200 px-3 py-1 rounded-md text-md"
               title="Budget remaining"
             >
               <HiCreditCard size={20} className="text-gray-600" />
@@ -410,9 +445,9 @@ export default function BrandTopbar({ onSidebarOpen }: { onSidebarOpen: () => vo
           {loading ? (
             <span className="text-gray-500 text-sm">Loading…</span>
           ) : error ? (
-            <span className="text-red-500 text-sm">{error}</span>
+            <span className="text-red-500 text-sm break-words">{error}</span>
           ) : (
-            <span className="text-gray-800 font-medium text-lg">{brandName || "—"}</span>
+            <span className="text-gray-800 font-medium text-lg break-words">{brandName || "—"}</span>
           )}
 
           {/* Profile dropdown */}
@@ -427,10 +462,10 @@ export default function BrandTopbar({ onSidebarOpen }: { onSidebarOpen: () => vo
             {menuOpen && !loading && !error && (
               <div className="absolute right-0 mt-2 w-64 bg-white border border-gray-200 rounded-md shadow-lg z-10">
                 <div className="px-4 py-3 border-b border-gray-100">
-                  <p className="text-md font-semibold text-gray-700">{brandName}</p>
-                  {email && <p className="text-sm text-gray-500">{email}</p>}
+                  <p className="text-md font-semibold text-gray-700 break-words">{brandName}</p>
+                  {email && <p className="text-sm text-gray-500 break-words">{email}</p>}
                   {subscriptionName && (
-                    <p className="text-md text-gray-500">
+                    <p className="text-md text-gray-500 break-words">
                       Plan: {subscriptionName.charAt(0).toUpperCase() + subscriptionName.slice(1)}
                     </p>
                   )}
