@@ -186,7 +186,7 @@ export default function BrandActiveCampaignsPage() {
             placeholder="Search campaigns..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
+            className="w-full pl-10 pr-4 py-2 bg-white border border-[#FFA135] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FF7236] focus:border-[#FF7236] text-sm"
           />
         </div>
       </div>
@@ -277,15 +277,14 @@ function TableView({ data, formatDate, formatCurrency }: TableViewProps) {
                 }}
               >
                 <td className="px-6 py-4 align-top">
-                  <div className="font-medium text-gray-900">{c.productOrServiceName}</div>
-                  <div className="text-gray-600 line-clamp-1">{c.description}</div>
+                  <div className="font-medium text-gray-900 text-center">{c.productOrServiceName}</div>
                 </td>
                 <td className="px-6 py-4 text-center whitespace-nowrap align-top">{formatCurrency(c.budget)}</td>
                 <td className="px-6 py-4 whitespace-nowrap align-top text-center">
                   <span
                     className={`inline-flex items-center justify-center px-2 py-1 text-xs font-semibold rounded-full ${c.isActive === 1
-                        ? "bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white"
-                        : "bg-red-100 text-red-800"
+                      ? "bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white"
+                      : "bg-red-100 text-red-800"
                       }`}
                   >
                     {c.isActive === 1 ? "Active" : "Inactive"}

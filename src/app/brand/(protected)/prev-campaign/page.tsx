@@ -96,8 +96,8 @@ export default function BrandPreviousCampaignsPage() {
         const list: RawCampaign[] = Array.isArray(res?.campaigns)
           ? res!.campaigns!
           : Array.isArray(res?.data)
-          ? res!.data!
-          : [];
+            ? res!.data!
+            : [];
 
         const normalized: Campaign[] = list.map((c) => ({
           id: c.campaignsId ?? c._id ?? "",
@@ -172,7 +172,7 @@ export default function BrandPreviousCampaignsPage() {
             placeholder="Search campaigns..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
+            className="w-full pl-10 pr-4 py-2 bg-white border border-[#FFA135] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FF7236] focus:border-[#FF7236] text-sm"
           />
         </div>
       </div>
@@ -265,11 +265,10 @@ function TableView({ data, formatDate, formatCurrency }: TableViewProps) {
                 <td className="px-6 py-4 whitespace-nowrap align-top">{formatCurrency(c.budget)}</td>
                 <td className="px-6 py-4 whitespace-nowrap align-top">
                   <span
-                    className={`inline-flex items-center px-2 py-1 text-xs font-semibold rounded-full ${
-                      c.isActive === 1
+                    className={`inline-flex items-center px-2 py-1 text-xs font-semibold rounded-full ${c.isActive === 1
                         ? "bg-green-100 text-green-800"
                         : "bg-green-100 text-green-800"
-                    }`}
+                      }`}
                   >
                     {c.isActive === 1 ? "Active" : "Completed"}
                   </span>

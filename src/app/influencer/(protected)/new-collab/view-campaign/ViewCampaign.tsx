@@ -342,7 +342,7 @@ export default function ViewCampaignPage() {
             </div>
             <div className="md:col-span-2 lg:col-span-2">
               <p className="text-sm font-medium text-gray-600">Description</p>
-              <p className="mt-1 whitespace-pre-wrap">{c.description}</p>
+              <p className="mt-1 whitespace-pre-wrap break-words text-gray-800">{c.description}</p>
             </div>
 
             {/* Images */}
