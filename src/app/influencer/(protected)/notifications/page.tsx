@@ -222,7 +222,7 @@ export default function InfluencerNotificationsPage() {
   }
 
   return (
-    <main className="min-h-screen">
+    <main className="min-h-screen bg-white">
       <div className="max-w-5xl mx-auto px-4 py-8">
         {/* Header Card */}
         <div className="bg-white/80 backdrop-blur-xl rounded-2xl shadow-lg border border-white/20 p-6 mb-6">
@@ -247,7 +247,14 @@ export default function InfluencerNotificationsPage() {
             </div>
 
             <div className="flex items-center gap-2">
-              
+              <button
+                onClick={refresh}
+                disabled={loading}
+                className="group relative inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white border border-slate-200 text-slate-700 text-sm font-medium hover:bg-slate-50 hover:border-slate-300 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-sm hover:shadow"
+              >
+                <HiOutlineRefresh className={`${loading ? 'animate-spin' : 'group-hover:rotate-180'} transition-transform duration-500`} size={18} />
+                <span>Refresh</span>
+              </button>
               <button
                 onClick={markAllRead}
                 disabled={busy || unreadCount === 0}
