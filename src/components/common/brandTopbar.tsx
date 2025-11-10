@@ -431,8 +431,7 @@ export default function BrandTopbar({ onSidebarOpen }: { onSidebarOpen: () => vo
           {/* Budget Remaining */}
           {!loading && !error && budgetRemaining !== null && (
             <button
-              onClick={() => router.push("/brand/milestone-history")}
-              className="flex items-center space-x-1 bg-gray-100 hover:bg-gray-200 px-3 py-1 rounded-md text-md cursor-pointer"
+              className="flex items-center space-x-1 bg-gray-100 hover:bg-gray-200 px-3 py-1 rounded-md text-md"
               title="Budget remaining"
             >
               <HiCreditCard size={20} className="text-gray-600" />
