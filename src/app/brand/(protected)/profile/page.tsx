@@ -676,7 +676,7 @@ export default function BrandProfilePage() {
 
       try {
         const brandRes = await get<any>(`/brand?id=${brandId}`);
-        const normalized = normalizeBrand(brandRes); 
+        const normalized = normalizeBrand(brandRes);
 
         // Update main state
         setBrand(normalized);
@@ -703,51 +703,51 @@ export default function BrandProfilePage() {
     [maps.countryById, maps.callingById, maps.co, maps.ko]
   );
   const saveProfile = useCallback(async () => {
-  if (!form || !brand) return;
+    if (!form || !brand) return;
 
-  if (emailFlow !== "idle" && emailFlow !== "verified") {
-    await fire({
-      icon: "warning",
-      title: "Verify the new email first",
-      text: "Finish email verification to save.",
-    });
-    return;
-  }
+    if (emailFlow !== "idle" && emailFlow !== "verified") {
+      await fire({
+        icon: "warning",
+        title: "Verify the new email first",
+        text: "Finish email verification to save.",
+      });
+      return;
+    }
 
-  setSaving(true);
-  try {
-    const payload: any = {
-      brandId: form.brandId,
-      name: form.name,
-      phone: form.phone,
-      countryId: form.countryId || undefined,
-      callingId: form.callingId || undefined,
-      logoUrl: form.logoUrl || undefined,
-    };
+    setSaving(true);
+    try {
+      const payload: any = {
+        brandId: form.brandId,
+        name: form.name,
+        phone: form.phone,
+        countryId: form.countryId || undefined,
+        callingId: form.callingId || undefined,
+        logoUrl: form.logoUrl || undefined,
+      };
 
-    // Save changes
-    await post<any>("/brand/update", payload);
+      // Save changes
+      await post<any>("/brand/update", payload);
 
-    // Now refetch the latest brand from the source of truth
-    await refetchBrand(form.brandId);
+      // Now refetch the latest brand from the source of truth
+      await refetchBrand(form.brandId);
 
-    setIsEditing(false);
-    setEmailFlow("idle");
-    await fire({ icon: "success", title: "Profile saved" });
+      setIsEditing(false);
+      setEmailFlow("idle");
+      await fire({ icon: "success", title: "Profile saved" });
 
-    // (Optional) If this page also has server components that should re-fetch:
-    // router.refresh();
-  } catch (e: any) {
-    console.error(e);
-    await fire({
-      icon: "error",
-      title: "Failed to save profile",
-      text: e?.message || "Please try again.",
-    });
-  } finally {
-    setSaving(false);
-  }
-}, [brand, emailFlow, form, refetchBrand]);
+      // (Optional) If this page also has server components that should re-fetch:
+      // router.refresh();
+    } catch (e: any) {
+      console.error(e);
+      await fire({
+        icon: "error",
+        title: "Failed to save profile",
+        text: e?.message || "Please try again.",
+      });
+    } finally {
+      setSaving(false);
+    }
+  }, [brand, emailFlow, form, refetchBrand]);
 
 
 
@@ -896,8 +896,8 @@ export default function BrandProfilePage() {
             <Card className="bg-white border border-gray-200 shadow-sm">
               <CardHeader className="pb-4">
                 <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 bg-emerald-100 rounded-xl flex items-center justify-center">
-                    <HiCash className="w-6 h-6 text-emerald-600" />
+                  <div className="flex-shrink-0 w-10 h-10 bg-gradient-to-r from-[#FFA135] to-[#FF7236] rounded-lg flex items-center justify-center">
+                    <HiGlobe className="w-5 h-5 text-white" />
                   </div>
                   <div>
                     <CardTitle>Wallet</CardTitle>
@@ -918,8 +918,8 @@ export default function BrandProfilePage() {
               <CardHeader className="pb-4">
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                   <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 bg-purple-100 rounded-xl flex items-center justify-center">
-                      <HiCreditCard className="w-6 h-6 text-purple-600" />
+                    <div className="w-12 h-12 bg-gradient-to-r from-[#FFA135] to-[#FF7236] rounded-xl flex items-center justify-center">
+                      <HiCreditCard className="w-6 h-6 text-white" />
                     </div>
                     <div>
                       <CardTitle>Subscription</CardTitle>
@@ -1190,8 +1190,8 @@ const IconField = React.memo(function IconField({
   return (
     <div className="bg-white border border-gray-100 p-6 rounded-xl shadow-sm hover:shadow-md transition-shadow duration-200 min-w-0">
       <div className="flex items-start gap-4">
-        <div className="flex-shrink-0 w-10 h-10 bg-gradient-to-br from-blue-50 to-indigo-100 rounded-lg flex items-center justify-center">
-          <Icon className="text-indigo-600 w-5 h-5" />
+        <div className="flex-shrink-0 w-10 h-10 bg-gradient-to-r from-[#FFA135] to-[#FF7236] rounded-lg flex items-center justify-center">
+          <Icon className="text-white w-5 h-5" />
         </div>
         <div className="flex-1 min-w-0">
           <Label className="block text-sm text-gray-700 mb-2" htmlFor={id}>
@@ -1255,8 +1255,8 @@ const PhoneField = React.memo(function PhoneField({
   return (
     <div className="bg-white border border-gray-100 p-6 rounded-xl shadow-sm hover:shadow-md transition-shadow duration-200 min-w-0">
       <div className="flex items-start gap-4">
-        <div className="flex-shrink-0 w-10 h-10 bg-gradient-to-br from-green-50 to-emerald-100 rounded-lg flex items-center justify-center">
-          <HiPhone className="text-emerald-600 w-5 h-5" />
+        <div className="flex-shrink-0 w-10 h-10 bg-gradient-to-r from-[#FFA135] to-[#FF7236] rounded-lg flex items-center justify-center">
+          <HiPhone className="text-white w-5 h-5" />
         </div>
         <div className="flex-1 min-w-0">
           <Label className="block text-sm text-gray-700 mb-2" htmlFor={numberId}>
@@ -1315,8 +1315,8 @@ const CountryField = React.memo(function CountryField({
   return (
     <div className="bg-white border border-gray-100 p-6 rounded-xl shadow-sm hover:shadow-md transition-shadow duration-200 min-w-0">
       <div className="flex items-start gap-4">
-        <div className="flex-shrink-0 w-10 h-10 bg-gradient-to-br from-purple-50 to-purple-100 rounded-lg flex items-center justify-center">
-          <HiGlobe className="text-purple-600 w-5 h-5" />
+        <div className="flex-shrink-0 w-10 h-10 bg-gradient-to-r from-[#FFA135] to-[#FF7236] rounded-lg flex items-center justify-center">
+          <HiGlobe className="text-white w-5 h-5" />
         </div>
         <div className="flex-1 min-w-0">
           <Label className="block text-sm text-gray-700 mb-2">Country</Label>
