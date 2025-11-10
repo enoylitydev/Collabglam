@@ -27,7 +27,7 @@ const menuItems: MenuItem[] = [
   { name: "Find New Collab", href: "/influencer/new-collab", icon: HiPlusCircle },
   { name: "My Media-Kit", href: "/influencer/media-kit", icon: HiDocument },
   { name: "My Campaigns", href: "/influencer/my-campaign", icon: HiClipboardList },
-  { name: "Previous Campaigns", href: "/influencer/prev-campaign", icon: HiArchive },
+  { name: "Rejected Campaigns", href: "/influencer/rejected-campaign", icon: HiArchive },
   { name: "Disputes", href: "/influencer/disputes", icon: HiClipboardList },
   { name: "Messages", href: "/influencer/messages", icon: HiChatAlt2 },
   { name: "Payment Details", href: "/influencer/payment-detail", icon: HiBanknotes },
@@ -56,7 +56,7 @@ export default function InfluencerSidebar({ isOpen, onClose }: InfluencerSidebar
     const onResize = () => {
       const w = window.innerWidth;
       setAutoCollapsed(prev => {
-        if (w < COLLAPSE_AT) return true;
+        if (w < COLLAPSE_AT) return true;0
         if (w > EXPAND_AT) return false;
         return prev;
       });

@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -346,7 +345,6 @@ function normalizeInfluencer(data: any): InfluencerData {
     createdAt: inf?.createdAt ?? "",
     updatedAt: inf?.updatedAt ?? "",
 
-
     gender: normalizeGenderStr(inf?.gender),
   };
 }
@@ -416,7 +414,7 @@ function MultiSelect({ values, onChange, options, placeholder = "Choose...", max
   );
 }
 
-/* ===================== Dual-OTP Email Editor (unchanged) ===================== */
+/* ===================== Dual-OTP Email Editor (unchanged except theme) ===================== */
 
 export type EmailFlowState = "idle" | "needs" | "codes_sent" | "verifying" | "verified";
 
@@ -1075,10 +1073,7 @@ export default function InfluencerProfilePage() {
                             }
                           }}
                         />
-                        <Button variant="outline" size="sm" className="gap-1 bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-800">
-                          <ImageIcon className="h-4 w-4" />
-                          Upload
-                        </Button>
+                        
                       </label>
                     </div>
                   )}
@@ -1115,7 +1110,11 @@ export default function InfluencerProfilePage() {
           <CardContent className="py-6">
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
               {/* Name */}
-              <FieldCard icon={<User className="h-5 w-5 text-indigo-600" />} label="Full Name" editing={isEditing}>
+              <FieldCard
+                icon={<User className="h-5 w-5 text-gray-800" />}
+                label="Full Name"
+                editing={isEditing}
+              >
                 {isEditing ? (
                   <Input value={form?.name || ""} onChange={(e) => onField("name", e.target.value as any)} />
                 ) : (
@@ -1124,7 +1123,11 @@ export default function InfluencerProfilePage() {
               </FieldCard>
 
               {/* Social Handle */}
-              <FieldCard icon={<Hash className="h-5 w-5 text-indigo-600" />} label="Social Handle" editing={isEditing}>
+              <FieldCard
+                icon={<Hash className="h-5 w-5 text-gray-800" />}
+                label="Social Handle"
+                editing={isEditing}
+              >
                 {isEditing ? (
                   <Input value={form?.socialMedia || ""} onChange={(e) => onField("socialMedia", e.target.value as any)} />
                 ) : (
@@ -1132,18 +1135,13 @@ export default function InfluencerProfilePage() {
                 )}
               </FieldCard>
 
-              {/* Profile Link
-              <FieldCard icon={<LinkIcon className="h-5 w-5 text-indigo-600" />} label="Profile Link" editing={isEditing}>
-                {isEditing ? (
-                  <Input value={form?.profileLink || ""} onChange={(e) => onField("profileLink", e.target.value as any)} />
-                ) : (
-                  <ReadText text={influencer?.profileLink || ""} />
-                )}
-              </FieldCard> */}
-
               {/* Email (dual OTP) */}
               {!isEditing ? (
-                <FieldCard icon={<Mail className="h-5 w-5 text-indigo-600" />} label="Email Address" editing={false}>
+                <FieldCard
+                  icon={<Mail className="h-5 w-5 text-gray-800" />}
+                  label="Email Address"
+                  editing={false}
+                >
                   <ReadText text={influencer?.email ?? ""} />
                 </FieldCard>
               ) : (
@@ -1164,7 +1162,11 @@ export default function InfluencerProfilePage() {
               )}
 
               {/* Phone */}
-              <FieldCard icon={<PhoneIcon className="h-5 w-5 text-emerald-600" />} label="Phone Number" editing={isEditing}>
+              <FieldCard
+                icon={<PhoneIcon className="h-5 w-5 text-gray-800" />}
+                label="Phone Number"
+                editing={isEditing}
+              >
                 {isEditing ? (
                   <div className="grid grid-cols-1 sm:grid-cols-[140px,1fr] gap-2">
                     <div className="sm:col-span-1">
@@ -1194,7 +1196,11 @@ export default function InfluencerProfilePage() {
               </FieldCard>
 
               {/* Country */}
-              <FieldCard icon={<Globe className="h-5 w-5 text-purple-600" />} label="Country" editing={isEditing}>
+              <FieldCard
+                icon={<Globe className="h-5 w-5 text-gray-800" />}
+                label="Country"
+                editing={isEditing}
+              >
                 {isEditing ? (
                   <ShSelect
                     value={selectedCountry?.value || ""}
@@ -1218,10 +1224,8 @@ export default function InfluencerProfilePage() {
 
               {/* Gender */}
               <FieldCard
-                icon={<User className="h-5 w-5 text-indigo-600" />}
-                label={<>
-                  Gender {form?.otpVerified}
-                </>}
+                icon={<User className="h-5 w-5 text-gray-800" />}
+                label="Gender"
                 editing={isEditing}
               >
                 {isEditing ? (
@@ -1255,7 +1259,11 @@ export default function InfluencerProfilePage() {
           <CardContent className="space-y-4">
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
               {/* Platform */}
-              <FieldCard icon={<Users className="h-5 w-5 text-indigo-600" />} label="Primary Platform" editing={isEditing}>
+              <FieldCard
+                icon={<Users className="h-5 w-5 text-gray-800" />}
+                label="Primary Platform"
+                editing={isEditing}
+              >
                 {isEditing ? (
                   <ShSelect
                     value={selectedPlatform || ""}
@@ -1278,7 +1286,11 @@ export default function InfluencerProfilePage() {
               </FieldCard>
 
               {/* Category */}
-              <FieldCard icon={<Pencil className="h-5 w-5 text-indigo-600" />} label="Category" editing={isEditing}>
+              <FieldCard
+                icon={<Pencil className="h-5 w-5 text-gray-800" />}
+                label="Category"
+                editing={isEditing}
+              >
                 {isEditing ? (
                   <ShSelect
                     value={selectedCategory?.value?.toString() || ""}
@@ -1341,14 +1353,13 @@ export default function InfluencerProfilePage() {
           </CardContent>
         </Card>
 
-
         {/* Subscription (read-only display) */}
         {!isEditing && (
           <Card className="bg-white">
             <CardContent className="py-6">
               <div className="flex flex-col sm:flex-row gap-4">
-                <div className="w-12 h-12 rounded-xl bg-purple-100 flex items-center justify-center">
-                  <CreditCard className="h-6 w-6 text-purple-600" />
+                <div className="w-12 h-12 rounded-xl bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-800 flex items-center justify-center">
+                  <CreditCard className="h-6 w-6 text-gray-800" />
                 </div>
 
                 <div className="flex-1 min-w-0">
@@ -1383,7 +1394,7 @@ export default function InfluencerProfilePage() {
 
                     <div className="w-full sm:w-auto">
                       <Button className="w-full gap-2 bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-800" onClick={() => router.push('/influencer/subscriptions')}>
-                        <CreditCard className="h-5 w-5" />
+                        <CreditCard className="h-5 w-5 text-gray-800" />
                         Upgrade Subscription
                       </Button>
                     </div>
@@ -1427,13 +1438,14 @@ export default function InfluencerProfilePage() {
                         }
 
                         const pct = unlimited ? 100 : limit > 0 ? Math.min(100, Math.round((used / limit) * 100)) : 0;
-                        const barColorClass = unlimited
-                          ? "[&>div]:bg-blue-500"
-                          : used >= limit
-                            ? "[&>div]:bg-red-500"
-                            : pct >= 80
-                              ? "[&>div]:bg-orange-500"
-                              : "[&>div]:bg-emerald-500";
+                const barColorClass = unlimited
+  ? "[&>div]:bg-gradient-to-r [&>div]:from-[#FFBF00] [&>div]:to-[#FFDB58]"
+  : used >= limit
+    ? "[&>div]:bg-gradient-to-r [&>div]:from-red-500 [&>div]:to-red-400"
+    : pct >= 80
+      ? "[&>div]:bg-gradient-to-r [&>div]:from-orange-500 [&>div]:to-orange-300"
+      : "[&>div]:bg-gradient-to-r [&>div]:from-[#FFBF00] [&>div]:to-[#FFDB58]";
+
 
                         return (
                           <div key={f.key} className="group">
@@ -1518,12 +1530,23 @@ function InlineError({ message }: { message: string }) {
   );
 }
 
-function FieldCard({ icon, label, children, editing, }: { icon: React.ReactNode; label: React.ReactNode; children: React.ReactNode; editing: boolean; }) {
+function FieldCard({
+  icon,
+  label,
+  children,
+  editing,
+}: {
+  icon: React.ReactNode;
+  label: React.ReactNode;
+  children: React.ReactNode;
+  editing: boolean;
+}) {
   return (
     <Card className="shadow-none">
       <CardContent className="pt-6 bg-white">
         <div className="flex items-start gap-4">
-          <div className="flex-shrink-0 w-10 h-10 rounded-lg bg-indigo-50 flex items-center justify-center">
+          {/* Gradient chip wrapper for the icon */}
+          <div className="flex-shrink-0 w-10 h-10 rounded-lg bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-800 flex items-center justify-center">
             {icon}
           </div>
           <div className="flex-1 min-w-0">
@@ -1539,5 +1562,3 @@ function FieldCard({ icon, label, children, editing, }: { icon: React.ReactNode;
 function ReadText({ text }: { text: string }) {
   return <p className="text-lg font-medium break-words">{text || "—"}</p>;
 }
-
-
