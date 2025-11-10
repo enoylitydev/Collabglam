@@ -485,35 +485,25 @@ export function BrandSignup({ onSuccess, onStepChange }: { onSuccess: () => void
             required
           />
 
-          <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
-            <Button
-              onClick={sendOTP}
-              loading={loading}
-              disabled={resendIn > 0}
-              variant="brand"
-              className="w-full sm:w-auto px-6"
-            >
-              Resend Code
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <Button onClick={verifyOTP} loading={loading} variant="brand">
+              Verify Code
             </Button>
-            <span className="self-center text-sm text-gray-600">
-              {resendIn > 0 ? `Resend in ${resendIn}s` : 'You can resend now'}
-            </span>
+
+            <button
+              type="button"
+              onClick={sendOTP}
+              disabled={resendIn > 0 || loading}
+              className={`sm:ml-auto text-sm underline font-medium transition-colors ${resendIn > 0 || loading
+                  ? 'text-gray-400 cursor-not-allowed'
+                  : 'text-gray-700 hover:text-gray-900'
+                }`}
+              aria-live="polite"
+            >
+              {resendIn > 0 ? `Resend in ${resendIn}s` : 'Resend code'}
+            </button>
           </div>
 
-          <Button onClick={verifyOTP} loading={loading} variant="brand">
-            Verify Code
-          </Button>
-
-          <button
-            onClick={() => {
-              setStep('email');
-              setResendIn(0);
-              setFormData({ ...formData, otp: '' });
-            }}
-            className="w-full text-sm text-gray-600 hover:text-gray-900"
-          >
-            Change email address
-          </button>
         </div>
       )}
 

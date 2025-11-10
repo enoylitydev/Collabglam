@@ -1,15 +1,17 @@
 import { useEffect, useMemo, useState, useCallback } from 'react';
-import { Sparkles, Instagram, Youtube, Globe, CheckCircle2, Eye, EyeOff } from 'lucide-react';
+import { Instagram, Youtube, Globe, CheckCircle2, Eye, EyeOff } from 'lucide-react';
 import { FloatingLabelInput } from '@/components/common/FloatingLabelInput';
 import { Button } from './Button';
 import { ProgressIndicator } from './ProgressIndicator';
-import Select, { GroupBase, MultiValue, SingleValue } from 'react-select';
+import Select, { MultiValue, SingleValue } from 'react-select';
 import { rsStyles, rsTheme } from '../styles/reactSelectStyles'
 import type { Country } from './types';
 import { get, post } from '@/lib/api';
 import { useRouter } from 'next/navigation';
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
+import { Tooltip, TooltipTrigger } from "@/components/ui/tooltip";
+import * as TooltipPrimitive from "@radix-ui/react-tooltip";
 
 // =========================
 // Types
@@ -45,17 +47,59 @@ type ApiCategory = {
 type Option = { value: string; label: string; meta?: any };
 type Language = { _id: string; code: string; name: string };
 
-type GroupOption = { label: string; options: Option[] };
-
 const genders = ['Female', 'Male', 'Non-binary', 'Prefer not to say'];
 
 // flip to true if you want to allow proceeding without Modash payload
 const ALLOW_SELF_REPORT_FALLBACK = false;
 
-// =========================
-// Component
-// =========================
+// Small helper: branded tooltip trigger + content (NO ARROW, upgraded styling)
+function InfoTip({ title, desc }: { title: string; desc?: string }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span
+          role="button"
+          tabIndex={0}
+          aria-label={title}
+          className="ml-1 inline-flex items-center justify-center w-5 h-5 rounded-full border border-yellow-300/60 bg-white text-[11px] font-semibold text-gray-800 shadow-sm hover:bg-yellow-50 focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-yellow-400 cursor-pointer"
+        >
+          i
+        </span>
+      </TooltipTrigger>
 
+      {/* Using Radix Content directly so no Arrow is rendered */}
+      <TooltipPrimitive.Portal>
+        <TooltipPrimitive.Content
+          side="top"
+          align="start"
+          sideOffset={8}
+          className={[
+            // surface
+            "z-50 max-w-xs rounded-xl border border-yellow-300/40 bg-white/95 backdrop-blur-md px-3 py-2",
+            "shadow-[0_12px_40px_rgba(0,0,0,0.12)] ring-1 ring-yellow-200/30",
+            // typography
+            "text-xs text-gray-800",
+            // motion
+            "origin-[var(--radix-tooltip-content-transform-origin)]",
+            "animate-in fade-in-0 zoom-in-90",
+            "data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95",
+            "data-[side=top]:slide-in-from-bottom-2",
+            "data-[side=bottom]:slide-in-from-top-2",
+            "data-[side=left]:slide-in-from-right-2",
+            "data-[side=right]:slide-in-from-left-2",
+          ].join(" ")}
+        >
+          <div className="space-y-1">
+            <p className="text-xs font-semibold">{title}</p>
+            {desc ? <p className="text-[11px] leading-snug text-gray-700">{desc}</p> : null}
+          </div>
+        </TooltipPrimitive.Content>
+      </TooltipPrimitive.Portal>
+    </Tooltip>
+  );
+}
+
+// =========================
 export default function InfluencerSignup({ onSuccess, onStepChange }: { onSuccess: () => void; onStepChange?: (currentStep: number) => void }) {
   const router = useRouter();
   // Start at BASIC for a natural flow
@@ -73,15 +117,11 @@ export default function InfluencerSignup({ onSuccess, onStepChange }: { onSucces
   const [langLoading, setLangLoading] = useState(false);
   const [langError, setLangError] = useState('');
 
-  // Max allowed DOB: 2013 or earlier
-  const maxDob = '2013-12-31';
-
   // OTP state
   const [resendIn, setResendIn] = useState<number>(0);
   const [otpSent, setOtpSent] = useState(false);
   const [otpVerified, setOtpVerified] = useState(false);
   const [passwordVisible, setPasswordVisible] = useState(false);
-  const [confirmPasswordVisible, setConfirmPasswordVisible] = useState(false);
 
   // Track influencerId returned from /influencer/register for follow-up onboarding
   const [influencerId, setInfluencerId] = useState<string>('');
@@ -138,17 +178,22 @@ export default function InfluencerSignup({ onSuccess, onStepChange }: { onSucces
     fullName: '',
     email: '',
     otp: '',
-    // phone: '',
-    // dateOfBirth: '',
     countryId: '',
-    // city: '',
-    // callingCodeId: '',
     gender: '',
     selectedLanguages: [] as string[],
     password: '',
     confirmPassword: '',
     agreedToTerms: false,
   });
+
+  // ===== Helpers
+  // NEW: 9–15 chars, at least 1 letter & 1 number
+  const isStrongPassword = (pwd: string) => {
+    const lenOk = pwd.length > 8 && pwd.length < 16; // strictly greater than 8 and less than 16
+    const hasLetter = /[A-Za-z]/.test(pwd);
+    const hasDigit = /\d/.test(pwd);
+    return lenOk && hasLetter && hasDigit;
+  };
 
   // ====== Effects
   useEffect(() => {
@@ -191,6 +236,11 @@ export default function InfluencerSignup({ onSuccess, onStepChange }: { onSucces
     onStepChange?.(current);
   }, [step, onStepChange]);
 
+  // Ensure password hints never leak to later steps
+  useEffect(() => {
+    if (step !== 'basic') setShowPwdHints(false);
+  }, [step]);
+
   // ====== Options (memoized)
   const genderOptions: Option[] = useMemo(() => genders.map((g) => ({ value: g, label: g })), []);
   const languageOptions: Option[] = useMemo(
@@ -217,12 +267,16 @@ export default function InfluencerSignup({ onSuccess, onStepChange }: { onSucces
   ), []);
 
   // ===== Step 1 — Basic + Email (auto-send OTP on continue)
-  const completeBasicDetails = () => {
+  // UPDATED: make async; request OTP first, navigate to Verify only on success
+  const completeBasicDetails = async () => {
+    // reset hints first
     setShowBasicHints(false);
+    setShowPwdHints(false);
+
+    // required checks
     if (!formData.fullName || !formData.email || !formData.countryId) {
       setShowBasicHints(true);
       setError('');
-      // try scroll to first missing
       const firstMissingId = (
         [
           ['inf-name', !formData.fullName],
@@ -231,25 +285,41 @@ export default function InfluencerSignup({ onSuccess, onStepChange }: { onSucces
           ['country', !formData.countryId],
         ] as const
       ).find(([, miss]) => miss)?.[0];
-      if (firstMissingId) document.getElementById(firstMissingId)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      if (firstMissingId) {
+        document.getElementById(firstMissingId)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
       return;
     }
+
+    // password validation (trigger inline hint on this page only)
+    if (!formData.password || !isStrongPassword(formData.password)) {
+      setShowPwdHints(true);
+      setError('');
+      document.getElementById('inf-password')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
+    }
+
+    // Try OTP first; if it fails (e.g., user already present), keep user on this step and show error here
     setError('');
-    setStep('verify');
-    setOtpSent(false);
-    setOtpVerified(false);
-    setResendIn(0);
     setFormData((prev) => ({ ...prev, otp: '' }));
-    sendOTP(); // auto-fire
+    const ok = await sendOTP();
+    if (ok) {
+      setOtpVerified(false);
+      setStep('verify');
+    } else {
+      // stay on basic step; error already set by sendOTP()
+      setStep('basic');
+    }
   };
 
   // ===== Step 2 — OTP + Password
-  const sendOTP = async () => {
+  // UPDATED: return boolean so Step 1 can decide whether to navigate
+  const sendOTP = async (): Promise<boolean> => {
     if (!formData.email) {
       setError('Please enter your email');
-      return;
+      return false;
     }
-    if (resendIn > 0) return;
+    if (resendIn > 0) return false;
 
     setLoading(true);
     setError('');
@@ -257,8 +327,11 @@ export default function InfluencerSignup({ onSuccess, onStepChange }: { onSucces
       await post('/influencer/request-otp', { email: formData.email, role: 'Influencer' });
       setOtpSent(true);
       setResendIn(30);
+      return true;
     } catch (err: any) {
+      // This will show on the current step (Step 1 if called from there)
       setError(err?.response?.data?.message || err?.message || 'Failed to send OTP');
+      return false;
     } finally {
       setLoading(false);
     }
@@ -565,11 +638,11 @@ export default function InfluencerSignup({ onSuccess, onStepChange }: { onSucces
                         id="inf-password"
                         label="Password"
                         type={passwordVisible ? 'text' : 'password'}
-                        placeholder="≥8 chars, 1 number, 1 letter"
+                        placeholder="9–15 chars, 1 number, 1 letter"
                         value={formData.password}
                         onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                         required
-                        minLength={8}
+                        minLength={9}
                         autoComplete="new-password"
                         style={{ paddingRight: 40 }}
                       />
@@ -585,12 +658,20 @@ export default function InfluencerSignup({ onSuccess, onStepChange }: { onSucces
                     {missingPwd.password && (
                       <p className="text-xs text-red-600">this field is required</p>
                     )}
-                    {showPwdHints && !!formData.password && formData.password.length < 8 && (
-                      <p className="text-xs text-red-600">Password must be at least 8 characters</p>
+                    {/* NEW: detailed password hints only on Step 1 */}
+                    {showPwdHints && !!formData.password && (formData.password.length <= 8 || formData.password.length >= 16) && (
+                      <p className="text-xs text-red-600">Password must be between 9 and 15 characters.</p>
+                    )}
+                    {showPwdHints && !!formData.password && !/[A-Za-z]/.test(formData.password) && (
+                      <p className="text-xs text-red-600">Include at least one letter.</p>
+                    )}
+                    {showPwdHints && !!formData.password && !/\d/.test(formData.password) && (
+                      <p className="text-xs text-red-600">Include at least one number.</p>
                     )}
                   </div>
                 </div>
 
+                {/* Gender */}
                 <div className="grid sm:grid-cols-1 gap-4 ">
                   <div className="space-y-1">
                     <Select
@@ -612,6 +693,7 @@ export default function InfluencerSignup({ onSuccess, onStepChange }: { onSucces
                   </div>
                 </div>
 
+                {/* Country */}
                 <div className="grid sm:grid-cols-2 gap-4">
                   <div className="sm:col-span-2 space-y-1">
                     <Select
@@ -631,6 +713,7 @@ export default function InfluencerSignup({ onSuccess, onStepChange }: { onSucces
                   </div>
                 </div>
 
+                {/* Languages */}
                 <div className=" grid sm:grid-cols-1 gap-4">
                   <div className="space-y-1">
                     <Select
@@ -649,7 +732,6 @@ export default function InfluencerSignup({ onSuccess, onStepChange }: { onSucces
                     />
                     {langError && <p className="text-xs text-red-600 mt-2" aria-live="polite">{langError}</p>}
                   </div>
-
                 </div>
               </div>
 
@@ -913,7 +995,7 @@ export default function InfluencerSignup({ onSuccess, onStepChange }: { onSucces
 }
 
 // ======================================================
-// QuickQuestions with ALL selections via react-select
+// QuickQuestions with in-place answers + 75-word limit
 // ======================================================
 
 function QuickQuestions({
@@ -1039,6 +1121,19 @@ function QuickQuestions({
     });
   }, [answers.formats.join('|')]);
 
+  // ===== Word helpers for prompt answers (max 75 words) =====
+  const MAX_WORDS = 75;
+  const wordCount = (text: string) => {
+    const trimmed = text.trim();
+    if (!trimmed) return 0;
+    return trimmed.split(/\s+/).filter(Boolean).length;
+  };
+  const clampToWords = (text: string, maxWords = MAX_WORDS) => {
+    const words = text.trim().split(/\s+/);
+    if (words.filter(Boolean).length <= maxWords) return text;
+    return words.slice(0, maxWords).join(' ');
+  };
+
   // ===== Validation per substep =====
   const validStep1 = useMemo(() => {
     if (answers.formats.length < 1) return false;
@@ -1059,8 +1154,9 @@ function QuickQuestions({
   const validStep3 = useMemo(() => {
     if (answers.selectedPrompts.length < 1 || answers.selectedPrompts.length > 3) return false;
     for (const { prompt } of answers.selectedPrompts) {
-      const text = answers.promptAnswers[prompt]?.trim() || '';
-      if (text.length < 10) return false;
+      const text = (answers.promptAnswers[prompt] || '').trim();
+      const wc = wordCount(text);
+      if (wc < 1 || wc > MAX_WORDS) return false;
     }
     return true;
   }, [answers.selectedPrompts, answers.promptAnswers]);
@@ -1076,7 +1172,7 @@ function QuickQuestions({
 
   const finish = async () => {
     setErr('');
-    if (!validStep3) return setErr('Please pick up to 3 prompts (max 1 per group) and answer each.');
+    if (!validStep3) return setErr(`Please answer each selected prompt in 1–${MAX_WORDS} words.`);
     try {
       setSaving(true);
       await post('/influencer/onboarding', {
@@ -1096,8 +1192,8 @@ function QuickQuestions({
   const theme = rsTheme;
   const styles = rsStyles as any;
 
-  // Prompts — convert to grouped react-select
-  const storyPrompts: Record<string, string[]> = {
+  // Prompts (single select per group, textarea appears just below it)
+  const storyPrompts: Record<'Content' | 'Audience' | 'Brand', string[]> = {
     Content: [
       'What’s one thing your content always delivers—no exceptions?',
       'What’s your why—the thing that fuels your creativity?',
@@ -1115,58 +1211,33 @@ function QuickQuestions({
     ],
   };
 
-  const promptGroups: GroupBase<Option>[] = useMemo(() => {
-    return Object.entries(storyPrompts).map(([group, list]) => ({
-      label: group,
-      options: list.map((p) => ({ value: p, label: p, meta: { group } })),
-    }));
-  }, []);
-
-  const selectedPromptOptions: Option[] = useMemo(() => {
-    const m = new Map<string, Option>();
-    for (const g of promptGroups) for (const o of g.options as Option[]) m.set(o.value, o);
-    return answers.selectedPrompts.map((sp) => m.get(sp.prompt)!).filter(Boolean) as Option[];
-  }, [answers.selectedPrompts, promptGroups]);
-
-  const onChangePrompts = (opts: readonly Option[] | null) => {
-    const arr = Array.from(opts || []);
-    // enforce max 3 total and max 1 per group
-    const byGroup = new Map<string, Option>();
-    const picked: Option[] = [];
-    for (const o of arr) {
-      const g = o.meta?.group as string;
-      if (!byGroup.has(g)) {
-        byGroup.set(g, o);
-        picked.push(o);
-      } else {
-        continue;
-      }
-      if (picked.length >= 3) break;
-    }
-    const selectedPrompts = picked.map((o) => ({ group: o.meta!.group, prompt: o.value }));
-    setAnswers((prev) => {
-      const keepSet = new Set(selectedPrompts.map((p) => p.prompt));
-      const nextAnswers: Record<string, string> = {};
-      for (const k of Object.keys(prev.promptAnswers)) if (keepSet.has(k)) nextAnswers[k] = prev.promptAnswers[k];
-      return { ...prev, selectedPrompts, promptAnswers: nextAnswers };
-    });
-  };
-
   // convenience helpers
   const helperText = 'text-xs text-gray-500';
   const valueFromIds = (options: Option[], ids: string[]) => options.filter((o) => ids.includes(o.value));
   const idsFromValue = (opts: readonly Option[] | null) => (opts ? Array.from(opts).map((o) => o.value) : []);
   const optionFromId = (options: Option[], id: string) => options.find((o) => o.value === id) ?? null;
 
-  const selectAll = (key: 'subcategories' | 'collabTypes' | 'cadences') => {
-    if (key === 'subcategories') return setAnswers((p) => ({ ...p, subcategories: subcategoryOptions.map((s) => s.value) }));
-    if (key === 'collabTypes') return setAnswers((p) => ({ ...p, collabTypes: collabTypeOptions.map((o) => o.value) }));
-    if (key === 'cadences') return setAnswers((p) => ({ ...p, cadences: cadenceOptions.map((o) => o.value) }));
+  // set selection for a specific group, and clean up old answer if changing/clearing
+  const setGroupPrompt = (group: 'Content' | 'Audience' | 'Brand', prompt: string) => {
+    setAnswers(prev => {
+      const prevSel = prev.selectedPrompts.find(s => s.group === group)?.prompt;
+      const filtered = prev.selectedPrompts.filter(s => s.group !== group);
+      const nextSel = prompt ? [...filtered, { group, prompt }] : filtered;
+
+      const nextAnswers = { ...prev.promptAnswers };
+      if (prevSel && prevSel !== prompt) delete nextAnswers[prevSel];
+      if (!prompt && prevSel) delete nextAnswers[prevSel];
+
+      return { ...prev, selectedPrompts: nextSel, promptAnswers: nextAnswers };
+    });
   };
 
-  const clearAll = (key: 'categoryId' | 'subcategories' | 'collabTypes' | 'cadences') => {
-    if (key === 'categoryId') return setAnswers((p) => ({ ...p, categoryId: '', subcategories: [] }));
-    setAnswers((prev) => ({ ...prev, [key]: [] as any }));
+  const handleAnswerChange = (prompt: string, value: string) => {
+    const clamped = clampToWords(value, MAX_WORDS);
+    setAnswers(prev => ({
+      ...prev,
+      promptAnswers: { ...prev.promptAnswers, [prompt]: clamped }
+    }));
   };
 
   return (
@@ -1239,7 +1310,7 @@ function QuickQuestions({
                           ...prev,
                           budgets: {
                             ...prev.budgets,
-                            [f]: (opt?.value as BudgetRange) || ('' as any),
+                            [f]: (opt?.value as any) || ('' as any),
                           },
                         }))
                       }
@@ -1255,15 +1326,9 @@ function QuickQuestions({
 
           <div className="grid sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">Preferred project length
-                <div className="relative group">
-                  <span className="inline-flex items-center justify-center w-5 h-4 text-s font-semibold text-gray-600 border border-gray-400 rounded-full cursor-default">
-                    i
-                  </span>
-                  <div className="absolute left-1 -translate-x-1 mt-2 w-48 text-s text-gray-700 bg-white border border-gray-300 rounded-lg shadow-lg opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity duration-200 p-1 z-10">
-                    Project Duration
-                  </div>
-                </div>
+              <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
+                Preferred project length
+                <InfoTip title="Project Duration" desc="How long you prefer a collaboration to run." />
               </label>
               <Select
                 instanceId="project-length"
@@ -1279,14 +1344,7 @@ function QuickQuestions({
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
                 Capacity right now
-                <div className="relative group">
-                  <span className="inline-flex items-center justify-center w-5 h-4 text-s font-semibold text-gray-600 border border-gray-400 rounded-full cursor-default">
-                    i
-                  </span>
-                  <div className="absolute left-1 -translate-x-1 mt-2 w-48 text-xs text-gray-700 bg-white border border-gray-300 rounded-lg shadow-lg opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity duration-200 p-1 z-10">
-                    It represents your Project Occupancy.
-                  </div>
-                </div>
+                <InfoTip title="Capacity" desc="How many projects you can comfortably take on at the moment." />
               </label>
 
               <Select
@@ -1323,15 +1381,9 @@ function QuickQuestions({
         <div className="space-y-6">
           <div>
             <div className="flex items-center justify-between mb-2">
-              <label className="block text-sm font-medium text-gray-700 flex items-center gap-2">Category (single select)
-                <div className="relative group">
-                  <span className="inline-flex items-center justify-center w-5 h-4 text-s font-semibold text-gray-600 border border-gray-400 rounded-full cursor-default">
-                    i
-                  </span>
-                  <div className="absolute left-1 -translate-x-1 mt-2 w-48 text-xs text-gray-700 bg-white border border-gray-300 rounded-lg shadow-lg opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity duration-200 p-1 z-10">
-                    Pick one category to unlock its subcategories.
-                  </div>
-                </div>
+              <label className="block text-sm font-medium text-gray-700 flex items-center gap-2">
+                Category (single select)
+                <InfoTip title="Category" desc="Pick one category to unlock its subcategories." />
               </label>
             </div>
 
@@ -1357,15 +1409,9 @@ function QuickQuestions({
 
           <div>
             <div className="flex items-center justify-between mb-2">
-              <label className="block text-sm font-medium text-gray-700 flex items-center gap-2">Subcategories (multi-select)
-                <div className="relative group">
-                  <span className="inline-flex items-center justify-center w-5 h-4 text-s font-semibold text-gray-600 border border-gray-400 rounded-full cursor-default">
-                    i
-                  </span>
-                  <div className="absolute left-1 -translate-x-1 mt-2 w-48 text-xs text-gray-700 bg-white border border-gray-300 rounded-lg shadow-lg opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity duration-200 p-1 z-10">
-                    These depend on the category you selected above.
-                  </div>
-                </div>
+              <label className="block text-sm font-medium text-gray-700 flex items-center gap-2">
+                Subcategories (multi-select)
+                <InfoTip title="Subcategories" desc="Options depend on the category you selected above." />
               </label>
             </div>
 
@@ -1440,18 +1486,20 @@ function QuickQuestions({
       {/* ===== SUBSTEP 3 */}
       {qStep === 3 && (
         <div className="space-y-6">
-          <div className="p-4 rounded-lg border border-yellow-200 bg-yellow-50 text-sm text-yellow-900">
-            Pick up to <strong>3</strong> prompts total — max <strong>1 per group</strong> — and answer briefly.
-          </div>
 
           <div className="space-y-5">
             {(['Content', 'Audience', 'Brand'] as const).map((grp) => {
               const options = storyPrompts[grp].map((t) => ({ value: t, label: t }));
-              const sel = answers.selectedPrompts.find((s) => s.group === grp)?.prompt || '';
-              const selectedOption = options.find((o) => o.value === sel) || null;
+              const selected = answers.selectedPrompts.find((s) => s.group === grp)?.prompt || '';
+              const selectedOption = options.find((o) => o.value === selected) || null;
+
+              // local per-card values (in scope for wordCount/MAX_WORDS)
+              const currentAnswer = selected ? (answers.promptAnswers[selected] || '') : '';
+              const wc = wordCount(currentAnswer);
+              const atLimit = wc >= MAX_WORDS;
 
               return (
-                <div key={grp} className="p-4 rounded-xl border-gray-200 bg-white duration-200">
+                <div key={grp} className="p-4 rounded-xl border border-gray-200 bg-white">
                   <label className="block text-sm font-semibold text-gray-800 mb-2">
                     {grp} Prompt
                   </label>
@@ -1461,11 +1509,7 @@ function QuickQuestions({
                     value={selectedOption}
                     onChange={(opt: SingleValue<{ value: string; label: string }>) => {
                       const prompt = opt?.value || '';
-                      setAnswers((prev) => {
-                        const filtered = prev.selectedPrompts.filter((s) => s.group !== grp);
-                        if (!prompt) return { ...prev, selectedPrompts: filtered };
-                        return { ...prev, selectedPrompts: [...filtered, { group: grp, prompt }] };
-                      });
+                      setGroupPrompt(grp, prompt);
                     }}
                     styles={styles}
                     theme={theme}
@@ -1473,32 +1517,31 @@ function QuickQuestions({
                     isClearable
                   />
                   <p className="mt-2 text-xs text-gray-500">Select only one prompt for this category.</p>
+
+                  {/* Answer box appears right below when a prompt is chosen */}
+                  {selectedOption && (
+                    <div className="mt-3 space-y-1">
+                      <textarea
+                        value={currentAnswer}
+                        onChange={(e) => handleAnswerChange(selected, e.target.value)}
+                        rows={3}
+                        placeholder={`Your short answer (up to ${MAX_WORDS} words)`}
+                        aria-invalid={atLimit}
+                        className={[
+                          "w-full px-3 py-2 border-2 rounded-lg bg-gray-50 focus:bg-white focus:outline-none text-sm",
+                          atLimit ? "border-red-400 focus:border-red-500" : "border-gray-300 focus:border-yellow-500"
+                        ].join(" ")}
+                      />
+                      {/* counter turns red at limit */}
+                      <div className={`text-xs text-right ${atLimit ? 'text-red-600' : 'text-gray-500'}`}>
+                        {wc}/{MAX_WORDS} words
+                      </div>
+                    </div>
+                  )}
                 </div>
               );
             })}
           </div>
-
-          {answers.selectedPrompts.map(({ group, prompt }) => (
-            <div key={prompt} className="space-y-2 mt-4">
-              <div className="text-sm font-medium text-gray-800">{group}</div>
-              <div className="text-sm text-gray-700">{prompt}</div>
-              <textarea
-                value={answers.promptAnswers[prompt] || ''}
-                onChange={(e) =>
-                  setAnswers((prev) => ({
-                    ...prev,
-                    promptAnswers: { ...prev.promptAnswers, [prompt]: e.target.value.slice(0, 500) },
-                  }))
-                }
-                rows={3}
-                placeholder="Your short answer (10–500 chars)"
-                className="w-full px-3 py-2 border-2 border-gray-300 rounded-lg bg-gray-50 focus:bg-white focus:border-yellow-500 focus:outline-none text-sm"
-              />
-              <div className="text-xs text-gray-500 text-right">
-                {(answers.promptAnswers[prompt]?.length ?? 0)}/500
-              </div>
-            </div>
-          ))}
 
           <div className="flex items-center justify-between mt-6">
             <div className="text-xs text-gray-500">
