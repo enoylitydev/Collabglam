@@ -6,8 +6,8 @@ import axios, {
   type AxiosRequestHeaders,
 } from 'axios'
 
-export const API_BASE_URL  = process.env.NEXT_PUBLIC_API_URL  || 'http://localhost:5000'
-export const API_BASE_URL2 = process.env.NEXT_PUBLIC_API_URL2 || 'http://localhost:7000'
+export const API_BASE_URL  = process.env.NEXT_PUBLIC_API_URL  || 'https://api.collabglam.com'
+export const API_BASE_URL2 = process.env.NEXT_PUBLIC_API_URL2 || 'https://api.sharemitra.com'
 
 // ---- Single token key ----
 export const TOKEN_KEY = 'token'
