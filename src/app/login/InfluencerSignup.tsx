@@ -52,8 +52,6 @@ const genders = ['Female', 'Male', 'Non-binary', 'Prefer not to say'];
 // flip to true if you want to allow proceeding without Modash payload
 const ALLOW_SELF_REPORT_FALLBACK = false;
 
-// Reusable react-select theme and styles are imported from '../styles/reactSelectStyles' and used directly.
-
 // =========================
 // Component
 // =========================
@@ -211,14 +209,6 @@ export default function InfluencerSignup({ onSuccess, onStepChange }: { onSucces
     [countries]
   );
 
-  // const callingCodeOptions: Option[] = useMemo(
-  //   () =>
-  //     countries
-  //       .map((c) => ({ value: c._id, label: c.callingCode, meta: { flag: c.flag } }))
-  //       .sort((a, b) => a.label.localeCompare(b.label)),
-  //   [countries]
-  // );
-
   const formatOptionLabelCountry = useCallback((opt: Option) => (
     <div className="flex items-center gap-2">
       <span className="text-lg leading-none">{opt.meta?.flag ?? '🏳️'}</span>
@@ -226,28 +216,17 @@ export default function InfluencerSignup({ onSuccess, onStepChange }: { onSucces
     </div>
   ), []);
 
-  // const formatOptionLabelCalling = useCallback((opt: Option) => (
-  //   <div className="flex items-center gap-2">
-  //     <span className="text-lg leading-none">{opt.meta?.flag ?? '🏳️'}</span>
-  //     <span>{opt.label}</span>
-  //   </div>
-  // ), []);
-
   // ===== Step 1 — Basic + Email (auto-send OTP on continue)
   const completeBasicDetails = () => {
     setShowBasicHints(false);
     if (!formData.fullName || !formData.email || !formData.countryId) {
       setShowBasicHints(true);
-      // Do not show generic banner error; rely on inline hints
       setError('');
       // try scroll to first missing
       const firstMissingId = (
         [
           ['inf-name', !formData.fullName],
           ['inf-email', !formData.email],
-          // ['calling-code', !formData.callingCodeId],
-          // ['inf-phone', !formData.phone],
-          // ['inf-dob', !formData.dateOfBirth],
           ['gender', !formData.gender],
           ['country', !formData.countryId],
         ] as const
@@ -255,25 +234,6 @@ export default function InfluencerSignup({ onSuccess, onStepChange }: { onSucces
       if (firstMissingId) document.getElementById(firstMissingId)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
       return;
     }
-    // DOB must be 2013-12-31 or earlier
-    // if (!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(formData.dateOfBirth)) {
-    //   setError('Please enter a valid date of birth');
-    //   return;
-    // }
-    // const cutoff = '2013-12-31';
-    // compare ISO strings (YYYY-MM-DD) lexicographically
-    // if (formData.dateOfBirth > cutoff) {
-    //   setError('Date of birth must be on or before 2013');
-    //   return;
-    // }
-    // Enforce 10-digit mobile without country code
-    // const phoneDigits = (formData.phone || '').replace(/\D/g, '');
-    // if (phoneDigits.length !== 10) {
-    //   setError('Please enter a valid 10-digit mobile number (exclude country code).');
-    //   return;
-    // }
-    // Persist normalized digits
-    // setFormData((prev) => ({ ...prev, phone: phoneDigits }));
     setError('');
     setStep('verify');
     setOtpSent(false);
@@ -324,7 +284,6 @@ export default function InfluencerSignup({ onSuccess, onStepChange }: { onSucces
     }
   };
 
-
   // ===== Multi-platform helpers
   const urlByPlatform = (p: Provider, h: string) => {
     if (p === 'instagram') return `https://instagram.com/${h}`;
@@ -352,8 +311,6 @@ export default function InfluencerSignup({ onSuccess, onStepChange }: { onSucces
   const setProvider = (p: Provider, patch: Partial<ProviderState>) =>
     setPlatforms((s) => ({ ...s, [p]: { ...s[p], ...patch } }));
 
-
-
   const resolveProfile = async (provider: Provider) => {
     const s = platforms[provider];
     const handle = s.handle.replace(/^@/, '').trim();
@@ -361,7 +318,6 @@ export default function InfluencerSignup({ onSuccess, onStepChange }: { onSucces
 
     setProvider(provider, { loading: true, error: '', payload: null, preview: null });
     try {
-      // call your backend proxy (keeps API key server-side)
       const result = await post('/modash/resolve-profile', {
         platform: provider, // 'instagram' | 'tiktok' | 'youtube'
         username: handle,
@@ -452,15 +408,9 @@ export default function InfluencerSignup({ onSuccess, onStepChange }: { onSucces
         name: formData.fullName,
         email: formData.email,
         password: formData.password,
-        // phone: (formData.phone || '').replace(/\D/g, ''),
         countryId: formData.countryId,
-        // callingId: formData.callingCodeId,
-        // NEW: pass basics & languages
-        // city: formData.city,
         gender: formData.gender,
-        // dateOfBirth: formData.dateOfBirth,        // "YYYY-MM-DD"
         selectedLanguages: formData.selectedLanguages, // Language _ids
-        // Platforms + preferred
         platforms: platformsPayload,
         preferredProvider: primaryProvider,
       });
@@ -491,7 +441,6 @@ export default function InfluencerSignup({ onSuccess, onStepChange }: { onSucces
       }
       router.replace('/influencer/dashboard');
     } catch (err: any) {
-      // If auto-login fails, fall back to existing success handling
       console.warn('Auto-login failed after signup:', err?.message || err);
       onSuccess();
     } finally {
@@ -533,9 +482,6 @@ export default function InfluencerSignup({ onSuccess, onStepChange }: { onSucces
   const missingBasic = {
     fullName: showBasicHints && !formData.fullName,
     email: showBasicHints && !formData.email,
-    // phone: showBasicHints && !formData.phone,
-    // dateOfBirth: showBasicHints && !formData.dateOfBirth,
-    // callingCodeId: showBasicHints && !formData.callingCodeId,
     countryId: showBasicHints && !formData.countryId,
     gender: showBasicHints && !formData.gender,
   } as const;
@@ -554,12 +500,11 @@ export default function InfluencerSignup({ onSuccess, onStepChange }: { onSucces
             <div className="w-10 h-10 rounded-xl flex items-center ring-1 ring-gray-200 overflow-hidden">
               <img src='./logo.png' alt="Logo" loading="lazy" className="w-full h-full object-contain" />
             </div>
-            <div className="flex items-center justify-content: center">
+            <div className="flex items-center justify-center">
               <h1 className="text-base sm:text-lg font-semibold text-gray-900">
                 Influencer Signup
               </h1>
             </div>
-
           </div>
         </div>
         <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 pb-3">
@@ -576,7 +521,7 @@ export default function InfluencerSignup({ onSuccess, onStepChange }: { onSucces
             </div>
           )}
 
-          {/* STEP 1 — BASIC + EMAIL (react-select everywhere) */}
+          {/* STEP 1 — BASIC + EMAIL */}
           {step === 'basic' && (
             <div className="space-y-5 animate-fadeIn">
 
@@ -593,7 +538,7 @@ export default function InfluencerSignup({ onSuccess, onStepChange }: { onSucces
                     autoComplete="name"
                   />
                   {missingBasic.fullName && (
-                    <p className="text-xs text-red-600">this feild is required</p>
+                    <p className="text-xs text-red-600">this field is required</p>
                   )}
                 </div>
 
@@ -609,7 +554,7 @@ export default function InfluencerSignup({ onSuccess, onStepChange }: { onSucces
                     autoComplete="email"
                   />
                   {missingBasic.email && (
-                    <p className="text-xs text-red-600">this feild is required</p>
+                    <p className="text-xs text-red-600">this field is required</p>
                   )}
                 </div>
 
@@ -638,55 +583,13 @@ export default function InfluencerSignup({ onSuccess, onStepChange }: { onSucces
                       </button>
                     </div>
                     {missingPwd.password && (
-                      <p className="text-xs text-red-600">this feild is required</p>
+                      <p className="text-xs text-red-600">this field is required</p>
                     )}
                     {showPwdHints && !!formData.password && formData.password.length < 8 && (
                       <p className="text-xs text-red-600">Password must be at least 8 characters</p>
                     )}
                   </div>
                 </div>
-
-                {/* <div className="grid sm:grid-cols-3 gap-4 sm:col-span-2">
-                  <div className="sm:col-span-1 space-y-1">
-                    <Select
-                      instanceId="calling-code"
-                      inputId="calling-code"
-                      options={callingCodeOptions}
-                      value={findOption(callingCodeOptions, formData.callingCodeId)}
-                      onChange={(opt: SingleValue<Option>) => setFormData((p) => ({ ...p, callingCodeId: opt?.value || '' }))}
-                      placeholder="Code"
-                      styles={rsStyles as any}
-                      theme={rsTheme}
-                      formatOptionLabel={formatOptionLabelCalling}
-                    />
-                    {missingBasic.callingCodeId && (
-                      <p className="text-xs text-red-600">this feild is required</p>
-                    )}
-                  </div>
-                  <div className="sm:col-span-2 space-y-1">
-                  <FloatingLabelInput
-                    id="inf-phone"
-                    label="Mobile Number"
-                    type="tel"
-                    placeholder="10-digit mobile (no country code)"
-                    inputMode="numeric"
-                    pattern="[0-9]{10}"
-                    maxLength={10}
-                    minLength={10}
-                    title="Enter 10-digit mobile number (exclude country code)"
-                    value={formData.phone}
-                    onChange={(e) => {
-                      const digits = e.target.value.replace(/\D/g, '').slice(0, 10);
-                      setFormData({ ...formData, phone: digits });
-                    }}
-                    required
-                    autoComplete="tel"
-                  />
-                  {missingBasic.phone && (
-                    <p className="text-xs text-red-600">this feild is required</p>
-                  )}
-                  </div>
-                </div> */}
 
                 <div className="grid sm:grid-cols-1 gap-4 ">
                   <div className="space-y-1">
@@ -707,30 +610,6 @@ export default function InfluencerSignup({ onSuccess, onStepChange }: { onSucces
                       <p className="text-xs text-red-600">this field is required</p>
                     )}
                   </div>
-                  {/* <div className="sm:col-span-1 space-y-1">
-                    <FloatingLabelInput
-                      id="inf-dob"
-                      label="Date of Birth"
-                      type="date"
-                      value={formData.dateOfBirth}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        if (/^\d{4}-\d{2}-\d{2}$/.test(val) && val > maxDob) {
-                          setError('Date of birth must be on or before 2013');
-                          (e.currentTarget as HTMLInputElement).setCustomValidity('Date of birth must be on or before 2013');
-                          (e.currentTarget as HTMLInputElement).reportValidity?.();
-                          return;
-                        }
-                        (e.currentTarget as HTMLInputElement).setCustomValidity('');
-                        setFormData({ ...formData, dateOfBirth: val });
-                      }}
-                      required
-                      autoComplete="bday"
-                    />
-                    {missingBasic.dateOfBirth && (
-                      <p className="text-xs text-red-600">this feild is required</p>
-                    )}
-                  </div> */}
                 </div>
 
                 <div className="grid sm:grid-cols-2 gap-4">
@@ -747,20 +626,9 @@ export default function InfluencerSignup({ onSuccess, onStepChange }: { onSucces
                       formatOptionLabel={formatOptionLabelCountry}
                     />
                     {missingBasic.countryId && (
-                      <p className="text-xs text-red-600">this feild is required</p>
+                      <p className="text-xs text-red-600">this field is required</p>
                     )}
                   </div>
-                  {/* <div className="sm:col-span-1">
-                    <FloatingLabelInput
-                      id="inf-city"
-                      label="City (Optional)"
-                      type="text"
-                      placeholder="Where do you create from?"
-                      value={formData.city}
-                      onChange={(e) => setFormData({ ...formData, city: e.target.value })}
-                      autoComplete="address-level2"
-                    />
-                  </div> */}
                 </div>
 
                 <div className=" grid sm:grid-cols-1 gap-4">
@@ -784,10 +652,8 @@ export default function InfluencerSignup({ onSuccess, onStepChange }: { onSucces
 
                 </div>
               </div>
-              <p className="text-xs text-gray-500 mt-2">We’ll use this to tailor briefs.</p>
 
               <div className="flex flex-col-reverse sm:flex-row gap-3 sm:justify-end">
-                {/* <p className="text-xs text-gray-500 text-center sm:text-left">You can edit this anytime</p> */}
                 <Button onClick={completeBasicDetails} variant="influencer" className="self-center sm:self-auto">
                   Continue
                 </Button>
@@ -822,7 +688,7 @@ export default function InfluencerSignup({ onSuccess, onStepChange }: { onSucces
                       autoComplete="one-time-code"
                     />
                     {showVerifyOtpHint && !formData.otp && (
-                      <p className="text-xs text-red-600">this feild is required</p>
+                      <p className="text-xs text-red-600">this field is required</p>
                     )}
                   </div>
 
@@ -839,13 +705,10 @@ export default function InfluencerSignup({ onSuccess, onStepChange }: { onSucces
                     >
                       {otpSent
                         ? resendIn > 0
-                          ? `Resend in ${resendIn}s` // Countdown text
-                          : 'Resend Code' // Active resend
+                          ? `Resend in ${resendIn}s`
+                          : 'Resend Code'
                         : 'Sending Verification Code'}
                     </button>
-
-
-
                   </div>
                 </>
               )}
@@ -880,12 +743,10 @@ export default function InfluencerSignup({ onSuccess, onStepChange }: { onSucces
                   placeholder="Select one or more platforms"
                 />
                 {showPlatformHints && includedPlatforms.length === 0 && (
-                  <p className="text-xs text-red-600">this feild is required</p>
+                  <p className="text-xs text-red-600">this field is required</p>
                 )}
                 <p className="text-xs text-gray-500">We only fetch public stats for matching & we will never post on your behalf.</p>
               </div>
-
-
 
               {/* Only render cards for included platforms */}
               {includedPlatforms.length > 0 && (
@@ -921,7 +782,6 @@ export default function InfluencerSignup({ onSuccess, onStepChange }: { onSucces
                           <button
                             type="button"
                             onClick={() => {
-                              // Deselect this platform
                               setPlatforms((prev) => ({ ...prev, [p]: { ...prev[p], include: false } }));
                               if (primaryProvider === p) setPrimaryProvider('');
                             }}
@@ -936,13 +796,9 @@ export default function InfluencerSignup({ onSuccess, onStepChange }: { onSucces
                           <Checkbox
                             id={`primary-${p}`}
                             checked={isPrimary}
-                            // shadcn Checkbox gives boolean | "indeterminate"
                             onCheckedChange={(checked) => {
-                              if (checked) {
-                                setPrimaryProvider(p);
-                              } else if (primaryProvider === p) {
-                                setPrimaryProvider('');
-                              }
+                              if (checked) setPrimaryProvider(p);
+                              else if (primaryProvider === p) setPrimaryProvider('');
                             }}
                             className="border-gray-300 data-[state=checked]:bg-yellow-500 data-[state=checked]:border-yellow-500"
                           />
@@ -963,7 +819,7 @@ export default function InfluencerSignup({ onSuccess, onStepChange }: { onSucces
                             required
                           />
                           {showPlatformHints && !s.handle.replace(/^@/, '').trim() && (
-                            <p className="text-xs text-red-600">this feild is required</p>
+                            <p className="text-xs text-red-600">this field is required</p>
                           )}
                         </div>
 
@@ -1021,7 +877,6 @@ export default function InfluencerSignup({ onSuccess, onStepChange }: { onSucces
                 </div>
               )}
 
-
               <div className="flex justify-end">
                 <Button
                   onClick={finishPlatformStep}
@@ -1059,7 +914,6 @@ export default function InfluencerSignup({ onSuccess, onStepChange }: { onSucces
 
 // ======================================================
 // QuickQuestions with ALL selections via react-select
-// (improved: sticky mini-progress on mobile, disabled Next when invalid)
 // ======================================================
 
 function QuickQuestions({
@@ -1088,7 +942,6 @@ function QuickQuestions({
   );
   const capacityOptions: Option[] = useMemo(() => ['Light', 'Normal', 'Heavy'].map((c) => ({ value: c, label: c })), []);
 
-  // moved to react-select (multi) per request
   const collabTypeStrings = ['Paid', 'Product Gifting', 'Ambassador', 'Event'];
   const cadenceStrings = ['Single Deliverable', 'Weekly Deliverable', 'Monthly Deliverable', 'Quarterly Deliverable'];
 
@@ -1126,8 +979,8 @@ function QuickQuestions({
     capacity: '',
 
     // STEP 4.2 — Category/Subcategories/Collab prefs
-    categoryId: '' as string, // <-- single category
-    subcategories: [] as string[], // <-- multiple subcategories
+    categoryId: '' as string, // single category
+    subcategories: [] as string[], // multiple subcategories
     collabTypes: [] as string[],
     allowlisting: false,
     cadences: [] as string[],
@@ -1196,8 +1049,8 @@ function QuickQuestions({
   }, [answers.formats, answers.budgets, answers.projectLength, answers.capacity]);
 
   const validStep2 = useMemo(() => {
-    const hasCat = !!answers.categoryId; // single category required
-    const hasSubcats = answers.subcategories.length >= 1; // at least one subcategory
+    const hasCat = !!answers.categoryId;
+    const hasSubcats = answers.subcategories.length >= 1;
     const hasCollab = answers.collabTypes.length >= 1;
     const hasCadence = answers.cadences.length >= 1;
     return hasCat && hasSubcats && hasCollab && hasCadence;
@@ -1207,7 +1060,7 @@ function QuickQuestions({
     if (answers.selectedPrompts.length < 1 || answers.selectedPrompts.length > 3) return false;
     for (const { prompt } of answers.selectedPrompts) {
       const text = answers.promptAnswers[prompt]?.trim() || '';
-      if (text.length < 10) return false; // minimal signal
+      if (text.length < 10) return false;
     }
     return true;
   }, [answers.selectedPrompts, answers.promptAnswers]);
@@ -1226,10 +1079,9 @@ function QuickQuestions({
     if (!validStep3) return setErr('Please pick up to 3 prompts (max 1 per group) and answer each.');
     try {
       setSaving(true);
-      // Persist Quick Questions to backend
       await post('/influencer/onboarding', {
-        influencerId, // preferred
-        email,        // fallback match if id is missing
+        influencerId,
+        email,
         ...answers
       });
       onComplete(answers);
@@ -1263,7 +1115,7 @@ function QuickQuestions({
     ],
   };
 
-  const promptGroups: GroupOption[] = useMemo(() => {
+  const promptGroups: GroupBase<Option>[] = useMemo(() => {
     return Object.entries(storyPrompts).map(([group, list]) => ({
       label: group,
       options: list.map((p) => ({ value: p, label: p, meta: { group } })),
@@ -1272,7 +1124,7 @@ function QuickQuestions({
 
   const selectedPromptOptions: Option[] = useMemo(() => {
     const m = new Map<string, Option>();
-    for (const g of promptGroups) for (const o of g.options) m.set(o.value, o);
+    for (const g of promptGroups) for (const o of g.options as Option[]) m.set(o.value, o);
     return answers.selectedPrompts.map((sp) => m.get(sp.prompt)!).filter(Boolean) as Option[];
   }, [answers.selectedPrompts, promptGroups]);
 
@@ -1291,8 +1143,7 @@ function QuickQuestions({
       }
       if (picked.length >= 3) break;
     }
-    const selectedPrompts = picked.map((o) => ({ group: o.meta.group, prompt: o.value }));
-    // prune promptAnswers for deselected prompts
+    const selectedPrompts = picked.map((o) => ({ group: o.meta!.group, prompt: o.value }));
     setAnswers((prev) => {
       const keepSet = new Set(selectedPrompts.map((p) => p.prompt));
       const nextAnswers: Record<string, string> = {};
@@ -1301,10 +1152,8 @@ function QuickQuestions({
     });
   };
 
-  // ==== UI ====
+  // convenience helpers
   const helperText = 'text-xs text-gray-500';
-
-  // convenience: mapping helpers for select values
   const valueFromIds = (options: Option[], ids: string[]) => options.filter((o) => ids.includes(o.value));
   const idsFromValue = (opts: readonly Option[] | null) => (opts ? Array.from(opts).map((o) => o.value) : []);
   const optionFromId = (options: Option[], id: string) => options.find((o) => o.value === id) ?? null;
@@ -1323,7 +1172,7 @@ function QuickQuestions({
   return (
     <div className="space-y-5 animate-fadeIn">
       {/* Sticky mini-progress (mobile helpful) */}
-      <div className="sticky top=[64px] z-10 bg-white/80 backdrop-blur rounded-lg border p-3 sm:hidden">
+      <div className="sticky top-[64px] z-10 bg-white/80 backdrop-blur rounded-lg border p-3 sm:hidden">
         <div className="flex items-center justify-between text-xs text-gray-600 mb-1">
           <span>
             Step {qStep} of {stepCount}
@@ -1349,7 +1198,7 @@ function QuickQuestions({
 
       {err && <div className="p-3 text-sm rounded-md border border-red-200 bg-red-50 text-red-700" aria-live="polite">{err}</div>}
 
-      {/* ===== SUBSTEP 1 — all react-select */}
+      {/* ===== SUBSTEP 1 */}
       {qStep === 1 && (
         <div className="space-y-6">
           <div>
@@ -1373,14 +1222,13 @@ function QuickQuestions({
                 Pick a budget range for each selected format
               </label>
 
-              {/* Grid with 2 columns on medium screens and above */}
               <div className="grid md:grid-cols-2 gap-4">
                 {answers.formats.map((f) => (
                   <div
                     key={f}
-                    className=" rounded-lg  border-gray-200 bg-white duration-200"
+                    className="rounded-lg border-gray-200 bg-white duration-200"
                   >
-                    <h3 className="block text-sm font-medium text-gray-700 mb-2 ">{f}</h3>
+                    <h3 className="block text-sm font-medium text-gray-700 mb-2">{f}</h3>
 
                     <Select
                       instanceId={`budget-${f}`}
@@ -1404,8 +1252,6 @@ function QuickQuestions({
               </div>
             </div>
           )}
-
-
 
           <div className="grid sm:grid-cols-2 gap-4">
             <div>
@@ -1433,7 +1279,6 @@ function QuickQuestions({
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
                 Capacity right now
-                {/* Info icon with tooltip */}
                 <div className="relative group">
                   <span className="inline-flex items-center justify-center w-5 h-4 text-s font-semibold text-gray-600 border border-gray-400 rounded-full cursor-default">
                     i
@@ -1461,7 +1306,6 @@ function QuickQuestions({
               Next
             </Button>
           </div>
-          {/* Skip option (global) */}
           <div className="flex justify-end">
             <button
               type="button"
@@ -1474,7 +1318,7 @@ function QuickQuestions({
         </div>
       )}
 
-      {/* ===== SUBSTEP 2 — Category single, Subcategories multi (react-select) ===== */}
+      {/* ===== SUBSTEP 2 */}
       {qStep === 2 && (
         <div className="space-y-6">
           <div>
@@ -1492,7 +1336,6 @@ function QuickQuestions({
             </div>
 
             <Select
-              // SINGLE SELECT
               isMulti={false}
               closeMenuOnSelect={true}
               options={categoryOptions}
@@ -1501,7 +1344,7 @@ function QuickQuestions({
                 setAnswers((p) => ({
                   ...p,
                   categoryId: (opt as Option | null)?.value || '',
-                  subcategories: [], // reset subs when category changes
+                  subcategories: [],
                 }))
               }
               isLoading={catLoading}
@@ -1594,15 +1437,13 @@ function QuickQuestions({
         </div>
       )}
 
-      {/* ===== SUBSTEP 3 — Prompts via grouped react-select ===== */}
+      {/* ===== SUBSTEP 3 */}
       {qStep === 3 && (
         <div className="space-y-6">
-          {/* Instruction Banner */}
           <div className="p-4 rounded-lg border border-yellow-200 bg-yellow-50 text-sm text-yellow-900">
             Pick up to <strong>3</strong> prompts total — max <strong>1 per group</strong> — and answer briefly.
           </div>
 
-          {/* === Prompt Selectors (Content → Audience → Brand) === */}
           <div className="space-y-5">
             {(['Content', 'Audience', 'Brand'] as const).map((grp) => {
               const options = storyPrompts[grp].map((t) => ({ value: t, label: t }));
@@ -1637,7 +1478,6 @@ function QuickQuestions({
             })}
           </div>
 
-          {/* === Answers for Selected Prompts === */}
           {answers.selectedPrompts.map(({ group, prompt }) => (
             <div key={prompt} className="space-y-2 mt-4">
               <div className="text-sm font-medium text-gray-800">{group}</div>
@@ -1660,15 +1500,12 @@ function QuickQuestions({
             </div>
           ))}
 
-          {/* === Footer Buttons === */}
           <div className="flex items-center justify-between mt-6">
             <div className="text-xs text-gray-500">
               Selected: {answers.selectedPrompts.length} / 3
             </div>
 
             <div className="flex items-center gap-4">
-              {/* Finish as primary button */}
-              {/* Back as text button */}
               <button
                 type="button"
                 onClick={back}
@@ -1677,7 +1514,6 @@ function QuickQuestions({
                 Back
               </button>
 
-              {/* Skip for now as text button */}
               <button
                 type="button"
                 onClick={() => onComplete()}
@@ -1694,8 +1530,6 @@ function QuickQuestions({
               >
                 Finish
               </Button>
-
-
             </div>
           </div>
 
