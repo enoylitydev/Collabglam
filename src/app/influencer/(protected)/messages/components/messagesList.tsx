@@ -1,46 +1,26 @@
-"use client";
 
-import { useState, useEffect } from "react";
-import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
-import { post } from "@/lib/api";
+'use client';
+import { useState, useEffect } from 'react';
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
+import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
+import { post } from '@/lib/api';
 
-type RoomSummary = {
-  roomId: string;
-  participants: { userId: string; name: string }[];
-  lastMessage: { senderId: string; text: string; timestamp: string } | null;
-  unseenCount: number;
-};
+type RoomSummary = { roomId: string; participants: { userId: string; name: string }[]; lastMessage: { senderId: string; text: string; timestamp: string } | null; unseenCount: number; };
 
 export default function MessagesList() {
   const [rooms, setRooms] = useState<RoomSummary[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [error,   setError]   = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const pathname = usePathname();
-
-  const influencerId =
-    typeof window !== "undefined" ? localStorage.getItem("influencerId") : null;
+  const influencerId = typeof window !== 'undefined' ? localStorage.getItem('influencerId') : null;
 
   useEffect(() => {
-    if (!influencerId) {
-      setError("No influencerId in localStorage");
-      setLoading(false);
-      return;
-    }
-
+    if (!influencerId) { setError('No influencerId in localStorage'); setLoading(false); return; }
     (async () => {
-      try {
-        const data = await post<{ rooms: RoomSummary[] }>("/chat/rooms", {
-          userId: influencerId,
-        });
-        setRooms(data.rooms);
-      } catch (err) {
-        console.error("Error loading rooms:", err);
-        setError("Failed to load chat rooms.");
-      } finally {
-        setLoading(false);
-      }
+      try { const data = await post<{ rooms: RoomSummary[] }>('/chat/rooms', { userId: influencerId }); setRooms(data.rooms); }
+      catch (err) { console.error('Error loading rooms:', err); setError('Failed to load chat rooms.'); }
+      finally { setLoading(false); }
     })();
   }, [influencerId]);
 
@@ -48,11 +28,6 @@ export default function MessagesList() {
     <div className="flex flex-col h-full">
       <div className="px-4 py-2 flex items-center justify-between border-b">
         <h2 className="text-lg font-semibold">Messages</h2>
-        <Link href="/influencer/messages/new">
-          <button className="text-sm text-primary hover:underline">
-            + New Chat
-          </button>
-        </Link>
       </div>
 
       {loading ? (
@@ -62,47 +37,22 @@ export default function MessagesList() {
       ) : (
         <div className="overflow-y-auto flex-1 divide-y divide-border">
           {rooms.map((room) => {
-            const other = room.participants.find(
-              (p) => p.userId !== influencerId
-            )!;
+            const other = room.participants.find((p) => p.userId !== influencerId)!;
             const isActive = pathname?.endsWith(room.roomId);
-
             return (
-              <Link
-                key={room.roomId}
-                href={`/influencer/messages/${room.roomId}`}
-                className={`block px-4 py-3 hover:bg-gray-100 transition-colors ${
-                  isActive ? "bg-white border-l-4 border-primary" : ""
-                }`}
-              >
+              <Link key={room.roomId} href={`/influencer/messages/${room.roomId}`} className={`block px-4 py-3 hover:bg-gray-100 transition-colors ${isActive ? 'bg-white border-l-4 border-primary' : ''}`}>
                 <div className="flex items-center space-x-3">
                   <Avatar className="h-10 w-10">
-                    <AvatarImage
-                      src={`/avatars/${other.name.split(" ")[0].toLowerCase()}.jpg`}
-                      alt={other.name}
-                    />
+                    <AvatarImage src={`/avatars/${other.name.split(' ')[0].toLowerCase()}.jpg`} alt={other.name} />
                     <AvatarFallback>{other.name.charAt(0)}</AvatarFallback>
                   </Avatar>
                   <div className="flex-1">
                     <p className="font-medium">{other.name}</p>
-                    <p className="text-sm text-muted-foreground truncate">
-                      {room.lastMessage?.text || "No messages yet"}
-                    </p>
+                    <p className="text-sm text-muted-foreground truncate">{room.lastMessage?.text || 'No messages yet'}</p>
                   </div>
                   <div className="flex items-center gap-2">
-                    {room.unseenCount > 0 && (
-                      <span className="flex h-4 w-4 items-center justify-center rounded-full bg-primary text-xs font-medium text-primary-foreground">
-                        {room.unseenCount}
-                      </span>
-                    )}
-                    <span className="text-xs text-muted-foreground">
-                      {room.lastMessage
-                        ? new Date(room.lastMessage.timestamp).toLocaleTimeString(
-                            [],
-                            { hour: "2-digit", minute: "2-digit" }
-                          )
-                        : "--:--"}
-                    </span>
+                    {room.unseenCount > 0 && (<span className="flex h-4 w-4 items-center justify-center rounded-full bg-primary text-xs font-medium text-primary-foreground">{room.unseenCount}</span>)}
+                    <span className="text-xs text-muted-foreground">{room.lastMessage ? new Date(room.lastMessage.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--'}</span>
                   </div>
                 </div>
               </Link>

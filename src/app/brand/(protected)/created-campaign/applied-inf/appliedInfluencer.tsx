@@ -444,7 +444,7 @@ export default function AppliedInfluencersPage() {
 
     try {
       // Create (or return existing) 1:1 room
-      const res: any = await post("/chat/room", {
+      const res: any = await post("/chat/create-room", {
         brandId,
         influencerId: target.influencerId,
       });
@@ -969,7 +969,7 @@ export default function AppliedInfluencersPage() {
         variant="outline"
         onClick={() => handleViewMessage(inf)}
       >
-        View Messages
+        Send Messages
       </ActionButton>
 
       <ActionButton
