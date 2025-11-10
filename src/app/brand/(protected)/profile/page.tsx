@@ -430,7 +430,7 @@ const EmailEditorDualOTPRaw = ({
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <Label htmlFor={oldOtpId} className="text-xs text-gray-600">
+                  <Label htmlFor={oldOtpId} className="text-xs text-gray-600 mb-2">
                     Current Email OTP
                   </Label>
                   <Input
@@ -445,7 +445,7 @@ const EmailEditorDualOTPRaw = ({
                   />
                 </div>
                 <div>
-                  <Label htmlFor={newOtpId} className="text-xs text-gray-600">
+                  <Label htmlFor={newOtpId} className="text-xs text-gray-600 mb-2">
                     New Email OTP
                   </Label>
                   <Input

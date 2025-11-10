@@ -125,32 +125,32 @@ const AdminBrandsPage: NextPage = () => {
           <TableHeader>
             <TableRow>
               <TableHead onClick={() => toggleSort("name")} className="cursor-pointer">
-                <div className="flex items-center">
+                <div className="flex items-center justify-center">
                   Name{sortBy === "name" && (sortOrder === "asc" ? <HiChevronUp /> : <HiChevronDown />)}
                 </div>
               </TableHead>
               <TableHead onClick={() => toggleSort("email")} className="cursor-pointer">
-                <div className="flex items-center">
+                <div className="flex items-center justify-center">
                   Email{sortBy === "email" && (sortOrder === "asc" ? <HiChevronUp /> : <HiChevronDown />)}
                 </div>
               </TableHead>
               <TableHead onClick={() => toggleSort("phone")} className="cursor-pointer">
-                <div className="flex items-center">
+                <div className="flex items-center justify-center">
                   Phone{sortBy === "phone" && (sortOrder === "asc" ? <HiChevronUp /> : <HiChevronDown />)}
                 </div>
               </TableHead>
               <TableHead onClick={() => toggleSort("planName")} className="cursor-pointer">
-                <div className="flex items-center">
+                <div className="flex items-center justify-center">
                   Plan{sortBy === "planName" && (sortOrder === "asc" ? <HiChevronUp /> : <HiChevronDown />)}
                 </div>
               </TableHead>
               <TableHead onClick={() => toggleSort("expiresAt")} className="cursor-pointer">
-                <div className="flex items-center">
+                <div className="flex items-center  justify-center">
                   Expires{sortBy === "expiresAt" && (sortOrder === "asc" ? <HiChevronUp /> : <HiChevronDown />)}
                 </div>
               </TableHead>
               <TableHead onClick={() => toggleSort("subscriptionExpired")} className="cursor-pointer">
-                <div className="flex items-center">
+                <div className="flex items-center justify-center">
                   Status{sortBy === "subscriptionExpired" && (sortOrder === "asc" ? <HiChevronUp /> : <HiChevronDown />)}
                 </div>
               </TableHead>

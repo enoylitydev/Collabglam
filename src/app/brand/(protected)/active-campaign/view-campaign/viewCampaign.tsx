@@ -255,31 +255,30 @@ export default function ViewCampaignPage() {
             </div>
             <div className="md:col-span-2 lg:col-span-2">
               <p className="text-sm font-medium text-gray-600">Description</p>
-              <p className="mt-1 whitespace-pre-wrap text-gray-800">{c.description}</p>
+              <p className="mt-1 whitespace-pre-wrap break-words text-gray-800">{c.description}</p>
             </div>
-            {imageUrls.length > 0 && (
+            {campaignImages.length > 0 && (
               <div className="md:col-span-3">
                 <p className="text-sm font-medium text-gray-600">Images</p>
                 <div className="mt-2 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-                  {c.images.map((v, i) => {
-                    const src = fileUrl(v);
-                    return (
-                      <button
-                        type="button"
-                        key={`${v}-${i}`}
-                        className="relative h-36 rounded-lg overflow-hidden border focus:outline-none focus:ring-2 focus:ring-orange-400"
-                        onClick={() => openImagePreview(i)}
-                        title="Click to preview"
-                      >
-                        <img
-                          src={src}
-                          alt={`img-${i + 1}`}
-                          className="h-full w-full object-cover"
-                          onError={(e) => ((e.currentTarget as HTMLImageElement).style.display = "none")}
-                        />
-                      </button>
-                    );
-                  })}
+                  {campaignImages.map((src, i) => (
+                    <button
+                      type="button"
+                      key={`${src}-${i}`}
+                      className="relative h-36 rounded-lg overflow-hidden border focus:outline-none focus:ring-2 focus:ring-orange-400"
+                      onClick={() => openImagePreview(i)}
+                      title="Click to preview"
+                    >
+                      <img
+                        src={src}
+                        alt={`img-${i + 1}`}
+                        className="h-full w-full object-cover"
+                        onError={(e) => {
+                          (e.currentTarget as HTMLImageElement).style.display = "none";
+                        }}
+                      />
+                    </button>
+                  ))}
                 </div>
               </div>
             )}
@@ -308,8 +307,8 @@ export default function ViewCampaignPage() {
                 {c.targetAudience?.gender === 0
                   ? "Female"
                   : c.targetAudience?.gender === 1
-                  ? "Male"
-                  : "All"}
+                    ? "Male"
+                    : "All"}
               </p>
             </div>
             <div className="md:col-span-3">
@@ -560,9 +559,8 @@ export default function ViewCampaignPage() {
                 <button
                   key={src + idx}
                   onClick={() => setPreviewIndex(idx)}
-                  className={`h-16 w-16 flex-shrink-0 overflow-hidden rounded-md border ${
-                    idx === previewIndex ? "ring-2 ring-orange-500 border-transparent" : "border-gray-200"
-                  }`}
+                  className={`h-16 w-16 flex-shrink-0 overflow-hidden rounded-md border ${idx === previewIndex ? "ring-2 ring-orange-500 border-transparent" : "border-gray-200"
+                    }`}
                   aria-label={`Open image ${idx + 1}`}
                 >
                   <img src={src} alt={`thumb-${idx + 1}`} className="h-full w-full object-cover" />

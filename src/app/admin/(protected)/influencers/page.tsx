@@ -105,7 +105,7 @@ function PlatformBadge({ platform }: { platform?: string | null }) {
 
 function StatusBadge({ expired }: { expired?: boolean }) {
   return (
-    <Badge variant={expired ? "destructive" : "default"} className={cn("rounded-full px-3", expired ? "bg-red-600 hover:bg-red-600" : "bg-emerald-600 hover:bg-emerald-600") }>
+    <Badge variant={expired ? "destructive" : "default"} className={cn("rounded-full px-3", expired ? "bg-red-600 hover:bg-red-600" : "bg-emerald-600 hover:bg-emerald-600")}>
       {expired ? "Expired" : "Active"}
     </Badge>
   );
@@ -201,31 +201,11 @@ const AdminInfluencersPage = () => {
         </div>
       </div>
 
-      {/* Controls */}
-      <Card className="p-4 flex items-center justify-between gap-4">
-        <div className="text-sm text-muted-foreground">
-          Showing <span className="font-medium">{(page - 1) * limit + (rows.length ? 1 : 0)}</span>–
-          <span className="font-medium">{Math.min(page * limit, total)}</span> of <span className="font-medium">{total}</span>
-        </div>
-        <div className="flex items-center gap-3">
-          <label className="text-sm text-muted-foreground">Rows per page</label>
-          <select
-            className="h-9 rounded-md border bg-background px-2 text-sm"
-            value={limit}
-            onChange={(e) => { setLimit(parseInt(e.target.value, 10)); setPage(1); }}
-          >
-            {[10, 20, 50, 100].map(n => (
-              <option key={n} value={n}>{n}</option>
-            ))}
-          </select>
-        </div>
-      </Card>
-
       {/* Table */}
       <Card className="overflow-hidden">
         <div className="overflow-x-auto">
           <Table>
-            <TableHeader>
+            <TableHeader >
               <TableRow>
                 {HEADERS.map(({ key, label, sortable }) => (
                   <TableHead
@@ -233,7 +213,7 @@ const AdminInfluencersPage = () => {
                     onClick={() => toggleSort(String(key), !!sortable && ALLOWED_SORT.has(String(key)))}
                     className={cn("select-none", sortable && ALLOWED_SORT.has(String(key)) ? "cursor-pointer" : "")}
                   >
-                    <div className="flex items-center">
+                    <div className="flex items-center justify-center">
                       {label}
                       {sortBy === key && sortable && (
                         sortOrder === "asc" ? (
@@ -274,7 +254,7 @@ const AdminInfluencersPage = () => {
                       <TableCell className="font-medium">{inf.name || "—"}</TableCell>
                       <TableCell>{inf.email || "—"}</TableCell>
                       <TableCell>{inf.phone || "—"}</TableCell>
-                      <TableCell>
+                      <TableCell className="items-center justify-center">
                         <PlatformBadge platform={inf.primaryPlatform} />
                       </TableCell>
                       <TableCell>
@@ -290,7 +270,7 @@ const AdminInfluencersPage = () => {
                         <div className="flex flex-col">
                           <span>{formatDate(inf.expiresAt)}</span>
                           {typeof dLeft === "number" && (
-                            <span className={cn("text-xs", dLeft < 0 ? "text-red-600" : dLeft <= 7 ? "text-amber-600" : "text-muted-foreground")}> 
+                            <span className={cn("text-xs", dLeft < 0 ? "text-red-600" : dLeft <= 7 ? "text-amber-600" : "text-muted-foreground")}>
                               {dLeft < 0 ? `${Math.abs(dLeft)} days ago` : dLeft === 0 ? "today" : `in ${dLeft} days`}
                             </span>
                           )}
@@ -300,9 +280,9 @@ const AdminInfluencersPage = () => {
                         <StatusBadge expired={expired} />
                       </TableCell>
                       <TableCell>
-                        <div className="flex gap-1">
+                        <div className="flex gap-1 items-center justify-center">
                           <Tooltip>
-                            <TooltipTrigger asChild>
+                            <TooltipTrigger asChild >
                               <Link href={`/admin/influencers/view?influencerId=${inf.influencerId}`}>
                                 <Button variant="ghost" size="icon">
                                   <HiOutlineEye />
@@ -314,7 +294,7 @@ const AdminInfluencersPage = () => {
                           <Tooltip>
                             <TooltipTrigger asChild>
                               <Link href={`/admin/influencers/campaigns?influencerId=${inf.influencerId}`}>
-                                <Button variant="ghost" size="icon">
+                                <Button variant="ghost" size="icon" className="item-center">
                                   <HiOutlineClipboardList />
                                 </Button>
                               </Link>
@@ -358,6 +338,33 @@ const AdminInfluencersPage = () => {
           </div>
         )}
       </Card>
+      <Card className="p-4 flex items-center justify-between gap-4 whitespace-nowrap overflow-x-auto">
+        <div className="text-sm text-muted-foreground shrink-0">
+          Showing <span className="font-medium">{(page - 1) * limit + (rows.length ? 1 : 0)}</span>–
+          <span className="font-medium">{Math.min(page * limit, total)}</span> of <span className="font-medium">{total}</span>
+        </div>
+
+        <div className="flex items-center gap-3 shrink-0">
+          <span className="text-sm text-muted-foreground">Rows per page</span>
+          <div className="flex items-center gap-1">
+            {[10, 20, 50, 100].map((n) => (
+              <Button
+                key={n}
+                size="sm"
+                variant={limit === n ? "default" : "outline"}
+                className={limit === n ? "bg-[#ef2f5b] text-white" : ""}
+                onClick={() => {
+                  setLimit(n);
+                  setPage(1);
+                }}
+              >
+                {n}
+              </Button>
+            ))}
+          </div>
+        </div>
+      </Card>
+
     </div>
   );
 };

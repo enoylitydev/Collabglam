@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { get, post } from "@/lib/api";
-import { HiBell, HiCheckCircle, HiOutlineRefresh, HiTrash } from "react-icons/hi";
+import { HiBell, HiCheckCircle, HiTrash } from "react-icons/hi";
 import Swal from "sweetalert2";
 
 type NotificationItem = {
@@ -106,7 +106,7 @@ export default function InfluencerNotificationsPage() {
       const mins = Math.floor(diff / 60000);
       const hrs = Math.floor(diff / 3600000);
       const days = Math.floor(diff / 86400000);
-      
+
       if (mins < 1) return "Just now";
       if (mins < 60) return `${mins}m ago`;
       if (hrs < 24) return `${hrs}h ago`;
@@ -215,14 +215,8 @@ export default function InfluencerNotificationsPage() {
     router.push(path);
   }
 
-  function refresh() {
-    setItems([]);
-    setTotal(null);
-    setPage(1);
-  }
-
   return (
-    <main className="min-h-screen bg-white">
+    <main className="min-h-screen">
       <div className="max-w-5xl mx-auto px-4 py-8">
         {/* Header Card */}
         <div className="bg-white/80 backdrop-blur-xl rounded-2xl shadow-lg border border-white/20 p-6 mb-6">
@@ -247,14 +241,6 @@ export default function InfluencerNotificationsPage() {
             </div>
 
             <div className="flex items-center gap-2">
-              <button
-                onClick={refresh}
-                disabled={loading}
-                className="group relative inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white border border-slate-200 text-slate-700 text-sm font-medium hover:bg-slate-50 hover:border-slate-300 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-sm hover:shadow"
-              >
-                <HiOutlineRefresh className={`${loading ? 'animate-spin' : 'group-hover:rotate-180'} transition-transform duration-500`} size={18} />
-                <span>Refresh</span>
-              </button>
               <button
                 onClick={markAllRead}
                 disabled={busy || unreadCount === 0}
@@ -309,28 +295,34 @@ export default function InfluencerNotificationsPage() {
                   className={`group relative overflow-hidden bg-white/80 backdrop-blur-xl rounded-2xl shadow-lg border transition-all duration-300 cursor-pointer hover:shadow-xl hover:scale-[1.01] animate-[slideIn_0.3s_ease-out_forwards] ${
                     n.isRead
                       ? "border-white/20"
-                      : "border-orange-200 bg-gradient-to-r from-orange-50/50 to-amber-50/50"
+                      : "border-yellow-300 bg-gradient-to-r from-yellow-50/60 to-yellow-100/60"
                   }`}
                 >
-                  {/* Unread indicator bar */}
+                  {/* Unread indicator bar (brand yellow) */}
                   {!n.isRead && (
-                    <div className="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-[#FFA135] to-[#FF7236]"></div>
+                    <div className="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-[#FFBF00] to-[#FFDB58]"></div>
                   )}
 
                   <div className="p-5 flex items-start gap-4">
                     {/* Icon */}
-                    <div className={`flex-shrink-0 w-10 h-10 rounded-xl flex items-center justify-center ${
-                      n.isRead ? "bg-slate-100" : "bg-gradient-to-r from-[#FFA135] to-[#FF7236]"
-                    }`}>
-                      <HiBell className={n.isRead ? "text-slate-500" : "text-white"} size={20} />
+                    <div
+                      className={`flex-shrink-0 w-10 h-10 rounded-xl flex items-center justify-center ${
+                        n.isRead
+                          ? "bg-slate-100"
+                          : "bg-gradient-to-r from-[#FFBF00] to-[#FFDB58]"
+                      }`}
+                    >
+                      <HiBell className={n.isRead ? "text-slate-500" : "text-gray-900"} size={20} />
                     </div>
 
                     {/* Content */}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-start justify-between gap-3 mb-1">
-                        <h3 className={`text-base font-semibold ${
-                          n.isRead ? "text-slate-700" : "text-slate-900"
-                        }`}>
+                        <h3
+                          className={`text-base font-semibold ${
+                            n.isRead ? "text-slate-700" : "text-slate-900"
+                          }`}
+                        >
                           {n.title}
                         </h3>
                         <span className="flex-shrink-0 text-xs font-medium text-slate-500 bg-slate-100 px-2.5 py-1 rounded-lg">
@@ -338,9 +330,11 @@ export default function InfluencerNotificationsPage() {
                         </span>
                       </div>
                       {n.message && (
-                        <p className={`text-sm leading-relaxed ${
-                          n.isRead ? "text-slate-600" : "text-slate-700"
-                        }`}>
+                        <p
+                          className={`text-sm leading-relaxed ${
+                            n.isRead ? "text-slate-600" : "text-slate-700"
+                          }`}
+                        >
                           {n.message}
                         </p>
                       )}
@@ -372,7 +366,7 @@ export default function InfluencerNotificationsPage() {
             >
               {loading ? (
                 <span className="flex items-center gap-2">
-                  <div className="w-4 h-4 border-2 border-slate-300 border-t-slate-600 rounded-full animate-spin"></div>
+                  <div className="w-4 h-4 border-2 border-slate-300 border-t-[#FFBF00] rounded-full animate-spin"></div>
                   Loading...
                 </span>
               ) : canLoadMore ? (
