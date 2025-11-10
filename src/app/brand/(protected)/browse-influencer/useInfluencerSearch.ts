@@ -1,3 +1,4 @@
+// useInfluencerSearch.ts
 import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import type { Platform } from './filters';
 import { FilterState, createDefaultFilters } from './filters';
@@ -35,9 +36,12 @@ interface SearchState {
   hasMore: boolean;
 }
 
-const API_SEARCH_ENDPOINT = '/api/modash/search'; // your POST route (adjust if you mounted it at /api/modash/search)
-const API_USERS_ENDPOINT  = '/api/modash/users'; // your GET route using ?q=...&platforms=...
+const API_SEARCH_ENDPOINT = '/api/modash/search';
+const API_USERS_ENDPOINT = '/api/modash/users';
 
+// ----------------------------------------------------
+// Utilities
+// ----------------------------------------------------
 const normalizePlatform = (p: unknown, fallback: Platform): Platform => {
   const s = typeof p === 'string' ? p.toLowerCase() : p;
   return (s === 'youtube' || s === 'instagram' || s === 'tiktok') ? (s as Platform) : fallback;
@@ -62,7 +66,7 @@ const dedupeClient = (list: NormalizedInfluencer[]) => {
   return Array.from(map.values());
 };
 
-// ---- free-text -> keywords/hashtags/mentions ----
+// free-text -> keywords/hashtags/mentions
 const parseSearchText = (text?: string) => {
   const raw = (text ?? '').trim();
   if (!raw) return { keywords: undefined as string | undefined, hashtags: [] as string[], mentions: [] as string[] };
@@ -70,18 +74,22 @@ const parseSearchText = (text?: string) => {
   const hashtagMatches = raw.match(/#[\p{L}\p{N}_]+/gu) || [];
   const hashtags = Array.from(new Set(hashtagMatches.map(h => h.slice(1))));
 
-  const mentionMatches = (raw.match(/@[A-Za-z0-9._-]+/g) || []).filter(m => !m.includes('.'));
-  const mentions = Array.from(new Set(mentionMatches.map(m => m.slice(1))));
+  // avoid grabbing emails by requiring word boundary and no dot in mention
+  const mentionMatches = (raw.match(/(^|\s)@([A-Za-z0-9_-]{2,30})\b/g) || []).map(m => m.trim());
+  const mentions = Array.from(new Set(mentionMatches.map(m => m.replace(/^@/, ''))));
 
   const keywords = raw
     .replace(/#[\p{L}\p{N}_]+/gu, ' ')
-    .replace(/@[A-Za-z0-9._-]+/g, ' ')
+    .replace(/(^|\s)@([A-Za-z0-9_-]{2,30})\b/g, ' ')
     .replace(/\s+/g, ' ')
     .trim() || undefined;
 
   return { keywords, hashtags, mentions };
 };
 
+// ----------------------------------------------------
+// Hook
+// ----------------------------------------------------
 export function useInfluencerSearch(platforms: Platform[]) {
   const [searchState, setSearchState] = useState<SearchState>({
     loading: false,
@@ -93,10 +101,11 @@ export function useInfluencerSearch(platforms: Platform[]) {
 
   const reqIdRef = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
-  const lastQueryRef = useRef<string>(''); // remember last query for pagination
+  const lastQueryRef = useRef<string>(''); // remembers last non-empty query
 
   useEffect(() => () => abortRef.current?.abort(), []);
 
+  // update nested filter path immutably
   const updateFilter = useCallback((path: string, value: unknown) => {
     setFilters(prev => {
       const keys = path.split('.');
@@ -111,7 +120,7 @@ export function useInfluencerSearch(platforms: Platform[]) {
     });
   }, []);
 
-  // ---- extract handles from text: bare token, @mention, or IG/TT/YT URLs ----
+  // extract exact handles from URL/@mention/bare token
   const extractHandles = useCallback((q: string): string[] => {
     const set = new Set<string>();
     const s = (q || '').trim();
@@ -132,7 +141,6 @@ export function useInfluencerSearch(platforms: Platform[]) {
     return Array.from(set);
   }, []);
 
-  // ---- GET /api/modash?q=a,b,c&platforms=... (preflight usernames) ----
   const fetchExactUsers = useCallback(async (handles: string[]) => {
     if (!handles.length) return [];
     const resp = await fetch(
@@ -175,7 +183,10 @@ export function useInfluencerSearch(platforms: Platform[]) {
 
     // ---- free-text mapping ----
     const { keywords: qKeywords, hashtags, mentions } = parseSearchText(searchText);
-    const baseKeywords = typeof inf.keywords === 'string' && inf.keywords.trim() ? inf.keywords.trim() : undefined;
+    const baseKeywords =
+      typeof inf.keywords === 'string' && inf.keywords.trim()
+        ? inf.keywords.trim()
+        : undefined;
     const mergedKeywords = [baseKeywords, qKeywords].filter(Boolean).join(', ').trim() || undefined;
     if (mergedKeywords) influencer.keywords = mergedKeywords;
 
@@ -235,15 +246,9 @@ export function useInfluencerSearch(platforms: Platform[]) {
       };
     }
 
-    if (Array.isArray(inf.relevance) && inf.relevance.length) {
-      influencer.relevance = inf.relevance;
-    }
-    if (Array.isArray(inf.audienceRelevance) && inf.audienceRelevance.length) {
-      influencer.audienceRelevance = inf.audienceRelevance;
-    }
-    if (Array.isArray(inf.filterOperations) && inf.filterOperations.length) {
-      influencer.filterOperations = inf.filterOperations;
-    }
+    if (Array.isArray(inf.relevance) && inf.relevance.length) influencer.relevance = inf.relevance;
+    if (Array.isArray(inf.audienceRelevance) && inf.audienceRelevance.length) influencer.audienceRelevance = inf.audienceRelevance;
+    if (Array.isArray(inf.filterOperations) && inf.filterOperations.length) influencer.filterOperations = inf.filterOperations;
 
     // ---- views / reels ----
     const setViews = (min?: number, max?: number) => {
@@ -323,14 +328,19 @@ export function useInfluencerSearch(platforms: Platform[]) {
     // ---------- Audience ----------
     const audience: any = {};
 
-    if (Array.isArray(aud.location)) {
-      if (typeof aud.location[0] === 'number') {
-        audience.location = aud.location.map((id: number) => ({ id, weight: 0.2 }));
+    // Robust normalization for location: number | number[] | {id,weight}[]
+    const loc = aud.location;
+    if (Array.isArray(loc) && loc.length) {
+      if (typeof loc[0] === 'number') {
+        audience.location = loc.map((id: number) => ({ id, weight: 0.2 }));
       } else {
-        audience.location = aud.location;
+        audience.location = loc;
       }
-    } else if (typeof aud.location === 'number') {
-      audience.location = [{ id: aud.location, weight: 0.2 }];
+    } else if (typeof loc === 'number') {
+      audience.location = [{ id: loc, weight: 0.2 }];
+    } else if (typeof loc === 'string' && loc.trim()) {
+      const id = Number(loc);
+      if (Number.isFinite(id)) audience.location = [{ id, weight: 0.2 }];
     }
 
     if (aud.language?.id) audience.language = { id: aud.language.id, weight: aud.language.weight ?? 0.2 };
@@ -339,10 +349,10 @@ export function useInfluencerSearch(platforms: Platform[]) {
     if (Array.isArray(aud.age) && aud.age.length) {
       audience.age = aud.age;
     }
-    if (aud.ageRange?.min != null && aud.ageRange?.max != null) {
+    if (aud.ageRange?.min != null || aud.ageRange?.max != null) {
       audience.ageRange = {
-        min: String(aud.ageRange.min),
-        max: String(aud.ageRange.max),
+        ...(aud.ageRange?.min != null ? { min: String(aud.ageRange.min) } : {}),
+        ...(aud.ageRange?.max != null ? { max: String(aud.ageRange.max) } : {}),
         weight: 0.3
       };
     }
@@ -438,8 +448,11 @@ export function useInfluencerSearch(platforms: Platform[]) {
 
   // --- main search: combines exact username preflight + discovery ---
   const runSearch = useCallback(async (opts?: { reset?: boolean; queryText?: string }) => {
-    const queryText = (opts?.queryText ?? '').trim();
-    if (queryText) lastQueryRef.current = queryText;
+    const incoming = (opts?.queryText ?? '').trim();
+    if (incoming) {
+      lastQueryRef.current = incoming;
+    }
+    const queryForThisRun = incoming || lastQueryRef.current || '';
 
     const { id } = startRequest();
     setSearchState(prev => ({
@@ -452,7 +465,7 @@ export function useInfluencerSearch(platforms: Platform[]) {
     try {
       // 1) Exact username preflight
       let exactUsers: NormalizedInfluencer[] = [];
-      const handles = extractHandles(lastQueryRef.current);
+      const handles = extractHandles(queryForThisRun);
       if (handles.length) {
         try {
           const hits = await fetchExactUsers(handles);
@@ -460,11 +473,13 @@ export function useInfluencerSearch(platforms: Platform[]) {
             ...x,
             platform: normalizePlatform((x as any).platform, platforms[0] ?? 'youtube'),
           }));
-        } catch {}
+        } catch {
+          // ignore preflight errors; continue discovery
+        }
       }
 
       // 2) Discovery (name/keywords/bio/content)
-      const payload = buildPayload({ page: 0, cursor: null }, lastQueryRef.current);
+      const payload = buildPayload({ page: 0, cursor: null }, queryForThisRun);
       const data = await serverFetch(payload);
 
       const serverResults = Array.isArray(data?.results) ? data.results : [];
@@ -473,7 +488,7 @@ export function useInfluencerSearch(platforms: Platform[]) {
         platform: normalizePlatform((r as any).platform, platforms[0] ?? 'youtube'),
       }));
 
-      // 3) Merge: username hits first, then discovery; de-dupe
+      // 3) Merge and de-dupe: username hits first, then discovery
       const unique = dedupeClient([...exactUsers, ...normalized]);
 
       const { page, totalPages, nextCursor, hasMore } = parseServerPageInfo(data);

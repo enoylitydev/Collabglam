@@ -10,20 +10,28 @@ interface Props {
   platforms?: Platform[];
 }
 
-type Country = {
-  countryId: number;
-  name: string;
-  title: string;
+type ApiCountry = {
+  _id: string;
+  countryName: string;
+  callingCode: string;
+  countryCode: string; // e.g. "AD"
+  flag?: string;
 };
 
-const API_URL = 'http://localhost:5000/modash/getAll';
+type Country = {
+  id: string;    // from _id
+  code: string;  // ISO (uppercased)
+  name: string;  // human name
+  label: string; // e.g. "🇦🇩 Andorra (AD)"
+};
+
+const API_URL = 'http://localhost:5000/country/getAll';
 
 export function AudienceFilters({ filters, updateFilter, platforms }: Props) {
   const [countries, setCountries] = useState<Country[]>([]);
   const [loadingCountries, setLoadingCountries] = useState(false);
   const [countriesError, setCountriesError] = useState<string | null>(null);
 
-  // 🔑 Show credibility only if Instagram is among the selected platforms
   const hasInstagram = (platforms ?? []).includes('instagram');
 
   useEffect(() => {
@@ -35,17 +43,38 @@ export function AudienceFilters({ filters, updateFilter, platforms }: Props) {
 
         const res = await fetch(API_URL, { method: 'GET', signal: controller.signal });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data: Country[] = await res.json();
 
-        const sorted = Array.isArray(data)
-          ? [...data].sort((a, b) => a.name.localeCompare(b.name))
-          : [];
+        const raw = (await res.json()) as unknown;
+        const arr = Array.isArray(raw) ? (raw as ApiCountry[]) : [];
+
+        // Normalize
+        const normalized = arr.map((c): Country => {
+          const code = (c.countryCode || '').trim().toUpperCase();
+          const name = (c.countryName || code || 'Unknown').trim();
+          const flag = (c.flag || '').trim();
+          return {
+            id: c._id || `${code}-${name}`, // stable unique key
+            code,
+            name,
+            label: `${flag ? flag + ' ' : ''}${name}${code ? ` (${code})` : ''}`,
+          };
+        });
+
+        // De-duplicate by ISO code (keep the first occurrence)
+        const dedupMap = new Map<string, Country>();
+        for (const c of normalized) {
+          if (!dedupMap.has(c.code)) dedupMap.set(c.code, c);
+        }
+
+        const sorted = Array.from(dedupMap.values()).sort((a, b) =>
+          a.name.localeCompare(b.name),
+        );
         setCountries(sorted);
       } catch (err: any) {
         if (err?.name === 'AbortError') return;
+        console.error('Countries fetch failed:', err);
         setCountriesError(err?.message || 'Failed to load countries');
         setCountries([]);
-        console.error('Countries fetch failed:', err);
       } finally {
         setLoadingCountries(false);
       }
@@ -53,40 +82,37 @@ export function AudienceFilters({ filters, updateFilter, platforms }: Props) {
     return () => controller.abort();
   }, []);
 
-  const selectedCountryId = useMemo(() => {
+  // Current select value as an ISO code (uppercase)
+  const selectedCountryCode = useMemo(() => {
     const v = (filters as any).location;
-    if (v == null || v === '') return '';
-    const n = Number(v);
-    return Number.isFinite(n) ? String(n) : '';
+    // allow legacy shapes: string | number | string[] | number[]
+    const pick = Array.isArray(v) ? v[0] : v;
+    if (pick == null || pick === '') return '';
+    return String(pick).toUpperCase();
   }, [filters]);
 
-  // helpers for age range with no defaults
+  // ------- age helpers -------
   const parseNum = (s: string) => (s === '' ? undefined : Number(s));
-
   const handleAgeMinChange = (raw: string) => {
     const min = parseNum(raw);
     const current = (filters as any).ageRange ?? {};
     const max = current.max;
-    if (min == null && (max == null || max === '')) {
-      updateFilter('ageRange', undefined); // remove filter entirely
-    } else {
-      updateFilter('ageRange', { min, max });
-    }
+    if (min == null && max == null) updateFilter('ageRange', undefined);
+    else updateFilter('ageRange', { min, max });
   };
-
   const handleAgeMaxChange = (raw: string) => {
     const max = parseNum(raw);
     const current = (filters as any).ageRange ?? {};
     const min = current.min;
-    if (max == null && (min == null || min === '')) {
-      updateFilter('ageRange', undefined); // remove filter entirely
-    } else {
-      updateFilter('ageRange', { min, max });
-    }
+    if (max == null && min == null) updateFilter('ageRange', undefined);
+    else updateFilter('ageRange', { min, max });
   };
 
-  const credibilityValue = filters.credibility ?? undefined;
-  const shownCredibility = credibilityValue != null ? Math.floor(credibilityValue * 100) : null;
+  const credibilityValue = (filters as any).credibility as number | undefined;
+  const shownCredibility =
+    credibilityValue != null && !Number.isNaN(credibilityValue)
+      ? Math.floor(credibilityValue * 100)
+      : null;
 
   return (
     <div className="space-y-4 mb-4">
@@ -95,7 +121,7 @@ export function AudienceFilters({ filters, updateFilter, platforms }: Props) {
         <label className="block text-sm font-medium text-gray-700 mb-2">Audience Language</label>
         <select
           className="w-full px-3 py-2 border rounded-md text-sm"
-          value={filters.language?.id ?? ''}
+          value={(filters as any).language?.id ?? ''}
           onChange={(e) =>
             updateFilter('language', e.target.value ? { id: e.target.value, weight: 0.2 } : undefined)
           }
@@ -114,15 +140,15 @@ export function AudienceFilters({ filters, updateFilter, platforms }: Props) {
         </select>
       </div>
 
-      {/* Audience Location — from backend */}
+      {/* Audience Location — ISO code */}
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-2">
           Audience Location (country)
         </label>
         <select
           className="w-full px-3 py-2 border rounded-md text-sm"
-          value={selectedCountryId}
-          onChange={(e) => updateFilter('location', e.target.value ? Number(e.target.value) : '')}
+          value={selectedCountryCode}
+          onChange={(e) => updateFilter('location', e.target.value || undefined)}
           disabled={loadingCountries}
         >
           {loadingCountries && <option value="">Loading countries…</option>}
@@ -131,9 +157,9 @@ export function AudienceFilters({ filters, updateFilter, platforms }: Props) {
 
           {!loadingCountries &&
             !countriesError &&
-            countries.map((c) => (
-              <option key={c.countryId} value={String(c.countryId)}>
-                {c.title || c.name}
+            countries.map((c, idx) => (
+              <option key={c.id || `${c.code}-${idx}`} value={c.code}>
+                {c.label}
               </option>
             ))}
         </select>
@@ -174,7 +200,7 @@ export function AudienceFilters({ filters, updateFilter, platforms }: Props) {
         <label className="block text-sm font-medium text-gray-700 mb-2">Audience Gender</label>
         <select
           className="w-full px-3 py-2 border rounded-md text-sm"
-          value={filters.gender?.id ?? ''}
+          value={(filters as any).gender?.id ?? ''}
           onChange={(e) =>
             updateFilter('gender', e.target.value ? { id: e.target.value, weight: 0.5 } : undefined)
           }
@@ -186,7 +212,7 @@ export function AudienceFilters({ filters, updateFilter, platforms }: Props) {
         </select>
       </div>
 
-      {/* Audience Credibility — IG only; no default */}
+      {/* Audience Credibility — IG only */}
       {hasInstagram && (
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">

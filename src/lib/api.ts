@@ -4,12 +4,29 @@ import axios, { AxiosRequestConfig } from 'axios'
 export const API_BASE_URL  = process.env.NEXT_PUBLIC_API_URL  || 'http://localhost:5000'
 export const API_BASE_URL2 = process.env.NEXT_PUBLIC_API_URL2 || 'http://localhost:7000'
 
+// ---- Single token key (change if you prefer a different name) ----
+export const TOKEN_KEY = 'token'
+
+const forceLogout = () => {
+  if (typeof window === 'undefined') return
+  try {
+    localStorage.clear()
+    // in case you ever used sessionStorage anywhere:
+    try { sessionStorage.clear() } catch {}
+  } catch {}
+  try {
+    if (window.location.pathname !== '/login') {
+      // replace() avoids polluting history with a dead page
+      window.location.replace('/login')
+    }
+  } catch {}
+}
+
 // Primary API (BASE_URL)
 const api = axios.create({
   baseURL: API_BASE_URL,
   withCredentials: true,
   headers: { 'Content-Type': 'application/json' },
-  // Optional: add a reasonable timeout to surface timeouts as network errors
   timeout: 20000,
 })
 
@@ -21,35 +38,43 @@ const api2 = axios.create({
   timeout: 20000,
 })
 
-// Attach auth token to both clients
+// ---- Attach single auth token to both clients; if missing => logout ----
 const attachAuth = (config: any) => {
   if (typeof window !== 'undefined') {
-    const path = window.location?.pathname || ''
     let token: string | null = null
+    try {
+      token = localStorage.getItem(TOKEN_KEY)
+    } catch {}
 
-    // Role-scoped tokens
-    if (path.startsWith('/brand')) token = localStorage.getItem('brand_token')
-    else if (path.startsWith('/influencer')) token = localStorage.getItem('influencer_token')
-    else if (path.startsWith('/admin')) token = localStorage.getItem('admin_token')
-
-    // Fallbacks
-    if (!token) token = localStorage.getItem('brand_token')
-    if (!token) token = localStorage.getItem('influencer_token')
-    if (!token) token = localStorage.getItem('admin_token')
-    if (!token) token = localStorage.getItem('token')
-
-    if (token) config.headers!['Authorization'] = `Bearer ${token}`
+    if (token) {
+      config.headers = config.headers || {}
+      config.headers['Authorization'] = `Bearer ${token}`
+    } else {
+      // No token anywhere -> force logout + redirect
+      forceLogout()
+      // allow request to proceed without auth (e.g., login endpoint)
+    }
   }
   return config
 }
 api.interceptors.request.use(attachAuth)
 api2.interceptors.request.use(attachAuth)
 
+// ---- If API says 401 (expired/invalid token), force logout ----
+const onResponseError = (err: any) => {
+  const status = err?.response?.status
+  if (status === 401) {
+    forceLogout()
+  }
+  return Promise.reject(err)
+}
+api.interceptors.response.use((r) => r, onResponseError)
+api2.interceptors.response.use((r) => r, onResponseError)
+
 /** Helpers to decide fallback */
 const isNetworkishError = (err: any) => {
   // No HTTP response -> CORS / DNS / mixed content / timeout / connection refused
   if (!err || err.response) return false
-  // Axios codes: ERR_NETWORK, ECONNABORTED (timeout), etc.
   return true
 }
 
@@ -68,8 +93,6 @@ if (typeof window !== 'undefined') {
   try {
     const pageIsHTTPS = window.location.protocol === 'https:'
     if (pageIsHTTPS && /^http:\/\//i.test(API_BASE_URL)) {
-      // This WILL be blocked by the browser; use an https API endpoint in production.
-      // Keeping as console.warn to avoid noisy logs in prod builds.
       // eslint-disable-next-line no-console
       console.warn(
         '[api] Page is HTTPS but NEXT_PUBLIC_API_URL is HTTP. This causes mixed-content blocking (Network Error). ' +
