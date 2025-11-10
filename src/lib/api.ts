@@ -12,18 +12,18 @@ export const API_BASE_URL2 = process.env.NEXT_PUBLIC_API_URL2 || 'https://api.sh
 // ---- Single token key ----
 export const TOKEN_KEY = 'token'
 
-const forceLogout = () => {
-  if (typeof window === 'undefined') return
-  try {
-    localStorage.clear()
-    try { sessionStorage.clear() } catch {}
-  } catch {}
-  try {
-    if (window.location.pathname !== '/login') {
-      window.location.replace('/login')
-    }
-  } catch {}
-}
+// const forceLogout = () => {
+//   if (typeof window === 'undefined') return
+//   try {
+//     localStorage.clear()
+//     try { sessionStorage.clear() } catch {}
+//   } catch {}
+//   try {
+//     if (window.location.pathname !== '/login') {
+//       window.location.replace('/login')
+//     }
+//   } catch {}
+// }
 
 // Primary API (BASE_URL)
 const api = axios.create({
@@ -64,10 +64,10 @@ const attachAuthPrimary = (config: InternalAxiosRequestConfig): InternalAxiosReq
       const token = localStorage.getItem(TOKEN_KEY)
       if (token) return attachBearer(config, token)
       // No token -> logout (only for primary API)
-      forceLogout()
+      // forceLogout()
     } catch {
       // storage error -> treat like missing token
-      forceLogout()
+      // forceLogout()
     }
   }
   return config
@@ -93,7 +93,7 @@ api2.interceptors.request.use(attachAuthSecondary)
 const onResponseErrorPrimary = (err: any) => {
   const status = err?.response?.status
   if (status === 401) {
-    forceLogout()
+    // forceLogout()
   }
   return Promise.reject(err)
 }
