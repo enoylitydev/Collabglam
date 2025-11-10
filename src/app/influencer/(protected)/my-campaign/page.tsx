@@ -1,16 +1,19 @@
 "use client";
 
-// =============================================================================
-// COMPLETE REWRITE — Compliant contract flow for influencers
-// - PDF view strictly via POST /contract/viewPdf (no /preview anywhere)
-// - Influencer confirm/update wired to /contract/influencer/* endpoints
-// - Signature upload (PNG/JPG ≤ 50 KB) via dedicated modal; sends data URL to /contract/sign
-// - Uses plural endpoints /contract/* and expects plural key `contracts` from /contract/getContract
-// - Resolves resend children and sets `effectiveContractId`
-// - EDIT MODE: Split layout — LEFT PDF, RIGHT form
-// - UI: Hide Edit tab entirely when editing isn’t allowed; force View
-// - Extra: honors flags like canEditInfluencerFields/canSignInfluencer and lock state
-// =============================================================================
+/**
+ * =============================================================================
+ * Influencer MyCampaigns — UPDATED
+ * -----------------------------------------------------------------------------
+ * New logic requested:
+ * 1) If a contract is FINALIZED or SIGNED by anyone (brand or influencer),
+ *    HIDE all "Edit" entry points (including the table button and modal Edit tab).
+ * 2) If BRAND has already signed (and contract not locked), show a
+ *    "Sign as Influencer" button directly in the main table (no sidebar).
+ *    Clicking it opens the signature modal from the page.
+ * 3) Colors/theme remain unchanged for influencer side.
+ * 4) We resolve resent children to get the effective contractId for actions.
+ * -----------------------------------------------------------------------------
+ */
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -20,9 +23,10 @@ import {
   HiDocumentText,
   HiOutlineClipboardList,
   HiOutlineEye,
+  HiOutlineEyeOff,
   HiX,
 } from "react-icons/hi";
-import api, { post } from "@/lib/api";
+import api, { post } from "@/lib/api"; // expects axios instance + helper post()
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
@@ -80,15 +84,25 @@ interface CampaignsResponse {
   campaigns: any[];
 }
 
-// Data-access flags within influencer form
-export type DataAccess = {
-  allowAnalytics?: boolean;
-  allowPaidAds?: boolean;
-  allowContentReuse?: boolean;
+// Server-shaped influencer fields
+export type ServerInfluencer = {
+  legalName?: string;
+  email?: string;
+  phone?: string;
+  taxId?: string;
+  addressLine1?: string;
+  addressLine2?: string;
+  city?: string;
+  state?: string;
+  postalCode?: string;
+  country?: string;
+  notes?: string;
+  shippingAddress?: string;
+  taxFormType?: "W-9" | "W-8BEN" | "W-8BEN-E";
+  dataAccess?: { insightsReadOnly?: boolean; whitelisting?: boolean; sparkAds?: boolean };
 };
 
-// Influencer "purple" model captured in confirm/update
-export type Purple = {
+export type LocalInfluencer = {
   legalName: string;
   email: string;
   phone: string;
@@ -99,11 +113,12 @@ export type Purple = {
   zip: string;
   country: string;
   taxId: string;
+  taxFormType?: ServerInfluencer["taxFormType"];
   notes: string;
-  dataAccess: DataAccess;
+  dataAccess: NonNullable<ServerInfluencer["dataAccess"]>;
 };
 
-const emptyPurple: Purple = {
+const emptyLocal: LocalInfluencer = {
   legalName: "",
   email: "",
   phone: "",
@@ -114,34 +129,71 @@ const emptyPurple: Purple = {
   zip: "",
   country: "",
   taxId: "",
+  taxFormType: "W-9",
   notes: "",
-  dataAccess: {},
+  dataAccess: { insightsReadOnly: true, whitelisting: false, sparkAds: false },
 };
 
-const sanitizePurple = (p: Purple): Purple => ({
-  legalName: (p.legalName || "").trim(),
-  email: (p.email || "").trim(),
-  phone: (p.phone || "").trim(),
-  addressLine1: (p.addressLine1 || "").trim(),
-  addressLine2: (p.addressLine2 || "").trim(),
-  city: (p.city || "").trim(),
-  state: (p.state || "").trim(),
-  zip: (p.zip || "").trim(),
-  country: (p.country || "").trim(),
-  taxId: (p.taxId || "").trim(),
-  notes: (p.notes || "").trim(),
-  dataAccess: p.dataAccess ?? {},
+const trim = (s?: string) => (s || "").trim();
+const sanitizeLocal = (p: LocalInfluencer): LocalInfluencer => ({
+  ...p,
+  legalName: trim(p.legalName),
+  email: trim(p.email),
+  phone: trim(p.phone),
+  addressLine1: trim(p.addressLine1),
+  addressLine2: trim(p.addressLine2),
+  city: trim(p.city),
+  state: trim(p.state),
+  zip: trim(p.zip),
+  country: trim(p.country),
+  taxId: trim(p.taxId),
+  notes: trim(p.notes),
 });
 
+const composeShippingAddress = (p: LocalInfluencer) =>
+  [p.addressLine1, p.addressLine2, [p.city, p.state].filter(Boolean).join(", "), p.zip, p.country]
+    .filter(Boolean)
+    .join(", ");
+
+const toServerInfluencer = (sp: LocalInfluencer): ServerInfluencer => ({
+  legalName: sp.legalName,
+  email: sp.email,
+  phone: sp.phone,
+  taxId: sp.taxId || undefined,
+  addressLine1: sp.addressLine1,
+  addressLine2: sp.addressLine2,
+  city: sp.city,
+  state: sp.state,
+  postalCode: sp.zip,
+  country: sp.country,
+  notes: sp.notes,
+  shippingAddress: composeShippingAddress(sp),
+  taxFormType: sp.taxFormType,
+  dataAccess: {
+    insightsReadOnly: !!sp.dataAccess.insightsReadOnly,
+    whitelisting: !!sp.dataAccess.whitelisting,
+    sparkAds: !!sp.dataAccess.sparkAds,
+  },
+});
+
+/* ───────────────────────────── Contract Meta (shared) ─────────────────────── */
+export type PartyConfirm = { confirmed?: boolean };
+export type PartySign = { signed?: boolean; byUserId?: string; name?: string; email?: string; at?: string };
+export type ContractMeta = {
+  status?: string; // draft | sent | viewed | negotiation | finalize | signing | rejected | locked
+  confirmations?: { brand?: PartyConfirm; influencer?: PartyConfirm };
+  signatures?: { brand?: PartySign; influencer?: PartySign };
+  lockedAt?: string | null;
+  campaignId?: string;
+  contractId?: string;
+  flags?: any;
+  statusFlags?: any;
+  isResendChild?: boolean;
+  supersededBy?: string | null;
+};
+
 /* ─────────────────────────── Small form components ────────────────────────── */
-function Input({
-  id,
-  label,
-  value,
-  onChange,
-  type = "text",
-  disabled = false,
-}: {
+function Input({ id, label, value, onChange, type = "text", disabled = false }: {
   id: string;
   label: string;
   value: string;
@@ -157,9 +209,8 @@ function Input({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         disabled={disabled}
-        className={`w-full px-4 pt-6 pb-2 border-2 rounded-lg text-sm transition-all duration-200 focus:outline-none ${
-          disabled ? "border-gray-200 opacity-60 cursor-not-allowed" : "border-gray-200 focus:border-[#FFBF00]"
-        }`}
+        className={`w-full px-4 pt-6 pb-2 border-2 rounded-lg text-sm transition-all duration-200 focus:outline-none ${disabled ? "border-gray-200 opacity-60 cursor-not-allowed" : "border-gray-200 focus:border-[#FFBF00]"
+          }`}
         placeholder=" "
       />
       <label htmlFor={id} className="absolute left-4 top-2 text-xs text-[#FFBF00] font-medium pointer-events-none">
@@ -169,14 +220,7 @@ function Input({
   );
 }
 
-function Textarea({
-  id,
-  label,
-  value,
-  onChange,
-  rows = 3,
-  disabled = false,
-}: {
+function Textarea({ id, label, value, onChange, rows = 3, disabled = false }: {
   id: string;
   label: string;
   value: string;
@@ -192,9 +236,8 @@ function Textarea({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         disabled={disabled}
-        className={`w-full px-4 pt-6 pb-2 border-2 rounded-lg text-sm transition-all duration-200 focus:outline-none ${
-          disabled ? "border-gray-200 opacity-60 cursor-not-allowed" : "border-gray-200 focus:border-[#FFBF00]"
-        }`}
+        className={`w-full px-4 pt-6 pb-2 border-2 rounded-lg text-sm transition-all duration-200 focus:outline-none ${disabled ? "border-gray-200 opacity-60 cursor-not-allowed" : "border-gray-200 focus:border-[#FFBF00]"
+          }`}
         placeholder=" "
       />
       <label htmlFor={id} className="absolute left-4 top-2 text-xs text-[#FFBF00] font-medium pointer-events-none">
@@ -204,12 +247,7 @@ function Textarea({
   );
 }
 
-function Checkbox({
-  label,
-  checked,
-  onChange,
-  disabled = false,
-}: {
+function Checkbox({ label, checked, onChange, disabled = false }: {
   label: string;
   checked: boolean;
   onChange: (checked: boolean) => void;
@@ -217,11 +255,10 @@ function Checkbox({
 }) {
   return (
     <label
-      className={`flex items-center gap-3 p-3 rounded-lg border-2 transition-all duration-200 ${
-        disabled
-          ? "border-gray-200 opacity-60 cursor-not-allowed"
-          : "border-gray-200 hover:border-[#FFBF00] hover:bg-yellow-50/50 cursor-pointer"
-      }`}
+      className={`flex items-center gap-3 p-3 rounded-lg border-2 transition-all duration-200 ${disabled
+        ? "border-gray-200 opacity-60 cursor-not-allowed"
+        : "border-gray-200 hover:border-[#FFBF00] hover:bg-yellow-50/50 cursor-pointer"
+        }`}
     >
       <input
         type="checkbox"
@@ -236,12 +273,7 @@ function Checkbox({
 }
 
 /* ───────────────────────────── Signature Modal ────────────────────────────── */
-function SignatureModal({
-  open,
-  onClose,
-  onSubmit,
-  title = "Add Signature",
-}: {
+function SignatureModal({ open, onClose, onSubmit, title = "Add Signature" }: {
   open: boolean;
   onClose: () => void;
   onSubmit: (signatureDataUrl: string) => Promise<void> | void;
@@ -311,14 +343,7 @@ function SignatureModal({
 }
 
 /* ───────────────────── Contract Modal: Accept / Edit / Sign ───────────────── */
-function InfluencerContractModal({
-  open,
-  onClose,
-  contractId,
-  campaign,
-  readOnly = false,
-  onAfterAction,
-}: {
+function InfluencerContractModal({ open, onClose, contractId, campaign, readOnly = false, onAfterAction, }: {
   open: boolean;
   onClose: () => void;
   contractId: string;
@@ -326,39 +351,34 @@ function InfluencerContractModal({
   readOnly?: boolean;
   onAfterAction?: () => void;
 }) {
-  type ContractMeta = {
-    status?: string;
-    confirmations?: { brand?: { confirmed?: boolean }; influencer?: { confirmed?: boolean } };
-    signatures?: { brand?: { signed?: boolean }; influencer?: { signed?: boolean } };
-    lockedAt?: string;
-    campaignId?: string;
-    contractId?: string;
-    flags?: any;
-    isResendChild?: boolean;
-    supersededBy?: string;
-  };
-
-  const [purple, setPurple] = useState<Purple>(emptyPurple);
+  const [local, setLocal] = useState<LocalInfluencer>(emptyLocal);
   const [previewUrl, setPreviewUrl] = useState<string>("");
   const [isWorking, setIsWorking] = useState(false);
   const [liteLoaded, setLiteLoaded] = useState(false);
 
-  // We may receive an outdated contractId; resolve to latest (resent child)
+  // Resolve to resent child if present
   const [effectiveContractId, setEffectiveContractId] = useState<string>(contractId);
   const [meta, setMeta] = useState<ContractMeta | null>(null);
+  const [showTax, setShowTax] = useState(false);
 
   const influencerConfirmed = !!(
     meta?.confirmations?.influencer?.confirmed || meta?.flags?.isInfluencerConfirm
   );
 
   const isLocked = !!meta?.lockedAt || meta?.status === "locked" || !!meta?.flags?.isLocked;
+  const anyoneSigned = !!(meta?.signatures?.brand?.signed || meta?.signatures?.influencer?.signed);
+  const isFinalizedPhase = ["finalize", "signing"].includes(String(meta?.status || "").toLowerCase());
 
+  // NEW: Editing is disabled when locked/finalized or if ANYONE signed
   const canEdit = useMemo(() => {
     if (readOnly) return false;
     if (isLocked) return false;
+    if (anyoneSigned) return false;
+    if (isFinalizedPhase) return false;
+    if (!influencerConfirmed) return true; // allow before acceptance
     if (meta?.flags?.canEditInfluencerFields === false) return false;
     return true;
-  }, [readOnly, isLocked, meta?.flags?.canEditInfluencerFields]);
+  }, [readOnly, isLocked, anyoneSigned, isFinalizedPhase, influencerConfirmed, meta?.flags?.canEditInfluencerFields]);
 
   const [mode, setMode] = useState<"view" | "edit">(readOnly ? "view" : "edit");
 
@@ -367,11 +387,11 @@ function InfluencerContractModal({
     if (!canEdit && mode === "edit") setMode("view");
   }, [canEdit, mode]);
 
-  // Signature modal state
+  // Signature modal state (inside modal remains available)
   const [showSignModal, setShowSignModal] = useState(false);
 
-  /* Prefill purple from influencer lite */
-  const toPurpleFromLite = (lite: any): Purple => {
+  /* Prefill UI model from influencer lite */
+  const toLocalFromLite = (lite: any): LocalInfluencer => {
     const primary = (lite?.primaryPlatform || "").toLowerCase();
     const profiles: any[] = Array.isArray(lite?.socialProfiles) ? lite.socialProfiles : [];
     const match = profiles.find((p) => (p?.provider || "").toLowerCase() === primary) || profiles[0] || {};
@@ -387,21 +407,44 @@ function InfluencerContractModal({
       zip: "",
       country: lite?.country || "",
       taxId: "",
+      taxFormType: "W-9",
       notes: "",
       dataAccess: {
-        allowAnalytics: true,
-        allowPaidAds: !!lite?.onboarding?.allowlisting,
-        allowContentReuse: false,
+        insightsReadOnly: true,
+        whitelisting: !!lite?.onboarding?.allowlisting,
+        sparkAds: false,
       },
     };
   };
+
+  const contractInfluencerToLocal = (ci: any, prev: LocalInfluencer): LocalInfluencer =>
+    sanitizeLocal({
+      ...prev,
+      legalName: ci.legalName ?? prev.legalName,
+      email: ci.email ?? prev.email,
+      phone: ci.phone ?? prev.phone,
+      addressLine1: ci.addressLine1 ?? prev.addressLine1,
+      addressLine2: ci.addressLine2 ?? prev.addressLine2,
+      city: ci.city ?? prev.city,
+      state: ci.state ?? prev.state,
+      zip: ci.postalCode ?? ci.zip ?? prev.zip,
+      country: ci.country ?? prev.country,
+      taxId: ci.taxId ?? prev.taxId,
+      taxFormType: (ci.taxFormType as any) ?? prev.taxFormType,
+      notes: ci.notes ?? prev.notes,
+      dataAccess: {
+        insightsReadOnly: ci?.dataAccess?.insightsReadOnly ?? prev.dataAccess.insightsReadOnly,
+        whitelisting: ci?.dataAccess?.whitelisting ?? prev.dataAccess.whitelisting,
+        sparkAds: ci?.dataAccess?.sparkAds ?? prev.dataAccess.sparkAds,
+      },
+    });
 
   const fetchInfluencerLite = useCallback(async () => {
     try {
       const influencerId = typeof window !== "undefined" ? localStorage.getItem("influencerId") : null;
       if (!influencerId) throw new Error("No influencer ID found in localStorage.");
       const res = await api.get("/influencer/lite", { params: { influencerId } });
-      setPurple(toPurpleFromLite(res.data?.influencer || {}));
+      setLocal(toLocalFromLite(res.data?.influencer || {}));
     } catch (e: any) {
       console.warn("lite fetch failed", e?.message);
     } finally {
@@ -417,17 +460,16 @@ function InfluencerContractModal({
       const list = await post<{ success?: boolean; contracts: any[] }>("/contract/getContract", {
         brandId: campaign.brandId,
         influencerId,
+        campaignId: campaign.id,
       });
 
       const arr = Array.isArray((list as any)?.contracts) ? (list as any).contracts : [];
 
-      // Find by provided contractId or by campaignId fallback
       let c: any =
         arr.find((x: any) => String(x.contractId) === String(contractId)) ||
         arr.find((x: any) => String(x.campaignId) === String(campaign.id)) ||
         null;
 
-      // If this contract was superseded, prefer the resent child
       if (c?.supersededBy) {
         const child = arr.find((x: any) => String(x.contractId) === String(c.supersededBy));
         if (child) c = child;
@@ -446,6 +488,11 @@ function InfluencerContractModal({
           isResendChild: !!(c.flags?.isResendChild || c.statusFlags?.isResendChild),
           supersededBy: c.supersededBy,
         });
+
+        // Prefill on edit open ONLY
+        if (!readOnly && c.influencer && Object.keys(c.influencer).length) {
+          setLocal((prev) => contractInfluencerToLocal(c.influencer, prev));
+        }
       } else {
         setMeta(null);
         setEffectiveContractId(contractId);
@@ -454,7 +501,7 @@ function InfluencerContractModal({
       setMeta(null);
       setEffectiveContractId(contractId);
     }
-  }, [campaign.brandId, campaign.id, contractId]);
+  }, [campaign.brandId, campaign.id, contractId, readOnly]);
 
   // initial open: load lite + meta
   useEffect(() => {
@@ -477,7 +524,7 @@ function InfluencerContractModal({
   useEffect(() => {
     if (!open) return;
     if (readOnly) setMode("view");
-    else setMode(influencerConfirmed ? "view" : "edit");
+    else if (!influencerConfirmed) setMode("edit");
   }, [open, readOnly, influencerConfirmed]);
 
   // Ensure a preview exists when switching to either view OR edit (via /contract/viewPdf)
@@ -492,7 +539,6 @@ function InfluencerContractModal({
   const generatePreview = async (silent = false) => {
     setIsWorking(true);
     try {
-      // VIEW-ONLY: always via /contract/viewPdf
       const res = await api.post(
         "/contract/viewPdf",
         { contractId: effectiveContractId },
@@ -513,23 +559,32 @@ function InfluencerContractModal({
   const acceptOrSave = async () => {
     setIsWorking(true);
     try {
+      const sp = sanitizeLocal(local);
+      const payload: ServerInfluencer = toServerInfluencer(sp);
+
+      // Simple Tax ID format validation moved out for brevity — keep your original
+      const isValidTaxId = (value: string, taxFormType?: ServerInfluencer["taxFormType"]) => {
+        const v = (value || "").trim();
+        if (!v) return true;
+        if (taxFormType === "W-9") return /^(?:\d{3}-\d{2}-\d{4}|\d{2}-\d{7}|\d{9})$/.test(v);
+        return /^[A-Za-z0-9 \-\/]{4,30}$/.test(v);
+      };
+      if (!isValidTaxId(sp.taxId, sp.taxFormType)) {
+        setIsWorking(false);
+        toast({ icon: "error", title: "Invalid Tax ID", text: sp.taxFormType === "W-9" ? "Enter a valid SSN (XXX-XX-XXXX), EIN (XX-XXXXXXX), or 9 digits." : "Enter a valid Tax ID (4–30 characters; letters, numbers, spaces, '-' or '/')." });
+        return;
+      }
+
       if (!influencerConfirmed) {
         const ok = await askConfirm("Accept Contract?", "Your details will be submitted to the brand.");
         if (!ok) return;
-        // ACCEPT by confirming details
-        await post("/contract/influencer/confirm", {
-          contractId: effectiveContractId,
-          influencer: sanitizePurple(purple),
-        });
+        await post("/contract/influencer/confirm", { contractId: effectiveContractId, influencer: payload });
         toast({ icon: "success", title: "Accepted", text: "Details saved. Contract accepted." });
       } else {
-        // EDIT after acceptance
-        await post("/contract/influencer/update", {
-          contractId: effectiveContractId,
-          influencerUpdates: sanitizePurple(purple),
-        });
+        await post("/contract/influencer/update", { contractId: effectiveContractId, influencerUpdates: payload });
         toast({ icon: "success", title: "Saved", text: "Your changes were saved." });
       }
+
       await fetchContractMeta();
       onAfterAction && onAfterAction();
       setMode("view");
@@ -560,8 +615,8 @@ function InfluencerContractModal({
       await post("/contract/sign", {
         contractId: effectiveContractId,
         role: "influencer",
-        name: purple.legalName,
-        email: purple.email,
+        name: local.legalName,
+        email: local.email,
         signatureImageDataUrl: signatureDataUrl,
       });
       toast({ icon: "success", title: "Signed", text: "Signature recorded." });
@@ -629,10 +684,9 @@ function InfluencerContractModal({
         {/* Minimal meta line */}
         <div className="px-5 pt-3 flex flex-wrap gap-2 text-[11px]">
           {meta?.status && (
-            <span className={`px-2 py-1 rounded-full border ${
-              isLocked ? "bg-emerald-50 border-emerald-200 text-emerald-700" : "bg-yellow-50 border-yellow-200 text-yellow-700"
-            }`}>
-              Status: {meta.status.toUpperCase()}
+            <span className={`px-2 py-1 rounded-full border ${isLocked ? "bg-emerald-50 border-emerald-200 text-emerald-700" : "bg-yellow-50 border-yellow-200 text-yellow-700"
+              }`}>
+              Status: {String(meta.status).toUpperCase()}
             </span>
           )}
           {meta?.flags?.isResendChild && (
@@ -640,6 +694,7 @@ function InfluencerContractModal({
           )}
           <span className="px-2 py-1 rounded-full border bg-gray-50 border-gray-200 text-gray-700">You: {influencerConfirmed ? "Accepted" : "Pending"}</span>
           <span className="px-2 py-1 rounded-full border bg-gray-50 border-gray-200 text-gray-700">You Signed: {meta?.signatures?.influencer?.signed ? "Yes" : "No"}</span>
+          <span className="px-2 py-1 rounded-full border bg-gray-50 border-gray-200 text-gray-700">Brand Signed: {meta?.signatures?.brand?.signed ? "Yes" : "No"}</span>
         </div>
 
         {/* Content */}
@@ -699,29 +754,83 @@ function InfluencerContractModal({
                   <div className="font-semibold text-gray-800 mb-3">{influencerConfirmed ? "Edit Your Details" : "Fill Your Details to Accept"}</div>
 
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-                    <Input id="legalName" label="Legal Name" value={purple.legalName} onChange={(v) => setPurple((p) => ({ ...p, legalName: v }))} disabled={!canEdit} />
-                    <Input id="email" label="Email" value={purple.email} onChange={(v) => setPurple((p) => ({ ...p, email: v }))} disabled={!canEdit} />
-                    <Input id="phone" label="Phone" value={purple.phone} onChange={(v) => setPurple((p) => ({ ...p, phone: v }))} disabled={!canEdit} />
-                    <Input id="taxId" label="Tax ID (optional)" value={purple.taxId} onChange={(v) => setPurple((p) => ({ ...p, taxId: v }))} disabled={!canEdit} />
-                    <Input id="addressLine1" label="Address Line 1" value={purple.addressLine1} onChange={(v) => setPurple((p) => ({ ...p, addressLine1: v }))} disabled={!canEdit} />
-                    <Input id="addressLine2" label="Address Line 2" value={purple.addressLine2} onChange={(v) => setPurple((p) => ({ ...p, addressLine2: v }))} disabled={!canEdit} />
-                    <Input id="city" label="City" value={purple.city} onChange={(v) => setPurple((p) => ({ ...p, city: v }))} disabled={!canEdit} />
-                    <Input id="state" label="State" value={purple.state} onChange={(v) => setPurple((p) => ({ ...p, state: v }))} disabled={!canEdit} />
-                    <Input id="zip" label="ZIP / Postal Code" value={purple.zip} onChange={(v) => setPurple((p) => ({ ...p, zip: v }))} disabled={!canEdit} />
-                    <Input id="country" label="Country" value={purple.country} onChange={(v) => setPurple((p) => ({ ...p, country: v }))} disabled={!canEdit} />
+                    <Input id="legalName" label="Legal Name" value={local.legalName} onChange={(v) => setLocal((p) => ({ ...p, legalName: v }))} disabled={!canEdit} />
+                    <Input id="email" label="Email" value={local.email} onChange={(v) => setLocal((p) => ({ ...p, email: v }))} disabled={!canEdit} />
+                    <Input id="phone" label="Phone" value={local.phone} onChange={(v) => setLocal((p) => ({ ...p, phone: v }))} disabled={!canEdit} />
+
+                    {/* Tax Form Type selector */}
+                    <div className="relative">
+                      <label htmlFor="taxFormType" className="absolute left-4 top-2 text-xs text-[#FFBF00] font-medium pointer-events-none">
+                        Tax Form Type
+                      </label>
+                      <select
+                        id="taxFormType"
+                        disabled={!canEdit}
+                        value={local.taxFormType}
+                        onChange={(e) => setLocal((p) => ({ ...p, taxFormType: e.target.value as any }))}
+                        className={`w-full px-4 pt-6 pb-2 border-2 rounded-lg text-sm transition-all duration-200 focus:outline-none ${!canEdit ? "border-gray-200 opacity-60 cursor-not-allowed" : "border-gray-200 focus:border-[#FFBF00]"
+                          }`}
+                      >
+                        <option value="W-9">W-9</option>
+                        <option value="W-8BEN">W-8BEN</option>
+                        <option value="W-8BEN-E">W-8BEN-E</option>
+                      </select>
+                    </div>
+
+                    {/* Tax ID (secure) */}
+                    <div className="relative">
+                      <label htmlFor="taxId" className="absolute left-4 top-2 text-xs text-[#FFBF00] font-medium pointer-events-none">Tax ID {local.taxFormType === "W-9" ? "(SSN/EIN)" : ""}</label>
+                      <input
+                        id="taxId"
+                        type={showTax ? "text" : "password"}
+                        value={local.taxId}
+                        onChange={(e) => setLocal((p) => ({ ...p, taxId: e.target.value }))}
+                        disabled={!canEdit}
+                        className={`w-full px-4 pt-6 pb-2 pr-12 border-2 rounded-lg text-sm transition-all duration-200 focus:outline-none ${!canEdit ? "border-gray-200 opacity-60 cursor-not-allowed" : "border-gray-200 focus:border-[#FFBF00]"
+                          }`}
+                        placeholder=" "
+                        autoComplete="off"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowTax((s) => !s)}
+                        disabled={!canEdit}
+                        aria-label={showTax ? "Hide Tax ID" : "Show Tax ID"}
+                        aria-controls="taxId"
+                        aria-pressed={showTax}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 grid place-items-center w-9 h-9 rounded-md border bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#FFBF00] disabled:opacity-50"
+                        title={showTax ? "Hide Tax ID" : "Show Tax ID"}
+                      >
+                        {showTax ? (
+                          <HiOutlineEyeOff className="w-5 h-5 text-gray-600" />
+                        ) : (
+                          <HiOutlineEye className="w-5 h-5 text-gray-600" />
+                        )}
+                      </button>
+                    </div>
+
+                    {/* Address composition */}
+                    <Input id="addressLine1" label="Address Line 1" value={local.addressLine1} onChange={(v) => setLocal((p) => ({ ...p, addressLine1: v }))} disabled={!canEdit} />
+                    <Input id="addressLine2" label="Address Line 2" value={local.addressLine2} onChange={(v) => setLocal((p) => ({ ...p, addressLine2: v }))} disabled={!canEdit} />
+                    <Input id="city" label="City" value={local.city} onChange={(v) => setLocal((p) => ({ ...p, city: v }))} disabled={!canEdit} />
+                    <Input id="state" label="State" value={local.state} onChange={(v) => setLocal((p) => ({ ...p, state: v }))} disabled={!canEdit} />
+                    <Input id="zip" label="ZIP / Postal Code" value={local.zip} onChange={(v) => setLocal((p) => ({ ...p, zip: v }))} disabled={!canEdit} />
+                    <Input id="country" label="Country" value={local.country} onChange={(v) => setLocal((p) => ({ ...p, country: v }))} disabled={!canEdit} />
                   </div>
 
                   <div className="mt-3">
-                    <Textarea id="notes" label="Notes (optional)" value={purple.notes} onChange={(v) => setPurple((p) => ({ ...p, notes: v }))} rows={3} disabled={!canEdit} />
+                    <Textarea id="notes" label="Notes (optional)" value={local.notes} onChange={(v) => setLocal((p) => ({ ...p, notes: v }))} rows={3} disabled={!canEdit} />
                   </div>
 
+                  {/* Data/Access Consents */}
                   <div className="mt-4">
-                    <div className="text-sm font-medium text-gray-800 mb-2">Data Access</div>
+                    <div className="text-sm font-medium text-gray-800 mb-2">Data / Access Consents</div>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-                      <Checkbox label="Allow Analytics" checked={!!purple.dataAccess.allowAnalytics} onChange={(checked) => setPurple((p) => ({ ...p, dataAccess: { ...p.dataAccess, allowAnalytics: checked } }))} disabled={!canEdit} />
-                      <Checkbox label="Allow Paid Ads" checked={!!purple.dataAccess.allowPaidAds} onChange={(checked) => setPurple((p) => ({ ...p, dataAccess: { ...p.dataAccess, allowPaidAds: checked } }))} disabled={!canEdit} />
-                      <Checkbox label="Allow Content Reuse" checked={!!purple.dataAccess.allowContentReuse} onChange={(checked) => setPurple((p) => ({ ...p, dataAccess: { ...p.dataAccess, allowContentReuse: checked } }))} disabled={!canEdit} />
+                      <Checkbox label="Read-Only Insights Access" checked={!!local.dataAccess.insightsReadOnly} onChange={(checked) => setLocal((p) => ({ ...p, dataAccess: { ...p.dataAccess, insightsReadOnly: checked } }))} disabled={!canEdit} />
+                      <Checkbox label="Whitelisting Access" checked={!!local.dataAccess.whitelisting} onChange={(checked) => setLocal((p) => ({ ...p, dataAccess: { ...p.dataAccess, whitelisting: checked } }))} disabled={!canEdit} />
+                      <Checkbox label="Spark Ads Access" checked={!!local.dataAccess.sparkAds} onChange={(checked) => setLocal((p) => ({ ...p, dataAccess: { ...p.dataAccess, sparkAds: checked } }))} disabled={!canEdit} />
                     </div>
+                    <div className="text-xs text-gray-500 mt-1">Consents appear in Parties block / Section 12(e) and Schedule K references inside the contract.</div>
                   </div>
 
                   <div className="mt-5 flex flex-wrap gap-2">
@@ -753,7 +862,7 @@ function InfluencerContractModal({
             {isLocked ? (
               <span className="text-emerald-600">Locked — all signatures/confirmations captured.</span>
             ) : influencerConfirmed ? (
-              <span className="text-emerald-600">Accepted — you can edit, view, and sign.</span>
+              <span className="text-emerald-600">Accepted — you can view{canEdit ? ", edit," : ""} and sign.</span>
             ) : (
               <span className="text-amber-600">Fill details to accept the contract.</span>
             )}
@@ -766,94 +875,6 @@ function InfluencerContractModal({
 
       {/* Signature Modal */}
       <SignatureModal open={showSignModal} onClose={() => setShowSignModal(false)} title="Sign as Influencer" onSubmit={signWithSignature} />
-    </div>
-  );
-}
-
-/* ───────────────────────────── Overlay (brand/influencer) ─────────────────── */
-export function ContractEditorOverlay({
-  contractId,
-  role,
-  onClose,
-  onAfterSave,
-  readOnly = false,
-  accentGradientClass = "bg-gradient-to-r from-[#FFBF00] to-[#FFDB58]",
-}: {
-  contractId: string;
-  role: "brand" | "influencer";
-  onClose: () => void;
-  onAfterSave?: () => void;
-  readOnly?: boolean;
-  accentGradientClass?: string;
-}) {
-  const [pdfUrl, setPdfUrl] = useState<string>("");
-  const [busy, setBusy] = useState(false);
-  const [signOpen, setSignOpen] = useState(false);
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const res = await api.post("/contract/viewPdf", { contractId }, { responseType: "blob" });
-        const url = URL.createObjectURL(res.data);
-        setPdfUrl(url);
-      } catch (e: any) {
-        toast({ icon: "error", title: "Load error", text: e?.message || "Failed to load PDF" });
-      }
-    })();
-    return () => {
-      if (pdfUrl) URL.revokeObjectURL(pdfUrl);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [contractId]);
-
-  const signWithSignature = async (sig: string) => {
-    try {
-      setBusy(true);
-      await post("/contract/sign", { contractId, role, signatureImageDataUrl: sig });
-      toast({ icon: "success", title: "Signed", text: "Signature recorded" });
-      onAfterSave && onAfterSave();
-      setSignOpen(false);
-      onClose();
-    } catch (e: any) {
-      toast({ icon: "error", title: "Sign error", text: e?.response?.data?.message || e?.message || "Failed to sign" });
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 z-50">
-      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
-      <div className="absolute right-0 top-0 h-full w-full lg:w-[900px] bg-white shadow-2xl border-l flex flex-col">
-        <div className={`p-4 flex items-center justify-between border-b text-gray-900 ${accentGradientClass}`}>
-          <div className="font-semibold text-gray-900">Contract — {role}</div>
-          <button onClick={onClose} className="p-2 rounded bg-white/20 hover:bg-white/30">
-            <HiX className="w-5 h-5 text-gray-900" />
-          </button>
-        </div>
-
-        <div className="flex-1 overflow-auto p-4">
-          {pdfUrl ? (
-            <iframe className="w-full h:[78vh] lg:h-[78vh] h-[70vh] rounded border" src={pdfUrl} />
-          ) : (
-            <div className="p-6 text-gray-500">Loading PDF…</div>
-          )}
-        </div>
-
-        {!readOnly && (
-          <div className="p-4 border-t flex items-center gap-3 justify-between">
-            <div className="text-xs text-gray-600">Upload your signature in the next step.</div>
-            <div className="flex gap-2">
-              <Button variant="outline" onClick={onClose}>Close</Button>
-              <Button onClick={() => setSignOpen(true)} disabled={busy} className={`text-gray-900 px-4 py-2 rounded-md shadow-sm hover:brightness-95 ${accentGradientClass} ${busy ? "opacity-60 cursor-not-allowed" : ""}`}>
-                {busy ? "Opening…" : "Sign"}
-              </Button>
-            </div>
-          </div>
-        )}
-      </div>
-
-      <SignatureModal open={signOpen} onClose={() => setSignOpen(false)} title={`Sign as ${role === "brand" ? "Brand" : "Influencer"}`} onSubmit={signWithSignature} />
     </div>
   );
 }
@@ -902,19 +923,7 @@ function RejectButton({ contractId, onDone }: { contractId: string; onDone: () =
 }
 
 /* ─────────────────────────── Reusable Campaign Table ───────────────────────── */
-function CampaignTable({
-  data,
-  loading,
-  error,
-  emptyMessage,
-  page,
-  totalPages,
-  onPrev,
-  onNext,
-  showMilestones = false,
-  onOpenEditor,
-  onRefreshAll,
-}: {
+function CampaignTable({ data, loading, error, emptyMessage, page, totalPages, onPrev, onNext, showMilestones = false, onOpenEditor, onRefreshAll, metaCache, onSignDirect, }: {
   data: Campaign[];
   loading: boolean;
   error: string | null;
@@ -926,6 +935,8 @@ function CampaignTable({
   showMilestones?: boolean;
   onOpenEditor: (c: Campaign, viewOnly: boolean) => void;
   onRefreshAll: () => void;
+  metaCache: Record<string, ContractMeta | null>;
+  onSignDirect: (opts: { contractId: string; influencerConfirmed: boolean; isLocked: boolean }) => void;
 }) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const influencerId = typeof window !== "undefined" ? localStorage.getItem("influencerId") : null;
@@ -965,8 +976,19 @@ function CampaignTable({
   const DataRows = () => (
     <tbody>
       {data.map((c, idx) => {
-        const isExpanded = expandedId === c.id;
         const accepted = c.isAccepted === 1;
+        const isExpanded = expandedId === c.id;
+        const meta = metaCache[c.id] || null;
+        const influencerConfirmed = !!(meta?.confirmations?.influencer?.confirmed || meta?.flags?.isInfluencerConfirm);
+        const isLocked = !!meta?.lockedAt || meta?.status === "locked" || !!meta?.flags?.isLocked;
+        const brandSigned = !!meta?.signatures?.brand?.signed;
+        const influencerSigned = !!meta?.signatures?.influencer?.signed;
+        const isFinalizedPhase = ["finalize", "signing"].includes(String(meta?.status || "").toLowerCase());
+        const anyoneSigned = brandSigned || influencerSigned;
+        const effectiveContractId = meta?.contractId || c.contractId;
+
+        // Edit button visibility (table level)
+        const canShowEdit = !isLocked && !anyoneSigned && !isFinalizedPhase;
 
         return (
           <React.Fragment key={c.id}>
@@ -980,7 +1002,6 @@ function CampaignTable({
               <td className="px-6 py-4 text-center">
                 {formatDate(c.timeline.startDate)} – {formatDate(c.timeline.endDate)}
               </td>
-
               <td className="px-6 py-4 text-center">
                 {c.hasApplied === 1 && !accepted && !c.isContracted ? (
                   <Badge className="bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-800 shadow-none">Brand Reviewing</Badge>
@@ -990,36 +1011,62 @@ function CampaignTable({
                   <Badge className="bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-800 shadow-none">Accepted</Badge>
                 )}
               </td>
-
               <td className="px-6 py-4 flex justify-center gap-2 whitespace-nowrap">
                 {c.isContracted === 1 && !accepted ? (
                   <>
-                    <Button
-                      variant="outline"
-                      className="bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-900"
-                      onClick={() => onOpenEditor(c, false)}
-                      title="Fill details to accept"
-                    >
-                      Accept & Edit
-                    </Button>
+                    {/* Accept & Edit is hidden if finalized/locked/anyone signed */}
+                    {canShowEdit && (
+                      <Button
+                        variant="outline"
+                        className="bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-900"
+                        onClick={() => onOpenEditor(c, false)}
+                        title="Fill details to accept"
+                      >
+                        Accept & Edit
+                      </Button>
+                    )}
+
+                    {/* If brand has signed, surface Sign on table */}
+                    {brandSigned && !influencerSigned && (
+                      <Button
+                        className="bg-indigo-600 hover:bg-indigo-700 text-white"
+                        onClick={() => onSignDirect({ contractId: effectiveContractId, influencerConfirmed, isLocked })}
+                        title={influencerConfirmed ? "Sign as Influencer" : "Accept first to sign"}
+                      >
+                        Sign as Influencer
+                      </Button>
+                    )}
+
                     <Button variant="outline" onClick={() => onOpenEditor(c, true)} className="bg-white" title="View contract">
                       View Contract
                     </Button>
-                    <RejectButton
-                      contractId={c.contractId}
-                      onDone={onRefreshAll}
-                    />
+                    <RejectButton contractId={effectiveContractId} onDone={onRefreshAll} />
                   </>
                 ) : accepted ? (
                   <>
-                    <Button
-                      variant="outline"
-                      className="bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-900"
-                      onClick={() => onOpenEditor(c, false)}
-                      title="Edit your details"
-                    >
-                      Edit Contract
-                    </Button>
+                    {/* Hide Edit Contract when finalized/locked/anyone signed */}
+                    {canShowEdit && (
+                      <Button
+                        variant="outline"
+                        className="bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-900"
+                        onClick={() => onOpenEditor(c, false)}
+                        title="Edit your details"
+                      >
+                        Edit Contract
+                      </Button>
+                    )}
+
+                    {/* If brand signed and influencer hasn't, show Sign action here */}
+                    {brandSigned && !influencerSigned && (
+                      <Button
+                        className="bg-indigo-600 hover:bg-indigo-700 text-white"
+                        onClick={() => onSignDirect({ contractId: effectiveContractId, influencerConfirmed, isLocked })}
+                        title={influencerConfirmed ? "Sign as Influencer" : "Accept first to sign"}
+                      >
+                        Sign as Influencer
+                      </Button>
+                    )}
+
                     <Button variant="outline" onClick={() => onOpenEditor(c, true)} className="bg-white" title="View contract">
                       View Contract
                     </Button>
@@ -1028,7 +1075,7 @@ function CampaignTable({
                   <Button
                     variant="outline"
                     className="bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-900"
-                    onClick={() => window.location.assign(`/influencer/my-campaign/view-campaign?id=${c.id}`)}
+                    onClick={() => (window.location.href = `/influencer/my-campaign/view-campaign?id=${c.id}`)}
                   >
                     View Campaign
                   </Button>
@@ -1134,11 +1181,16 @@ export default function MyCampaignsPage() {
   const [contractedPage, setContractedPage] = useState(1);
   const [contractedTotalPages, setContractedTotalPages] = useState(1);
 
-  /* Modal state */
-  const [editorOpen, setEditorOpen] = useState(false);
-  const [editorReadOnly, setEditorReadOnly] = useState(false);
-  const [editorContractId, setEditorContractId] = useState<string>("");
-  const [editorCampaign, setEditorCampaign] = useState<Campaign | null>(null);
+  /* Contract meta cache (per campaign) */
+  const [metaCache, setMetaCache] = useState<Record<string, ContractMeta | null>>({});
+  const [metaLoading, setMetaLoading] = useState(false);
+
+  /* Influencer identity for signing from table */
+  const [influencerIdentity, setInfluencerIdentity] = useState<{ legalName?: string; name?: string; email?: string }>({});
+
+  /* Page-level signature modal */
+  const [topSignOpen, setTopSignOpen] = useState(false);
+  const [topSignContractId, setTopSignContractId] = useState<string>("");
 
   const itemsPerPage = 10;
 
@@ -1215,7 +1267,76 @@ export default function MyCampaignsPage() {
   useEffect(() => { fetchActiveCampaigns(); }, [fetchActiveCampaigns]);
   useEffect(() => { fetchAppliedCampaigns(); }, [fetchAppliedCampaigns]);
 
+  /* Build/refresh meta cache for visible campaigns */
+  const loadMetaCache = useCallback(async (list: Campaign[]) => {
+    const influencerId = typeof window !== "undefined" ? localStorage.getItem("influencerId") : null;
+    if (!influencerId) return;
+    setMetaLoading(true);
+    try {
+      const uniqById: Record<string, Campaign> = {};
+      list.forEach((c) => { uniqById[c.id] = c; });
+      const campaigns = Object.values(uniqById);
+      const metas = await Promise.all(campaigns.map(async (c) => {
+        try {
+          const res: any = await post("/contract/getContract", { brandId: c.brandId, influencerId, campaignId: c.id });
+          const arr: any[] = Array.isArray(res?.contracts) ? res.contracts : [];
+          let m: any = arr.find((x) => String(x.contractId) === String(c.contractId)) || arr.find((x) => String(x.campaignId) === String(c.id)) || null;
+          if (m?.supersededBy) {
+            const child = arr.find((x) => String(x.contractId) === String(m.supersededBy));
+            if (child) m = child;
+          }
+          return {
+            id: c.id,
+            meta: m ? ({
+              status: m.status,
+              confirmations: m.confirmations || {},
+              signatures: m.signatures || {},
+              lockedAt: m.lockedAt,
+              campaignId: m.campaignId,
+              contractId: m.contractId,
+              flags: m.flags || m.statusFlags || {},
+              isResendChild: !!(m.flags?.isResendChild || m.statusFlags?.isResendChild),
+              supersededBy: m.supersededBy,
+            } as ContractMeta) : null,
+          };
+        } catch {
+          return { id: c.id, meta: null };
+        }
+      }));
+      const next: Record<string, ContractMeta | null> = {};
+      metas.forEach((x) => { next[x.id] = x.meta; });
+      setMetaCache(next);
+    } finally {
+      setMetaLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    const all = [...activeCampaigns, ...appliedCampaigns, ...contractedCampaigns].filter((c) => c.contractId);
+    loadMetaCache(all);
+  }, [activeCampaigns, appliedCampaigns, contractedCampaigns, loadMetaCache]);
+
+  /* Fetch influencer identity once (for table-level signing) */
+  useEffect(() => {
+    (async () => {
+      try {
+        const influencerId = typeof window !== "undefined" ? localStorage.getItem("influencerId") : null;
+        if (!influencerId) return;
+        const res = await api.get("/influencer/lite", { params: { influencerId } });
+        const i = res?.data?.influencer || {};
+        setInfluencerIdentity({ legalName: i?.legalName || i?.name, name: i?.name, email: i?.email });
+      } catch (e) {
+        // not fatal
+      }
+    })();
+  }, []);
+
   /* Editor open */
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [editorReadOnly, setEditorReadOnly] = useState(false);
+  const [editorContractId, setEditorContractId] = useState<string>("");
+  const [editorCampaign, setEditorCampaign] = useState<Campaign | null>(null);
+
   const openEditor = (c: Campaign, viewOnly = false) => {
     setEditorCampaign(c);
     setEditorReadOnly(viewOnly);
@@ -1223,11 +1344,39 @@ export default function MyCampaignsPage() {
     setEditorOpen(true);
   };
 
-  // single refresh callback to reuse in children
   const refreshAll = () => {
     fetchActiveCampaigns();
     fetchAppliedCampaigns();
     fetchContractedCampaigns();
+  };
+
+  /* Table-level signing */
+  const openSignDirect = ({ contractId, influencerConfirmed, isLocked }: { contractId: string; influencerConfirmed: boolean; isLocked: boolean }) => {
+    if (isLocked) return; // ignore silently
+    if (!influencerConfirmed) {
+      toast({ icon: "error", title: "Confirm first", text: "Please accept the contract before signing." });
+      return;
+    }
+    setTopSignContractId(contractId);
+    setTopSignOpen(true);
+  };
+
+  const signDirect = async (sigDataUrl: string) => {
+    try {
+      await post("/contract/sign", {
+        contractId: topSignContractId,
+        role: "influencer",
+        name: influencerIdentity.legalName || influencerIdentity.name || "",
+        email: influencerIdentity.email || "",
+        signatureImageDataUrl: sigDataUrl,
+      });
+      toast({ icon: "success", title: "Signed", text: "Signature recorded." });
+      setTopSignOpen(false);
+      setTopSignContractId("");
+      refreshAll();
+    } catch (e: any) {
+      toast({ icon: "error", title: "Sign failed", text: e?.response?.data?.message || e?.message || "Could not sign." });
+    }
   };
 
   return (
@@ -1247,6 +1396,8 @@ export default function MyCampaignsPage() {
           showMilestones
           onOpenEditor={openEditor}
           onRefreshAll={refreshAll}
+          metaCache={metaCache}
+          onSignDirect={openSignDirect}
         />
       </section>
 
@@ -1264,6 +1415,8 @@ export default function MyCampaignsPage() {
           onNext={() => setContractedPage((p) => Math.min(p + 1, contractedTotalPages))}
           onOpenEditor={openEditor}
           onRefreshAll={refreshAll}
+          metaCache={metaCache}
+          onSignDirect={openSignDirect}
         />
       </section>
 
@@ -1281,6 +1434,8 @@ export default function MyCampaignsPage() {
           onNext={() => setAppliedPage((p) => Math.min(p + 1, appliedTotalPages))}
           onOpenEditor={openEditor}
           onRefreshAll={refreshAll}
+          metaCache={metaCache}
+          onSignDirect={openSignDirect}
         />
       </section>
 
@@ -1295,6 +1450,14 @@ export default function MyCampaignsPage() {
           onAfterAction={refreshAll}
         />
       )}
+
+      {/* Page-level Signature Modal (table action) */}
+      <SignatureModal
+        open={topSignOpen}
+        onClose={() => setTopSignOpen(false)}
+        title="Sign as Influencer"
+        onSubmit={signDirect}
+      />
     </div>
   );
 }

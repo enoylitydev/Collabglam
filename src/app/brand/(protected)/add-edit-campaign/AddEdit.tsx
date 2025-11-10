@@ -68,14 +68,14 @@ interface CategoriesResponse {
 interface SubcategoryOption {
   value: string; // subcategoryId
   label: string; // subcategory name
-  categoryId: number; // category _id
+  categoryId: number; // category.id (numeric)
   categoryName: string; // category name
 }
 
 interface CampaignEditPayload {
   productOrServiceName: string;
   description: string;
-  images: string[];
+  images: string[]; // GridFS filenames or full URLs
   targetAudience: {
     age: { MinAge: number; MaxAge: number };
     gender: 0 | 1 | 2;
@@ -89,12 +89,28 @@ interface CampaignEditPayload {
   }[];
   goal: string;
   budget: number;
-  timeline: { startDate: string; endDate: string };
+  timeline: { startDate?: string; endDate?: string };
   creativeBriefText: string;
   additionalNotes: string;
 }
 
+interface DraftFilePayload {
+  name: string;
+  type: string;
+  lastModified: number;
+  dataUrl: string;
+}
+
 // ── helpers ─────────────────────────────────────────────────
+
+const API_BASE = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") || "";
+
+const fileUrl = (v?: string) => {
+  if (!v) return "";
+  if (/^https?:\/\//i.test(v)) return v;
+  if (v.startsWith("/file/")) return `${API_BASE}${v}`;
+  return `${API_BASE}/file/${encodeURIComponent(v)}`;
+};
 
 const buildCountryOptions = (countries: Country[]): CountryOption[] =>
   countries.map((c) => ({
@@ -102,6 +118,36 @@ const buildCountryOptions = (countries: Country[]): CountryOption[] =>
     label: `${c.flag} ${c.countryName}`,
     country: c,
   }));
+
+const fileToDraftPayload = (file: File): Promise<DraftFilePayload> =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () =>
+      resolve({
+        name: file.name,
+        type: file.type,
+        lastModified: file.lastModified,
+        dataUrl: reader.result as string,
+      });
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+
+const draftPayloadToFile = (draft: DraftFilePayload): File => {
+  const parts = draft.dataUrl.split(",");
+  if (parts.length < 2) throw new Error("Invalid data URL");
+  const binary = atob(parts[1]);
+  const len = binary.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i += 1) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  const mimeMatch = parts[0]?.match(/:(.*?);/);
+  return new File([bytes], draft.name, {
+    type: mimeMatch?.[1] || draft.type || "application/octet-stream",
+    lastModified: draft.lastModified,
+  });
+};
 
 const filterByCountryName = (
   option: FilterOptionOption<unknown>,
@@ -161,7 +207,7 @@ export default function CampaignFormPage() {
     ageRange.max !== "" &&
     Number(ageRange.min) >= Number(ageRange.max);
   const dateOrderError =
-    !!(timeline.start && timeline.end && new Date(timeline.start) >= new Date(timeline.end));
+    !!(timeline.start && timeline.end && new Date(timeline.start) > new Date(timeline.end));
 
   const [draftLoaded, setDraftLoaded] = useState(false);
 
@@ -170,6 +216,15 @@ export default function CampaignFormPage() {
 
   // ── memoised options ─────────────────────────────────────
   const countryOptions = useMemo<CountryOption[]>(() => buildCountryOptions(countries), [countries]);
+
+  // local YYYY-MM-DD for <input type="date">
+  const todayStr = useMemo(() => {
+    const d = new Date();
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+  }, []);
 
   const categoryGroups = useMemo<GroupBase<SubcategoryOption>[]>(
     () =>
@@ -198,7 +253,7 @@ export default function CampaignFormPage() {
       arr.push(s.label);
       m.set(s.categoryName, arr);
     });
-    return Array.from(m.entries()); // [ [categoryName, [sub1, sub2]], ... ]
+    return Array.from(m.entries());
   }, [selectedSubcategories]);
 
   // react-select styles
@@ -229,6 +284,12 @@ export default function CampaignFormPage() {
     }),
   };
 
+  // Normalized URLs for existing images (for UI display only)
+  const existingImagesNormalized = useMemo(
+    () => existingImages.map((v) => fileUrl(v)),
+    [existingImages]
+  );
+
   // ── fetch reference data ─────────────────────────────────
   useEffect(() => {
     get<Country[]>("/country/getall")
@@ -247,25 +308,30 @@ export default function CampaignFormPage() {
 
     get<CampaignEditPayload>(`/campaign/id?id=${campaignId}`)
       .then((data) => {
-        setProductName(data.productOrServiceName);
-        setDescription(data.description);
-        setAdditionalNotes(data.additionalNotes);
-        setCreativeBriefText(data.creativeBriefText);
-        setExistingImages(data.images || []);
-        setAgeRange({ min: data.targetAudience.age.MinAge, max: data.targetAudience.age.MaxAge });
-        setSelectedGender(serverGenderToUI(data.targetAudience.gender));
+        setProductName(data.productOrServiceName || "");
+        setDescription(data.description || "");
+        setAdditionalNotes(data.additionalNotes || "");
+        setCreativeBriefText(data.creativeBriefText || "");
+        // store raw filenames/URLs; we'll display via existingImagesNormalized
+        setExistingImages(Array.isArray(data.images) ? data.images : []);
+        setAgeRange({
+          min: data.targetAudience?.age?.MinAge ?? "",
+          max: data.targetAudience?.age?.MaxAge ?? "",
+        });
+        setSelectedGender(serverGenderToUI(data.targetAudience?.gender ?? 2));
 
         // locations
-        const locIds = data.targetAudience.locations.map((l) => l.countryId);
+        const locIds = (data.targetAudience?.locations || []).map((l) => l.countryId);
         const locOptions = countryOptions.filter((o) => locIds.includes(o.value));
         setSelectedCountries(locOptions);
 
-        setSelectedGoal(data.goal);
-        setBudget(data.budget);
-        setTimeline({
-          start: data.timeline.startDate.split("T")[0],
-          end: data.timeline.endDate.split("T")[0],
-        });
+        setSelectedGoal(data.goal || "");
+        setBudget(typeof data.budget === "number" ? data.budget : "");
+
+        // timeline (guard against missing)
+        const sd = data.timeline?.startDate ? data.timeline.startDate.split("T")[0] : "";
+        const ed = data.timeline?.endDate ? data.timeline.endDate.split("T")[0] : "";
+        setTimeline({ start: sd, end: ed });
 
         // prefill subcategories if present in payload
         if (Array.isArray(data.categories) && data.categories.length && allSubcategoryOptions.length) {
@@ -309,6 +375,14 @@ export default function CampaignFormPage() {
       setCreativeBriefText(draft.creativeBriefText || "");
       setUseFileUploadForBrief(Boolean(draft.useFileUploadForBrief));
       setAdditionalNotes(draft.additionalNotes || "");
+      if (Array.isArray(draft.productImages)) {
+        try {
+          const revived = draft.productImages.map((img: DraftFilePayload) => draftPayloadToFile(img));
+          setProductImages(revived);
+        } catch (err) {
+          console.error("Failed to restore draft images", err);
+        }
+      }
 
       setDraftLoaded(true);
       toast({ icon: "info", title: "Draft Loaded", text: "We restored your saved draft." });
@@ -371,8 +445,9 @@ export default function CampaignFormPage() {
   const fileSizeKB = (b: number) => `${(b / 1024).toFixed(1)} KB`;
 
   // ── Save Draft & Preview ─────────────────────────────────
-  const handleSaveDraft = () => {
+  const handleSaveDraft = async () => {
     try {
+      const serializedProductImages = await Promise.all(productImages.map((file) => fileToDraftPayload(file)));
       const draft = {
         productName,
         description,
@@ -387,17 +462,17 @@ export default function CampaignFormPage() {
         creativeBriefText,
         useFileUploadForBrief,
         additionalNotes,
+        productImages: serializedProductImages,
       };
       localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
       toast({ icon: "success", title: "Draft Saved", text: "You can continue later." });
-    } catch {
+    } catch (err) {
+      console.error("Failed to save campaign draft", err);
       toast({ icon: "error", title: "Could not save draft" });
     }
   };
 
-  const handlePreview = () => {
-    setIsPreviewOpen(true);
-  };
+  const handlePreview = () => setIsPreviewOpen(true);
 
   // ── submit ───────────────────────────────────────────────
   const handleSubmit = async (e?: React.FormEvent) => {
@@ -420,15 +495,15 @@ export default function CampaignFormPage() {
     ) {
       setShowRequiredHints(true);
       setIsPreviewOpen(false);
-      return; // no popup; show only inline hints
+      return;
     }
     if (Number(ageRange.min) >= Number(ageRange.max)) {
       setIsPreviewOpen(false);
       return toast({ icon: "error", title: "Invalid Age Range", text: "Min Age must be less than Max Age." });
     }
-    if (timeline.start && timeline.end && new Date(timeline.start) >= new Date(timeline.end)) {
+    if (timeline.start && timeline.end && new Date(timeline.start) > new Date(timeline.end)) {
       setIsPreviewOpen(false);
-      return toast({ icon: "error", title: "Invalid Dates", text: "Start Date must be before End Date." });
+      return toast({ icon: "error", title: "Invalid Dates", text: "Start Date must be on or before End Date." });
     }
 
     setIsSubmitting(true);
@@ -472,9 +547,7 @@ export default function CampaignFormPage() {
       } else {
         await post("/campaign/create", formData);
         toast({ icon: "success", title: "Campaign Created" });
-        try {
-          localStorage.removeItem(DRAFT_KEY);
-        } catch { }
+        try { localStorage.removeItem(DRAFT_KEY); } catch { }
       }
 
       setIsPreviewOpen(false);
@@ -505,7 +578,7 @@ export default function CampaignFormPage() {
       <div className="min-h-screen">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8 pb-32">
           <div className="mb-8">
-            <h1 className="text-4xl font-bold bg-gradient-to-r from-[#FFA135] to-[#FF7236] bg-clip-text text-transparent mb-2">
+            <h1 className="text-4xl font-semibold text-black mb-2">
               {isEditMode ? "Edit Campaign" : "Create New Campaign"}
             </h1>
             <p className="text-gray-600 text-lg">
@@ -544,7 +617,7 @@ export default function CampaignFormPage() {
                   <Textarea
                     id="description"
                     rows={5}
-                    placeholder="Provide a detailed description of your product or service..."
+                    placeholder="Provide a detailed description..."
                     value={description}
                     onChange={(e) => setDescription(e.target.value)}
                     className="resize-none focus:ring-2 focus:ring-orange-500/20"
@@ -574,7 +647,7 @@ export default function CampaignFormPage() {
 
                   {(existingImages.length > 0 || productImages.length > 0) && (
                     <div className="mt-4 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-                      {existingImages.map((url, idx) => (
+                      {existingImagesNormalized.map((url, idx) => (
                         <div key={`existing-${idx}`} className="relative group">
                           <img src={url} alt={`Existing ${idx + 1}`} className="h-32 w-full object-cover rounded-lg border-2 border-gray-200 shadow-sm" />
                           <button type="button" onClick={() => removeExistingImage(idx)} className="absolute top-2 right-2 bg-red-500 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200 hover:bg-red-600">
@@ -760,11 +833,12 @@ export default function CampaignFormPage() {
                         type="date"
                         value={timeline.start}
                         onChange={(e) => setTimeline({ ...timeline, start: e.target.value })}
+                        min={todayStr}
+                        max={timeline.end || undefined}
                         className="w-full h-12 rounded-lg border border-gray-300 pl-12 pr-4 text-gray-900 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-colors duration-200"
                         required
                       />
                     </div>
-                    {/* Show date order error only below End Date */}
                     {showRequiredHints && !timeline.start && (
                       <p className="text-xs text-red-600">This field is required</p>
                     )}
@@ -778,12 +852,13 @@ export default function CampaignFormPage() {
                         type="date"
                         value={timeline.end}
                         onChange={(e) => setTimeline({ ...timeline, end: e.target.value })}
+                        min={timeline.start || undefined}
                         className="w-full h-12 rounded-lg border border-gray-300 pl-12 pr-4 text-gray-900 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-colors duration-200"
                         required
                       />
                     </div>
                     {dateOrderError && (
-                      <p className="text-xs text-red-600">End Date must be after Start Date.</p>
+                      <p className="text-xs text-red-600">End Date must be on or after Start Date.</p>
                     )}
                     {showRequiredHints && !timeline.end && (
                       <p className="text-xs text-red-600">This field is required</p>
@@ -861,7 +936,7 @@ export default function CampaignFormPage() {
                     <Textarea
                       id="briefText"
                       rows={6}
-                      placeholder="Outline your creative vision, key messaging, tone, style preferences..."
+                      placeholder="Outline your creative vision, key messaging, tone, style..."
                       value={creativeBriefText}
                       onChange={(e) => setCreativeBriefText(e.target.value)}
                       className="resize-none focus:ring-2 focus:ring-orange-500/20"
@@ -965,7 +1040,7 @@ export default function CampaignFormPage() {
                   <div>
                     <div className="text-xs text-gray-500 mb-2">Images</div>
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                      {existingImages.map((url, i) => (
+                      {existingImagesNormalized.map((url, i) => (
                         <img key={`ex-${i}`} src={url} alt={`existing-${i}`} className="h-24 w-full object-cover rounded border" />
                       ))}
                       {productImages.map((file, i) => (

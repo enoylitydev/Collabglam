@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useState, useId } from "react";
 import Select from "react-select";
 import { get, post } from "@/lib/api";
+import { resolveFileUrl } from "@/lib/files";
 import {
   HiUser,
   HiPhone,
@@ -121,6 +122,7 @@ type BrandData = {
   };
   subscriptionExpired: boolean;
   walletBalance: number;
+  logoUrl?: string;
 };
 
 /* ===================== Utilities ===================== */
@@ -153,6 +155,7 @@ function normalizeBrand(data: any): BrandData {
     brandId: brand?.brandId ?? "",
     createdAt: brand?.createdAt ?? "",
     updatedAt: brand?.updatedAt ?? "",
+    logoUrl: brand?.logoUrl ?? "",
     subscription: {
       planName: s?.planName ?? brand?.planName ?? "",
       startedAt: s?.startedAt ?? brand?.startedAt ?? "",
@@ -719,6 +722,7 @@ export default function BrandProfilePage() {
       phone: form.phone,
       countryId: form.countryId || undefined,
       callingId: form.callingId || undefined,
+      logoUrl: form.logoUrl || undefined,
     };
 
     // Save changes
@@ -762,6 +766,8 @@ export default function BrandProfilePage() {
   const saveDisabled =
     saving || (emailFlow !== "idle" && emailFlow !== "verified");
 
+  const brandLogoUrl = resolveFileUrl(form?.logoUrl || brand?.logoUrl);
+
   return (
     <div className="min-h-screen py-8">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -791,8 +797,17 @@ export default function BrandProfilePage() {
           <CardContent className="p-8">
             <div className="flex flex-col sm:flex-row items-center sm:items-start justify-center sm:justify-start gap-4 sm:gap-6 mb-8 text-center sm:text-left">
               {/* Icon */}
-              <div className="flex-shrink-0 w-16 h-16 sm:w-20 sm:h-20 bg-gradient-to-r from-[#FFA135] to-[#FF7236] rounded-2xl flex items-center justify-center shadow-lg mx-auto sm:mx-0">
-                <HiUser className="w-8 h-8 sm:w-10 sm:h-10 text-white" />
+              <div className="flex-shrink-0 w-16 h-16 sm:w-20 sm:h-20 bg-gradient-to-r from-[#FFA135] to-[#FF7236] rounded-2xl flex items-center justify-center shadow-lg mx-auto sm:mx-0 overflow-hidden">
+                {brandLogoUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={brandLogoUrl}
+                    alt={`${brand?.name || "Brand"} logo`}
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <HiUser className="w-8 h-8 sm:w-10 sm:h-10 text-white" />
+                )}
               </div>
 
               {/* Label + Field (stacked on mobile, centered) */}

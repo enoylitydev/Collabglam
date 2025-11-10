@@ -222,7 +222,7 @@ function TableView({
             <tr>
               {["Campaign", "Budget", "Status", "Timeline", "Influencers Applied", "Actions"].map(
                 (h, i) => (
-                  <th key={i} className="px-6 py-3 font-medium whitespace-nowrap">
+                  <th key={i} className="px-6 py-3 text-center font-medium whitespace-nowrap">
                     {h}
                   </th>
                 )
@@ -251,17 +251,17 @@ function TableView({
                   <td className="px-6 py-4 whitespace-nowrap align-top">
                     {formatCurrency(c.budget)}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap align-top">
-                    <span
-                      className={`inline-flex items-center px-2 py-1 text-xs font-semibold rounded-full ${
-                        c.isActive === 1
-                          ? "bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white"
-                          : "bg-red-100 text-red-800"
-                      }`}
-                    >
-                      {c.isActive === 1 ? "Active" : "Inactive"}
-                    </span>
-                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap align-top text-center">
+  <span
+    className={`inline-flex items-center justify-center px-2 py-1 text-xs font-semibold rounded-full ${
+      c.isActive === 1
+        ? "bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white"
+        : "bg-red-100 text-red-800"
+    }`}
+  >
+    {c.isActive === 1 ? "Active" : "Inactive"}
+  </span>
+</td>
                   <td className="px-6 py-4 whitespace-nowrap align-top">
                     {formatDate(c.timeline.startDate)} – {formatDate(c.timeline.endDate)}
                   </td>
@@ -283,9 +283,7 @@ function TableView({
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <Link
-                            href={`/brand/created-campaign/applied-inf?id=${c.id}&name=${encodeURIComponent(
-                              c.productOrServiceName
-                            )}`}
+                            href={`/brand/created-campaign/applied-inf?id=${c.id}`}
                             className="relative flex items-center p-2 bg-gray-100 text-gray-800 rounded-full hover:bg-gray-200 focus:outline-none"
                           >
                             <HiOutlineUserGroup size={18} />
