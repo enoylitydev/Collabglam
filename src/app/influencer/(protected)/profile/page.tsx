@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Swal from "sweetalert2";
 import "sweetalert2/dist/sweetalert2.min.css";
 
@@ -43,7 +43,7 @@ import {
   Check as CheckIcon,
 } from "lucide-react";
 
-/* ===================== Types ===================== */
+/* ===================== Types (aligned to Influencer model) ===================== */
 
 type SubscriptionFeature = {
   key: string;
@@ -51,75 +51,21 @@ type SubscriptionFeature = {
   used: number;
 };
 
-type AudienceBifurcation = {
-  malePercentage?: number;
-  femalePercentage?: number;
-};
+type GenderStr = "" | "Male" | "Female" | "Non-binary" | "Prefer not to say";
 
-type InfluencerData = {
-  // Base profile
-  name: string;
-  email: string;
-  password?: string; // only for update
-  phone: string;
-  profileImage?: string; // URL
-  profileLink?: string;
-  socialMedia?: string;
+// Onboarding (model-aligned)
+interface OnboardingSubcategory {
+  subcategoryId: string; // UUID v4
+  subcategoryName: string;
+}
 
-  // Location / dialing
-  country: string;
-  countryId: string;
-  callingId: string;
-  callingCode?: string; // "+91"
-  county?: string; // backend legacy name for country
+interface Onboarding {
+  categoryId?: number; // numeric id from taxonomy service
+  categoryName?: string;
+  subcategories: OnboardingSubcategory[]; // 0..n (no max limit)
+}
 
-  // Platform / audience
-  platformId?: string; // incoming normalized to platformId
-  platformName?: string;
-  manualPlatformName?: string;
-  audienceRange?: string;
-  audienceAgeRange?: string;
-  audienceAgeRangeId?: string;
-  audienceId?: string; // will hold AudienceRange _id when saving
-  audienceBifurcation?: AudienceBifurcation;
-
-  // Categories
-  categories?: string[]; // interest _ids
-  categoryName?: string[]; // resolved names
-
-  // Subscription (read-only display)
-  subscription: {
-    planName: string;
-    planId?: string;
-    startedAt?: string;
-    expiresAt: string;
-    features: SubscriptionFeature[];
-  };
-  subscriptionExpired: boolean;
-
-  // Wallet
-  walletBalance: number;
-
-  // Security / auth
-  otpVerified?: boolean;
-  passwordResetVerified?: boolean;
-  failedLoginAttempts?: number;
-  lockUntil?: string | null;
-
-  // IDs & meta
-  _id?: string;
-  influencerId: string;
-  createdAt?: string;
-  updatedAt?: string;
-
-  // Misc
-  bio?: string;
-
-  // Gender (0: Male, 1: Female, 2: Other)
-  gender?: 0 | 1 | 2;
-};
-
-/* Reference data */
+// Reference data
 interface Country {
   _id: string;
   countryName: string;
@@ -133,47 +79,75 @@ interface CountryOption {
   country: Country;
 }
 
-interface Platform {
-  _id: string;
-  platformId?: string;
+// Category taxonomy (API should return this shape or equivalent)
+interface CategoryNode {
+  categoryId: number;
+  categoryName: string;
+  subcategories: { subcategoryId: string; subcategoryName: string }[];
+}
+
+interface CategoryOption {
+  value: number; // categoryId
+  label: string; // categoryName
+  raw: CategoryNode;
+}
+
+interface SubcategoryOption {
+  value: string; // subcategoryId (UUID v4)
+  label: string; // subcategoryName
+}
+
+// Primary platform, per model enum
+export type PrimaryPlatform = "youtube" | "tiktok" | "instagram" | "other" | null;
+
+// Client view model (normalized from backend)
+export type InfluencerData = {
+  // Base profile
   name: string;
-}
-interface PlatformOption {
-  value: string;
-  label: string;
-  raw: Platform;
-}
+  email: string;
+  password?: string; // only when updating
+  phone: string;
+  profileImage?: string; // URL / dataURL (preview only)
+  profileLink?: string; // optional, for display/backcompat
+  socialMedia?: string; // optional, for display/backcompat
 
-interface Interest {
-  _id: string;
-  name: string;
-}
-interface InterestOption {
-  value: string;
-  label: string;
-  raw: Interest;
-}
+  // Location / dialing
+  country: string;
+  countryId: string;
+  callingId: string;
+  callingCode?: string; // e.g., "+91"
 
-interface AudienceAgeRange {
-  _id: string;
-  audienceId: string;
-  range: string;
-}
-interface AudienceAgeOption {
-  value: string;
-  label: string;
-  raw: AudienceAgeRange;
-}
+  // Platform
+  primaryPlatform: PrimaryPlatform;
 
-interface AudienceRange {
-  _id: string;
-  range: string;
-}
-interface AudienceRangeOption {
-  value: string;
-  label: string;
-  raw: AudienceRange;
-}
+  // Onboarding taxonomy (model aligned)
+  onboarding: Onboarding;
+
+  // Subscription (read-only display)
+  subscription: {
+    planName: string;
+    planId?: string;
+    startedAt?: string;
+    expiresAt?: string;
+    features: SubscriptionFeature[];
+  };
+  subscriptionExpired: boolean;
+
+  // Security / auth
+  otpVerified?: boolean;
+  passwordResetVerified?: boolean;
+  failedLoginAttempts?: number;
+  lockUntil?: string | null;
+
+  // IDs & meta
+  _id?: string;
+  influencerId: string;
+  createdAt?: string;
+  updatedAt?: string;
+
+  // Gender string enum (model)
+  gender?: GenderStr;
+};
 
 /* ===================== Utilities ===================== */
 const isEmailEqual = (a = "", b = "") => a.trim().toLowerCase() === b.trim().toLowerCase();
@@ -193,43 +167,43 @@ function formatDate(d?: string | null) {
   return dt.toLocaleString();
 }
 
-function genderFromCode(code?: number) {
-  if (code === 0) return "Male";
-  if (code === 1) return "Female";
-  if (code === 2) return "Other";
-  return "—";
-}
-
 function titleizeFeatureKey(key: string) {
   return key
     .replace(/_/g, " ")
     .replace(/\b\w/g, (m) => m.toUpperCase());
 }
 
-function pct(val?: number) {
-  const v = Number.isFinite(val as any) ? (val as number) : 0;
-  return Math.max(0, Math.min(100, Math.round(v)));
-}
-
-function normalizeGender(raw: any): 0 | 1 | 2 | undefined {
-  if (raw === null || typeof raw === "undefined" || raw === "") return undefined;
-
-  if (typeof raw === "number") {
-    return raw === 0 || raw === 1 || raw === 2 ? (raw as 0 | 1 | 2) : undefined;
-  }
-
-  const s = String(raw).trim().toLowerCase();
-  if (s === "0" || s === "male" || s === "m") return 0;
-  if (s === "1" || s === "female" || s === "f") return 1;
-  if (s === "2" || s === "other" || s === "non-binary" || s === "nonbinary" || s === "nb")
-    return 2;
-
-  const n = Number(s);
-  return n === 0 || n === 1 || n === 2 ? (n as 0 | 1 | 2) : undefined;
-}
-
 function validateEmail(email: string) {
   return /[^@\s]+@[^@\s]+\.[^@\s]+/.test(email);
+}
+
+function normalizeGenderStr(raw: any): GenderStr | undefined {
+  if (raw === null || typeof raw === "undefined") return undefined;
+
+  // If backend ever sends numeric enum (0..3) or numeric string, map to labels
+  const num = typeof raw === "number" && Number.isFinite(raw)
+    ? raw
+    : (typeof raw === "string" && /^[0-9]+$/.test(raw.trim()) ? Number(raw.trim()) : null);
+
+  if (num !== null) {
+    switch (num) {
+      case 0: return "Male";
+      case 1: return "Female";
+      case 2: return "Non-binary";
+      case 3: return "Prefer not to say";
+      default: break;
+    }
+  }
+
+  const s = String(raw).trim();
+  const t = s.toLowerCase();
+  if (t === "male" || t === "m") return "Male";
+  if (t === "female" || t === "f") return "Female";
+  if (t === "non-binary" || t === "nonbinary" || t === "nb") return "Non-binary";
+  if (t === "prefer not to say" || t === "prefer-not-to-say") return "Prefer not to say";
+  if (s === "") return "";
+  if (["Male","Female","Non-binary","Prefer not to say"].includes(s)) return s as GenderStr;
+  return undefined;
 }
 
 /* Build options */
@@ -254,46 +228,103 @@ const buildCallingOptions = (countries: Country[]): CountryOption[] => {
   return opts;
 };
 
-const buildPlatformOptions = (rows: Platform[]): PlatformOption[] =>
-  rows.map((p) => ({ value: p.platformId || p._id, label: p.name, raw: p }));
+const PLATFORM_OPTIONS: { value: Exclude<PrimaryPlatform, null>; label: string }[] = [
+  { value: "youtube", label: "YouTube" },
+  { value: "tiktok", label: "TikTok" },
+  { value: "instagram", label: "Instagram" },
+  { value: "other", label: "Other" },
+];
 
-const buildInterestOptions = (rows: Interest[]): InterestOption[] =>
-  rows.map((r) => ({ value: r._id, label: r.name, raw: r }));
+const humanizePlatform = (p: PrimaryPlatform) => {
+  const found = PLATFORM_OPTIONS.find((o) => o.value === p);
+  return found ? found.label : "—";
+};
 
-const buildAgeOptions = (rows: AudienceAgeRange[]): AudienceAgeOption[] =>
-  rows.map((r) => ({ value: r.audienceId, label: r.range, raw: r }));
+// Coerce unknown payloads into arrays safely
+function asArray<T = any>(v: any): T[] {
+  if (Array.isArray(v)) return v as T[];
+  if (v && typeof v === "object") {
+    for (const k of [
+      "data",
+      "items",
+      "rows",
+      "result",
+      "results",
+      "categories",
+      "list",
+      "categoryList",
+    ]) {
+      const val = (v as any)[k];
+      if (Array.isArray(val)) return val as T[];
+    }
+  }
+  return [] as T[];
+}
 
-const buildCountOptions = (rows: AudienceRange[]): AudienceRangeOption[] =>
-  rows.map((r) => ({ value: r._id, label: r.range, raw: r }));
+function normalizeCategoryNode(raw: any): CategoryNode {
+  const categoryIdRaw = raw?.categoryId ?? raw?.id ?? raw?.code;
+  const categoryName = String(raw?.categoryName ?? raw?.name ?? raw?.label ?? "");
+  const subRaw = raw?.subcategories ?? raw?.children ?? raw?.subs ?? raw?.subCategoryList ?? raw?.subcategoriesList;
+  const subcategories: { subcategoryId: string; subcategoryName: string }[] = asArray<any>(subRaw)
+    .map((s) => ({
+      subcategoryId: String(s?.subcategoryId ?? s?.id ?? s?.uuid ?? s?._id ?? s?.value ?? s?.code ?? ""),
+      subcategoryName: String(s?.subcategoryName ?? s?.name ?? s?.label ?? ""),
+    }))
+    .filter((s) => s.subcategoryId && s.subcategoryName);
 
-/* Normalize influencer payloads with variants */
+  return {
+    categoryId: Number(categoryIdRaw),
+    categoryName,
+    subcategories,
+  } as CategoryNode;
+}
+
+const buildCategoryOptions = (rows: any): CategoryOption[] => {
+  const arr = asArray<any>(rows).map(normalizeCategoryNode).filter((n) => Number.isFinite(n.categoryId) && n.categoryName);
+  if (!Array.isArray(rows)) {
+    console.warn("[categories] Non-array payload received; coerced via keys.", rows);
+  }
+  return arr.map((c) => ({ value: c.categoryId, label: c.categoryName, raw: c }));
+};
+
+const buildSubcategoryOptions = (row?: CategoryNode | null): SubcategoryOption[] =>
+  row?.subcategories?.map((s) => ({ value: s.subcategoryId, label: s.subcategoryName })) || [];
+
+/* Normalize influencer payload from backend (model-aligned) */
 function normalizeInfluencer(data: any): InfluencerData {
   const inf = data?.influencer ?? data;
   const s = inf?.subscription ?? {};
+
+  // Social fallbacks from primary social profile (prefer primary platform; else first)
+  const spArr = Array.isArray(inf?.socialProfiles) ? inf.socialProfiles : [];
+  const preferred = spArr.find((p: any) => p?.provider === (inf?.primaryPlatform || "")) || spArr[0] || {};
+  const fallbackHandle = preferred?.username ? `@${preferred.username}` : "";
+  const fallbackLink = preferred?.url || "";
+  const fallbackImage = preferred?.picture || "";
+
   return {
     name: inf?.name ?? "",
     email: inf?.email ?? "",
     phone: inf?.phone ?? "",
-    profileImage: inf?.profileImage ?? "",
-    profileLink: inf?.profileLink ?? "",
-    socialMedia: inf?.socialMedia ?? "",
 
-    country: inf?.country ?? inf?.county ?? "",
+    profileImage: inf?.profileImage || fallbackImage || "",
+    profileLink: inf?.profileLink || fallbackLink || "",
+    socialMedia: inf?.socialMedia || fallbackHandle || "",
+
+    country: inf?.country ?? "",
     countryId: inf?.countryId ?? "",
     callingId: inf?.callingId ?? "",
-    callingCode: inf?.callingCode ?? inf?.callingcode ?? "",
-    county: inf?.county ?? "",
+    callingCode: inf?.callingcode ?? inf?.callingCode ?? "",
 
-    platformId: inf?.platformId || inf?.platformRef || "",
-    platformName: inf?.platformName ?? "",
-    audienceRange: inf?.audienceRange ?? "",
-    audienceAgeRange: inf?.audienceAgeRange ?? "",
-    audienceAgeRangeId: inf?.audienceAgeRangeId ?? "",
-    audienceId: inf?.audienceId ?? "",
-    audienceBifurcation: inf?.audienceBifurcation ?? {},
+    primaryPlatform: (inf?.primaryPlatform as PrimaryPlatform) ?? null,
 
-    categories: Array.isArray(inf?.categories) ? inf.categories : [],
-    categoryName: Array.isArray(inf?.categoryName) ? inf.categoryName : [],
+    onboarding: {
+      categoryId: inf?.onboarding?.categoryId,
+      categoryName: inf?.onboarding?.categoryName,
+      subcategories: Array.isArray(inf?.onboarding?.subcategories)
+        ? inf.onboarding.subcategories
+        : [],
+    },
 
     subscription: {
       planName: s?.planName ?? "",
@@ -303,8 +334,6 @@ function normalizeInfluencer(data: any): InfluencerData {
       features: Array.isArray(s?.features) ? s.features : [],
     },
     subscriptionExpired: !!inf?.subscriptionExpired,
-
-    walletBalance: Number.isFinite(+inf?.walletBalance) ? +inf.walletBalance : 0,
 
     otpVerified: !!inf?.otpVerified,
     passwordResetVerified: !!inf?.passwordResetVerified,
@@ -316,25 +345,21 @@ function normalizeInfluencer(data: any): InfluencerData {
     createdAt: inf?.createdAt ?? "",
     updatedAt: inf?.updatedAt ?? "",
 
-    bio: inf?.bio ?? "",
-
-    gender: normalizeGender(inf?.gender),
+    gender: normalizeGenderStr(inf?.gender),
   };
 }
 
-/* ===================== MultiSelect for Categories (Select-only, searchable) ===================== */
+/* ===================== MultiSelect (Select-only, searchable) ===================== */
 
 type SimpleOption = { value: string; label: string };
 
-function MultiSelect({ values, onChange, options, placeholder = "Choose...", max = 3 }: {
+function MultiSelect({ values, onChange, options, placeholder = "Choose...", max = Infinity }: {
   values: SimpleOption[];
   onChange: (opts: SimpleOption[]) => void;
   options: SimpleOption[];
   placeholder?: string;
-  max?: number;
+  max?: number; // default Infinity (no limit)
 }) {
-  // remove controlled open unless you really need it
-  // const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
 
   const selectedSet = useMemo(() => new Set(values.map(v => v.value)), [values]);
@@ -352,12 +377,11 @@ function MultiSelect({ values, onChange, options, placeholder = "Choose...", max
       onChange(values.filter(v => v.value !== val));
     } else {
       if (values.length >= max) {
-        Swal.fire({ icon: "info", title: `Limit reached (${max})`, text: `You can select up to ${max} categories.` });
+        Swal.fire({ icon: "info", title: `Limit reached (${max})`, text: `You can select up to ${max} items.` });
         return;
       }
       onChange([...values, opt]);
     }
-    // ❌ remove: setOpen(true);
   };
 
   const triggerLabel = values.length
@@ -365,7 +389,7 @@ function MultiSelect({ values, onChange, options, placeholder = "Choose...", max
     : placeholder;
 
   return (
-    <ShSelect /* open={open} onOpenChange={setOpen} */ value="" onValueChange={toggle}>
+    <ShSelect value="" onValueChange={toggle}>
       <SelectTrigger className="w-full justify-between">
         <div className={`truncate ${values.length ? "" : "text-muted-foreground"}`}>{triggerLabel}</div>
       </SelectTrigger>
@@ -377,11 +401,7 @@ function MultiSelect({ values, onChange, options, placeholder = "Choose...", max
           <div className="px-3 py-2 text-sm text-muted-foreground">No results</div>
         ) : (
           filtered.map(opt => (
-            <SelectItem
-              key={opt.value}
-              value={opt.value}
-            // ❌ remove this: onPointerDown={(e) => e.preventDefault()}
-            >
+            <SelectItem key={opt.value} value={opt.value}>
               <div className="flex items-center gap-2">
                 <CheckIcon className={`h-4 w-4 ${selectedSet.has(opt.value) ? "opacity-100" : "opacity-0"}`} />
                 {opt.label}
@@ -394,8 +414,7 @@ function MultiSelect({ values, onChange, options, placeholder = "Choose...", max
   );
 }
 
-
-/* ===================== Dual-OTP Email Editor ===================== */
+/* ===================== Dual-OTP Email Editor (unchanged except theme) ===================== */
 
 export type EmailFlowState = "idle" | "needs" | "codes_sent" | "verifying" | "verified";
 
@@ -648,16 +667,17 @@ export default function InfluencerProfilePage() {
   const [selectedCountry, setSelectedCountry] = useState<CountryOption | null>(null);
   const [selectedCalling, setSelectedCalling] = useState<CountryOption | null>(null);
 
-  // Platform, Categories, Audience Age, Audience Range
-  const [platforms, setPlatforms] = useState<PlatformOption[]>([]);
-  const [interests, setInterests] = useState<InterestOption[]>([]);
-  const [ages, setAges] = useState<AudienceAgeOption[]>([]);
-  const [ranges, setRanges] = useState<AudienceRangeOption[]>([]);
+  // Platform
+  const [selectedPlatform, setSelectedPlatform] = useState<PrimaryPlatform>(null);
 
-  const [selectedPlatform, setSelectedPlatform] = useState<PlatformOption | null>(null);
-  const [selectedCategories, setSelectedCategories] = useState<InterestOption[]>([]);
-  const [selectedAge, setSelectedAge] = useState<AudienceAgeOption | null>(null);
-  const [selectedRange, setSelectedRange] = useState<AudienceRangeOption | null>(null);
+  // Categories taxonomy
+  const [categories, setCategories] = useState<CategoryOption[]>([]);
+  const [selectedCategory, setSelectedCategory] = useState<CategoryOption | null>(null);
+  const [subcategoryOptions, setSubcategoryOptions] = useState<SubcategoryOption[]>([]);
+  const [selectedSubcats, setSelectedSubcats] = useState<SubcategoryOption[]>([]);
+
+  // Track previous category to avoid wiping subs on initial hydration
+  const prevCatIdRef = useRef<number | null>(null);
 
   // Profile image upload
   const [profileImageFile, setProfileImageFile] = useState<File | null>(null);
@@ -683,15 +703,12 @@ export default function InfluencerProfilePage() {
 
     (async () => {
       try {
-        const [infRes, countryRes, platRes, interestRes, ageRes, rangeRes] =
-          await Promise.all([
-            get<any>(`/influencer/getbyid?id=${influencerId}`),
-            get<Country[]>("/country/getall"),
-            get<Platform[]>("/platform/getall"),
-            get<Interest[]>("/interest/getList"),
-            get<AudienceAgeRange[]>("/audienceRange/getAll"),
-            get<AudienceRange[]>("/audience/getlist"),
-          ]);
+        const [infRes, countryRes, categoryRes] = await Promise.all([
+          get<any>(`/influencer/getbyid?id=${influencerId}`),
+          get<Country[]>("/country/getall"),
+          // Expect categories API to return array of CategoryNode
+          get<CategoryNode[]>("/category/categories"),
+        ]);
 
         const countriesList = countryRes || [];
         setCountries(countriesList);
@@ -703,25 +720,17 @@ export default function InfluencerProfilePage() {
         // Build selections
         const countryOpts = buildCountryOptions(countriesList);
         const callingOpts = buildCallingOptions(countriesList);
-        const platformOpts = buildPlatformOptions(platRes || []);
-        const interestOpts = buildInterestOptions(interestRes || []);
-        const ageOpts = buildAgeOptions(ageRes || []);
-        const rangeOpts = buildCountOptions(rangeRes || []);
+        const cats = buildCategoryOptions(categoryRes || []);
+        setCategories(cats);
 
-        setPlatforms(platformOpts);
-        setInterests(interestOpts);
-        setAges(ageOpts);
-        setRanges(rangeOpts);
-
-        // Preselect based on stored ids / values
+        // Country & Calling preselects
         setSelectedCountry(() => {
           if (normalized.countryId)
             return countryOpts.find((o) => o.value === normalized.countryId) || null;
           if (normalized.country)
             return (
               countryOpts.find(
-                (o) =>
-                  o.country.countryName.toLowerCase() === normalized.country.toLowerCase()
+                (o) => o.country.countryName.toLowerCase() === normalized.country.toLowerCase()
               ) || null
             );
           return null;
@@ -730,76 +739,36 @@ export default function InfluencerProfilePage() {
           if (normalized.callingId)
             return callingOpts.find((o) => o.value === normalized.callingId) || null;
           if (normalized.callingCode)
-            return (
-              callingOpts.find((o) => o.country.callingCode === normalized.callingCode) ||
-              null
-            );
+            return callingOpts.find((o) => o.country.callingCode === normalized.callingCode) || null;
           return null;
         });
 
-        setSelectedPlatform(() => {
-          if (!normalized.platformName && !normalized.platformId) return null;
-          return (
-            platformOpts.find((o) => o.value === normalized.platformId) ||
-            platformOpts.find(
-              (o) =>
-                o.label.toLowerCase() === (normalized.platformName || "").toLowerCase()
-            ) ||
-            null
-          );
-        });
+        // Platform preselect
+        setSelectedPlatform(normalized.primaryPlatform);
 
-        setSelectedCategories(() => {
-          const haveIds =
-            Array.isArray(normalized.categories) && normalized.categories.length > 0;
-          let picked: InterestOption[] = [];
-
-          if (haveIds) {
-            const idSet = new Set(normalized.categories);
-            picked = interestOpts.filter((o) => idSet.has(o.value));
-          }
-
-          if (!picked.length && Array.isArray(normalized.categoryName) && normalized.categoryName.length) {
-            const nameSet = new Set(
-              normalized.categoryName.map((n: string) => n.trim().toLowerCase())
-            );
-            picked = interestOpts.filter((o) =>
-              nameSet.has(o.label.trim().toLowerCase())
-            );
-          }
-
-          return picked.slice(0, 3);
-        });
-
-        setSelectedAge(() => {
-          const byId = ageOpts.find((o) => o.value === normalized.audienceAgeRangeId) || null;
-          const byLabel =
-            !byId && normalized.audienceAgeRange
-              ? ageOpts.find(
-                (o) =>
-                  o.label.toLowerCase() ===
-                  (normalized.audienceAgeRange || "").toLowerCase()
+        // Category + Subcategories preselect
+        const preCategory = (() => {
+          if (normalized.onboarding?.categoryId)
+            return cats.find((c) => c.value === normalized.onboarding.categoryId) || null;
+          if (normalized.onboarding?.categoryName)
+            return (
+              cats.find(
+                (c) => c.label.toLowerCase() === normalized.onboarding.categoryName!.toLowerCase()
               ) || null
-              : null;
+            );
+          return null;
+        })();
+        setSelectedCategory(preCategory);
+        setSubcategoryOptions(buildSubcategoryOptions(preCategory?.raw));
 
-          const sel = byId || byLabel || null;
-          if (sel) setForm((prev) => (prev ? { ...prev, audienceAgeRangeId: sel.value } : prev));
-          return sel;
-        });
+        // Preselect saved subcategories (no max, no slice)
+        const preSubcats = (normalized.onboarding?.subcategories || [])
+          .map((s) => ({ value: s.subcategoryId, label: s.subcategoryName }))
+          .filter((s) => s.value);
+        setSelectedSubcats(preSubcats);
 
-        setSelectedRange(() => {
-          const byId = rangeOpts.find((o) => o.value === normalized.audienceId) || null;
-          const byLabel =
-            !byId && normalized.audienceRange
-              ? rangeOpts.find(
-                (o) =>
-                  o.label.toLowerCase() === (normalized.audienceRange || "").toLowerCase()
-              ) || null
-              : null;
-          const sel = byId || byLabel || null;
-          if (sel) setForm((prev) => (prev ? { ...prev, audienceId: sel.value } : prev));
-          return sel;
-        });
+        // Initialize prevCatId to current without triggering clear
+        prevCatIdRef.current = preCategory?.value ?? null;
       } catch (e: any) {
         console.error(e);
         setError(e?.message || "Failed to load influencer profile.");
@@ -812,7 +781,7 @@ export default function InfluencerProfilePage() {
   // keep form.country / callingCode in sync with selections
   useEffect(() => {
     if (!selectedCountry) return;
-    setForm(prev => {
+    setForm((prev) => {
       if (!prev) return prev;
       const nextCountryId = selectedCountry.value;
       const nextCountryName = selectedCountry.country.countryName;
@@ -823,7 +792,7 @@ export default function InfluencerProfilePage() {
 
   useEffect(() => {
     if (!selectedCalling) return;
-    setForm(prev => {
+    setForm((prev) => {
       if (!prev) return prev;
       const nextCallingId = selectedCalling.value;
       const nextCallingCode = selectedCalling.country.callingCode;
@@ -832,51 +801,71 @@ export default function InfluencerProfilePage() {
     });
   }, [selectedCalling]);
 
+  // Sync selected platform into form
   useEffect(() => {
-    setForm(prev => {
+    setForm((prev) => {
       if (!prev) return prev;
-      const next = selectedAge?.value || "";
-      if (prev.audienceAgeRangeId === next) return prev;
-      return { ...prev, audienceAgeRangeId: next };
-    });
-  }, [selectedAge]);
-
-  useEffect(() => {
-    setForm(prev => {
-      if (!prev) return prev;
-      const next = selectedRange?.value || "";
-      if (prev.audienceId === next) return prev;
-      return { ...prev, audienceId: next };
-    });
-  }, [selectedRange]);
-
-  useEffect(() => {
-    setForm(prev => {
-      if (!prev) return prev;
-      if (!selectedPlatform) {
-        if (!prev.platformId && !prev.platformName && !prev.manualPlatformName) return prev;
-        return { ...prev, platformId: "", platformName: "", manualPlatformName: "" };
-      }
-      const id = selectedPlatform.value;
-      const name = selectedPlatform.label;
-      if (prev.platformId === id && prev.platformName === name) return prev;
-      return { ...prev, platformId: id, platformName: name };
+      if (prev.primaryPlatform === selectedPlatform) return prev;
+      return { ...prev, primaryPlatform: selectedPlatform };
     });
   }, [selectedPlatform]);
 
-  // Only push categories while editing, and only if changed
+  // When category changes, refresh subcategory options and only clear selection if the user actually changed it
   useEffect(() => {
-    if (!isEditing) return;
-    setForm(prev => {
+    setSubcategoryOptions(buildSubcategoryOptions(selectedCategory?.raw));
+
+    const currentId = selectedCategory?.value ?? null;
+    const prevId = prevCatIdRef.current;
+
+    if (prevId !== null && currentId !== prevId) {
+      // category truly changed by user -> clear subs
+      setSelectedSubcats([]);
+      setForm((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          onboarding: {
+            ...prev.onboarding,
+            categoryId: selectedCategory?.value,
+            categoryName: selectedCategory?.label,
+            subcategories: [],
+          },
+        };
+      });
+    } else {
+      // just keep the category in sync without clearing on initial hydration
+      setForm((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          onboarding: {
+            ...prev.onboarding,
+            categoryId: selectedCategory?.value,
+            categoryName: selectedCategory?.label,
+          },
+        };
+      });
+    }
+
+    prevCatIdRef.current = currentId;
+  }, [selectedCategory]);
+
+  // Push selected subcats into form.onboarding
+  useEffect(() => {
+    setForm((prev) => {
       if (!prev) return prev;
-      const next = selectedCategories.map(c => c.value);
-      const same = Array.isArray(prev.categories)
-        && prev.categories.length === next.length
-        && prev.categories.every((v, i) => v === next[i]);
-      if (same) return prev;
-      return { ...prev, categories: next };
+      return {
+        ...prev,
+        onboarding: {
+          ...prev.onboarding,
+          subcategories: selectedSubcats.map((s) => ({
+            subcategoryId: s.value,
+            subcategoryName: s.label,
+          })),
+        },
+      };
     });
-  }, [selectedCategories, isEditing]);
+  }, [selectedSubcats]);
 
   const onField = useCallback(<K extends keyof InfluencerData>(key: K, value: InfluencerData[K]) => {
     setForm((prev) => (prev ? { ...prev, [key]: value } : prev));
@@ -890,96 +879,41 @@ export default function InfluencerProfilePage() {
     setEmailFlow("idle");
     setProfileImageFile(null);
 
-    const countryOpt =
-      countryOptions.find((o) => o.value === cl.countryId) ||
-      countryOptions.find(
-        (o) => o.country.countryName.toLowerCase() === (cl.country || "").toLowerCase()
-      ) ||
-      null;
-    const callingOpt =
-      codeOptions.find((o) => o.value === cl.callingId) ||
-      codeOptions.find((o) => o.country.callingCode === cl.callingCode) ||
-      null;
-    setSelectedCountry(countryOpt);
-    setSelectedCalling(callingOpt);
-
-    setSelectedPlatform(() => {
+    // Hydrate selections
+    setSelectedCountry((prev) => {
+      const byId = countryOptions.find((o) => o.value === cl.countryId) || null;
+      if (byId) return byId;
       return (
-        platforms.find((p) => p.value === cl.platformId) ||
-        platforms.find(
-          (p) => p.label.toLowerCase() === (cl.platformName || "").toLowerCase()
-        ) ||
-        null
-      );
-    });
-    setSelectedCategories(() => {
-      const ids = new Set(cl.categories || []);
-      return interests.filter((i) => ids.has(i.value));
-    });
-    setSelectedAge(() => ages.find((a) => a.value === cl.audienceAgeRangeId) || null);
-    setSelectedRange(() => ranges.find((r) => r.value === cl.audienceId) || null);
-  }, [influencer, countryOptions, codeOptions, platforms, interests, ages, ranges]);
-
-  // Hydrate selections when entering edit mode (ensures chips populated)
-  useEffect(() => {
-    if (!isEditing || !form) return;
-    if (!selectedCategories.length && interests.length) {
-      const ids = new Set(form.categories || []);
-      setSelectedCategories(interests.filter((i) => ids.has(i.value)));
-    }
-    if (!selectedAge && ages.length && form.audienceAgeRangeId) {
-      setSelectedAge(ages.find((a) => a.value === form.audienceAgeRangeId) || null);
-    }
-    if (!selectedRange && ranges.length && form.audienceId) {
-      setSelectedRange(ranges.find((r) => r.value === form.audienceId) || null);
-    }
-    if (!selectedPlatform && platforms.length) {
-      const sel =
-        platforms.find((p) => p.value === form.platformId) ||
-        platforms.find(
-          (p) => p.label.toLowerCase() === (form.platformName || "").toLowerCase()
-        ) ||
-        null;
-      setSelectedPlatform(sel);
-    }
-    if (!selectedCountry && countryOptions.length) {
-      setSelectedCountry(
-        countryOptions.find((o) => o.value === form.countryId) ||
         countryOptions.find(
-          (o) =>
-            o.country.countryName.toLowerCase() === (form.country || "").toLowerCase()
-        ) ||
-        null
+          (o) => o.country.countryName.toLowerCase() === (cl.country || "").toLowerCase()
+        ) || null
       );
-    }
-    if (!selectedCalling && codeOptions.length) {
-      setSelectedCalling(
-        codeOptions.find((o) => o.value === form.callingId) ||
-        codeOptions.find((o) => o.country.callingCode === form.callingCode) ||
-        null
-      );
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    isEditing,
-    form,
-    interests,
-    ages,
-    ranges,
-    platforms,
-    countryOptions,
-    codeOptions,
-    selectedCategories.length,
-    selectedAge,
-    selectedRange,
-    selectedPlatform,
-    selectedCountry,
-    selectedCalling,
-  ]);
+    });
+    setSelectedCalling((prev) => {
+      const byId = codeOptions.find((o) => o.value === cl.callingId) || null;
+      if (byId) return byId;
+      return codeOptions.find((o) => o.country.callingCode === cl.callingCode) || null;
+    });
+
+    setSelectedPlatform(cl.primaryPlatform ?? null);
+
+    // Category + subcats
+    const cat = categories.find((c) => c.value === cl.onboarding?.categoryId)
+      || categories.find((c) => c.label.toLowerCase() === (cl.onboarding?.categoryName || "").toLowerCase())
+      || null;
+    setSelectedCategory(cat);
+    setSubcategoryOptions(buildSubcategoryOptions(cat?.raw));
+    const subs = (cl.onboarding?.subcategories || [])
+      .map((s) => ({ value: s.subcategoryId, label: s.subcategoryName }))
+      .filter((s) => s.value);
+    setSelectedSubcats(subs);
+    prevCatIdRef.current = cat?.value ?? null;
+  }, [influencer, countryOptions, codeOptions, categories]);
 
   const saveProfile = useCallback(async () => {
     if (!form || !influencer) return;
 
+    // Must not save if email change not verified
     if (emailFlow !== "idle" && emailFlow !== "verified") {
       await Swal.fire({
         icon: "warning",
@@ -989,26 +923,26 @@ export default function InfluencerProfilePage() {
       return;
     }
 
-    const hasValidGender = form.gender === 0 || form.gender === 1 || form.gender === 2;
+    // Gender is required after OTP verification (product decision)
+    const hasValidGender = typeof form.gender !== "undefined" && ["Male","Female","Non-binary","Prefer not to say",""].includes(form.gender);
     if (form.otpVerified && !hasValidGender) {
-      await Swal.fire({
-        icon: "info",
-        title: "Gender required",
-        text: "Please select your gender to continue.",
-      });
+      await Swal.fire({ icon: "info", title: "Gender required", text: "Please select your gender to continue." });
       return;
     }
 
-    const categoriesForSave =
-      (form.categories && form.categories.length
-        ? form.categories
-        : selectedCategories.map((c) => c.value)) || [];
-    if (categoriesForSave.length < 1 || categoriesForSave.length > 3) {
-      await Swal.fire({
-        icon: "error",
-        title: "Pick 1–3 categories",
-        text: "Please select between 1 and 3 categories.",
-      });
+    // Phone quick check (model expects 10 digits when otpVerified)
+    if (form.otpVerified && !/^\d{10}$/.test((form.phone || "").trim())) {
+      await Swal.fire({ icon: "warning", title: "Invalid phone", text: "Phone number must be 10 digits." });
+      return;
+    }
+
+    // Category & subcategories validation (no upper limit; require at least 1)
+    if (!form.onboarding?.categoryId || !form.onboarding?.categoryName) {
+      await Swal.fire({ icon: "error", title: "Pick a category", text: "Please select a primary category." });
+      return;
+    }
+    if (!form.onboarding.subcategories || form.onboarding.subcategories.length < 1) {
+      await Swal.fire({ icon: "error", title: "Pick subcategories", text: "Please select one or more subcategories." });
       return;
     }
 
@@ -1020,40 +954,44 @@ export default function InfluencerProfilePage() {
       const fd = new FormData();
       fd.append("influencerId", influencerId);
 
+      // Basics
       fd.append("name", form.name || "");
       if (form.password) fd.append("password", form.password);
       fd.append("phone", form.phone || "");
+
+      // Gender: send label (backend expects String enum)
+      if (typeof form.gender !== "undefined") {
+        const g = String(form.gender || "");
+        const allowed = ["Male", "Female", "Non-binary", "Prefer not to say", ""];
+        if (allowed.includes(g)) {
+          fd.append("gender", g);
+        }
+      }
+
+      // Optional backcompat
       fd.append("socialMedia", form.socialMedia || "");
-      if (typeof form.gender !== "undefined") fd.append("gender", String(form.gender));
       fd.append("profileLink", form.profileLink || "");
-      fd.append("bio", form.bio || "");
 
-      if (form.platformId) fd.append("platformId", form.platformId);
-      if (form.manualPlatformName) fd.append("manualPlatformName", form.manualPlatformName);
+      // Platform
+      if (form.primaryPlatform) fd.append("primaryPlatform", form.primaryPlatform);
 
-      const male = form.audienceBifurcation?.malePercentage;
-      const female = form.audienceBifurcation?.femalePercentage;
-      if (typeof male !== "undefined") fd.append("malePercentage", String(male));
-      if (typeof female !== "undefined") fd.append("femalePercentage", String(female));
-
-      fd.append("categories", JSON.stringify(categoriesForSave));
-
-      if (form.audienceAgeRangeId) fd.append("audienceAgeRangeId", form.audienceAgeRangeId);
-      if (form.audienceId) fd.append("audienceId", form.audienceId);
-
+      // Location
       if (form.countryId) fd.append("countryId", form.countryId);
       if (form.callingId) fd.append("callingId", form.callingId);
 
+      // Onboarding taxonomy (send as one JSON blob)
+      fd.append("onboarding", JSON.stringify({
+        categoryId: form.onboarding.categoryId,
+        categoryName: form.onboarding.categoryName,
+        subcategories: form.onboarding.subcategories,
+      }));
+
+      // Avatar
       if (profileImageFile) fd.append("profileImage", profileImageFile);
 
       await post<{ message?: string }>("/influencer/updateProfile", fd);
 
-      await Swal.fire({
-        icon: "success",
-        title: "Profile updated",
-        timer: 1200,
-        showConfirmButton: false,
-      });
+      await Swal.fire({ icon: "success", title: "Profile updated", timer: 1200, showConfirmButton: false });
 
       const updatedRaw = await get<any>(`/influencer/getbyid?id=${influencerId}`);
       const updated = normalizeInfluencer(updatedRaw);
@@ -1064,68 +1002,43 @@ export default function InfluencerProfilePage() {
       setEmailFlow("idle");
       setProfileImageFile(null);
 
+      // Reset selects to reflect saved state
       setSelectedCountry(() => {
         const byId = countryOptions.find((o) => o.value === updated.countryId);
-        const byName =
-          !byId &&
-          countryOptions.find(
-            (o) =>
-              o.country.countryName.toLowerCase() === (updated.country || "").toLowerCase()
-          );
-        return byId || byName || null;
+        const byName = !byId && countryOptions.find((o) => o.country.countryName.toLowerCase() === (updated.country || "").toLowerCase());
+        return (byId || byName || null) as CountryOption | null;
       });
       setSelectedCalling(() => {
         const byId = codeOptions.find((o) => o.value === updated.callingId);
-        const byCode =
-          !byId && codeOptions.find((o) => o.country.callingCode === updated.callingCode);
-        return byId || byCode || null;
+        const byCode = !byId && codeOptions.find((o) => o.country.callingCode === updated.callingCode);
+        return (byId || byCode || null) as CountryOption | null;
       });
-      setSelectedPlatform(() => {
-        return (
-          platforms.find((p) => p.value === updated.platformId) ||
-          platforms.find(
-            (p) => p.label.toLowerCase() === (updated.platformName || "").toLowerCase()
-          ) ||
-          null
-        );
-      });
-      setSelectedAge(() => ages.find((a) => a.value === updated.audienceAgeRangeId) || null);
-      setSelectedRange(() => ranges.find((r) => r.value === updated.audienceId) || null);
-      setSelectedCategories(() => {
-        const ids = new Set(updated.categories || []);
-        return interests.filter((i) => ids.has(i.value));
-      });
+      setSelectedPlatform(updated.primaryPlatform ?? null);
+
+      const cat = categories.find((c) => c.value === updated.onboarding?.categoryId)
+        || categories.find((c) => c.label.toLowerCase() === (updated.onboarding?.categoryName || "").toLowerCase())
+        || null;
+      setSelectedCategory(cat);
+      setSubcategoryOptions(buildSubcategoryOptions(cat?.raw));
+      const subs = (updated.onboarding?.subcategories || [])
+        .map((s) => ({ value: s.subcategoryId, label: s.subcategoryName }))
+        .filter((s) => s.value);
+      setSelectedSubcats(subs);
+      prevCatIdRef.current = cat?.value ?? null;
     } catch (e: any) {
       console.error(e);
-      await Swal.fire({
-        icon: "error",
-        title: "Save failed",
-        text: e?.message || "Failed to save profile.",
-      });
+      await Swal.fire({ icon: "error", title: "Save failed", text: e?.message || "Failed to save profile." });
     } finally {
       setSaving(false);
     }
-  }, [
-    influencer,
-    emailFlow,
-    form,
-    profileImageFile,
-    selectedCategories,
-    countryOptions,
-    codeOptions,
-    platforms,
-    ages,
-    ranges,
-    interests,
-  ]);
+  }, [influencer, emailFlow, form, profileImageFile, countryOptions, codeOptions, categories]);
 
   if (loading) return <Loader />;
   if (error) return <InlineError message={error} />;
 
   const saveDisabled = saving || (emailFlow !== "idle" && emailFlow !== "verified");
-  const showManualPlatform = selectedPlatform?.label?.toLowerCase() === "other";
 
-  // Helper-to-SimpleOption for category MultiSelect
+  // Helper-to-SimpleOption for MultiSelect
   const toSO = (o: { value: string; label: string }) => ({ value: o.value, label: o.label });
 
   return (
@@ -1138,10 +1051,7 @@ export default function InfluencerProfilePage() {
               <div className="flex items-center gap-4 min-w-0">
                 <div className="relative">
                   <Avatar className="h-20 w-20 rounded-2xl">
-                    <AvatarImage
-                      src={form?.profileImage || influencer?.profileImage || ""}
-                      alt={influencer?.name}
-                    />
+                    <AvatarImage src={form?.profileImage || influencer?.profileImage || ""} alt={influencer?.name} />
                     <AvatarFallback className="rounded-2xl bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-800">
                       <User className="h-8 w-8" />
                     </AvatarFallback>
@@ -1158,48 +1068,30 @@ export default function InfluencerProfilePage() {
                             setProfileImageFile(f);
                             if (f) {
                               const reader = new FileReader();
-                              reader.onload = () =>
-                                setForm((prev) =>
-                                  prev ? { ...prev, profileImage: String(reader.result) } : prev
-                                );
+                              reader.onload = () => setForm((prev) => (prev ? { ...prev, profileImage: String(reader.result) } : prev));
                               reader.readAsDataURL(f);
                             }
                           }}
                         />
-                        <Button variant="outline" size="sm" className="gap-1 bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-800">
-                          <ImageIcon className="h-4 w-4" />
-                          Upload
-                        </Button>
+                        
                       </label>
                     </div>
                   )}
                 </div>
 
                 <div className="min-w-0">
-                  <h1 className="text-2xl sm:text-3xl font-bold truncate">
-                    {influencer?.name || "—"}
-                  </h1>
+                  <h1 className="text-2xl sm:text-3xl font-bold truncate">{influencer?.name || "—"}</h1>
                   <p className="text-muted-foreground truncate">
-                    {influencer?.platformName ? `${influencer.platformName}` : "—"}
+                    {humanizePlatform(influencer?.primaryPlatform ?? null)}
                     {influencer?.profileLink && (
                       <>
                         {" • "}
-                        <a
-                          href={influencer.profileLink}
-                          className="text-amber-600 underline"
-                          target="_blank"
-                          rel="noreferrer"
-                        >
+                        <a href={influencer.profileLink} className="text-amber-600 underline" target="_blank" rel="noreferrer">
                           Profile Link
                         </a>
                       </>
                     )}
                   </p>
-                  {influencer?.socialMedia && (
-                    <p className="text-muted-foreground truncate">
-                      Handle: <span className="font-medium">{influencer.socialMedia}</span>
-                    </p>
-                  )}
                 </div>
               </div>
 
@@ -1219,15 +1111,12 @@ export default function InfluencerProfilePage() {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
               {/* Name */}
               <FieldCard
-                icon={<User className="h-5 w-5 text-indigo-600" />}
+                icon={<User className="h-5 w-5 text-gray-800" />}
                 label="Full Name"
                 editing={isEditing}
               >
                 {isEditing ? (
-                  <Input
-                    value={form?.name || ""}
-                    onChange={(e) => onField("name", e.target.value as any)}
-                  />
+                  <Input value={form?.name || ""} onChange={(e) => onField("name", e.target.value as any)} />
                 ) : (
                   <ReadText text={influencer?.name || ""} />
                 )}
@@ -1235,48 +1124,28 @@ export default function InfluencerProfilePage() {
 
               {/* Social Handle */}
               <FieldCard
-                icon={<Hash className="h-5 w-5 text-indigo-600" />}
+                icon={<Hash className="h-5 w-5 text-gray-800" />}
                 label="Social Handle"
                 editing={isEditing}
               >
                 {isEditing ? (
-                  <Input
-                    value={form?.socialMedia || ""}
-                    onChange={(e) => onField("socialMedia", e.target.value as any)}
-                  />
+                  <Input value={form?.socialMedia || ""} onChange={(e) => onField("socialMedia", e.target.value as any)} />
                 ) : (
                   <ReadText text={influencer?.socialMedia || ""} />
-                )}
-              </FieldCard>
-
-              {/* Profile Link */}
-              <FieldCard
-                icon={<LinkIcon className="h-5 w-5 text-indigo-600" />}
-                label="Profile Link"
-                editing={isEditing}
-              >
-                {isEditing ? (
-                  <Input
-                    value={form?.profileLink || ""}
-                    onChange={(e) => onField("profileLink", e.target.value as any)}
-                  />
-                ) : (
-                  <ReadText text={influencer?.profileLink || ""} />
                 )}
               </FieldCard>
 
               {/* Email (dual OTP) */}
               {!isEditing ? (
                 <FieldCard
-                  icon={<Mail className="h-5 w-5 text-indigo-600" />}
+                  icon={<Mail className="h-5 w-5 text-gray-800" />}
                   label="Email Address"
                   editing={false}
                 >
                   <ReadText text={influencer?.email ?? ""} />
                 </FieldCard>
               ) : (
-                influencer &&
-                form && (
+                influencer && form && (
                   <EmailEditorDualOTP
                     influencerId={influencer.influencerId}
                     originalEmail={influencer.email}
@@ -1294,7 +1163,7 @@ export default function InfluencerProfilePage() {
 
               {/* Phone */}
               <FieldCard
-                icon={<PhoneIcon className="h-5 w-5 text-emerald-600" />}
+                icon={<PhoneIcon className="h-5 w-5 text-gray-800" />}
                 label="Phone Number"
                 editing={isEditing}
               >
@@ -1303,11 +1172,7 @@ export default function InfluencerProfilePage() {
                     <div className="sm:col-span-1">
                       <ShSelect
                         value={selectedCalling?.value || ""}
-                        onValueChange={(v) =>
-                          setSelectedCalling(
-                            codeOptions.find((o) => o.value === v) || null
-                          )
-                        }
+                        onValueChange={(v) => setSelectedCalling(codeOptions.find((o) => o.value === v) || null)}
                       >
                         <SelectTrigger className="w-full">
                           <SelectValue placeholder="Code" />
@@ -1322,40 +1187,24 @@ export default function InfluencerProfilePage() {
                       </ShSelect>
                     </div>
                     <div className="sm:col-span-1">
-                      <Input
-                        type="tel"
-                        inputMode="tel"
-                        value={form?.phone ?? ""}
-                        onChange={(e) => onField("phone", e.target.value as any)}
-                        placeholder="Phone number"
-                      />
+                      <Input type="tel" inputMode="tel" value={form?.phone ?? ""} onChange={(e) => onField("phone", e.target.value as any)} placeholder="Phone number" />
                     </div>
                   </div>
                 ) : (
-
-                  <ReadText
-                    text={formatPhoneDisplay(
-                      form?.callingCode || influencer?.callingCode,
-                      influencer?.phone
-                    )}
-                  />
+                  <ReadText text={formatPhoneDisplay(form?.callingCode || influencer?.callingCode, influencer?.phone)} />
                 )}
               </FieldCard>
 
               {/* Country */}
               <FieldCard
-                icon={<Globe className="h-5 w-5 text-purple-600" />}
+                icon={<Globe className="h-5 w-5 text-gray-800" />}
                 label="Country"
                 editing={isEditing}
               >
                 {isEditing ? (
                   <ShSelect
                     value={selectedCountry?.value || ""}
-                    onValueChange={(v) =>
-                      setSelectedCountry(
-                        countryOptions.find((o) => o.value === v) || null
-                      )
-                    }
+                    onValueChange={(v) => setSelectedCountry(countryOptions.find((o) => o.value === v) || null)}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Select Country" />
@@ -1369,70 +1218,62 @@ export default function InfluencerProfilePage() {
                     </SelectContent>
                   </ShSelect>
                 ) : (
-                  <ReadText text={influencer?.country || influencer?.county || ""} />
+                  <ReadText text={influencer?.country || ""} />
                 )}
               </FieldCard>
 
               {/* Gender */}
               <FieldCard
-                icon={<User className="h-5 w-5 text-indigo-600" />}
-                label={
-                  <>
-                    Gender {form?.otpVerified && <span className="text-destructive">*</span>}
-                  </>
-                }
+                icon={<User className="h-5 w-5 text-gray-800" />}
+                label="Gender"
                 editing={isEditing}
               >
                 {isEditing ? (
                   <ShSelect
-                    value={form?.gender !== undefined ? String(form.gender) : ""}
-                    onValueChange={(v) => {
-                      if (v === "") onField("gender", undefined as any);
-                      else onField("gender", Number(v) as any);
-                    }}
+                    value={form?.gender ?? ""}
+                    onValueChange={(v) => onField("gender", v as GenderStr)}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Select gender" />
                     </SelectTrigger>
                     <SelectContent className="bg-white">
-                      <SelectItem value="0">Male</SelectItem>
-                      <SelectItem value="1">Female</SelectItem>
-                      <SelectItem value="2">Other</SelectItem>
+                      <SelectItem value="Male">Male</SelectItem>
+                      <SelectItem value="Female">Female</SelectItem>
+                      <SelectItem value="Non-binary">Non-binary</SelectItem>
+                      <SelectItem value="Prefer not to say">Prefer not to say</SelectItem>
                     </SelectContent>
                   </ShSelect>
                 ) : (
-                  <ReadText text={genderFromCode(influencer?.gender as any)} />
+                  <ReadText text={influencer?.gender || "—"} />
                 )}
               </FieldCard>
             </div>
           </CardContent>
         </Card>
 
-        {/* Platform & Audience */}
+        {/* Platform & Categories */}
         <Card className="bg-white">
           <CardHeader>
-            <CardTitle className="text-lg">Platform & Audience</CardTitle>
+            <CardTitle className="text-lg">Platform & Categories</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
               {/* Platform */}
               <FieldCard
-                icon={<Users className="h-5 w-5 text-indigo-600" />}
-                label="Platform"
+                icon={<Users className="h-5 w-5 text-gray-800" />}
+                label="Primary Platform"
                 editing={isEditing}
               >
                 {isEditing ? (
                   <ShSelect
-                    value={selectedPlatform?.value || ""}
-                    onValueChange={(v) =>
-                      setSelectedPlatform(platforms.find((o) => o.value === v) || null)
-                    }
+                    value={selectedPlatform || ""}
+                    onValueChange={(v) => setSelectedPlatform((v || null) as PrimaryPlatform)}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Select Platform" />
                     </SelectTrigger>
                     <SelectContent className="bg-white max-h-72 overflow-auto">
-                      {platforms.map((o) => (
+                      {PLATFORM_OPTIONS.map((o) => (
                         <SelectItem key={o.value} value={o.value}>
                           {o.label}
                         </SelectItem>
@@ -1440,193 +1281,53 @@ export default function InfluencerProfilePage() {
                     </SelectContent>
                   </ShSelect>
                 ) : (
-                  <ReadText text={influencer?.platformName || "—"} />
+                  <ReadText text={humanizePlatform(influencer?.primaryPlatform ?? null)} />
                 )}
               </FieldCard>
 
-              {/* Manual Platform */}
-              {isEditing && showManualPlatform && (
-                <FieldCard
-                  icon={<Pencil className="h-5 w-5 text-indigo-600" />}
-                  label="If Other – Enter Platform Name"
-                  editing={true}
-                >
-                  <Input
-                    value={form?.manualPlatformName || ""}
-                    onChange={(e) => onField("manualPlatformName", e.target.value as any)}
-                  />
-                </FieldCard>
-              )}
-
-              {/* Audience Age Range */}
+              {/* Category */}
               <FieldCard
-                icon={<Calendar className="h-5 w-5 text-indigo-600" />}
-                label="Audience Age Range"
+                icon={<Pencil className="h-5 w-5 text-gray-800" />}
+                label="Category"
                 editing={isEditing}
               >
                 {isEditing ? (
                   <ShSelect
-                    value={selectedAge?.value || ""}
-                    onValueChange={(v) =>
-                      setSelectedAge(ages.find((o) => o.value === v) || null)
-                    }
+                    value={selectedCategory?.value?.toString() || ""}
+                    onValueChange={(v) => setSelectedCategory(categories.find((c) => String(c.value) === v) || null)}
                   >
                     <SelectTrigger>
-                      <SelectValue placeholder="e.g., 18 – 24" />
+                      <SelectValue placeholder="Select Category" />
                     </SelectTrigger>
                     <SelectContent className="bg-white max-h-72 overflow-auto">
-                      {ages.map((o) => (
-                        <SelectItem key={o.value} value={o.value}>
+                      {categories.map((o) => (
+                        <SelectItem key={o.value} value={String(o.value)}>
                           {o.label}
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </ShSelect>
                 ) : (
-                  <ReadText text={influencer?.audienceAgeRange || "—"} />
+                  <ReadText text={influencer?.onboarding?.categoryName || "—"} />
                 )}
               </FieldCard>
 
-              {/* Audience Range (Count) */}
-              <FieldCard
-                icon={<Calendar className="h-5 w-5 text-indigo-600" />}
-                label="Audience Range (Count)"
-                editing={isEditing}
-              >
-                {isEditing ? (
-                  <ShSelect
-                    value={selectedRange?.value || ""}
-                    onValueChange={(v) =>
-                      setSelectedRange(ranges.find((o) => o.value === v) || null)
-                    }
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="e.g., 10k – 18k" />
-                    </SelectTrigger>
-                    <SelectContent className="bg-white max-h-72 overflow-auto">
-                      {ranges.map((o) => (
-                        <SelectItem key={o.value} value={o.value}>
-                          {o.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </ShSelect>
-                ) : (
-                  <ReadText text={influencer?.audienceRange || "—"} />
-                )}
-              </FieldCard>
-
-              {/* Audience Gender Split */}
-              <div className="lg:col-span-2">
-                <Card className="border">
-                  <CardContent className="pt-6">
-                    <Label>Audience Gender Split</Label>
-                    {isEditing ? (
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
-                        <div>
-                          <Label className="text-xs">Male %</Label>
-                          <Input
-                            type="number"
-                            min={0}
-                            max={100}
-                            value={form?.audienceBifurcation?.malePercentage ?? 0}
-                            onChange={(e) =>
-                              onField(
-                                "audienceBifurcation",
-                                {
-                                  ...form?.audienceBifurcation,
-                                  malePercentage: Math.max(
-                                    0,
-                                    Math.min(100, Number(e.target.value))
-                                  ),
-                                } as any
-                              )
-                            }
-                          />
-                        </div>
-                        <div>
-                          <Label className="text-xs">Female %</Label>
-                          <Input
-                            type="number"
-                            min={0}
-                            max={100}
-                            value={form?.audienceBifurcation?.femalePercentage ?? 0}
-                            onChange={(e) =>
-                              onField(
-                                "audienceBifurcation",
-                                {
-                                  ...form?.audienceBifurcation,
-                                  femalePercentage: Math.max(
-                                    0,
-                                    Math.min(100, Number(e.target.value))
-                                  ),
-                                } as any
-                              )
-                            }
-                          />
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="mt-3">
-                        <div className="w-full h-3 bg-muted rounded-full overflow-hidden">
-                          <div
-                            className="h-3 inline-block bg-blue-400"
-                            style={{
-                              width: `${pct(
-                                influencer?.audienceBifurcation?.malePercentage
-                              )}%`,
-                            }}
-                            title={`Male ${pct(
-                              influencer?.audienceBifurcation?.malePercentage
-                            )}%`}
-                          />
-                          <div
-                            className="h-3 inline-block bg-pink-300"
-                            style={{
-                              width: `${pct(
-                                influencer?.audienceBifurcation?.femalePercentage
-                              )}%`,
-                            }}
-                            title={`Female ${pct(
-                              influencer?.audienceBifurcation?.femalePercentage
-                            )}%`}
-                          />
-                        </div>
-                        <div className="flex justify-between text-xs text-muted-foreground mt-1">
-                          <span>
-                            Male: {pct(influencer?.audienceBifurcation?.malePercentage)}%
-                          </span>
-                          <span>
-                            Female: {pct(influencer?.audienceBifurcation?.femalePercentage)}%
-                          </span>
-                        </div>
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-              </div>
-
-              {/* Categories (multi) */}
+              {/* Subcategories (multi) */}
               <div className="lg:col-span-2">
                 <Card className="border">
                   <CardContent className="pt-6 space-y-2 bg-white">
-                    <Label>Categories (select 1–3)</Label>
+                    <Label>Subcategories (select one or more)</Label>
                     {isEditing ? (
                       <>
                         <MultiSelect
-                          values={selectedCategories.map(toSO)}
-                          onChange={(opts) =>
-                            setSelectedCategories(
-                              interests.filter((i) => opts.some((o) => o.value === i.value))
-                            )
-                          }
-                          options={interests.map(toSO)}
-                          placeholder="Choose up to 3 categories"
-                          max={3}
+                          values={selectedSubcats.map(toSO)}
+                          onChange={(opts) => setSelectedSubcats(opts as SubcategoryOption[])}
+                          options={subcategoryOptions.map(toSO)}
+                          placeholder={selectedCategory ? "Choose subcategories" : "Pick a category first"}
                         />
-                        {!!selectedCategories.length && (
+                        {!!selectedSubcats.length && (
                           <div className="flex flex-wrap gap-2 pt-1">
-                            {selectedCategories.map((c) => (
+                            {selectedSubcats.map((c) => (
                               <Badge key={c.value} variant="secondary">
                                 {c.label}
                               </Badge>
@@ -1634,11 +1335,11 @@ export default function InfluencerProfilePage() {
                           </div>
                         )}
                       </>
-                    ) : influencer?.categoryName?.length ? (
+                    ) : influencer?.onboarding?.subcategories?.length ? (
                       <div className="flex flex-wrap gap-2">
-                        {influencer.categoryName.map((c) => (
-                          <Badge key={c} variant="secondary" className="bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-800">
-                            {c}
+                        {influencer.onboarding.subcategories.map((s) => (
+                          <Badge key={s.subcategoryId} variant="secondary" className="bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-800">
+                            {s.subcategoryName}
                           </Badge>
                         ))}
                       </div>
@@ -1652,33 +1353,13 @@ export default function InfluencerProfilePage() {
           </CardContent>
         </Card>
 
-        {/* Bio */}
-        <Card className="bg-white">
-          <CardHeader>
-            <CardTitle className="text-lg">Bio</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {isEditing ? (
-              <Textarea
-                rows={4}
-                value={form?.bio || ""}
-                onChange={(e) => onField("bio", e.target.value as any)}
-              />
-            ) : (
-              <p className="text-foreground whitespace-pre-wrap break-words">
-                {influencer?.bio || "—"}
-              </p>
-            )}
-          </CardContent>
-        </Card>
-
         {/* Subscription (read-only display) */}
         {!isEditing && (
           <Card className="bg-white">
             <CardContent className="py-6">
               <div className="flex flex-col sm:flex-row gap-4">
-                <div className="w-12 h-12 rounded-xl bg-purple-100 flex items-center justify-center">
-                  <CreditCard className="h-6 w-6 text-purple-600" />
+                <div className="w-12 h-12 rounded-xl bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-800 flex items-center justify-center">
+                  <CreditCard className="h-6 w-6 text-gray-800" />
                 </div>
 
                 <div className="flex-1 min-w-0">
@@ -1687,7 +1368,7 @@ export default function InfluencerProfilePage() {
                       <h3 className="text-lg font-semibold mb-1">Subscription</h3>
                       <p className="text-2xl font-bold">
                         {influencer?.subscription?.planName
-                          ? influencer.subscription.planName.replace(/^./u, c => c.toLocaleUpperCase())
+                          ? influencer.subscription.planName.replace(/^./u, (c) => c.toLocaleUpperCase())
                           : "No Plan"}
                       </p>
                       <div className="space-y-1 text-sm text-muted-foreground mt-2">
@@ -1703,9 +1384,7 @@ export default function InfluencerProfilePage() {
                             <span>
                               Expires: {formatDate(influencer.subscription.expiresAt)}
                               {influencer?.subscriptionExpired && (
-                                <Badge variant="destructive" className="ml-2">
-                                  Expired
-                                </Badge>
+                                <Badge variant="destructive" className="ml-2">Expired</Badge>
                               )}
                             </span>
                           </div>
@@ -1715,7 +1394,7 @@ export default function InfluencerProfilePage() {
 
                     <div className="w-full sm:w-auto">
                       <Button className="w-full gap-2 bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-800" onClick={() => router.push('/influencer/subscriptions')}>
-                        <CreditCard className="h-5 w-5" />
+                        <CreditCard className="h-5 w-5 text-gray-800" />
                         Upgrade Subscription
                       </Button>
                     </div>
@@ -1731,13 +1410,12 @@ export default function InfluencerProfilePage() {
                         const limit = Math.max(0, rawLimit);
                         const used = Math.max(0, Number.isFinite(f.used) ? f.used : 0);
 
-                        // Unlimited rule: treat 1 OR 0 as unlimited (per your requirement)
+                        // Unlimited rule: treat 1 OR 0 as unlimited (per product rule)
                         const unlimited = limit <= 1;
 
                         const label = isManager ? "Dedicated Manager Support" : titleizeFeatureKey(f.key);
 
                         if (isManager) {
-                          // Special “availability” row (no bar)
                           const status = unlimited ? "Unlimited" : limit >= 1 ? "Available" : "Not Included";
                           const ok = unlimited || limit >= 1;
 
@@ -1747,54 +1425,42 @@ export default function InfluencerProfilePage() {
                                 {ok ? <Check className="w-4 h-4 text-emerald-600" /> : <X className="w-4 h-4 text-gray-400" />}
                                 <span className="text-gray-800">{label}</span>
                               </div>
-                              <span
-                                className={`text-xs px-2 py-1 rounded-md border ${unlimited
-                                  ? "bg-blue-100 text-blue-700 border-blue-200"
-                                  : ok
-                                    ? "bg-emerald-100 text-emerald-800 border-emerald-200"
-                                    : "bg-gray-100 text-gray-700 border-gray-200"
-                                  }`}
-                              >
+                              <span className={`text-xs px-2 py-1 rounded-md border ${unlimited
+                                ? "bg-blue-100 text-blue-700 border-blue-200"
+                                : ok
+                                  ? "bg-emerald-100 text-emerald-800 border-emerald-200"
+                                  : "bg-gray-100 text-gray-700 border-gray-200"
+                                }`}>
                                 {status}
                               </span>
                             </div>
                           );
                         }
 
-                        // Quota-like features (show progress bar)
                         const pct = unlimited ? 100 : limit > 0 ? Math.min(100, Math.round((used / limit) * 100)) : 0;
+                const barColorClass = unlimited
+  ? "[&>div]:bg-gradient-to-r [&>div]:from-[#FFBF00] [&>div]:to-[#FFDB58]"
+  : used >= limit
+    ? "[&>div]:bg-gradient-to-r [&>div]:from-red-500 [&>div]:to-red-400"
+    : pct >= 80
+      ? "[&>div]:bg-gradient-to-r [&>div]:from-orange-500 [&>div]:to-orange-300"
+      : "[&>div]:bg-gradient-to-r [&>div]:from-[#FFBF00] [&>div]:to-[#FFDB58]";
 
-                        // Color the inner indicator via `[&>div]` which targets Progress's indicator element
-                        const barColorClass = unlimited
-                          ? "[&>div]:bg-blue-500"
-                          : used >= limit
-                            ? "[&>div]:bg-red-500"
-                            : pct >= 80
-                              ? "[&>div]:bg-orange-500"
-                              : "[&>div]:bg-emerald-500";
 
                         return (
                           <div key={f.key} className="group">
                             <div className="flex items-center justify-between mb-1 text-sm">
                               <span className="text-gray-800">{label}</span>
-                              <span className="text-gray-500 tabular-nums">
-                                {used} / {unlimited ? "∞" : limit}
-                              </span>
+                              <span className="text-gray-500 tabular-nums">{used} / {unlimited ? "∞" : limit}</span>
                             </div>
 
-                            <Progress
-                              value={pct}
-                              className={`h-2 rounded-full bg-gray-100 ${barColorClass}`}
-                              aria-label={`${label} usage: ${used} of ${unlimited ? "unlimited" : limit}`}
-                            />
+                            <Progress value={pct} className={`h-2 rounded-full bg-gray-100 ${barColorClass}`} aria-label={`${label} usage: ${used} of ${unlimited ? "unlimited" : limit}`} />
 
                             <div className="mt-1 flex items-center justify-between text-xs text-gray-500">
                               <span className="tabular-nums">{unlimited ? "∞" : `${pct}%`}</span>
                               {unlimited ? (
                                 <span className="tabular-nums flex items-center gap-1">
-                                  <span className="px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200">
-                                    Unlimited
-                                  </span>
+                                  <span className="px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200">Unlimited</span>
                                 </span>
                               ) : (
                                 <span className="tabular-nums">{Math.max(0, limit - used)} left</span>
@@ -1822,11 +1488,7 @@ export default function InfluencerProfilePage() {
               onClick={saveProfile}
               disabled={saveDisabled}
               className="gap-2 bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-800"
-              title={
-                emailFlow !== "idle" && emailFlow !== "verified"
-                  ? "Verify the new email to enable saving"
-                  : undefined
-              }
+              title={emailFlow !== "idle" && emailFlow !== "verified" ? "Verify the new email to enable saving" : undefined}
             >
               {saving ? <Loader2 className="h-5 w-5 animate-spin" /> : <Check className="h-5 w-5" />}
               {saving ? "Saving…" : "Save Changes"}
@@ -1883,7 +1545,8 @@ function FieldCard({
     <Card className="shadow-none">
       <CardContent className="pt-6 bg-white">
         <div className="flex items-start gap-4">
-          <div className="flex-shrink-0 w-10 h-10 rounded-lg bg-indigo-50 flex items-center justify-center">
+          {/* Gradient chip wrapper for the icon */}
+          <div className="flex-shrink-0 w-10 h-10 rounded-lg bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-800 flex items-center justify-center">
             {icon}
           </div>
           <div className="flex-1 min-w-0">

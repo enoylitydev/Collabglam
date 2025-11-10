@@ -28,13 +28,13 @@ export interface InfluencerFilters {
 }
 
 export interface AudienceFilters {
-  language?: { id: string; weight: number };           // weighted
-  gender?: { id: GenderId; weight: number };           // weighted
-  location?: string;                                   // free text city/region
-  country?: string;                                    // ISO code or name
-  ageRange?: { min: number; max: number };
-  credibility?: number;                                // 0..1
+  language?: { id: string; weight: number };
+  gender?: { id: GenderId; weight: number };
+  location?: number | number[];                          // ✅ correct
+  ageRange?: { min?: number; max?: number };             // allow partial input
+  credibility?: number;                                  // 0..1
 }
+
 
 export interface FilterState {
   influencer: InfluencerFilters;

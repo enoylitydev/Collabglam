@@ -1,24 +1,30 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
 import {
   HiOutlinePhotograph,
   HiOutlineCalendar,
   HiOutlineCurrencyDollar,
   HiOutlineDocument,
+  HiChevronLeft,
+  HiChevronRight,
+  HiDownload,
+  HiOutlineEye,
 } from "react-icons/hi";
 import { get } from "@/lib/api";
+import { resolveFileList } from "@/lib/files";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardHeader,
-  CardContent,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardHeader, CardContent, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
-import { useRouter } from "next/navigation";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
 
 interface CampaignData {
   _id: string;
@@ -41,13 +47,23 @@ interface CampaignData {
   createdAt: string;
 }
 
+const isPdf = (href: string) => /\.pdf(?:$|[?#])/i.test(href);
+
 export default function ViewCampaignPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const id = searchParams.get("id");
+
   const [campaign, setCampaign] = useState<CampaignData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // ===== Image preview modal =====
+  const [isPreviewOpen, setPreviewOpen] = useState(false);
+  const [previewIndex, setPreviewIndex] = useState(0);
+
+  // ===== Inline PDF preview =====
+  const [pdfPreview, setPdfPreview] = useState<{ name: string; url: string } | null>(null);
 
   useEffect(() => {
     if (!id) {
@@ -68,6 +84,117 @@ export default function ViewCampaignPage() {
     })();
   }, [id]);
 
+  const imageUrls = useMemo(
+    () => resolveFileList(campaign?.images ?? []).filter(Boolean),
+    [campaign?.images]
+  );
+  const creativeBriefUrls = useMemo(
+    () => resolveFileList(campaign?.creativeBrief ?? []).filter(Boolean),
+    [campaign?.creativeBrief]
+  );
+
+  // Clamp preview index when images change
+  useEffect(() => {
+    if (previewIndex >= imageUrls.length) setPreviewIndex(0);
+  }, [imageUrls.length, previewIndex]);
+
+  const openPreview = useCallback((idx: number) => {
+    setPreviewIndex(idx);
+    setPreviewOpen(true);
+  }, []);
+  const closePreview = useCallback(() => setPreviewOpen(false), []);
+
+  const prevImage = useCallback(() => {
+    if (imageUrls.length < 2) return;
+    setPreviewIndex((i) => (i - 1 + imageUrls.length) % imageUrls.length);
+  }, [imageUrls.length]);
+
+  const nextImage = useCallback(() => {
+    if (imageUrls.length < 2) return;
+    setPreviewIndex((i) => (i + 1) % imageUrls.length);
+  }, [imageUrls.length]);
+
+  // Keyboard navigation in modal
+  useEffect(() => {
+    if (!isPreviewOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") closePreview();
+      if (e.key === "ArrowLeft") prevImage();
+      if (e.key === "ArrowRight") nextImage();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [isPreviewOpen, closePreview, prevImage, nextImage]);
+
+  // Touch swipe in modal
+  useEffect(() => {
+    if (!isPreviewOpen) return;
+    let startX = 0;
+    const onTouchStart = (e: TouchEvent) => (startX = e.touches[0].clientX);
+    const onTouchEnd = (e: TouchEvent) => {
+      const dx = e.changedTouches[0].clientX - startX;
+      if (Math.abs(dx) > 40) (dx > 0 ? prevImage() : nextImage());
+    };
+    document.addEventListener("touchstart", onTouchStart, { passive: true });
+    document.addEventListener("touchend", onTouchEnd);
+    return () => {
+      document.removeEventListener("touchstart", onTouchStart);
+      document.removeEventListener("touchend", onTouchEnd);
+    };
+  }, [isPreviewOpen, prevImage, nextImage]);
+
+  // Download any file
+  const downloadFile = useCallback(async (src: string, filenameHint = "download") => {
+    try {
+      const res = await fetch(src, { credentials: "include" });
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filenameHint || src.split("/").pop() || "download";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error("Download failed", err);
+      window.open(src, "_blank", "noopener,noreferrer");
+    }
+  }, []);
+
+  // Inline PDF open/close
+  const openPdfInline = useCallback(async (href: string) => {
+    const name = decodeURIComponent(href.split("/").pop() || "document.pdf");
+    try {
+      const res = await fetch(href, { credentials: "include" });
+      const blob = await res.blob();
+      const typed =
+        blob.type === "application/pdf" ? blob : new Blob([blob], { type: "application/pdf" });
+      const url = URL.createObjectURL(typed);
+      setPdfPreview((prev) => {
+        if (prev?.url) URL.revokeObjectURL(prev.url);
+        return { name, url };
+      });
+    } catch (e) {
+      console.error("Failed to preview PDF inline", e);
+      window.open(href, "_blank", "noopener,noreferrer");
+    }
+  }, []);
+
+  const closePdfInline = useCallback(() => {
+    setPdfPreview((prev) => {
+      if (prev?.url) URL.revokeObjectURL(prev.url);
+      return null;
+    });
+  }, []);
+
+  // Cleanup PDF blob on unmount
+  useEffect(() => {
+    return () => {
+      if (pdfPreview?.url) URL.revokeObjectURL(pdfPreview.url);
+    };
+  }, [pdfPreview]);
+
   if (loading) {
     return (
       <div className="flex h-screen items-center justify-center">
@@ -85,33 +212,32 @@ export default function ViewCampaignPage() {
   }
 
   const c = campaign;
-  const interests = c.interestId.map(i => i.name).join(", ");
+  const interests = c.interestId.map((i) => i.name).join(", ");
+  const currentImage = imageUrls[previewIndex] || "";
 
   return (
     <div className="min-h-full p-8 space-y-8">
-<header className="flex items-center justify-between p-4 rounded-md">
-      <h1 className="text-3xl font-bold text-gray-800">
-        Campaign Details
-      </h1>
+      <header className="flex items-center justify-between p-4 rounded-md">
+        <h1 className="text-3xl font-bold text-gray-800">Campaign Details</h1>
 
-      <div className="flex items-center space-x-2">
-        <Button
-          size="sm"
-          variant="outline"
-          className="bg-white text-gray-800 hover:bg-gray-100"
-          onClick={() => router.back()}
-        >
-          Back
-        </Button>
-      </div>
-    </header>
-
+        <div className="flex items-center space-x-2">
+          <Button
+            size="sm"
+            variant="outline"
+            className="bg-white text-gray-800 hover:bg-gray-100"
+            onClick={() => router.back()}
+          >
+            Back
+          </Button>
+        </div>
+      </header>
 
       {/* Product Info */}
       <Card className="bg-white">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-xl font-medium">
-            <HiOutlinePhotograph className="h-6 w-6 text-orange-500" /> Detailed view of <span className="font-">{c.productOrServiceName}</span>
+            <HiOutlinePhotograph className="h-6 w-6 text-orange-500" />
+            Detailed view of <span className="font-">{c.productOrServiceName}</span>
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -124,14 +250,29 @@ export default function ViewCampaignPage() {
               <p className="text-sm font-medium text-gray-600">Description</p>
               <p className="mt-1 whitespace-pre-wrap text-gray-800">{c.description}</p>
             </div>
-            {c.images?.length > 0 && (
+
+            {/* Images with modal preview */}
+            {imageUrls.length > 0 && (
               <div className="md:col-span-3">
                 <p className="text-sm font-medium text-gray-600">Images</p>
                 <div className="mt-2 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-                  {c.images.map((url, i) => (
-                    <div key={i} className="relative h-36 rounded-lg overflow-hidden border">
-                      <img src={url} alt={`img-${i}`} className="h-full w-full object-cover" />
-                    </div>
+                  {imageUrls.map((url, i) => (
+                    <button
+                      type="button"
+                      key={i}
+                      className="relative h-36 rounded-lg overflow-hidden border focus:outline-none focus:ring-2 focus:ring-orange-400"
+                      onClick={() => openPreview(i)}
+                      title="Click to preview"
+                    >
+                      <img
+                        src={url}
+                        alt={`img-${i + 1}`}
+                        className="h-full w-full object-cover"
+                        onError={(e) => {
+                          (e.currentTarget as HTMLImageElement).style.display = "none";
+                        }}
+                      />
+                    </button>
                   ))}
                 </div>
               </div>
@@ -158,7 +299,11 @@ export default function ViewCampaignPage() {
             <div>
               <p className="text-sm font-medium text-gray-600">Gender</p>
               <p className="mt-1 text-gray-800">
-                {c.targetAudience.gender === 0 ? "Female" : c.targetAudience.gender === 1 ? "Male" : "All"}
+                {c.targetAudience.gender === 0
+                  ? "Female"
+                  : c.targetAudience.gender === 1
+                  ? "Male"
+                  : "All"}
               </p>
             </div>
             <div>
@@ -168,7 +313,7 @@ export default function ViewCampaignPage() {
             <div className="md:col-span-3">
               <p className="text-sm font-medium text-gray-600">Interests</p>
               <div className="mt-2 flex flex-wrap gap-2">
-                {c.interestId.map(i => (
+                {c.interestId.map((i) => (
                   <Badge key={i._id} variant="outline" className="bg-orange-50 text-orange-700">
                     {i.name}
                   </Badge>
@@ -203,7 +348,9 @@ export default function ViewCampaignPage() {
                 </TooltipTrigger>
                 <TooltipContent>Start Date</TooltipContent>
               </Tooltip>
-              <p className="text-gray-800">{new Date(c.timeline.startDate).toLocaleDateString()}</p>
+              <p className="text-gray-800">
+                {new Date(c.timeline.startDate).toLocaleDateString()}
+              </p>
             </div>
             <div className="flex items-center gap-3">
               <Tooltip>
@@ -212,13 +359,15 @@ export default function ViewCampaignPage() {
                 </TooltipTrigger>
                 <TooltipContent>End Date</TooltipContent>
               </Tooltip>
-              <p className="text-gray-800">{new Date(c.timeline.endDate).toLocaleDateString()}</p>
+              <p className="text-gray-800">
+                {new Date(c.timeline.endDate).toLocaleDateString()}
+              </p>
             </div>
           </div>
         </CardContent>
       </Card>
 
-      {/* Creative Brief & Notes */}
+      {/* Creative Brief & Notes (inline PDF preview + download) */}
       <Card className="bg-white">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-xl">
@@ -232,36 +381,194 @@ export default function ViewCampaignPage() {
               <p className="whitespace-pre-wrap text-gray-800">{c.creativeBriefText}</p>
             </div>
           )}
-          {c.creativeBrief.length > 0 && (
+
+          {creativeBriefUrls.length > 0 && (
             <div>
               <p className="text-sm font-medium text-gray-600">Files</p>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                {c.creativeBrief.map((url, i) => (
-                  <a
-                    key={i}
-                    href={url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center gap-2 rounded-lg border bg-orange-50 p-2 hover:bg-orange-100"
-                  >
-                    <HiOutlineDocument className="h-5 w-5 text-orange-600" />
-                    <span className="truncate text-sm font-medium text-orange-700">
-                      {url.split("/").pop()}
-                    </span>
-                  </a>
-                ))}
+              <div className="grid grid-cols-1 gap-2">
+                {creativeBriefUrls.map((href, i) => {
+                  const name = decodeURIComponent(href.split("/").pop() || "");
+                  const pdf = isPdf(href);
+                  return (
+                    <div
+                      key={`${href}-${i}`}
+                      className="flex items-center justify-between rounded-lg border bg-orange-50 p-2"
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <HiOutlineDocument className="h-5 w-5 text-orange-600" />
+                        <span className="truncate text-sm font-medium text-orange-700">
+                          {name || "document"}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {pdf && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="bg-white text-gray-800 hover:bg-gray-50"
+                            onClick={() => openPdfInline(href)}
+                            title="Preview inline"
+                          >
+                            <HiOutlineEye className="mr-1 h-4 w-4" />
+                            Preview
+                          </Button>
+                        )}
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="bg-white text-gray-800 hover:bg-gray-50"
+                          onClick={() => downloadFile(href, name || "document")}
+                          title="Download"
+                        >
+                          <HiDownload className="mr-1 h-4 w-4" />
+                          Download
+                        </Button>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}
-          <hr className="border-1" />
-          {c.additionalNotes && (
-            <div>
-              <p className="text-xl font-medium text-gray-600">Additional Notes</p>
-              <p className="whitespace-pre-wrap text-gray-800">{c.additionalNotes}</p>
+
+          {/* Inline PDF viewer */}
+          {pdfPreview && (
+            <div className="mt-4 rounded-lg border bg-white">
+              <div className="flex items-center justify-between px-3 py-2 border-b bg-gray-50">
+                <div className="text-sm font-medium text-gray-800 truncate">{pdfPreview.name}</div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => downloadFile(pdfPreview.url, pdfPreview.name)}
+                  >
+                    <HiDownload className="mr-1 h-4 w-4" />
+                    Download
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={closePdfInline}>
+                    Close Preview
+                  </Button>
+                </div>
+              </div>
+              <div className="h-[75vh] w-full overflow-hidden">
+                <iframe
+                  src={`${pdfPreview.url}#zoom=page-width`}
+                  title={pdfPreview.name}
+                  className="h-full w-full"
+                />
+              </div>
             </div>
+          )}
+
+          {c.additionalNotes && (
+            <>
+              <hr className="border-1" />
+              <div>
+                <p className="text-xl font-medium text-gray-600">Additional Notes</p>
+                <p className="whitespace-pre-wrap text-gray-800">{c.additionalNotes}</p>
+              </div>
+            </>
           )}
         </CardContent>
       </Card>
+
+      {/* ===== Image Preview Modal ===== */}
+      <Dialog open={isPreviewOpen} onOpenChange={(o) => (o ? setPreviewOpen(true) : closePreview())}>
+        <DialogContent
+          className="
+            sm:max-w-[1000px] max-w-[95vw]
+            bg-transparent p-0 border-0 shadow-none
+            data-[state=open]:animate-in data-[state=closed]:animate-out
+          "
+        >
+          <DialogHeader className="sr-only">
+            <DialogTitle>Image preview</DialogTitle>
+          </DialogHeader>
+
+          <div className="relative w-full">
+            <div className="flex items-center justify-center">
+              <img
+                src={currentImage}
+                alt={`Preview ${previewIndex + 1}`}
+                className="max-h-[80vh] w-auto rounded-lg shadow-xl select-none object-contain"
+                draggable={false}
+              />
+            </div>
+
+            {imageUrls.length > 1 && (
+              <>
+                <button
+                  onClick={prevImage}
+                  className="absolute left-2 top-1/2 -translate-y-1/2 inline-flex h-12 w-12 items-center justify-center rounded-full bg-white/90 text-gray-900 shadow hover:bg-white focus:outline-none focus:ring-2 focus:ring-orange-400"
+                  aria-label="Previous image"
+                >
+                  <HiChevronLeft className="h-6 w-6" />
+                </button>
+                <button
+                  onClick={nextImage}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 inline-flex h-12 w-12 items-center justify-center rounded-full bg-white/90 text-gray-900 shadow hover:bg-white focus:outline-none focus:ring-2 focus:ring-orange-400"
+                  aria-label="Next image"
+                >
+                  <HiChevronRight className="h-6 w-6" />
+                </button>
+              </>
+            )}
+
+            <div className="absolute left-2 top-2 rounded-md bg-white/90 px-2 py-1 text-xs font-medium text-gray-900 shadow">
+              {previewIndex + 1} / {imageUrls.length || 1}
+            </div>
+          </div>
+
+          {!!imageUrls.length && (
+            <div className="mt-4 flex gap-2 overflow-x-auto px-2 pb-1">
+              {imageUrls.map((src, idx) => (
+                <button
+                  key={src + idx}
+                  onClick={() => setPreviewIndex(idx)}
+                  className={`h-16 w-16 flex-shrink-0 overflow-hidden rounded-md border ${
+                    idx === previewIndex ? "ring-2 ring-orange-500 border-transparent" : "border-gray-200"
+                  }`}
+                  aria-label={`Open image ${idx + 1}`}
+                >
+                  <img src={src} alt={`thumb-${idx + 1}`} className="h-full w-full object-cover" />
+                </button>
+              ))}
+            </div>
+          )}
+
+          <DialogFooter className="mt-4 flex w-full items-center justify-between gap-2">
+            <div className="text-xs text-gray-300">
+              {c.productOrServiceName}
+              {imageUrls.length > 1 ? ` — image ${previewIndex + 1}` : ""}
+            </div>
+
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                className="bg-white/95 text-gray-800 hover:bg-white"
+                onClick={() =>
+                  downloadFile(
+                    currentImage,
+                    (currentImage && decodeURIComponent(currentImage.split("/").pop() || "")) || "image"
+                  )
+                }
+              >
+                <HiDownload className="mr-2 h-4 w-4" />
+                Download
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                className="bg-white/95 text-gray-800 hover:bg-white"
+                onClick={closePreview}
+              >
+                Close
+              </Button>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

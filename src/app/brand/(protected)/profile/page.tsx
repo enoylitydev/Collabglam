@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useState, useId } from "react";
 import Select from "react-select";
 import { get, post } from "@/lib/api";
+import { resolveFileUrl } from "@/lib/files";
 import {
   HiUser,
   HiPhone,
@@ -121,6 +122,7 @@ type BrandData = {
   };
   subscriptionExpired: boolean;
   walletBalance: number;
+  logoUrl?: string;
 };
 
 /* ===================== Utilities ===================== */
@@ -153,6 +155,7 @@ function normalizeBrand(data: any): BrandData {
     brandId: brand?.brandId ?? "",
     createdAt: brand?.createdAt ?? "",
     updatedAt: brand?.updatedAt ?? "",
+    logoUrl: brand?.logoUrl ?? "",
     subscription: {
       planName: s?.planName ?? brand?.planName ?? "",
       startedAt: s?.startedAt ?? brand?.startedAt ?? "",
@@ -427,7 +430,7 @@ const EmailEditorDualOTPRaw = ({
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <Label htmlFor={oldOtpId} className="text-xs text-gray-600">
+                  <Label htmlFor={oldOtpId} className="text-xs text-gray-600 mb-2">
                     Current Email OTP
                   </Label>
                   <Input
@@ -442,7 +445,7 @@ const EmailEditorDualOTPRaw = ({
                   />
                 </div>
                 <div>
-                  <Label htmlFor={newOtpId} className="text-xs text-gray-600">
+                  <Label htmlFor={newOtpId} className="text-xs text-gray-600 mb-2">
                     New Email OTP
                   </Label>
                   <Input
@@ -673,7 +676,7 @@ export default function BrandProfilePage() {
 
       try {
         const brandRes = await get<any>(`/brand?id=${brandId}`);
-        const normalized = normalizeBrand(brandRes); 
+        const normalized = normalizeBrand(brandRes);
 
         // Update main state
         setBrand(normalized);
@@ -700,50 +703,51 @@ export default function BrandProfilePage() {
     [maps.countryById, maps.callingById, maps.co, maps.ko]
   );
   const saveProfile = useCallback(async () => {
-  if (!form || !brand) return;
+    if (!form || !brand) return;
 
-  if (emailFlow !== "idle" && emailFlow !== "verified") {
-    await fire({
-      icon: "warning",
-      title: "Verify the new email first",
-      text: "Finish email verification to save.",
-    });
-    return;
-  }
+    if (emailFlow !== "idle" && emailFlow !== "verified") {
+      await fire({
+        icon: "warning",
+        title: "Verify the new email first",
+        text: "Finish email verification to save.",
+      });
+      return;
+    }
 
-  setSaving(true);
-  try {
-    const payload: any = {
-      brandId: form.brandId,
-      name: form.name,
-      phone: form.phone,
-      countryId: form.countryId || undefined,
-      callingId: form.callingId || undefined,
-    };
+    setSaving(true);
+    try {
+      const payload: any = {
+        brandId: form.brandId,
+        name: form.name,
+        phone: form.phone,
+        countryId: form.countryId || undefined,
+        callingId: form.callingId || undefined,
+        logoUrl: form.logoUrl || undefined,
+      };
 
-    // Save changes
-    await post<any>("/brand/update", payload);
+      // Save changes
+      await post<any>("/brand/update", payload);
 
-    // Now refetch the latest brand from the source of truth
-    await refetchBrand(form.brandId);
+      // Now refetch the latest brand from the source of truth
+      await refetchBrand(form.brandId);
 
-    setIsEditing(false);
-    setEmailFlow("idle");
-    await fire({ icon: "success", title: "Profile saved" });
+      setIsEditing(false);
+      setEmailFlow("idle");
+      await fire({ icon: "success", title: "Profile saved" });
 
-    // (Optional) If this page also has server components that should re-fetch:
-    // router.refresh();
-  } catch (e: any) {
-    console.error(e);
-    await fire({
-      icon: "error",
-      title: "Failed to save profile",
-      text: e?.message || "Please try again.",
-    });
-  } finally {
-    setSaving(false);
-  }
-}, [brand, emailFlow, form, refetchBrand]);
+      // (Optional) If this page also has server components that should re-fetch:
+      // router.refresh();
+    } catch (e: any) {
+      console.error(e);
+      await fire({
+        icon: "error",
+        title: "Failed to save profile",
+        text: e?.message || "Please try again.",
+      });
+    } finally {
+      setSaving(false);
+    }
+  }, [brand, emailFlow, form, refetchBrand]);
 
 
 
@@ -761,6 +765,8 @@ export default function BrandProfilePage() {
 
   const saveDisabled =
     saving || (emailFlow !== "idle" && emailFlow !== "verified");
+
+  const brandLogoUrl = resolveFileUrl(form?.logoUrl || brand?.logoUrl);
 
   return (
     <div className="min-h-screen py-8">
@@ -791,8 +797,17 @@ export default function BrandProfilePage() {
           <CardContent className="p-8">
             <div className="flex flex-col sm:flex-row items-center sm:items-start justify-center sm:justify-start gap-4 sm:gap-6 mb-8 text-center sm:text-left">
               {/* Icon */}
-              <div className="flex-shrink-0 w-16 h-16 sm:w-20 sm:h-20 bg-gradient-to-r from-[#FFA135] to-[#FF7236] rounded-2xl flex items-center justify-center shadow-lg mx-auto sm:mx-0">
-                <HiUser className="w-8 h-8 sm:w-10 sm:h-10 text-white" />
+              <div className="flex-shrink-0 w-16 h-16 sm:w-20 sm:h-20 bg-gradient-to-r from-[#FFA135] to-[#FF7236] rounded-2xl flex items-center justify-center shadow-lg mx-auto sm:mx-0 overflow-hidden">
+                {brandLogoUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={brandLogoUrl}
+                    alt={`${brand?.name || "Brand"} logo`}
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <HiUser className="w-8 h-8 sm:w-10 sm:h-10 text-white" />
+                )}
               </div>
 
               {/* Label + Field (stacked on mobile, centered) */}
@@ -835,7 +850,11 @@ export default function BrandProfilePage() {
                         setBrand((b) => (b ? { ...b, email: newEmail } : b));
                         setForm((f) => (f ? { ...f, email: newEmail } : f));
                         setEmailFlow("verified");
-                        if (token) localStorage.setItem("token", token);
+                        if (token) {
+                          // Maintain role-scoped token for brand
+                          localStorage.setItem("brand_token", token);
+                          localStorage.removeItem("token");
+                        }
                       }}
                       onStateChange={setEmailFlow}
                     />
@@ -877,8 +896,8 @@ export default function BrandProfilePage() {
             <Card className="bg-white border border-gray-200 shadow-sm">
               <CardHeader className="pb-4">
                 <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 bg-emerald-100 rounded-xl flex items-center justify-center">
-                    <HiCash className="w-6 h-6 text-emerald-600" />
+                  <div className="flex-shrink-0 w-10 h-10 bg-gradient-to-r from-[#FFA135] to-[#FF7236] rounded-lg flex items-center justify-center">
+                    <HiGlobe className="w-5 h-5 text-white" />
                   </div>
                   <div>
                     <CardTitle>Wallet</CardTitle>
@@ -899,8 +918,8 @@ export default function BrandProfilePage() {
               <CardHeader className="pb-4">
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                   <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 bg-purple-100 rounded-xl flex items-center justify-center">
-                      <HiCreditCard className="w-6 h-6 text-purple-600" />
+                    <div className="w-12 h-12 bg-gradient-to-r from-[#FFA135] to-[#FF7236] rounded-xl flex items-center justify-center">
+                      <HiCreditCard className="w-6 h-6 text-white" />
                     </div>
                     <div>
                       <CardTitle>Subscription</CardTitle>
@@ -1171,8 +1190,8 @@ const IconField = React.memo(function IconField({
   return (
     <div className="bg-white border border-gray-100 p-6 rounded-xl shadow-sm hover:shadow-md transition-shadow duration-200 min-w-0">
       <div className="flex items-start gap-4">
-        <div className="flex-shrink-0 w-10 h-10 bg-gradient-to-br from-blue-50 to-indigo-100 rounded-lg flex items-center justify-center">
-          <Icon className="text-indigo-600 w-5 h-5" />
+        <div className="flex-shrink-0 w-10 h-10 bg-gradient-to-r from-[#FFA135] to-[#FF7236] rounded-lg flex items-center justify-center">
+          <Icon className="text-white w-5 h-5" />
         </div>
         <div className="flex-1 min-w-0">
           <Label className="block text-sm text-gray-700 mb-2" htmlFor={id}>
@@ -1236,8 +1255,8 @@ const PhoneField = React.memo(function PhoneField({
   return (
     <div className="bg-white border border-gray-100 p-6 rounded-xl shadow-sm hover:shadow-md transition-shadow duration-200 min-w-0">
       <div className="flex items-start gap-4">
-        <div className="flex-shrink-0 w-10 h-10 bg-gradient-to-br from-green-50 to-emerald-100 rounded-lg flex items-center justify-center">
-          <HiPhone className="text-emerald-600 w-5 h-5" />
+        <div className="flex-shrink-0 w-10 h-10 bg-gradient-to-r from-[#FFA135] to-[#FF7236] rounded-lg flex items-center justify-center">
+          <HiPhone className="text-white w-5 h-5" />
         </div>
         <div className="flex-1 min-w-0">
           <Label className="block text-sm text-gray-700 mb-2" htmlFor={numberId}>
@@ -1296,8 +1315,8 @@ const CountryField = React.memo(function CountryField({
   return (
     <div className="bg-white border border-gray-100 p-6 rounded-xl shadow-sm hover:shadow-md transition-shadow duration-200 min-w-0">
       <div className="flex items-start gap-4">
-        <div className="flex-shrink-0 w-10 h-10 bg-gradient-to-br from-purple-50 to-purple-100 rounded-lg flex items-center justify-center">
-          <HiGlobe className="text-purple-600 w-5 h-5" />
+        <div className="flex-shrink-0 w-10 h-10 bg-gradient-to-r from-[#FFA135] to-[#FF7236] rounded-lg flex items-center justify-center">
+          <HiGlobe className="text-white w-5 h-5" />
         </div>
         <div className="flex-1 min-w-0">
           <Label className="block text-sm text-gray-700 mb-2">Country</Label>

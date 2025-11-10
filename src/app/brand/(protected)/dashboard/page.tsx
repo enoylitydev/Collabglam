@@ -11,7 +11,6 @@ import {
 import { format } from "date-fns";
 import { post } from "@/lib/api";
 import { ArrowRight, PlayCircle } from "lucide-react";
-import EnhancedSearchModal, { InfluencerResult } from "./SearchModal";
 
 interface DashboardData {
   brandName: string;
@@ -49,15 +48,6 @@ export default function BrandDashboardHome() {
     })();
   }, []);
 
-  const handleInfluencerSelect = (influencer: InfluencerResult) => {
-    // Navigate to influencer profile
-    router.push(`/brand/influencers/view?id=${influencer.id}&platform=${influencer.platform}`);
-  };
-
-  const handleBulkSelect = (influencers: InfluencerResult[]) => {
-    // Implement add-to-campaign / comparison flow
-    console.log("Bulk selected influencers:", influencers.length);
-  };
 
   const handleToggleFavorite = (id: string) => {
     setFavorites((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
@@ -85,28 +75,11 @@ export default function BrandDashboardHome() {
     <div className="flex h-screen overflow-hidden">
       <div className="flex-1 flex flex-col overflow-y-auto">
         <main className="flex-1 px-6 py-8">
-          {/* Search trigger */}
-          <div className="mb-6">
-            <button
-              type="button"
-              onClick={() => setIsSearchModalOpen(true)}
-              className="w-full max-w-md bg-white rounded-full border border-orange-300 border-2 px-6 py-4 flex items-center space-x-3 hover:border-orange-400 hover:shadow-md transition-all focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2"
-              aria-label="Open search modal"
-            >
-              <HiSearch className="h-5 w-5 text-gray-400" />
-              <span className="text-gray-500 text-left flex-1">
-                Search for influencers across platforms...
-              </span>
-              <div className="bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white p-2 rounded-full">
-                <HiSearch className="w-4 h-4" />
-              </div>
-            </button>
-          </div>
 
           {/* Zero campaigns CTA */}
           {totalActiveCampaigns === 0 && (
             <ZeroCampaignCTA
-              onClick={() => router.push("/brand/create-campaign")}
+              onClick={() => router.push("/brand/add-edit-campaign")}
               accentFrom={accentFrom}
               accentTo={accentTo}
             />
@@ -142,7 +115,7 @@ export default function BrandDashboardHome() {
               label="Hired Influencers"
               value={totalInfluencers.toLocaleString()}
               accentFrom={accentFrom}
-              onClick={() => router.push("/brand/browse-influencers")}
+              // onClick={() => router.push("/brand/browse-influencers")}
             />
 
             <StatCard
@@ -150,63 +123,9 @@ export default function BrandDashboardHome() {
               label="Budget Remaining"
               value={`$${budgetRemaining.toLocaleString()}`}
               accentFrom={accentFrom}
-              onClick={() => router.push("/brand/dashboard/settings")}
+              // onClick={() => router.push("/brand/dashboard/settings")}
             />
           </div>
-
-          {/* Recent Activity */}
-          {totalActiveCampaigns > 0 && (
-            <section className="mt-8">
-              <h3 className="text-lg font-semibold text-gray-800 mb-4">Recent Campaign</h3>
-              <div className="bg-white rounded-lg shadow divide-y divide-gray-200">
-                {[
-                  {
-                    title: 'Created a new campaign: "Back to School 2025"',
-                    date: "Mar 1, 2025",
-                    href: "/brand/prev-campaign",
-                  },
-                  {
-                    title: 'Influencer "TechWithTom" accepted your collaboration',
-                    date: "Feb 25, 2025",
-                    href: "/brand/browse-influencers",
-                  },
-                  {
-                    title: 'Campaign "Holiday Promo 2024" marked as Completed',
-                    date: "Nov 20, 2024",
-                    href: "/brand/prev-campaign",
-                  },
-                ].map((act, idx) => (
-                  <div key={idx} className="px-6 py-4 flex items-center justify-between">
-                    <div>
-                      <p className="font-medium text-gray-700">{act.title}</p>
-                      <p className="text-sm text-gray-500 mt-1">{act.date}</p>
-                    </div>
-                    <button
-                      onClick={() => router.push(act.href)}
-                      className="text-sm font-medium hover:underline"
-                      style={{
-                        background: `linear-gradient(to right, ${accentFrom}, ${accentTo})`,
-                        WebkitBackgroundClip: "text",
-                        color: "transparent",
-                      }}
-                    >
-                      View
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </section>
-          )}
-
-          {/* Search Modal */}
-          <EnhancedSearchModal
-            isOpen={isSearchModalOpen}
-            onClose={() => setIsSearchModalOpen(false)}
-            onSelectInfluencer={handleInfluencerSelect}
-            onBulkSelect={handleBulkSelect}
-            favorites={favorites}
-            onToggleFavorite={handleToggleFavorite}
-          />
         </main>
       </div>
     </div>

@@ -326,22 +326,8 @@ export default function MyCampaignsPage() {
       >
         <form ref={searchFormRef} onSubmit={handleSearchSubmit} className="relative">
           <div className="relative w-full max-w-3xl bg-white rounded-full">
-            <Input
-              ref={searchInputRef}
-              placeholder="Search for Brand..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-6 pr-20 h-16 text-lg placeholder:text-gray-400 rounded-full border border-yellow-300 focus:outline-none focus:ring-2 focus:ring-yellow-400"
-            />
-            <div className="absolute inset-y-0 right-6 flex items-center pointer-events-none">
-              <span className="bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-white p-3 rounded-full shadow">
-                {brandLoading ? (
-                  <div className="animate-spin h-4 w-4 border-2 border-white rounded-full border-t-transparent" />
-                ) : (
-                  <HiOutlineSearch className="w-6 h-6" />
-                )}
-              </span>
-            </div>
+            
+           
             {searchOpen && (
               <button
                 type="button"
@@ -530,7 +516,7 @@ export default function MyCampaignsPage() {
                     <td className="px-6 py-4">{formatDate(c.timeline.startDate)} - {formatDate(c.timeline.endDate)}</td>
                     <td className="px-6 py-4 flex space-x-2 justify-center">
                       <Link href={`/influencer/dashboard/view-campaign?id=${c.campaignsId}`} className="p-2 bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-800 rounded-md">
-                        Apply for Campaign
+                        View Campaign
                       </Link>
                     </td>
                   </tr>

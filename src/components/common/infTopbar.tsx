@@ -1,33 +1,49 @@
-// src/components/InfluencerTopbar.tsx
 "use client";
 
-import React, {
-  useState,
-  useEffect,
-  useRef,
-} from "react";
-import {
-  HiSearch,
-  HiUserCircle,
-  HiChevronDown,
-  HiMenu,
-  HiX,
-} from "react-icons/hi";
-import { get } from "@/lib/api";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { HiUserCircle, HiChevronDown, HiMenu, HiBell, HiRefresh, HiCheckCircle, HiExclamationCircle } from "react-icons/hi";
+import { get, post } from "@/lib/api";
 
 interface InfluencerTopbarProps {
   onSidebarOpen: () => void;
 }
 
-interface SearchResult {
-  id: string;
+type LiteInfluencerResp = {
+  influencerId: string;
+  name: string;
+  email: string;
+  planId: string | null;
+  planName: string | null;
+  expiresAt?: string | null;
+};
+
+type NotificationItem = {
+  id: string;                 // normalized from _id/notificationId
   title: string;
-  subtitle?: string;
-  url: string;
+  message?: string;
+  createdAt: string;
+  isRead?: boolean;
+  actionPath?: string;
+  type?: string;
+  entityId?: string;
+};
+
+function normalizeNotif(n: any): NotificationItem {
+  return {
+    id: n?.id || n?._id || n?.notificationId || `${Date.now()}`,
+    title: n?.title || "",
+    message: n?.message || "",
+    createdAt: n?.createdAt || new Date().toISOString(),
+    isRead: Boolean(n?.isRead),
+    actionPath: n?.actionPath || "",
+    type: n?.type || "",
+    entityId: n?.entityId ? String(n.entityId) : undefined,
+  };
 }
 
 export default function InfluencerTopbar({ onSidebarOpen }: InfluencerTopbarProps) {
-  // profile state
+  // ---------------- Profile ----------------
+  const [influencerId, setInfluencerId] = useState<string | null>(null);
   const [influencerName, setInfluencerName] = useState("");
   const [email, setEmail] = useState("");
   const [subscriptionName, setSubscriptionName] = useState("");
@@ -35,120 +51,362 @@ export default function InfluencerTopbar({ onSidebarOpen }: InfluencerTopbarProp
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // profile menu
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
+  // ---------------- Notifications ----------------
+  const [notifOpen, setNotifOpen] = useState(false);
+  const notifRef = useRef<HTMLDivElement>(null);
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const [notifLoading, setNotifLoading] = useState(false);
+  const [notifError, setNotifError] = useState<string | null>(null);
+  const [unreadCount, setUnreadCount] = useState(0);
 
-  // desktop vs mobile flag
-  const [isDesktop, setIsDesktop] = useState(false);
+  // get influencerId with short retry
   useEffect(() => {
-    const update = () => setIsDesktop(window.innerWidth >= 768);
-    update();
-    window.addEventListener("resize", update);
-    return () => window.removeEventListener("resize", update);
-  }, []);
-
-  // fetch influencer info
-  useEffect(() => {
-    const infId = typeof window !== "undefined" ? localStorage.getItem("influencerId") : null;
-    if (!infId) {
-      setError("No influencerId found");
-      setLoading(false);
-      return;
-    }
-    (async () => {
-      try {
-        const data = await get<{
-          name: string;
-          email: string;
-          subscription: { planName: string; expiresAt: string };
-        }>(`/influencer/getbyid?id=${infId}`);
-        setInfluencerName(data.name);
-        setEmail(data.email);
-        setSubscriptionName(data.subscription.planName);
-        setSubscriptionExpiresAt(data.subscription.expiresAt);
-      } catch (err: any) {
-        console.error(err);
-        setError("Failed to load profile");
-      } finally {
+    let retries = 0;
+    const maxRetries = 10;
+    const stepMs = 400;
+    const attempt = () => {
+      const id = typeof window !== "undefined" ? localStorage.getItem("influencerId") : null;
+      if (id) {
+        setInfluencerId(id);
+      } else if (retries < maxRetries) {
+        retries += 1;
+        setTimeout(attempt, stepMs);
+      } else {
+        setError("No influencerId found");
         setLoading(false);
       }
-    })();
+    };
+    attempt();
   }, []);
 
-  // close profile menu on outside click
+  // profile load
+  useEffect(() => {
+    if (!influencerId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        setLoading(true);
+        const resp = await get<any>(`/influencer/lite?id=${encodeURIComponent(influencerId)}`);
+        const data: LiteInfluencerResp = resp?.data ?? resp;
+        if (cancelled) return;
+        setInfluencerName(data?.name ?? "");
+        setEmail(data?.email ?? "");
+        setSubscriptionName(data?.planName ?? "");
+        setSubscriptionExpiresAt(data?.expiresAt ?? "");
+        setError(null);
+      } catch (err) {
+        if (!cancelled) {
+          console.error(err);
+          setError("Failed to load profile");
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [influencerId]);
+
+  // click-outside to close menus
   useEffect(() => {
     const handler = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setMenuOpen(false);
-      }
+      const target = e.target as Node;
+      if (menuRef.current && !menuRef.current.contains(target)) setMenuOpen(false);
+      if (notifRef.current && !notifRef.current.contains(target)) setNotifOpen(false);
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
+  // load notifications
+  async function reloadNotifications() {
+    if (!influencerId) return;
+    setNotifLoading(true);
+    setNotifError(null);
+    try {
+      const resp = await get<{ data?: any[]; unread?: number }>(
+        `/notifications/influencer?recipientType=influencer&influencerId=${encodeURIComponent(influencerId)}&limit=15`
+      );
+      const list = (resp?.data ?? []).map(normalizeNotif);
+      setNotifications(list);
+      setUnreadCount(
+        typeof resp?.unread === "number" ? resp.unread : list.filter((n) => !n.isRead).length
+      );
+    } catch (err) {
+      console.error("Failed to load notifications", err);
+      setNotifError("Could not load notifications. Please try again.");
+    } finally {
+      setNotifLoading(false);
+    }
+  }
 
-  const formattedExpiry = subscriptionExpiresAt
-    ? new Date(subscriptionExpiresAt).toLocaleDateString()
-    : "";
+  useEffect(() => {
+    if (!influencerId) return;
+    reloadNotifications();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [influencerId]);
+
+  // optional realtime
+  useEffect(() => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const sock: any = (typeof window !== "undefined" && (window as any).socket) || null;
+    if (!sock || !influencerId) return;
+    const onNew = (payload: any) => {
+      if (String(payload?.meta?.influencerId || payload?.influencerId) !== String(influencerId)) return;
+      setUnreadCount((c) => c + 1);
+      if (notifOpen && payload?.title) {
+        setNotifications((prev) => [
+          normalizeNotif({
+            ...payload,
+            createdAt: new Date().toISOString(),
+            isRead: false,
+          }),
+          ...prev,
+        ]);
+      }
+    };
+    sock.on?.("notification:new", onNew);
+    return () => sock.off?.("notification:new", onNew);
+  }, [notifOpen, influencerId]);
+
+  // mark one read (optimistic)
+  async function markOneReadLocal(id: string) {
+    if (!influencerId) return;
+    setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, isRead: true } : n)));
+    setUnreadCount((c) => Math.max(0, c - 1));
+    try {
+      await post(`/notifications/influencer/mark-read`, {
+        id,
+        influencerId,
+      });
+    } catch (e) {
+      console.error("Mark read failed", e);
+      // rollback
+      setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, isRead: false } : n)));
+      setUnreadCount((c) => c + 1);
+    }
+  }
+
+  // mark all read
+  async function markAllRead() {
+    if (!influencerId || notifications.length === 0) return;
+    const hadUnread = notifications.some((n) => !n.isRead);
+    setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
+    if (hadUnread) setUnreadCount(0);
+    try {
+      await post(`/notifications/influencer/mark-all-read`, { influencerId });
+    } catch (e) {
+      console.error("Mark all read failed", e);
+      await reloadNotifications();
+    }
+  }
+
+  function formatWhen(iso: string) {
+    try {
+      const d = new Date(iso);
+      if (Number.isNaN(d.getTime())) return "";
+      return d.toLocaleString();
+    } catch {
+      return "";
+    }
+  }
+
+  async function onNotifClick(n: NotificationItem) {
+    if (!n.isRead) await markOneReadLocal(n.id);
+    const path = n.actionPath || "/influencer/notifications";
+    window.location.href = path;
+  }
+
+  const formattedExpiry = useMemo(
+    () => (subscriptionExpiresAt ? new Date(subscriptionExpiresAt).toLocaleDateString() : ""),
+    [subscriptionExpiresAt]
+  );
+  const planLabel = useMemo(
+    () => (subscriptionName ? subscriptionName.charAt(0).toUpperCase() + subscriptionName.slice(1) : ""),
+    [subscriptionName]
+  );
 
   return (
-    <header className="w-full bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] shadow-sm relative z-30 ">
+    <header className="w-full bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] shadow-sm relative z-30">
       <div className="mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-end h-16">
-          {/* Left: Sidebar toggle + Search */}
+          {/* Left: Sidebar toggle */}
           <div className="flex items-center space-x-4">
             <button
               onClick={onSidebarOpen}
               className="md:hidden p-2 rounded-md hover:bg-gray-100 focus:outline-none"
+              aria-label="Open sidebar"
             >
-              <HiMenu size={24} className="text-gray-600" />
+              <HiMenu size={24} className="text-gray-800" />
             </button>
           </div>
 
-          {/* Right: Profile & Name */}
+          {/* Right: Notifications, Profile & Name */}
           <div className="flex items-center space-x-6">
+            {/* === Notifications bell === */}
+            <div className="relative" ref={notifRef}>
+              <button
+                onClick={() => setNotifOpen((o) => !o)}
+                className="relative p-2 rounded-md hover:bg-gray-100 focus:outline-none"
+                aria-haspopup="menu"
+                aria-expanded={notifOpen}
+                aria-label="Notifications"
+                title="Notifications"
+              >
+                <HiBell size={22} className="text-gray-900" />
+                {unreadCount > 0 && (
+                  <span className="absolute -top-0.5 -right-0.5 inline-flex items-center justify-center h-4 min-w-4 px-1 text-[10px] leading-none rounded-full bg-red-600 text-white">
+                    {unreadCount > 99 ? "99+" : unreadCount}
+                  </span>
+                )}
+              </button>
+
+              {notifOpen && (
+                <div className="absolute right-0 mt-2 w-96 max-w-[95vw] bg-white border border-gray-200 rounded-md shadow-lg z-[1000]">
+                  <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+                    <p className="text-lg font-semibold text-gray-800">Notifications</p>
+                    <div className="flex items-center gap-3">
+                      {notifError ? (
+                        <button
+                          onClick={reloadNotifications}
+                          className="inline-flex items-center text-sm text-red-600 hover:underline"
+                          title="Retry loading"
+                        >
+                          <HiRefresh className="mr-1" /> Retry
+                        </button>
+                      ) : (
+                        <button
+                          onClick={markAllRead}
+                          disabled={notifLoading || unreadCount === 0}
+                          className="text-sm text-blue-600 hover:underline disabled:opacity-50"
+                          title="Mark all as read"
+                        >
+                          Mark all read
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {notifError && (
+                    <div className="px-4 py-2 text-sm text-red-700 bg-red-50 border-b border-red-100 flex items-center gap-2">
+                      <HiExclamationCircle className="flex-shrink-0" />
+                      <span className="break-words">{notifError}</span>
+                    </div>
+                  )}
+
+                  <div className="max-h-96 overflow-auto">
+                    {notifLoading ? (
+                      <ul className="divide-y divide-gray-100">
+                        {Array.from({ length: 4 }).map((_, i) => (
+                          <li key={i} className="px-4 py-3 animate-pulse">
+                            <div className="h-3 w-2/3 bg-gray-200 rounded mb-2" />
+                            <div className="h-3 w-1/2 bg-gray-200 rounded mb-1" />
+                            <div className="h-2 w-1/3 bg-gray-200 rounded" />
+                          </li>
+                        ))}
+                      </ul>
+                    ) : notifications.length === 0 ? (
+                      <div className="p-6 text-sm text-gray-500 flex items-center gap-2">
+                        <HiCheckCircle className="text-green-500" />
+                        You’re all caught up.
+                      </div>
+                    ) : (
+                      <ul className="divide-y divide-gray-100">
+                        {notifications.map((n) => (
+                          <li
+                            key={n.id}
+                            className={`px-4 py-3 hover:bg-gray-50 cursor-pointer ${
+                              n.isRead ? "bg-white" : "bg-yellow-50"
+                            }`}
+                            onClick={() => onNotifClick(n)}
+                          >
+                            <div className="flex items-start gap-2">
+                              {!n.isRead && (
+                                <span
+                                  className="mt-1 inline-block h-2 w-2 rounded-full bg-red-500 flex-shrink-0"
+                                  aria-label="unread"
+                                />
+                              )}
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-medium text-gray-900 break-words">
+                                  {n.title}
+                                </p>
+                                {n.message && (
+                                  <p className="text-sm text-gray-700 mt-0.5 break-words whitespace-normal">
+                                    {n.message}
+                                  </p>
+                                )}
+                                <p className="text-xs text-gray-400 mt-1">
+                                  {formatWhen(n.createdAt)}
+                                </p>
+                              </div>
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+
+                  <div className="px-4 py-2 border-t border-gray-100">
+                    <a
+                      href="/influencer/notifications"
+                      className="text-sm text-blue-600 hover:underline"
+                    >
+                      View all
+                    </a>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* === Influencer name === */}
             {loading ? (
-              <span className="text-gray-500 text-sm">Loading…</span>
+              <span className="text-gray-700 text-sm">Loading…</span>
             ) : error ? (
-              <span className="text-red-500 text-sm">{error}</span>
+              <span className="text-red-600 text-sm break-words">{error}</span>
             ) : (
-              <span className="text-gray-800 font-medium text-lg">
-                {influencerName}
+              <span className="text-gray-900 font-medium text-lg break-words">
+                {influencerName || "—"}
               </span>
             )}
 
+            {/* === Profile menu === */}
             <div className="relative" ref={menuRef}>
               <button
                 onClick={() => setMenuOpen((o) => !o)}
                 className="flex items-center space-x-1 p-2 rounded-md hover:bg-gray-100 focus:outline-none"
+                aria-haspopup="menu"
+                aria-expanded={menuOpen}
               >
-                <HiUserCircle size={24} className="text-gray-600" />
-                <HiChevronDown size={16} className="text-gray-600" />
+                <HiUserCircle size={24} className="text-gray-900" />
+                <HiChevronDown size={16} className="text-gray-900" />
               </button>
 
               {menuOpen && !loading && !error && (
-                <div className="absolute right-0 mt-2 w-64 bg-white border border-gray-200 rounded-md shadow-lg z-10">
+                <div
+                  role="menu"
+                  className="absolute right-0 mt-2 w-64 bg-white border border-gray-200 rounded-md shadow-lg z-10"
+                >
                   <div className="px-4 py-3 border-b border-gray-100">
-                    <p className="text-lg font-semibold text-gray-700">
-                      {influencerName}
+                    <p className="text-lg font-semibold text-gray-900 break-words">
+                      {influencerName || "—"}
                     </p>
-                    <p className="text-md text-gray-500">{email}</p>
-<p className="text-md text-yellow-600">
-  {subscriptionName.charAt(0).toUpperCase() + subscriptionName.slice(1)} Plan
-</p>
-                    <p className="text-sm text-gray-500">
-                      Expires: {formattedExpiry}
-                    </p>
+                    {email && <p className="text-sm text-gray-600 break-words">{email}</p>}
+                    {planLabel && <p className="text-sm text-yellow-700">{planLabel} Plan</p>}
+                    {formattedExpiry && <p className="text-xs text-gray-500">Expires: {formattedExpiry}</p>}
                   </div>
-                  <ul className="py-1 hover:bg-gradient-to-r from-[#FFBF00] to-[#FFDB58]">
-                    <li className="px-4 py-2 text-md text-gray-700">
+                  <ul className="py-1">
+                    <li className="px-4 py-2 text-sm text-gray-800 hover:bg-gray-50">
                       <a href="/influencer/profile">View Profile</a>
                     </li>
                   </ul>
                 </div>
               )}
+
             </div>
           </div>
         </div>

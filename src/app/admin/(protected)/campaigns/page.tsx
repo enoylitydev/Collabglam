@@ -181,7 +181,6 @@ export default function AdminCampaignsPage() {
               <TableRow>
                 {[
                   { label: 'Name', key: 'productOrServiceName' },
-                  { label: 'Description', key: 'description' },
                   { label: 'Goal', key: 'goal' },
                   { label: 'Start', key: 'startDate' },
                   { label: 'End', key: 'endDate' },
@@ -195,7 +194,7 @@ export default function AdminCampaignsPage() {
                     className={col.key ? 'cursor-pointer select-none' : ''}
                     onClick={() => col.key && toggleSort(col.key as SortKey)}
                   >
-                    <div className="flex items-center">
+                    <div className="flex items-center justify-center">
                       {col.label}{col.key && renderSortIcon(col.key as SortKey)}
                     </div>
                   </TableHead>
@@ -206,7 +205,6 @@ export default function AdminCampaignsPage() {
               {campaigns.map(c => (
                 <TableRow key={c.campaignsId}>
                   <TableCell className="font-medium">{c.productOrServiceName}</TableCell>
-                  <TableCell className="text-gray-600 line-clamp-1">{c.description}</TableCell>
                   <TableCell>{c.goal || '—'}</TableCell>
                   <TableCell>{formatDate(c.timeline.startDate)}</TableCell>
                   <TableCell>{formatDate(c.timeline.endDate)}</TableCell>
