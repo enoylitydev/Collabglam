@@ -67,7 +67,7 @@ export async function downloadByHref(src: string, filename = "download") {
 
 export function getWsUrl() {
   const base = API_BASE || (typeof window !== "undefined" ? window.location.origin : "");
-  if (!base) return "ws://localhost:5000/ws";
+  if (!base) return "wss://api.collabglam.com/ws";
 
   const u = new URL(base);
   u.protocol = u.protocol === "https:" ? "wss:" : "ws:";
