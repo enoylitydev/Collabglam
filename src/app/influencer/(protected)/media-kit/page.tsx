@@ -19,7 +19,7 @@ type AudienceItem = { name?: string; code?: string; weight?: number };
 type Audience = {
   genders?: AudienceItem[]; ages?: AudienceItem[]; geoCountries?: AudienceItem[];
   geoCities?: { name: string; weight: number }[]; languages?: AudienceItem[];
-  interests?: { name: string; weight: number }[];
+  interests?: { name: string; weight?: number }[];
   [k: string]: any;
 };
 type PostT = { image?: string; thumbnail?: string; text?: string; likes?: number; comments?: number; views?: number; url?: string };
@@ -38,6 +38,7 @@ type SocialProfile = {
   bio?: string; categories?: CategoryLink[]; hashtags?: HashTag[]; mentions?: Mention[]; brandAffinity?: Affinity[];
   audience?: Audience; audienceExtra?: any; createdAt?: string; updatedAt?: string;
 };
+
 type MediaKit = {
   mediaKitId: string; influencerId: string;
   name?: string; email?: string; phone?: string; callingcode?: string;
@@ -52,8 +53,9 @@ type MediaKit = {
   rateCard?: string | null; additionalNotes?: string | null; mediaKitPdf?: string; website?: string;
   createdAt?: string; updatedAt?: string; [k: string]: any;
 };
+
 type LoadResponse = { mediaKit: MediaKit };
-type UpdateResponse = { mediaKit: MediaKit };
+// type UpdateResponse = { mediaKit: MediaKit };
 
 /* --------------------------- Utilities ---------------------------- */
 const fmtShort = (n?: number) =>
@@ -64,19 +66,19 @@ const fmtDate = (d?: string | Date) => {
   return isNaN(dt.getTime()) ? String(d) : dt.toLocaleDateString();
 };
 
-const STORAGE_KEYS = ["influencerId", "influencer_id", "userId", "user", "auth", "profile"];
+const STORAGE_KEYS = ["influencerId", "influencer_id", "userId", "user", "auth", "profile"] as const;
 const parseMaybe = (s: string | null) => { try { return s ? JSON.parse(s) : null; } catch { return null; } };
 const pickId = (o: any): string | null => {
   if (!o || typeof o !== "object") return null;
   for (const k of ["influencerId", "influencer_id", "userId", "id", "_id"]) {
-    const v = o?.[k]; if (typeof v === "string" || typeof v === "number") return String(v);
+    const v = (o as any)?.[k]; if (typeof v === "string" || typeof v === "number") return String(v);
   }
-  return o.profile ? pickId(o.profile) : o.user ? pickId(o.user) : null;
+  return (o as any).profile ? pickId((o as any).profile) : (o as any).user ? pickId((o as any).user) : null;
 };
 const getIdFromLS = () => {
   if (typeof window === "undefined") return null;
   for (const key of STORAGE_KEYS) {
-    const raw = localStorage.getItem(key); if (!raw) continue;
+    const raw = localStorage.getItem(key as string); if (!raw) continue;
     const t = raw.trim();
     if (!t.startsWith("{") && !t.startsWith("[")) { const s = t.replaceAll('"', ""); if (s) return s; }
     const obj = parseMaybe(raw); const found = pickId(obj); if (found) return found;
@@ -86,43 +88,38 @@ const getIdFromLS = () => {
 
 /** Normalize arrays that can be objects or strings */
 const toHashtagStrings = (arr?: HashTag[]) =>
-  Array.isArray(arr) ? arr.map(h => typeof h === "string" ? h : h?.tag).filter(Boolean) as string[] : [];
+  Array.isArray(arr) ? (arr.map(h => typeof h === "string" ? h : h?.tag).filter(Boolean) as string[]) : [];
 const toMentionStrings = (arr?: Mention[]) =>
-  Array.isArray(arr) ? arr.map(m => typeof m === "string" ? m : m?.tag).filter(Boolean) as string[] : [];
+  Array.isArray(arr) ? (arr.map(m => typeof m === "string" ? m : m?.tag).filter(Boolean) as string[]) : [];
 const toAffinityStrings = (arr?: Affinity[]) =>
-  Array.isArray(arr) ? arr.map(a => typeof a === "string" ? a : a?.name).filter(Boolean) as string[] : [];
+  Array.isArray(arr) ? (arr.map(a => typeof a === "string" ? a : a?.name).filter(Boolean) as string[]) : [];
 const toCategoryStrings = (arr?: CategoryLink[]) =>
-  Array.isArray(arr) ? arr.map(c => c?.subcategoryName || c?.categoryName).filter(Boolean) as string[] : [];
+  Array.isArray(arr) ? (arr.map(c => c?.subcategoryName || c?.categoryName).filter(Boolean) as string[]) : [];
 
 /* --------------------------- Component ---------------------------- */
-export default function MediaKitPage({ influencerId: propId }: { influencerId?: string }) {
+export default function MediaKitPage() {
   const [activeTab, setActiveTab] = useState<"overview" | "social" | "audience" | "collaboration" | "rates" | "contact">("overview");
   // const [isEditing, setIsEditing] = useState(false); // EDIT DISABLED
-  const [resolvedId, setResolvedId] = useState<string | null>(propId ?? null);
+  const [resolvedId, setResolvedId] = useState<string | null>(null);
 
   const [mediaKit, setMediaKit] = useState<MediaKit | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
-
-  // Edit form state (DISABLED)
-  // const [form, setForm] = useState<{ rateCard: string; additionalNotes: string; website: string; mediaKitPdf: string }>({
-  //   rateCard: "", additionalNotes: "", website: "", mediaKitPdf: ""
-  // });
-  // const [saving, setSaving] = useState(false);
-  // const [saveMsg, setSaveMsg] = useState<string | null>(null);
-
-  // NEW: selected platform for viewing the MediaKit
   const [selectedPlatform, setSelectedPlatform] = useState<string | null>(null);
 
-  /* Resolve influencerId */
+  /* Resolve influencerId from LocalStorage ONLY */
   useEffect(() => {
-    if (propId) { setResolvedId(propId); return; }
     const id = getIdFromLS();
-    if (id) setResolvedId(id);
-    else { setResolvedId(null); setLoading(false); setError("No influencer ID found in localStorage."); }
-  }, [propId]);
+    if (id) {
+      setResolvedId(id);
+    } else {
+      setResolvedId(null);
+      setLoading(false);
+      setError("No influencer ID found in localStorage.");
+    }
+  }, []);
 
-  /* Fetch MediaKit */
+  /* Fetch MediaKit once we have an ID */
   useEffect(() => {
     if (!resolvedId) return;
     (async () => {
@@ -131,15 +128,6 @@ export default function MediaKitPage({ influencerId: propId }: { influencerId?: 
       try {
         const res = (await post("/media-kit/influencer", { influencerId: resolvedId })) as LoadResponse;
         setMediaKit(res.mediaKit);
-        // EDIT DISABLED: prefill form state removed
-        // setForm({
-        //   rateCard: res.mediaKit.rateCard ?? "",
-        //   additionalNotes: res.mediaKit.additionalNotes ?? "",
-        //   website: res.mediaKit.website ?? "",
-        //   mediaKitPdf: res.mediaKit.mediaKitPdf ?? "",
-        // });
-
-        // Default the selection to primary platform, else first connected profile
         setSelectedPlatform(
           res.mediaKit.primaryPlatform ??
           res.mediaKit.socialProfiles?.[0]?.provider ??
@@ -164,24 +152,6 @@ export default function MediaKitPage({ influencerId: propId }: { influencerId?: 
   const mentions = useMemo(() => toMentionStrings(primary?.mentions), [primary]);
   const categories = useMemo(() => toCategoryStrings(primary?.categories), [primary]);
   const affinities = useMemo(() => toAffinityStrings(primary?.brandAffinity), [primary]);
-
-  // Save updates (DISABLED)
-  // const handleSave = async () => {
-  //   if (!mediaKit) return;
-  //   setSaving(true); setSaveMsg(null);
-  //   try {
-  //     const payload = { mediaKitId: mediaKit.mediaKitId, ...form };
-  //     const res = (await post("/media-kit/update", payload)) as UpdateResponse;
-  //     setMediaKit(res.mediaKit);
-  //     setIsEditing(false);
-  //     setSaveMsg("MediaKit updated successfully.");
-  //     setTimeout(() => setSaveMsg(null), 2500);
-  //   } catch {
-  //     setSaveMsg("Failed to update. Please try again.");
-  //   } finally {
-  //     setSaving(false);
-  //   }
-  // };
 
   /* --------------------------- Frames ---------------------------- */
   if (loading && !mediaKit) {
@@ -451,33 +421,6 @@ export default function MediaKitPage({ influencerId: propId }: { influencerId?: 
                 {mediaKit.onboarding.cadences && mediaKit.onboarding.cadences.length > 0 && (
                   <ChipSection title="Cadences" chips={mediaKit.onboarding.cadences} tone="outline" />
                 )}
-
-                {/* Budgets moved to RATES tab */}
-                {/* {mediaKit.onboarding.budgets && mediaKit.onboarding.budgets.length > 0 && (
-                  <div className="rounded-2xl border bg-white overflow-hidden">
-                    <div className="p-4 border-b font-semibold flex items-center gap-2">
-                      <DollarSign className="w-4 h-4 text[#FFBF00]" /> Budgets
-                    </div>
-                    <div className="p-4 overflow-x-auto">
-                      <table className="w-full text-sm">
-                        <thead>
-                          <tr className="text-left text-gray-600">
-                            <th className="py-2">Format</th>
-                            <th className="py-2">Range</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {mediaKit.onboarding.budgets.map((b, i) => (
-                            <tr key={i} className="border-t">
-                              <td className="py-2">{b.format}</td>
-                              <td className="py-2">{b.range}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                )} */}
               </div>
             </div>
           </div>
@@ -486,43 +429,6 @@ export default function MediaKitPage({ influencerId: propId }: { influencerId?: 
         {/* RATES */}
         {activeTab === "rates" && (
           <div className="space-y-6">
-            {/* <div className="bg-white rounded-2xl shadow-sm border overflow-hidden">
-              <div className="p-6 border-b bg-gradient-to-r from-[#FFBF00]/5 to-[#FFDB58]/5 flex items-center justify-between">
-                <div>
-                  <h3 className="text-xl font-bold text-gray-900 flex items-center gap-2">
-                    <DollarSign className="w-6 h-6 text-[#FFBF00]" />
-                    Rate Card
-                  </h3>
-                  <p className="text-gray-600 mt-1">Standard pricing for collaborations</p>
-                </div> */}
-                {/* EDIT DISABLED */}
-                {/* <button
-                  onClick={() => setIsEditing(true)}
-                  className="px-4 py-2 rounded-xl border hover:border-[#FFBF00]/50 hover:bg-gradient-to-r hover:from-[#FFBF00]/5 hover:to-[#FFDB58]/5 transition-all text-sm font-medium"
-                >
-                  Edit
-                </button> */}
-              {/* </div>
-              <div className="p-6">
-                {mediaKit?.rateCard ? (
-                  <div className="space-y-3">
-                    {mediaKit.rateCard.split("\n").map((line, i) => {
-                      const [label, price] = line.split(":");
-                      return (
-                        <div key={i} className="flex items-center justify-between p-4 bg-gray-50 rounded-xl border hover:border-[#FFBF00]/30 transition-colors">
-                          <span className="font-medium text-gray-900">{(label ?? "").trim()}</span>
-                          <span className="text-xl font-bold text-[#FFBF00]">{(price ?? "").trim()}</span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <p className="text-gray-500 italic">No rate card available</p>
-                )}
-              </div>
-            </div> */}
-
-            {/* NEW: Budgets moved here from Collaboration */}
             {mediaKit?.onboarding?.budgets && mediaKit.onboarding.budgets.length > 0 && (
               <div className="bg-white rounded-2xl shadow-sm border overflow-hidden">
                 <div className="p-6 border-b bg-gradient-to-r from-[#FFBF00]/5 to-[#FFDB58]/5">
@@ -629,83 +535,6 @@ export default function MediaKitPage({ influencerId: propId }: { influencerId?: 
           </div>
         )}
       </div>
-
-      {/* Edit Drawer / Modal - TEMPORARILY DISABLED */}
-      {/**
-      {isEditing && (
-        <div className="fixed inset-0 z-50">
-          <div className="absolute inset-0 bg-black/30" onClick={() => setIsEditing(false)} />
-          <div className="absolute right-0 top-0 h-full w-full max-w-xl bg-white shadow-2xl border-l p-6 overflow-y-auto">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-xl font-bold text-gray-900 flex items-center gap-2">
-                <Edit className="w-5 h-5 text-[#FFBF00]" /> Edit MediaKit
-              </h3>
-              <button onClick={() => setIsEditing(false)} className="p-2 rounded-lg hover:bg-gray-100">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="space-y-5">
-              <Field label="Website">
-                <input
-                  className="w-full px-3 py-2 rounded-lg border focus:outline-none focus:ring-2 focus:ring-[#FFBF00]/40"
-                  placeholder="https://..."
-                  value={form.website}
-                  onChange={(e) => setForm({ ...form, website: e.target.value })}
-                />
-              </Field>
-
-              <Field label="MediaKit PDF URL">
-                <input
-                  className="w-full px-3 py-2 rounded-lg border focus:outline-none focus:ring-2 focus:ring-[#FFBF00]/40"
-                  placeholder="https://..."
-                  value={form.mediaKitPdf}
-                  onChange={(e) => setForm({ ...form, mediaKitPdf: e.target.value })}
-                />
-              </Field>
-
-              <Field label="Rate Card (one item per line, e.g. `Instagram Post: $25,000`)">
-                <textarea
-                  rows={6}
-                  className="w-full px-3 py-2 rounded-lg border focus:outline-none focus:ring-2 focus:ring-[#FFBF00]/40"
-                  placeholder={"Instagram Post: $25,000\nReel: $35,000"}
-                  value={form.rateCard}
-                  onChange={(e) => setForm({ ...form, rateCard: e.target.value })}
-                />
-              </Field>
-
-              <Field label="Additional Notes">
-                <textarea
-                  rows={6}
-                  className="w-full px-3 py-2 rounded-lg border focus:outline-none focus:ring-2 focus:ring-[#FFBF00]/40"
-                  placeholder="Any additional information for brands..."
-                  value={form.additionalNotes}
-                  onChange={(e) => setForm({ ...form, additionalNotes: e.target.value })}
-                />
-              </Field>
-            </div>
-
-            {saveMsg && <p className="mt-4 text-sm font-medium">{saveMsg}</p>}
-
-            <div className="mt-6 flex items-center gap-3">
-              <button
-                onClick={handleSave}
-                disabled={saving}
-                className="px-5 py-3 rounded-xl bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-900 font-semibold disabled:opacity-60"
-              >
-                {saving ? "Saving..." : "Save Changes"}
-              </button>
-              <button
-                onClick={() => setIsEditing(false)}
-                className="px-5 py-3 rounded-xl border hover:bg-gray-50"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-      **/}
     </div>
   );
 }
