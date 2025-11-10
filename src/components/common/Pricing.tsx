@@ -266,14 +266,14 @@ const Pricing: React.FC = () => {
                   className="relative bg-white rounded-3xl shadow-lg hover:shadow-2xl transition-all duration-300 overflow-hidden flex flex-col h-full"
                 >
                   {/* Badge (label) */}
-                  {plan.label && (
+                  {/* {plan.label && (
                     <div className="absolute -top-3 left-1/2 -translate-x-1/2">
                       <div className="bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white text-xs font-bold py-2 px-4 rounded-full shadow-lg flex items-center space-x-1">
                         <Star className="w-3 h-3 fill-current" />
                         <span>{plan.label}</span>
                       </div>
                     </div>
-                  )}
+                  )} */}
 
                   <div className="p-8 flex-1 flex flex-col">
                     {/* Header */}
