@@ -60,7 +60,7 @@ export default function InfluencerCampaignsPage() {
           sortOrder: "desc",
         });
 
-        if (!isMounted) return;
+     if (!isMounted) return;
         setCampaigns(data?.campaigns ?? []);
         setPages(data?.pages ?? 1);
       } catch (err: any) {

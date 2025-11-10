@@ -1,4 +1,3 @@
-// src/app/influencer/notifications/page.tsx
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
@@ -24,7 +23,6 @@ type ListResp = {
   unread?: number;
 };
 
-// normalize server docs to { id, ... }
 function normalize(n: any): NotificationItem {
   return {
     id: n?.id || n?._id || n?.notificationId || `${Date.now()}`,
@@ -56,7 +54,6 @@ export default function InfluencerNotificationsPage() {
     setInfluencerId(id);
   }, []);
 
-  // Load page
   useEffect(() => {
     if (!influencerId) {
       setLoading(false);
@@ -104,13 +101,22 @@ export default function InfluencerNotificationsPage() {
     try {
       const d = new Date(iso);
       if (Number.isNaN(d.getTime())) return "";
-      return d.toLocaleString();
+      const now = new Date();
+      const diff = now.getTime() - d.getTime();
+      const mins = Math.floor(diff / 60000);
+      const hrs = Math.floor(diff / 3600000);
+      const days = Math.floor(diff / 86400000);
+      
+      if (mins < 1) return "Just now";
+      if (mins < 60) return `${mins}m ago`;
+      if (hrs < 24) return `${hrs}h ago`;
+      if (days < 7) return `${days}d ago`;
+      return d.toLocaleDateString();
     } catch {
       return "";
     }
   }
 
-  // mark one read (optimistic) using backend helper
   async function markOneRead(id: string) {
     if (!influencerId) return;
     setBusy(true);
@@ -123,7 +129,6 @@ export default function InfluencerNotificationsPage() {
       await post(`/notifications/influencer/mark-read`, { id, influencerId });
     } catch (e) {
       console.error("Mark read failed", e);
-      // rollback
       setItems((prev) => prev.map((n) => (n.id === id ? { ...n, isRead: false } : n)));
       if (wasUnread) setUnreadCount((c) => c + 1);
     } finally {
@@ -131,7 +136,6 @@ export default function InfluencerNotificationsPage() {
     }
   }
 
-  // mark all read (optimistic)
   async function markAllRead() {
     if (!influencerId) return;
     setBusy(true);
@@ -148,7 +152,6 @@ export default function InfluencerNotificationsPage() {
       });
     } catch (e) {
       console.error("Mark all read failed", e);
-      // on failure refresh
       setPage(1);
       await Swal.fire({
         icon: "error",
@@ -159,9 +162,8 @@ export default function InfluencerNotificationsPage() {
     }
   }
 
-  // delete notification (destructive) with swal confirm
   async function deleteNotification(e: React.MouseEvent, id: string) {
-    e.stopPropagation(); // don't open the tile
+    e.stopPropagation();
     if (!influencerId) return;
 
     const confirm = await Swal.fire({
@@ -171,7 +173,10 @@ export default function InfluencerNotificationsPage() {
       showCancelButton: true,
       confirmButtonText: "Delete",
       cancelButtonText: "Cancel",
-      confirmButtonColor: "#dc2626", // red-600
+      confirmButtonColor: "#ef4444",
+      cancelButtonColor: "#6b7280",
+      reverseButtons: true,
+      focusCancel: true,
     });
 
     if (!confirm.isConfirmed) return;
@@ -180,7 +185,6 @@ export default function InfluencerNotificationsPage() {
     const removedItem = items.find((n) => n.id === id) || null;
     const wasUnread = removedItem && !removedItem.isRead ? 1 : 0;
 
-    // optimistic remove
     setItems((prev) => prev.filter((n) => n.id !== id));
     if (wasUnread) setUnreadCount((c) => Math.max(0, c - 1));
 
@@ -194,7 +198,6 @@ export default function InfluencerNotificationsPage() {
       });
     } catch (e) {
       console.error("Delete failed", e);
-      // rollback if we have the item
       if (removedItem) setItems((prev) => [removedItem, ...prev]);
       if (wasUnread) setUnreadCount((c) => c + 1);
       await Swal.fire({
@@ -206,7 +209,6 @@ export default function InfluencerNotificationsPage() {
     }
   }
 
-  // open -> mark read then navigate
   async function openItem(n: NotificationItem) {
     if (!n.isRead) await markOneRead(n.id);
     const path = n.actionPath || "/influencer/notifications";
@@ -220,101 +222,181 @@ export default function InfluencerNotificationsPage() {
   }
 
   return (
-    <main className="max-w-4xl mx-auto px-4 py-6">
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-3">
-          <HiBell className="text-gray-800" size={24} />
-          <h1 className="text-2xl font-semibold text-gray-900">Notifications</h1>
-          <span className="ml-2 text-sm rounded-full bg-gray-100 px-2 py-0.5 text-gray-800">
-            Unread: {unreadCount}
-          </span>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <button
-            onClick={refresh}
-            disabled={loading}
-            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-md border text-sm hover:bg-gray-50"
-            title="Refresh"
-          >
-            <HiOutlineRefresh /> Refresh
-          </button>
-          <button
-            onClick={markAllRead}
-            disabled={busy || unreadCount === 0}
-            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-md border text-sm hover:bg-gray-50 disabled:opacity-50"
-            title="Mark all as read"
-          >
-            <HiCheckCircle /> Mark all read
-          </button>
-        </div>
-      </div>
-
-      {/* Filters */}
-      <div className="mb-4 inline-flex items-center rounded-md border bg-white">
-        {(["all", "unread", "read"] as const).map((f) => (
-          <button
-            key={f}
-            onClick={() => setFilter(f)}
-            className={`px-3 py-1.5 text-sm border-r last:border-r-0 ${
-              filter === f ? "bg-gray-100 font-medium" : "hover:bg-gray-50"
-            }`}
-          >
-            {f === "all" ? "All" : f === "unread" ? "Unread" : "Read"}
-          </button>
-        ))}
-      </div>
-
-      {/* List */}
-      <div className="bg-white rounded-lg border">
-        {loading && page === 1 ? (
-          <div className="p-6 text-sm text-gray-600">Loading…</div>
-        ) : filtered.length === 0 ? (
-          <div className="p-6 text-sm text-gray-600">No notifications.</div>
-        ) : (
-          <ul className="divide-y">
-            {filtered.map((n) => (
-              <li
-                key={n.id}
-                onClick={() => openItem(n)}
-                className={`p-4 flex items-start gap-3 cursor-pointer ${
-                  n.isRead ? "bg-white" : "bg-yellow-50"
-                } hover:bg-gray-50`}
-              >
-                <div className="flex-1">
-                  <div className="flex items-center justify-between gap-3">
-                    <h3 className="text-sm font-medium text-gray-900">{n.title}</h3>
-                    <span className="text-xs text-gray-500">{formatWhen(n.createdAt)}</span>
-                  </div>
-                  {n.message && <p className="mt-1 text-sm text-gray-700">{n.message}</p>}
+    <main className="min-h-screen bg-white">
+      <div className="max-w-5xl mx-auto px-4 py-8">
+        {/* Header Card */}
+        <div className="bg-white/80 backdrop-blur-xl rounded-2xl shadow-lg border border-white/20 p-6 mb-6">
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center gap-4">
+              <div className="relative">
+                <div className="w-12 h-12 bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] rounded-xl flex items-center justify-center shadow-lg">
+                  <HiBell className="text-gray-800" size={24} />
                 </div>
+                {unreadCount > 0 && (
+                  <div className="absolute -top-1 -right-1 w-6 h-6 bg-red-500 rounded-full flex items-center justify-center text-white text-xs font-bold shadow-lg animate-pulse">
+                    {unreadCount > 99 ? "99+" : unreadCount}
+                  </div>
+                )}
+              </div>
+              <div>
+                <h1 className="text-3xl font-bold bg-gradient-to-r from-slate-800 to-slate-600 bg-clip-text text-transparent">
+                  Notifications
+                </h1>
+                <p className="text-sm text-slate-500 mt-0.5">Stay updated with your activity</p>
+              </div>
+            </div>
 
-                <button
-                  onClick={(e) => deleteNotification(e, n.id)}
-                  disabled={busy}
-                  className="self-center inline-flex items-center gap-1 text-sm px-3 py-1.5 rounded-md border border-red-500 text-red-600 hover:bg-red-50 cursor-pointer disabled:opacity-50"
-                  title="Delete notification"
-                >
-                  <HiTrash />
-                </button>
-              </li>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={refresh}
+                disabled={loading}
+                className="group relative inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white border border-slate-200 text-slate-700 text-sm font-medium hover:bg-slate-50 hover:border-slate-300 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-sm hover:shadow"
+              >
+                <HiOutlineRefresh className={`${loading ? 'animate-spin' : 'group-hover:rotate-180'} transition-transform duration-500`} size={18} />
+                <span>Refresh</span>
+              </button>
+              <button
+                onClick={markAllRead}
+                disabled={busy || unreadCount === 0}
+                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-800 text-sm font-medium hover:from-[#FFB800] hover:to-[#FFD040] disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-md hover:shadow-lg"
+              >
+                <HiCheckCircle size={18} />
+                <span>Mark all read</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Filters */}
+          <div className="inline-flex items-center rounded-xl bg-slate-100 p-1 gap-1">
+            {(["all", "unread", "read"] as const).map((f) => (
+              <button
+                key={f}
+                onClick={() => setFilter(f)}
+                className={`px-6 py-2 text-sm font-medium rounded-lg transition-all duration-200 ${
+                  filter === f
+                    ? "bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-800 shadow-md"
+                    : "text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                {f === "all" ? "All" : f === "unread" ? "Unread" : "Read"}
+              </button>
             ))}
-          </ul>
+          </div>
+        </div>
+
+        {/* Notifications List */}
+        <div className="space-y-3">
+          {loading && page === 1 ? (
+            <div className="bg-white/80 backdrop-blur-xl rounded-2xl shadow-lg border border-white/20 p-12 text-center">
+              <div className="inline-block w-12 h-12 border-4 border-slate-200 border-t-[#FFBF00] rounded-full animate-spin"></div>
+              <p className="mt-4 text-slate-600">Loading notifications...</p>
+            </div>
+          ) : filtered.length === 0 ? (
+            <div className="bg-white/80 backdrop-blur-xl rounded-2xl shadow-lg border border-white/20 p-12 text-center">
+              <div className="w-20 h-20 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <HiBell className="text-slate-400" size={40} />
+              </div>
+              <h3 className="text-lg font-semibold text-slate-900 mb-1">No notifications</h3>
+              <p className="text-slate-500">You're all caught up!</p>
+            </div>
+          ) : (
+            <>
+              {filtered.map((n, idx) => (
+                <div
+                  key={n.id}
+                  onClick={() => openItem(n)}
+                  style={{ animationDelay: `${idx * 50}ms` }}
+                  className={`group relative overflow-hidden bg-white/80 backdrop-blur-xl rounded-2xl shadow-lg border transition-all duration-300 cursor-pointer hover:shadow-xl hover:scale-[1.01] animate-[slideIn_0.3s_ease-out_forwards] ${
+                    n.isRead
+                      ? "border-white/20"
+                      : "border-orange-200 bg-gradient-to-r from-orange-50/50 to-amber-50/50"
+                  }`}
+                >
+                  {/* Unread indicator bar */}
+                  {!n.isRead && (
+                    <div className="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-[#FFA135] to-[#FF7236]"></div>
+                  )}
+
+                  <div className="p-5 flex items-start gap-4">
+                    {/* Icon */}
+                    <div className={`flex-shrink-0 w-10 h-10 rounded-xl flex items-center justify-center ${
+                      n.isRead ? "bg-slate-100" : "bg-gradient-to-r from-[#FFA135] to-[#FF7236]"
+                    }`}>
+                      <HiBell className={n.isRead ? "text-slate-500" : "text-white"} size={20} />
+                    </div>
+
+                    {/* Content */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-start justify-between gap-3 mb-1">
+                        <h3 className={`text-base font-semibold ${
+                          n.isRead ? "text-slate-700" : "text-slate-900"
+                        }`}>
+                          {n.title}
+                        </h3>
+                        <span className="flex-shrink-0 text-xs font-medium text-slate-500 bg-slate-100 px-2.5 py-1 rounded-lg">
+                          {formatWhen(n.createdAt)}
+                        </span>
+                      </div>
+                      {n.message && (
+                        <p className={`text-sm leading-relaxed ${
+                          n.isRead ? "text-slate-600" : "text-slate-700"
+                        }`}>
+                          {n.message}
+                        </p>
+                      )}
+                    </div>
+
+                    {/* Delete button */}
+                    <button
+                      onClick={(e) => deleteNotification(e, n.id)}
+                      disabled={busy}
+                      className="flex-shrink-0 w-9 h-9 rounded-lg flex items-center justify-center text-slate-400 hover:text-red-600 hover:bg-red-50 transition-all duration-200 disabled:opacity-50 opacity-0 group-hover:opacity-100"
+                      title="Delete notification"
+                    >
+                      <HiTrash size={18} />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </>
+          )}
+        </div>
+
+        {/* Load More */}
+        {filtered.length > 0 && filter === "all" && (
+          <div className="flex justify-center pt-6">
+            <button
+              onClick={() => setPage((p) => p + 1)}
+              disabled={loading || !canLoadMore}
+              className="px-8 py-3 text-sm font-medium rounded-xl bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-slate-300 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-sm hover:shadow"
+            >
+              {loading ? (
+                <span className="flex items-center gap-2">
+                  <div className="w-4 h-4 border-2 border-slate-300 border-t-slate-600 rounded-full animate-spin"></div>
+                  Loading...
+                </span>
+              ) : canLoadMore ? (
+                "Load more"
+              ) : (
+                "No more notifications"
+              )}
+            </button>
+          </div>
         )}
       </div>
 
-      {/* Pager */}
-      {filtered.length > 0 && filter === "all" && (
-        <div className="flex justify-center py-4">
-          <button
-            onClick={() => setPage((p) => p + 1)}
-            disabled={loading || !canLoadMore}
-            className="px-4 py-2 text-sm border rounded-md hover:bg-gray-50 disabled:opacity-50"
-          >
-            {canLoadMore ? "Load more" : "No more"}
-          </button>
-        </div>
-      )}
+      <style jsx>{`
+        @keyframes slideIn {
+          from {
+            opacity: 0;
+            transform: translateY(10px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+      `}</style>
     </main>
   );
 }
