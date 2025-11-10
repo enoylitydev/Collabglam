@@ -82,10 +82,12 @@ const buildCountryOptions = (list: Country[]): CountryOption[] =>
 /* ──────────────────────────────────────────────────────────────────── */
 /* Helpers                                                             */
 /* ──────────────────────────────────────────────────────────────────── */
-const genderToEnum = (g: string): 0 | 1 | undefined =>
-  g === "female" ? 0 : g === "male" ? 1 : undefined;
+// 0 = Male, 1 = Female, 2 = All
+const genderToEnum = (g: string): 0 | 1 | 2 | undefined =>
+  g === "male" ? 1 : g === "female" ? 0 : g === "all" ? 2 : undefined;
 
-const genderLabel = (n: number) => (n === 0 ? "Female" : "Male");
+const genderLabel = (n: number) =>
+  n === 1 ? "Male" : n === 0 ? "Female" : n === 2 ? "All" : "—";
 
 const fmtDate = (d: string) => dayjs(d).format("DD-MMM-YY");
 

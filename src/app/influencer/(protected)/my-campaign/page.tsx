@@ -2,16 +2,13 @@
 
 /**
  * =============================================================================
- * Influencer MyCampaigns — UPDATED
+ * Influencer MyCampaigns — UPDATED w/ Selection Tabs
  * -----------------------------------------------------------------------------
  * New logic requested:
- * 1) If a contract is FINALIZED or SIGNED by anyone (brand or influencer),
- *    HIDE all "Edit" entry points (including the table button and modal Edit tab).
- * 2) If BRAND has already signed (and contract not locked), show a
- *    "Sign as Influencer" button directly in the main table (no sidebar).
- *    Clicking it opens the signature modal from the page.
- * 3) Colors/theme remain unchanged for influencer side.
- * 4) We resolve resent children to get the effective contractId for actions.
+ * - Segmented selection buttons for: Active, Contracted, Applied, and All.
+ * - Counts appear on each tab.
+ * - Switching tabs shows only the relevant table(s). "All" shows all sections.
+ * - Existing finalization/signing edit-hiding logic preserved.
  * -----------------------------------------------------------------------------
  */
 
@@ -272,6 +269,33 @@ function Checkbox({ label, checked, onChange, disabled = false }: {
   );
 }
 
+/* ─────────────────────────── API error helper ─────────────────────────── */
+function apiMessage(e: any, fallback = "Something went wrong") {
+  const status = e?.response?.status;
+  const msg = e?.response?.data?.message || e?.message;
+
+  // Prefer server’s explicit guardrail messages if present
+  const known = [
+    "Contract is locked",
+    "Influencer must confirm before this action",
+    "Brand must confirm before this action",
+    "Contract is finalized; no further edits allowed",
+    "All parties have signed; no further edits are allowed",
+    "Contract not found",
+  ];
+  if (msg && known.some((k) => String(msg).includes(k))) return msg;
+
+  if (status === 400) return msg || "Bad request.";
+  if (status === 401) return "Please sign in again.";
+  if (status === 403) return "You don’t have permission to do that.";
+  if (status === 404) return "Not found.";
+  if (status === 409) return msg || "Conflict. Please refresh.";
+  if (status === 422) return msg || "Validation error.";
+  if (status >= 500) return "Server error. Please try again.";
+
+  return msg || fallback;
+}
+
 /* ───────────────────────────── Signature Modal ────────────────────────────── */
 function SignatureModal({ open, onClose, onSubmit, title = "Add Signature" }: {
   open: boolean;
@@ -365,6 +389,10 @@ function InfluencerContractModal({ open, onClose, contractId, campaign, readOnly
     meta?.confirmations?.influencer?.confirmed || meta?.flags?.isInfluencerConfirm
   );
 
+  const brandConfirmed = !!(
+    meta?.confirmations?.brand?.confirmed || meta?.flags?.isBrandConfirm
+  );
+
   const isLocked = !!meta?.lockedAt || meta?.status === "locked" || !!meta?.flags?.isLocked;
   const anyoneSigned = !!(meta?.signatures?.brand?.signed || meta?.signatures?.influencer?.signed);
   const isFinalizedPhase = ["finalize", "signing"].includes(String(meta?.status || "").toLowerCase());
@@ -377,6 +405,7 @@ function InfluencerContractModal({ open, onClose, contractId, campaign, readOnly
     if (isFinalizedPhase) return false;
     if (!influencerConfirmed) return true; // allow before acceptance
     if (meta?.flags?.canEditInfluencerFields === false) return false;
+    if (readOnly || isLocked || anyoneSigned || isFinalizedPhase) return false;
     return true;
   }, [readOnly, isLocked, anyoneSigned, isFinalizedPhase, influencerConfirmed, meta?.flags?.canEditInfluencerFields]);
 
@@ -531,7 +560,7 @@ function InfluencerContractModal({ open, onClose, contractId, campaign, readOnly
   useEffect(() => {
     if (!open) return;
     if ((mode === "view" || mode === "edit") && !previewUrl) {
-      generatePreview(true).catch(() => {});
+      generatePreview(true).catch(() => { });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, open]);
@@ -549,7 +578,7 @@ function InfluencerContractModal({ open, onClose, contractId, campaign, readOnly
       setPreviewUrl(url);
       if (!silent) toast({ icon: "info", title: "PDF loaded" });
     } catch (e: any) {
-      toast({ icon: "error", title: "Preview Error", text: e?.message || "Failed to load PDF." });
+      toast({ icon: "error", title: "Preview Error", text: apiMessage(e, "Failed to load PDF.") });
       throw e;
     } finally {
       setIsWorking(false);
@@ -562,7 +591,7 @@ function InfluencerContractModal({ open, onClose, contractId, campaign, readOnly
       const sp = sanitizeLocal(local);
       const payload: ServerInfluencer = toServerInfluencer(sp);
 
-      // Simple Tax ID format validation moved out for brevity — keep your original
+      // Simple Tax ID format validation
       const isValidTaxId = (value: string, taxFormType?: ServerInfluencer["taxFormType"]) => {
         const v = (value || "").trim();
         if (!v) return true;
@@ -590,7 +619,7 @@ function InfluencerContractModal({ open, onClose, contractId, campaign, readOnly
       setMode("view");
       await generatePreview(true);
     } catch (e: any) {
-      toast({ icon: "error", title: "Error", text: e?.response?.data?.message || e?.message || "Failed to save." });
+      toast({ icon: "error", title: "Error", text: apiMessage(e, "Failed to save.") });
     } finally {
       setIsWorking(false);
     }
@@ -600,6 +629,10 @@ function InfluencerContractModal({ open, onClose, contractId, campaign, readOnly
     if (isLocked) return;
     if (!influencerConfirmed) {
       toast({ icon: "error", title: "Confirm first", text: "Please accept the contract before signing." });
+      return;
+    }
+    if (!brandConfirmed) {
+      toast({ icon: "error", title: "Brand confirmation pending", text: "Brand must confirm before signing can start." });
       return;
     }
     if (meta?.flags?.canSignInfluencer === false) {
@@ -625,9 +658,9 @@ function InfluencerContractModal({ open, onClose, contractId, campaign, readOnly
       onAfterAction && onAfterAction();
       onClose();
     } catch (e: any) {
-      const msg = e?.response?.data?.message || e?.message || "";
-      toast({ icon: "error", title: "Sign Error", text: msg || "Failed to sign." });
+      toast({ icon: "error", title: "Sign Error", text: apiMessage(e, "Failed to sign.") });
     } finally {
+
       setIsWorking(false);
     }
   };
@@ -842,9 +875,29 @@ function InfluencerContractModal({ open, onClose, contractId, campaign, readOnly
                     </Button>
                     <Button
                       onClick={openSignature}
-                      disabled={isWorking || isLocked || !influencerConfirmed || meta?.flags?.canSignInfluencer === false}
-                      className={(!influencerConfirmed || isLocked) ? "bg-gray-300 text-gray-600 cursor-not-allowed" : "bg-indigo-600 hover:bg-indigo-700 text-white"}
-                      title={!influencerConfirmed ? "Accept the contract first" : isLocked ? "Contract is locked" : meta?.flags?.canSignInfluencer === false ? "Signing disabled" : ""}
+                      disabled={
+                        isWorking ||
+                        isLocked ||
+                        !influencerConfirmed ||
+                        !brandConfirmed ||
+                        meta?.flags?.canSignInfluencer === false
+                      }
+                      className={
+                        (!influencerConfirmed || !brandConfirmed || isLocked)
+                          ? "bg-gray-300 text-gray-600 cursor-not-allowed"
+                          : "bg-indigo-600 hover:bg-indigo-700 text-white"
+                      }
+                      title={
+                        !influencerConfirmed
+                          ? "Accept the contract first"
+                          : !brandConfirmed
+                            ? "Brand must confirm before signing"
+                            : isLocked
+                              ? "Contract is locked"
+                              : meta?.flags?.canSignInfluencer === false
+                                ? "Signing disabled"
+                                : ""
+                      }
                     >
                       Sign
                     </Button>
@@ -936,7 +989,7 @@ function CampaignTable({ data, loading, error, emptyMessage, page, totalPages, o
   onOpenEditor: (c: Campaign, viewOnly: boolean) => void;
   onRefreshAll: () => void;
   metaCache: Record<string, ContractMeta | null>;
-  onSignDirect: (opts: { contractId: string; influencerConfirmed: boolean; isLocked: boolean }) => void;
+  onSignDirect: (opts: { contractId: string; influencerConfirmed: boolean; isLocked: boolean; brandConfirmed: boolean; }) => void;
 }) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const influencerId = typeof window !== "undefined" ? localStorage.getItem("influencerId") : null;
@@ -986,6 +1039,7 @@ function CampaignTable({ data, loading, error, emptyMessage, page, totalPages, o
         const isFinalizedPhase = ["finalize", "signing"].includes(String(meta?.status || "").toLowerCase());
         const anyoneSigned = brandSigned || influencerSigned;
         const effectiveContractId = meta?.contractId || c.contractId;
+        const brandConfirmed = !!(meta?.confirmations?.brand?.confirmed || meta?.flags?.isBrandConfirm);
 
         // Edit button visibility (table level)
         const canShowEdit = !isLocked && !anyoneSigned && !isFinalizedPhase;
@@ -1026,12 +1080,24 @@ function CampaignTable({ data, loading, error, emptyMessage, page, totalPages, o
                       </Button>
                     )}
 
-                    {/* If brand has signed, surface Sign on table */}
                     {brandSigned && !influencerSigned && (
                       <Button
-                        className="bg-indigo-600 hover:bg-indigo-700 text-white"
-                        onClick={() => onSignDirect({ contractId: effectiveContractId, influencerConfirmed, isLocked })}
-                        title={influencerConfirmed ? "Sign as Influencer" : "Accept first to sign"}
+                        className="bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-900"
+                        onClick={() =>
+                          onSignDirect({
+                            contractId: effectiveContractId,
+                            influencerConfirmed,
+                            brandConfirmed,
+                            isLocked,
+                          })
+                        }
+                        title={
+                          !influencerConfirmed
+                            ? "Accept first to sign"
+                            : !brandConfirmed
+                              ? "Brand must confirm before signing"
+                              : "Sign as Influencer"
+                        }
                       >
                         Sign as Influencer
                       </Button>
@@ -1060,7 +1126,7 @@ function CampaignTable({ data, loading, error, emptyMessage, page, totalPages, o
                     {brandSigned && !influencerSigned && (
                       <Button
                         className="bg-indigo-600 hover:bg-indigo-700 text-white"
-                        onClick={() => onSignDirect({ contractId: effectiveContractId, influencerConfirmed, isLocked })}
+                        onClick={() => onSignDirect({ contractId: effectiveContractId, influencerConfirmed, isLocked, brandConfirmed })}
                         title={influencerConfirmed ? "Sign as Influencer" : "Accept first to sign"}
                       >
                         Sign as Influencer
@@ -1156,6 +1222,8 @@ function CampaignTable({ data, loading, error, emptyMessage, page, totalPages, o
 }
 
 /* ─────────────────────────────── Page Component ───────────────────────────── */
+type ViewKey = "active" | "contracted" | "applied" | "all";
+
 export default function MyCampaignsPage() {
   const [search] = useState("");
   const router = useRouter();
@@ -1191,6 +1259,9 @@ export default function MyCampaignsPage() {
   /* Page-level signature modal */
   const [topSignOpen, setTopSignOpen] = useState(false);
   const [topSignContractId, setTopSignContractId] = useState<string>("");
+
+  /* NEW: selection view */
+  const [view, setView] = useState<ViewKey>("active");
 
   const itemsPerPage = 10;
 
@@ -1350,11 +1421,24 @@ export default function MyCampaignsPage() {
     fetchContractedCampaigns();
   };
 
-  /* Table-level signing */
-  const openSignDirect = ({ contractId, influencerConfirmed, isLocked }: { contractId: string; influencerConfirmed: boolean; isLocked: boolean }) => {
-    if (isLocked) return; // ignore silently
+  const openSignDirect = ({
+    contractId,
+    influencerConfirmed,
+    brandConfirmed,
+    isLocked,
+  }: {
+    contractId: string;
+    influencerConfirmed: boolean;
+    brandConfirmed: boolean;
+    isLocked: boolean;
+  }) => {
+    if (isLocked) return;
     if (!influencerConfirmed) {
       toast({ icon: "error", title: "Confirm first", text: "Please accept the contract before signing." });
+      return;
+    }
+    if (!brandConfirmed) {
+      toast({ icon: "error", title: "Brand confirmation pending", text: "Brand must confirm before signing can start." });
       return;
     }
     setTopSignContractId(contractId);
@@ -1379,65 +1463,170 @@ export default function MyCampaignsPage() {
     }
   };
 
+  /* ──────────────── NEW: Top selection tabs with counts ──────────────── */
+  const tabs: { key: ViewKey; label: string; count: number }[] = [
+    { key: "active", label: "Active", count: activeCampaigns.length },
+    { key: "contracted", label: "Contracted", count: contractedCampaigns.length },
+    { key: "applied", label: "Applied", count: appliedCampaigns.length },
+    { key: "all", label: "All", count: activeCampaigns.length + contractedCampaigns.length + appliedCampaigns.length },
+  ];
+
+  const TabButton = ({ k, label, count }: { k: ViewKey; label: string; count: number }) => {
+    const isActive = view === k;
+    return (
+      <button
+        onClick={() => setView(k)}
+        className={[
+          "px-3.5 py-2 rounded-full text-sm font-medium transition",
+          isActive
+            ? "bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-900 shadow"
+            : "bg-white hover:bg-gray-50 text-gray-700 border border-gray-200",
+        ].join(" ")}
+      >
+        <span>{label}</span>
+        <span className={`ml-2 inline-flex items-center justify-center text-xs px-2 py-0.5 rounded-full ${isActive ? "bg-white/70 text-gray-900" : "bg-gray-100 text-gray-700"}`}>
+          {count}
+        </span>
+      </button>
+    );
+  };
+
   return (
-    <div className="p-6 min-h-screen space-y-10">
-      {/* Active Campaigns */}
-      <section>
-        <h1 className="text-3xl font-semibold mb-6">Active Campaigns</h1>
-        <CampaignTable
-          data={activeCampaigns}
-          loading={activeLoading}
-          error={activeError}
-          emptyMessage="No active campaigns found."
-          page={activePage}
-          totalPages={activeTotalPages}
-          onPrev={() => setActivePage((p) => Math.max(p - 1, 1))}
-          onNext={() => setActivePage((p) => Math.min(p + 1, activeTotalPages))}
-          showMilestones
-          onOpenEditor={openEditor}
-          onRefreshAll={refreshAll}
-          metaCache={metaCache}
-          onSignDirect={openSignDirect}
-        />
-      </section>
+    <div className="p-6 min-h-screen space-y-8">
+      {/* Header & Tabs */}
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <h1 className="text-3xl font-semibold">My Campaigns</h1>
 
-      {/* Contracted Campaigns */}
-      <section>
-        <h1 className="text-3xl font-semibold mb-6">Contracted Campaigns</h1>
-        <CampaignTable
-          data={contractedCampaigns}
-          loading={contractedLoading}
-          error={contractedError}
-          emptyMessage="No Contracted campaigns found."
-          page={contractedPage}
-          totalPages={contractedTotalPages}
-          onPrev={() => setContractedPage((p) => Math.max(p - 1, 1))}
-          onNext={() => setContractedPage((p) => Math.min(p + 1, contractedTotalPages))}
-          onOpenEditor={openEditor}
-          onRefreshAll={refreshAll}
-          metaCache={metaCache}
-          onSignDirect={openSignDirect}
-        />
-      </section>
+        <div className="flex flex-wrap gap-2 bg-white rounded-full p-1 border border-gray-200">
+          {tabs.map(t => (
+            <TabButton key={t.key} k={t.key} label={t.label} count={t.count} />
+          ))}
+        </div>
+      </div>
 
-      {/* Applied Campaigns */}
-      <section>
-        <h1 className="text-3xl font-semibold mb-6">Applied Campaigns</h1>
-        <CampaignTable
-          data={appliedCampaigns}
-          loading={appliedLoading}
-          error={appliedError}
-          emptyMessage="No applied campaigns found."
-          page={appliedPage}
-          totalPages={appliedTotalPages}
-          onPrev={() => setAppliedPage((p) => Math.max(p - 1, 1))}
-          onNext={() => setAppliedPage((p) => Math.min(p + 1, appliedTotalPages))}
-          onOpenEditor={openEditor}
-          onRefreshAll={refreshAll}
-          metaCache={metaCache}
-          onSignDirect={openSignDirect}
-        />
-      </section>
+      {/* Content by selection */}
+      {view === "all" ? (
+        <>
+          {/* Active Campaigns */}
+          <section>
+            <h2 className="text-xl font-semibold mb-4">Active Campaigns</h2>
+            <CampaignTable
+              data={activeCampaigns}
+              loading={activeLoading}
+              error={activeError}
+              emptyMessage="No active campaigns found."
+              page={activePage}
+              totalPages={activeTotalPages}
+              onPrev={() => setActivePage((p) => Math.max(p - 1, 1))}
+              onNext={() => setActivePage((p) => Math.min(p + 1, activeTotalPages))}
+              showMilestones
+              onOpenEditor={openEditor}
+              onRefreshAll={refreshAll}
+              metaCache={metaCache}
+              onSignDirect={openSignDirect}
+            />
+          </section>
+
+          {/* Contracted Campaigns */}
+          <section>
+            <h2 className="text-xl font-semibold mb-4 mt-10">Contracted Campaigns</h2>
+            <CampaignTable
+              data={contractedCampaigns}
+              loading={contractedLoading}
+              error={contractedError}
+              emptyMessage="No contracted campaigns found."
+              page={contractedPage}
+              totalPages={contractedTotalPages}
+              onPrev={() => setContractedPage((p) => Math.max(p - 1, 1))}
+              onNext={() => setContractedPage((p) => Math.min(p + 1, contractedTotalPages))}
+              onOpenEditor={openEditor}
+              onRefreshAll={refreshAll}
+              metaCache={metaCache}
+              onSignDirect={openSignDirect}
+            />
+          </section>
+
+          {/* Applied Campaigns */}
+          <section>
+            <h2 className="text-xl font-semibold mb-4 mt-10">Applied Campaigns</h2>
+            <CampaignTable
+              data={appliedCampaigns}
+              loading={appliedLoading}
+              error={appliedError}
+              emptyMessage="No applied campaigns found."
+              page={appliedPage}
+              totalPages={appliedTotalPages}
+              onPrev={() => setAppliedPage((p) => Math.max(p - 1, 1))}
+              onNext={() => setAppliedPage((p) => Math.min(p + 1, appliedTotalPages))}
+              onOpenEditor={openEditor}
+              onRefreshAll={refreshAll}
+              metaCache={metaCache}
+              onSignDirect={openSignDirect}
+            />
+          </section>
+        </>
+      ) : null}
+
+      {view === "active" ? (
+        <section>
+          <h2 className="text-xl font-semibold mb-4">Active Campaigns</h2>
+          <CampaignTable
+            data={activeCampaigns}
+            loading={activeLoading}
+            error={activeError}
+            emptyMessage="No active campaigns found."
+            page={activePage}
+            totalPages={activeTotalPages}
+            onPrev={() => setActivePage((p) => Math.max(p - 1, 1))}
+            onNext={() => setActivePage((p) => Math.min(p + 1, activeTotalPages))}
+            showMilestones
+            onOpenEditor={openEditor}
+            onRefreshAll={refreshAll}
+            metaCache={metaCache}
+            onSignDirect={openSignDirect}
+          />
+        </section>
+      ) : null}
+
+      {view === "contracted" ? (
+        <section>
+          <h2 className="text-xl font-semibold mb-4">Contracted Campaigns</h2>
+          <CampaignTable
+            data={contractedCampaigns}
+            loading={contractedLoading}
+            error={contractedError}
+            emptyMessage="No contracted campaigns found."
+            page={contractedPage}
+            totalPages={contractedTotalPages}
+            onPrev={() => setContractedPage((p) => Math.max(p - 1, 1))}
+            onNext={() => setContractedPage((p) => Math.min(p + 1, contractedTotalPages))}
+            onOpenEditor={openEditor}
+            onRefreshAll={refreshAll}
+            metaCache={metaCache}
+            onSignDirect={openSignDirect}
+          />
+        </section>
+      ) : null}
+
+      {view === "applied" ? (
+        <section>
+          <h2 className="text-xl font-semibold mb-4">Applied Campaigns</h2>
+          <CampaignTable
+            data={appliedCampaigns}
+            loading={appliedLoading}
+            error={appliedError}
+            emptyMessage="No applied campaigns found."
+            page={appliedPage}
+            totalPages={appliedTotalPages}
+            onPrev={() => setAppliedPage((p) => Math.max(p - 1, 1))}
+            onNext={() => setAppliedPage((p) => Math.min(p + 1, appliedTotalPages))}
+            onOpenEditor={openEditor}
+            onRefreshAll={refreshAll}
+            metaCache={metaCache}
+            onSignDirect={openSignDirect}
+          />
+        </section>
+      ) : null}
 
       {/* Editor Modal */}
       {editorOpen && editorCampaign && (

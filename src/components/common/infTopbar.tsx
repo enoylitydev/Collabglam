@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { HiUserCircle, HiChevronDown, HiMenu, HiBell } from "react-icons/hi";
+import { HiUserCircle, HiChevronDown, HiMenu, HiBell, HiRefresh, HiCheckCircle, HiExclamationCircle } from "react-icons/hi";
 import { get, post } from "@/lib/api";
 
 interface InfluencerTopbarProps {
@@ -28,7 +28,6 @@ type NotificationItem = {
   entityId?: string;
 };
 
-// normalize server docs to { id, ... }
 function normalizeNotif(n: any): NotificationItem {
   return {
     id: n?.id || n?._id || n?.notificationId || `${Date.now()}`,
@@ -60,9 +59,10 @@ export default function InfluencerTopbar({ onSidebarOpen }: InfluencerTopbarProp
   const notifRef = useRef<HTMLDivElement>(null);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [notifLoading, setNotifLoading] = useState(false);
+  const [notifError, setNotifError] = useState<string | null>(null);
   const [unreadCount, setUnreadCount] = useState(0);
 
-  // get influencerId (short retry for post-login timing)
+  // get influencerId with short retry
   useEffect(() => {
     let retries = 0;
     const maxRetries = 10;
@@ -122,34 +122,35 @@ export default function InfluencerTopbar({ onSidebarOpen }: InfluencerTopbarProp
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
-  // 🔔 LOAD NOTIFICATIONS ON PAGE LOAD (after influencerId is known)
+  // load notifications
+  async function reloadNotifications() {
+    if (!influencerId) return;
+    setNotifLoading(true);
+    setNotifError(null);
+    try {
+      const resp = await get<{ data?: any[]; unread?: number }>(
+        `/notifications/influencer?recipientType=influencer&influencerId=${encodeURIComponent(influencerId)}&limit=15`
+      );
+      const list = (resp?.data ?? []).map(normalizeNotif);
+      setNotifications(list);
+      setUnreadCount(
+        typeof resp?.unread === "number" ? resp.unread : list.filter((n) => !n.isRead).length
+      );
+    } catch (err) {
+      console.error("Failed to load notifications", err);
+      setNotifError("Could not load notifications. Please try again.");
+    } finally {
+      setNotifLoading(false);
+    }
+  }
+
   useEffect(() => {
     if (!influencerId) return;
-    let cancelled = false;
-    (async () => {
-      setNotifLoading(true);
-      try {
-        const resp = await get<{ data?: any[]; unread?: number }>(
-          `/notifications/influencer?recipientType=influencer&influencerId=${encodeURIComponent(influencerId)}&limit=15`
-        );
-        if (cancelled) return;
-        const list = (resp?.data ?? []).map(normalizeNotif);
-        setNotifications(list);
-        setUnreadCount(
-          typeof resp?.unread === "number" ? resp.unread : list.filter((n) => !n.isRead).length
-        );
-      } catch (err) {
-        if (!cancelled) console.error("Failed to load notifications", err);
-      } finally {
-        if (!cancelled) setNotifLoading(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
+    reloadNotifications();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [influencerId]);
 
-  // optional realtime: bump unread & optionally prepend when dropdown open
+  // optional realtime
   useEffect(() => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const sock: any = (typeof window !== "undefined" && (window as any).socket) || null;
@@ -172,7 +173,7 @@ export default function InfluencerTopbar({ onSidebarOpen }: InfluencerTopbarProp
     return () => sock.off?.("notification:new", onNew);
   }, [notifOpen, influencerId]);
 
-  // mark one notification as read (optimistic) -> uses backend helper `post`
+  // mark one read (optimistic)
   async function markOneReadLocal(id: string) {
     if (!influencerId) return;
     setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, isRead: true } : n)));
@@ -190,29 +191,17 @@ export default function InfluencerTopbar({ onSidebarOpen }: InfluencerTopbarProp
     }
   }
 
-  // mark all as read -> uses backend helper `post`
+  // mark all read
   async function markAllRead() {
     if (!influencerId || notifications.length === 0) return;
     const hadUnread = notifications.some((n) => !n.isRead);
     setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
     if (hadUnread) setUnreadCount(0);
     try {
-      await post(`/notifications/influencer/mark-all-read`, {
-        influencerId,
-      });
+      await post(`/notifications/influencer/mark-all-read`, { influencerId });
     } catch (e) {
       console.error("Mark all read failed", e);
-      // soft refetch
-      try {
-        const resp = await get<{ data?: any[]; unread?: number }>(
-          `/notifications/influencer?recipientType=influencer&influencerId=${encodeURIComponent(influencerId)}&limit=15`
-        );
-        const list = (resp?.data ?? []).map(normalizeNotif);
-        setNotifications(list);
-        setUnreadCount(
-          typeof resp?.unread === "number" ? resp.unread : list.filter((n) => !n.isRead).length
-        );
-      } catch {}
+      await reloadNotifications();
     }
   }
 
@@ -227,7 +216,7 @@ export default function InfluencerTopbar({ onSidebarOpen }: InfluencerTopbarProp
   }
 
   async function onNotifClick(n: NotificationItem) {
-    if (!n.isRead) await markOneReadLocal(n.id); // turn white + decrement bubble
+    if (!n.isRead) await markOneReadLocal(n.id);
     const path = n.actionPath || "/influencer/notifications";
     window.location.href = path;
   }
@@ -277,24 +266,54 @@ export default function InfluencerTopbar({ onSidebarOpen }: InfluencerTopbarProp
               </button>
 
               {notifOpen && (
-                <div className="absolute right-0 mt-2 w-96 max-w-[95vw] bg-white border border-gray-200 rounded-md shadow-lg z-10">
+                <div className="absolute right-0 mt-2 w-96 max-w-[95vw] bg-white border border-gray-200 rounded-md shadow-lg z-[1000]">
                   <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
                     <p className="text-lg font-semibold text-gray-800">Notifications</p>
-                    <button
-                      onClick={markAllRead}
-                      disabled={notifLoading || unreadCount === 0}
-                      className="text-sm text-blue-600 hover:underline disabled:opacity-50"
-                      title="Mark all as read"
-                    >
-                      Mark all read
-                    </button>
+                    <div className="flex items-center gap-3">
+                      {notifError ? (
+                        <button
+                          onClick={reloadNotifications}
+                          className="inline-flex items-center text-sm text-red-600 hover:underline"
+                          title="Retry loading"
+                        >
+                          <HiRefresh className="mr-1" /> Retry
+                        </button>
+                      ) : (
+                        <button
+                          onClick={markAllRead}
+                          disabled={notifLoading || unreadCount === 0}
+                          className="text-sm text-blue-600 hover:underline disabled:opacity-50"
+                          title="Mark all as read"
+                        >
+                          Mark all read
+                        </button>
+                      )}
+                    </div>
                   </div>
+
+                  {notifError && (
+                    <div className="px-4 py-2 text-sm text-red-700 bg-red-50 border-b border-red-100 flex items-center gap-2">
+                      <HiExclamationCircle className="flex-shrink-0" />
+                      <span className="break-words">{notifError}</span>
+                    </div>
+                  )}
 
                   <div className="max-h-96 overflow-auto">
                     {notifLoading ? (
-                      <div className="p-4 text-sm text-gray-500">Loading…</div>
+                      <ul className="divide-y divide-gray-100">
+                        {Array.from({ length: 4 }).map((_, i) => (
+                          <li key={i} className="px-4 py-3 animate-pulse">
+                            <div className="h-3 w-2/3 bg-gray-200 rounded mb-2" />
+                            <div className="h-3 w-1/2 bg-gray-200 rounded mb-1" />
+                            <div className="h-2 w-1/3 bg-gray-200 rounded" />
+                          </li>
+                        ))}
+                      </ul>
                     ) : notifications.length === 0 ? (
-                      <div className="p-4 text-sm text-gray-500">No notifications yet.</div>
+                      <div className="p-6 text-sm text-gray-500 flex items-center gap-2">
+                        <HiCheckCircle className="text-green-500" />
+                        You’re all caught up.
+                      </div>
                     ) : (
                       <ul className="divide-y divide-gray-100">
                         {notifications.map((n) => (
@@ -312,12 +331,18 @@ export default function InfluencerTopbar({ onSidebarOpen }: InfluencerTopbarProp
                                   aria-label="unread"
                                 />
                               )}
-                              <div className="flex-1">
-                                <p className="text-sm font-medium text-gray-900">{n.title}</p>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-medium text-gray-900 break-words">
+                                  {n.title}
+                                </p>
                                 {n.message && (
-                                  <p className="text-sm text-gray-700 mt-0.5">{n.message}</p>
+                                  <p className="text-sm text-gray-700 mt-0.5 break-words whitespace-normal">
+                                    {n.message}
+                                  </p>
                                 )}
-                                <p className="text-xs text-gray-400 mt-1">{formatWhen(n.createdAt)}</p>
+                                <p className="text-xs text-gray-400 mt-1">
+                                  {formatWhen(n.createdAt)}
+                                </p>
                               </div>
                             </div>
                           </li>
@@ -342,9 +367,11 @@ export default function InfluencerTopbar({ onSidebarOpen }: InfluencerTopbarProp
             {loading ? (
               <span className="text-gray-700 text-sm">Loading…</span>
             ) : error ? (
-              <span className="text-red-600 text-sm">{error}</span>
+              <span className="text-red-600 text-sm break-words">{error}</span>
             ) : (
-              <span className="text-gray-900 font-medium text-lg">{influencerName || "—"}</span>
+              <span className="text-gray-900 font-medium text-lg break-words">
+                {influencerName || "—"}
+              </span>
             )}
 
             {/* === Profile menu === */}
@@ -365,10 +392,10 @@ export default function InfluencerTopbar({ onSidebarOpen }: InfluencerTopbarProp
                   className="absolute right-0 mt-2 w-64 bg-white border border-gray-200 rounded-md shadow-lg z-10"
                 >
                   <div className="px-4 py-3 border-b border-gray-100">
-                    <p className="text-lg font-semibold text-gray-900">
+                    <p className="text-lg font-semibold text-gray-900 break-words">
                       {influencerName || "—"}
                     </p>
-                    {email && <p className="text-sm text-gray-600">{email}</p>}
+                    {email && <p className="text-sm text-gray-600 break-words">{email}</p>}
                     {planLabel && <p className="text-sm text-yellow-700">{planLabel} Plan</p>}
                     {formattedExpiry && <p className="text-xs text-gray-500">Expires: {formattedExpiry}</p>}
                   </div>
@@ -379,8 +406,8 @@ export default function InfluencerTopbar({ onSidebarOpen }: InfluencerTopbarProp
                   </ul>
                 </div>
               )}
-            </div>
 
+            </div>
           </div>
         </div>
       </div>

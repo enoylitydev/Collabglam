@@ -39,7 +39,7 @@ import type { FilterOptionOption, GroupBase } from "react-select";
 // ── types ───────────────────────────────────────────────────
 
 type GenderOption = "Male" | "Female" | "All";
-const GENDER_OPTIONS: GenderOption[] = ["Male", "Female", "All"];
+// const GENDER_OPTIONS: GenderOption[] = ["Male", "Female", "All"]; // (unused after ReactSelect migration)
 
 interface Country {
   _id: string;
@@ -72,34 +72,8 @@ interface SubcategoryOption {
   categoryName: string; // category name
 }
 
-interface CampaignEditPayload {
-  productOrServiceName: string;
-  description: string;
-  images: string[]; // GridFS filenames or full URLs
-  targetAudience: {
-    age: { MinAge: number; MaxAge: number };
-    gender: 0 | 1 | 2;
-    locations: { countryId: string; countryName: string; _id: string }[];
-  };
-  categories?: {
-    categoryId: number;
-    categoryName: string;
-    subcategoryId: string;
-    subcategoryName: string;
-  }[];
-  goal: string;
-  budget: number;
-  timeline: { startDate?: string; endDate?: string };
-  creativeBriefText: string;
-  additionalNotes: string;
-}
-
-interface DraftFilePayload {
-  name: string;
-  type: string;
-  lastModified: number;
-  dataUrl: string;
-}
+// NEW: generic simple option for ReactSelect
+type SimpleOption = { value: string; label: string };
 
 // ── helpers ─────────────────────────────────────────────────
 
@@ -172,6 +146,17 @@ const uiGenderToServer = (g: GenderOption | ""): 0 | 1 | 2 =>
 
 const DRAFT_KEY = "campaignDraft";
 
+// NEW: ReactSelect option lists for Gender & Goals
+const GENDER_SELECT_OPTIONS: SimpleOption[] = ["Male", "Female", "All"].map((g) => ({
+  value: g,
+  label: g,
+}));
+const GOAL_OPTIONS: SimpleOption[] = [
+  "Brand Awareness",
+  "Sales",
+  "Engagement",
+].map((g) => ({ value: g, label: g }));
+
 export default function CampaignFormPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -233,7 +218,7 @@ export default function CampaignFormPage() {
         options: (cat.subcategories || []).map((sc) => ({
           value: sc.subcategoryId,
           label: sc.name,
-          categoryId: cat.id,      // ✅ numeric Category.id
+          categoryId: cat.id, // ✅ numeric Category.id
           categoryName: cat.name,
         })),
       })),
@@ -283,6 +268,20 @@ export default function CampaignFormPage() {
       "&:hover": { backgroundColor: "#FFEDD5", color: "#9A3412" },
     }),
   };
+
+  // NEW: extend styles to show red error ring when missing required
+  const makeSelectStyles = (hasError = false) => ({
+    ...selectStyles,
+    control: (base: any, state: any) => ({
+      ...selectStyles.control(base, state),
+      borderColor: hasError ? "#DC2626" : state.isFocused ? "#FFA135" : "#E5E7EB",
+      boxShadow: hasError
+        ? "0 0 0 3px rgba(220, 38, 38, 0.1)"
+        : state.isFocused
+        ? "0 0 0 3px rgba(255, 161, 53, 0.1)"
+        : "none",
+    }),
+  });
 
   // Normalized URLs for existing images (for UI display only)
   const existingImagesNormalized = useMemo(
@@ -523,8 +522,8 @@ export default function CampaignFormPage() {
         "categories",
         JSON.stringify(
           selectedSubcategories.map((s) => ({
-            categoryId: s.categoryId,   // number ✅
-            subcategoryId: s.value
+            categoryId: s.categoryId, // number ✅
+            subcategoryId: s.value,
           }))
         )
       );
@@ -547,7 +546,7 @@ export default function CampaignFormPage() {
       } else {
         await post("/campaign/create", formData);
         toast({ icon: "success", title: "Campaign Created" });
-        try { localStorage.removeItem(DRAFT_KEY); } catch { }
+        try { localStorage.removeItem(DRAFT_KEY); } catch {}
       }
 
       setIsPreviewOpen(false);
@@ -714,21 +713,16 @@ export default function CampaignFormPage() {
 
                 <div className="space-y-1">
                   <Label className="text-sm font-medium text-gray-700 mb-2 block">Gender</Label>
-                  <select
-                    value={selectedGender}
-                    onChange={(e) => setSelectedGender(e.target.value as GenderOption)}
-                    required
-                    className="block w-full h-12 rounded-lg border border-gray-300 px-4 text-gray-900 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-colors duration-200"
-                  >
-                    <option value="" disabled>
-                      Select gender
-                    </option>
-                    {GENDER_OPTIONS.map((g) => (
-                      <option key={g} value={g}>
-                        {g}
-                      </option>
-                    ))}
-                  </select>
+                  <ReactSelect
+                    options={GENDER_SELECT_OPTIONS}
+                    styles={makeSelectStyles(showRequiredHints && !selectedGender) as any}
+                    value={selectedGender ? GENDER_SELECT_OPTIONS.find((o) => o.value === selectedGender) : null}
+                    onChange={(opt) => setSelectedGender(((opt as SimpleOption | null)?.value as GenderOption) || "")}
+                    placeholder="Select gender..."
+                    isClearable
+                    closeMenuOnSelect
+                    blurInputOnSelect={false}
+                  />
                   {showRequiredHints && !selectedGender && (
                     <p className="text-xs text-red-600">This field is required</p>
                   )}
@@ -784,21 +778,16 @@ export default function CampaignFormPage() {
                 <div className="grid sm:grid-cols-2 gap-6">
                   <div className="space-y-1">
                     <Label className="text-sm font-medium text-gray-700 mb-2 block">Campaign Goal</Label>
-                    <select
-                      value={selectedGoal}
-                      onChange={(e) => setSelectedGoal(e.target.value)}
-                      required
-                      className="block w-full h-12 rounded-lg border border-gray-300 px-4 text-gray-900 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-colors duration-200"
-                    >
-                      <option value="" disabled>
-                        Select a goal
-                      </option>
-                      {["Brand Awareness", "Sales", "Engagement"].map((g) => (
-                        <option key={g} value={g}>
-                          {g}
-                        </option>
-                      ))}
-                    </select>
+                    <ReactSelect
+                      options={GOAL_OPTIONS}
+                      styles={makeSelectStyles(showRequiredHints && !selectedGoal) as any}
+                      value={selectedGoal ? GOAL_OPTIONS.find((o) => o.value === selectedGoal) : null}
+                      onChange={(opt) => setSelectedGoal(((opt as SimpleOption | null)?.value) || "")}
+                      placeholder="Select a goal..."
+                      isClearable
+                      closeMenuOnSelect
+                      blurInputOnSelect={false}
+                    />
                     {showRequiredHints && !selectedGoal && (
                       <p className="text-xs text-red-600">This field is required</p>
                     )}
@@ -1183,4 +1172,34 @@ export default function CampaignFormPage() {
       </Dialog>
     </>
   );
+}
+
+// ── payload interfaces moved to bottom to keep file compact ──
+interface CampaignEditPayload {
+  productOrServiceName: string;
+  description: string;
+  images: string[]; // GridFS filenames or full URLs
+  targetAudience: {
+    age: { MinAge: number; MaxAge: number };
+    gender: 0 | 1 | 2;
+    locations: { countryId: string; countryName: string; _id: string }[];
+  };
+  categories?: {
+    categoryId: number;
+    categoryName: string;
+    subcategoryId: string;
+    subcategoryName: string;
+  }[];
+  goal: string;
+  budget: number;
+  timeline: { startDate?: string; endDate?: string };
+  creativeBriefText: string;
+  additionalNotes: string;
+}
+
+interface DraftFilePayload {
+  name: string;
+  type: string;
+  lastModified: number;
+  dataUrl: string;
 }
