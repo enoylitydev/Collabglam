@@ -181,17 +181,25 @@ function normalizeGenderStr(raw: any): GenderStr | undefined {
   if (raw === null || typeof raw === "undefined") return undefined;
 
   // If backend ever sends numeric enum (0..3) or numeric string, map to labels
-  const num = typeof raw === "number" && Number.isFinite(raw)
-    ? raw
-    : (typeof raw === "string" && /^[0-9]+$/.test(raw.trim()) ? Number(raw.trim()) : null);
+  const num =
+    typeof raw === "number" && Number.isFinite(raw)
+      ? raw
+      : typeof raw === "string" && /^[0-9]+$/.test(raw.trim())
+      ? Number(raw.trim())
+      : null;
 
   if (num !== null) {
     switch (num) {
-      case 0: return "Male";
-      case 1: return "Female";
-      case 2: return "Non-binary";
-      case 3: return "Prefer not to say";
-      default: break;
+      case 0:
+        return "Male";
+      case 1:
+        return "Female";
+      case 2:
+        return "Non-binary";
+      case 3:
+        return "Prefer not to say";
+      default:
+        break;
     }
   }
 
@@ -202,7 +210,7 @@ function normalizeGenderStr(raw: any): GenderStr | undefined {
   if (t === "non-binary" || t === "nonbinary" || t === "nb") return "Non-binary";
   if (t === "prefer not to say" || t === "prefer-not-to-say") return "Prefer not to say";
   if (s === "") return "";
-  if (["Male","Female","Non-binary","Prefer not to say"].includes(s)) return s as GenderStr;
+  if (["Male", "Female", "Non-binary", "Prefer not to say"].includes(s)) return s as GenderStr;
   return undefined;
 }
 
@@ -264,7 +272,12 @@ function asArray<T = any>(v: any): T[] {
 function normalizeCategoryNode(raw: any): CategoryNode {
   const categoryIdRaw = raw?.categoryId ?? raw?.id ?? raw?.code;
   const categoryName = String(raw?.categoryName ?? raw?.name ?? raw?.label ?? "");
-  const subRaw = raw?.subcategories ?? raw?.children ?? raw?.subs ?? raw?.subCategoryList ?? raw?.subcategoriesList;
+  const subRaw =
+    raw?.subcategories ??
+    raw?.children ??
+    raw?.subs ??
+    raw?.subCategoryList ??
+    raw?.subcategoriesList;
   const subcategories: { subcategoryId: string; subcategoryName: string }[] = asArray<any>(subRaw)
     .map((s) => ({
       subcategoryId: String(s?.subcategoryId ?? s?.id ?? s?.uuid ?? s?._id ?? s?.value ?? s?.code ?? ""),
@@ -280,7 +293,9 @@ function normalizeCategoryNode(raw: any): CategoryNode {
 }
 
 const buildCategoryOptions = (rows: any): CategoryOption[] => {
-  const arr = asArray<any>(rows).map(normalizeCategoryNode).filter((n) => Number.isFinite(n.categoryId) && n.categoryName);
+  const arr = asArray<any>(rows)
+    .map(normalizeCategoryNode)
+    .filter((n) => Number.isFinite(n.categoryId) && n.categoryName);
   if (!Array.isArray(rows)) {
     console.warn("[categories] Non-array payload received; coerced via keys.", rows);
   }
@@ -297,7 +312,8 @@ function normalizeInfluencer(data: any): InfluencerData {
 
   // Social fallbacks from primary social profile (prefer primary platform; else first)
   const spArr = Array.isArray(inf?.socialProfiles) ? inf.socialProfiles : [];
-  const preferred = spArr.find((p: any) => p?.provider === (inf?.primaryPlatform || "")) || spArr[0] || {};
+  const preferred =
+    spArr.find((p: any) => p?.provider === (inf?.primaryPlatform || "")) || spArr[0] || {};
   const fallbackHandle = preferred?.username ? `@${preferred.username}` : "";
   const fallbackLink = preferred?.url || "";
   const fallbackImage = preferred?.picture || "";
@@ -353,7 +369,13 @@ function normalizeInfluencer(data: any): InfluencerData {
 
 type SimpleOption = { value: string; label: string };
 
-function MultiSelect({ values, onChange, options, placeholder = "Choose...", max = Infinity }: {
+function MultiSelect({
+  values,
+  onChange,
+  options,
+  placeholder = "Choose...",
+  max = Infinity,
+}: {
   values: SimpleOption[];
   onChange: (opts: SimpleOption[]) => void;
   options: SimpleOption[];
@@ -362,22 +384,26 @@ function MultiSelect({ values, onChange, options, placeholder = "Choose...", max
 }) {
   const [query, setQuery] = useState("");
 
-  const selectedSet = useMemo(() => new Set(values.map(v => v.value)), [values]);
+  const selectedSet = useMemo(() => new Set(values.map((v) => v.value)), [values]);
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return q ? options.filter(o => o.label.toLowerCase().includes(q)) : options;
+    return q ? options.filter((o) => o.label.toLowerCase().includes(q)) : options;
   }, [options, query]);
 
   const toggle = (val: string) => {
-    const opt = options.find(o => o.value === val);
+    const opt = options.find((o) => o.value === val);
     if (!opt) return;
     const isSelected = selectedSet.has(val);
 
     if (isSelected) {
-      onChange(values.filter(v => v.value !== val));
+      onChange(values.filter((v) => v.value !== val));
     } else {
       if (values.length >= max) {
-        Swal.fire({ icon: "info", title: `Limit reached (${max})`, text: `You can select up to ${max} items.` });
+        Swal.fire({
+          icon: "info",
+          title: `Limit reached (${max})`,
+          text: `You can select up to ${max} items.`,
+        });
         return;
       }
       onChange([...values, opt]);
@@ -385,7 +411,9 @@ function MultiSelect({ values, onChange, options, placeholder = "Choose...", max
   };
 
   const triggerLabel = values.length
-    ? values.length <= 2 ? values.map(v => v.label).join(", ") : `${values.length} selected`
+    ? values.length <= 2
+      ? values.map((v) => v.label).join(", ")
+      : `${values.length} selected`
     : placeholder;
 
   return (
@@ -400,7 +428,7 @@ function MultiSelect({ values, onChange, options, placeholder = "Choose...", max
         {filtered.length === 0 ? (
           <div className="px-3 py-2 text-sm text-muted-foreground">No results</div>
         ) : (
-          filtered.map(opt => (
+          filtered.map((opt) => (
             <SelectItem key={opt.value} value={opt.value}>
               <div className="flex items-center gap-2">
                 <CheckIcon className={`h-4 w-4 ${selectedSet.has(opt.value) ? "opacity-100" : "opacity-0"}`} />
@@ -867,9 +895,12 @@ export default function InfluencerProfilePage() {
     });
   }, [selectedSubcats]);
 
-  const onField = useCallback(<K extends keyof InfluencerData>(key: K, value: InfluencerData[K]) => {
-    setForm((prev) => (prev ? { ...prev, [key]: value } : prev));
-  }, []);
+  const onField = useCallback(
+    <K extends keyof InfluencerData>(key: K, value: InfluencerData[K]) => {
+      setForm((prev) => (prev ? { ...prev, [key]: value } : prev));
+    },
+    []
+  );
 
   const resetEdits = useCallback(() => {
     if (!influencer) return;
@@ -898,9 +929,12 @@ export default function InfluencerProfilePage() {
     setSelectedPlatform(cl.primaryPlatform ?? null);
 
     // Category + subcats
-    const cat = categories.find((c) => c.value === cl.onboarding?.categoryId)
-      || categories.find((c) => c.label.toLowerCase() === (cl.onboarding?.categoryName || "").toLowerCase())
-      || null;
+    const cat =
+      categories.find((c) => c.value === cl.onboarding?.categoryId) ||
+      categories.find(
+        (c) => c.label.toLowerCase() === (cl.onboarding?.categoryName || "").toLowerCase()
+      ) ||
+      null;
     setSelectedCategory(cat);
     setSubcategoryOptions(buildSubcategoryOptions(cat?.raw));
     const subs = (cl.onboarding?.subcategories || [])
@@ -924,25 +958,43 @@ export default function InfluencerProfilePage() {
     }
 
     // Gender is required after OTP verification (product decision)
-    const hasValidGender = typeof form.gender !== "undefined" && ["Male","Female","Non-binary","Prefer not to say",""].includes(form.gender);
+    const hasValidGender =
+      typeof form.gender !== "undefined" &&
+      ["Male", "Female", "Non-binary", "Prefer not to say", ""].includes(form.gender);
     if (form.otpVerified && !hasValidGender) {
-      await Swal.fire({ icon: "info", title: "Gender required", text: "Please select your gender to continue." });
+      await Swal.fire({
+        icon: "info",
+        title: "Gender required",
+        text: "Please select your gender to continue.",
+      });
       return;
     }
 
     // Phone quick check (model expects 10 digits when otpVerified)
     if (form.otpVerified && !/^\d{10}$/.test((form.phone || "").trim())) {
-      await Swal.fire({ icon: "warning", title: "Invalid phone", text: "Phone number must be 10 digits." });
+      await Swal.fire({
+        icon: "warning",
+        title: "Invalid phone",
+        text: "Phone number must be 10 digits.",
+      });
       return;
     }
 
     // Category & subcategories validation (no upper limit; require at least 1)
     if (!form.onboarding?.categoryId || !form.onboarding?.categoryName) {
-      await Swal.fire({ icon: "error", title: "Pick a category", text: "Please select a primary category." });
+      await Swal.fire({
+        icon: "error",
+        title: "Pick a category",
+        text: "Please select a primary category.",
+      });
       return;
     }
     if (!form.onboarding.subcategories || form.onboarding.subcategories.length < 1) {
-      await Swal.fire({ icon: "error", title: "Pick subcategories", text: "Please select one or more subcategories." });
+      await Swal.fire({
+        icon: "error",
+        title: "Pick subcategories",
+        text: "Please select one or more subcategories.",
+      });
       return;
     }
 
@@ -980,18 +1032,26 @@ export default function InfluencerProfilePage() {
       if (form.callingId) fd.append("callingId", form.callingId);
 
       // Onboarding taxonomy (send as one JSON blob)
-      fd.append("onboarding", JSON.stringify({
-        categoryId: form.onboarding.categoryId,
-        categoryName: form.onboarding.categoryName,
-        subcategories: form.onboarding.subcategories,
-      }));
+      fd.append(
+        "onboarding",
+        JSON.stringify({
+          categoryId: form.onboarding.categoryId,
+          categoryName: form.onboarding.categoryName,
+          subcategories: form.onboarding.subcategories,
+        })
+      );
 
       // Avatar
       if (profileImageFile) fd.append("profileImage", profileImageFile);
 
       await post<{ message?: string }>("/influencer/updateProfile", fd);
 
-      await Swal.fire({ icon: "success", title: "Profile updated", timer: 1200, showConfirmButton: false });
+      await Swal.fire({
+        icon: "success",
+        title: "Profile updated",
+        timer: 1200,
+        showConfirmButton: false,
+      });
 
       const updatedRaw = await get<any>(`/influencer/getbyid?id=${influencerId}`);
       const updated = normalizeInfluencer(updatedRaw);
@@ -1005,7 +1065,11 @@ export default function InfluencerProfilePage() {
       // Reset selects to reflect saved state
       setSelectedCountry(() => {
         const byId = countryOptions.find((o) => o.value === updated.countryId);
-        const byName = !byId && countryOptions.find((o) => o.country.countryName.toLowerCase() === (updated.country || "").toLowerCase());
+        const byName =
+          !byId &&
+          countryOptions.find(
+            (o) => o.country.countryName.toLowerCase() === (updated.country || "").toLowerCase()
+          );
         return (byId || byName || null) as CountryOption | null;
       });
       setSelectedCalling(() => {
@@ -1015,9 +1079,13 @@ export default function InfluencerProfilePage() {
       });
       setSelectedPlatform(updated.primaryPlatform ?? null);
 
-      const cat = categories.find((c) => c.value === updated.onboarding?.categoryId)
-        || categories.find((c) => c.label.toLowerCase() === (updated.onboarding?.categoryName || "").toLowerCase())
-        || null;
+      const cat =
+        categories.find((c) => c.value === updated.onboarding?.categoryId) ||
+        categories.find(
+          (c) =>
+            c.label.toLowerCase() === (updated.onboarding?.categoryName || "").toLowerCase()
+        ) ||
+        null;
       setSelectedCategory(cat);
       setSubcategoryOptions(buildSubcategoryOptions(cat?.raw));
       const subs = (updated.onboarding?.subcategories || [])
@@ -1027,7 +1095,11 @@ export default function InfluencerProfilePage() {
       prevCatIdRef.current = cat?.value ?? null;
     } catch (e: any) {
       console.error(e);
-      await Swal.fire({ icon: "error", title: "Save failed", text: e?.message || "Failed to save profile." });
+      await Swal.fire({
+        icon: "error",
+        title: "Save failed",
+        text: e?.message || "Failed to save profile.",
+      });
     } finally {
       setSaving(false);
     }
@@ -1051,7 +1123,10 @@ export default function InfluencerProfilePage() {
               <div className="flex items-center gap-4 min-w-0">
                 <div className="relative">
                   <Avatar className="h-20 w-20 rounded-2xl">
-                    <AvatarImage src={form?.profileImage || influencer?.profileImage || ""} alt={influencer?.name} />
+                    <AvatarImage
+                      src={form?.profileImage || influencer?.profileImage || ""}
+                      alt={influencer?.name}
+                    />
                     <AvatarFallback className="rounded-2xl bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-800">
                       <User className="h-8 w-8" />
                     </AvatarFallback>
@@ -1068,25 +1143,34 @@ export default function InfluencerProfilePage() {
                             setProfileImageFile(f);
                             if (f) {
                               const reader = new FileReader();
-                              reader.onload = () => setForm((prev) => (prev ? { ...prev, profileImage: String(reader.result) } : prev));
+                              reader.onload = () =>
+                                setForm((prev) =>
+                                  prev ? { ...prev, profileImage: String(reader.result) } : prev
+                                );
                               reader.readAsDataURL(f);
                             }
                           }}
                         />
-                        
                       </label>
                     </div>
                   )}
                 </div>
 
                 <div className="min-w-0">
-                  <h1 className="text-2xl sm:text-3xl font-bold truncate">{influencer?.name || "—"}</h1>
+                  <h1 className="text-2xl sm:text-3xl font-bold truncate">
+                    {influencer?.name || "—"}
+                  </h1>
                   <p className="text-muted-foreground truncate">
                     {humanizePlatform(influencer?.primaryPlatform ?? null)}
                     {influencer?.profileLink && (
                       <>
                         {" • "}
-                        <a href={influencer.profileLink} className="text-amber-600 underline" target="_blank" rel="noreferrer">
+                        <a
+                          href={influencer.profileLink}
+                          className="text-amber-600 underline"
+                          target="_blank"
+                          rel="noreferrer"
+                        >
                           Profile Link
                         </a>
                       </>
@@ -1096,7 +1180,10 @@ export default function InfluencerProfilePage() {
               </div>
 
               {!isEditing && (
-                <Button onClick={() => setIsEditing(true)} className="gap-2 bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-800">
+                <Button
+                  onClick={() => setIsEditing(true)}
+                  className="gap-2 bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-800"
+                >
                   <Pencil className="h-5 w-5" />
                   Edit Profile
                 </Button>
@@ -1110,11 +1197,7 @@ export default function InfluencerProfilePage() {
           <CardContent className="py-6">
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
               {/* Name */}
-              <FieldCard
-                icon={<User className="h-5 w-5 text-gray-800" />}
-                label="Full Name"
-                editing={isEditing}
-              >
+              <FieldCard icon={<User className="h-5 w-5 text-gray-800" />} label="Full Name" editing={isEditing}>
                 {isEditing ? (
                   <Input value={form?.name || ""} onChange={(e) => onField("name", e.target.value as any)} />
                 ) : (
@@ -1123,13 +1206,12 @@ export default function InfluencerProfilePage() {
               </FieldCard>
 
               {/* Social Handle */}
-              <FieldCard
-                icon={<Hash className="h-5 w-5 text-gray-800" />}
-                label="Social Handle"
-                editing={isEditing}
-              >
+              <FieldCard icon={<Hash className="h-5 w-5 text-gray-800" />} label="Social Handle" editing={isEditing}>
                 {isEditing ? (
-                  <Input value={form?.socialMedia || ""} onChange={(e) => onField("socialMedia", e.target.value as any)} />
+                  <Input
+                    value={form?.socialMedia || ""}
+                    onChange={(e) => onField("socialMedia", e.target.value as any)}
+                  />
                 ) : (
                   <ReadText text={influencer?.socialMedia || ""} />
                 )}
@@ -1137,15 +1219,12 @@ export default function InfluencerProfilePage() {
 
               {/* Email (dual OTP) */}
               {!isEditing ? (
-                <FieldCard
-                  icon={<Mail className="h-5 w-5 text-gray-800" />}
-                  label="Email Address"
-                  editing={false}
-                >
+                <FieldCard icon={<Mail className="h-5 w-5 text-gray-800" />} label="Email Address" editing={false}>
                   <ReadText text={influencer?.email ?? ""} />
                 </FieldCard>
               ) : (
-                influencer && form && (
+                influencer &&
+                form && (
                   <EmailEditorDualOTP
                     influencerId={influencer.influencerId}
                     originalEmail={influencer.email}
@@ -1162,17 +1241,15 @@ export default function InfluencerProfilePage() {
               )}
 
               {/* Phone */}
-              <FieldCard
-                icon={<PhoneIcon className="h-5 w-5 text-gray-800" />}
-                label="Phone Number"
-                editing={isEditing}
-              >
+              <FieldCard icon={<PhoneIcon className="h-5 w-5 text-gray-800" />} label="Phone Number" editing={isEditing}>
                 {isEditing ? (
                   <div className="grid grid-cols-1 sm:grid-cols-[140px,1fr] gap-2">
                     <div className="sm:col-span-1">
                       <ShSelect
                         value={selectedCalling?.value || ""}
-                        onValueChange={(v) => setSelectedCalling(codeOptions.find((o) => o.value === v) || null)}
+                        onValueChange={(v) =>
+                          setSelectedCalling(codeOptions.find((o) => o.value === v) || null)
+                        }
                       >
                         <SelectTrigger className="w-full">
                           <SelectValue placeholder="Code" />
@@ -1187,24 +1264,33 @@ export default function InfluencerProfilePage() {
                       </ShSelect>
                     </div>
                     <div className="sm:col-span-1">
-                      <Input type="tel" inputMode="tel" value={form?.phone ?? ""} onChange={(e) => onField("phone", e.target.value as any)} placeholder="Phone number" />
+                      <Input
+                        type="tel"
+                        inputMode="tel"
+                        value={form?.phone ?? ""}
+                        onChange={(e) => onField("phone", e.target.value as any)}
+                        placeholder="Phone number"
+                      />
                     </div>
                   </div>
                 ) : (
-                  <ReadText text={formatPhoneDisplay(form?.callingCode || influencer?.callingCode, influencer?.phone)} />
+                  <ReadText
+                    text={formatPhoneDisplay(
+                      form?.callingCode || influencer?.callingCode,
+                      influencer?.phone
+                    )}
+                  />
                 )}
               </FieldCard>
 
               {/* Country */}
-              <FieldCard
-                icon={<Globe className="h-5 w-5 text-gray-800" />}
-                label="Country"
-                editing={isEditing}
-              >
+              <FieldCard icon={<Globe className="h-5 w-5 text-gray-800" />} label="Country" editing={isEditing}>
                 {isEditing ? (
                   <ShSelect
                     value={selectedCountry?.value || ""}
-                    onValueChange={(v) => setSelectedCountry(countryOptions.find((o) => o.value === v) || null)}
+                    onValueChange={(v) =>
+                      setSelectedCountry(countryOptions.find((o) => o.value === v) || null)
+                    }
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Select Country" />
@@ -1223,11 +1309,7 @@ export default function InfluencerProfilePage() {
               </FieldCard>
 
               {/* Gender */}
-              <FieldCard
-                icon={<User className="h-5 w-5 text-gray-800" />}
-                label="Gender"
-                editing={isEditing}
-              >
+              <FieldCard icon={<User className="h-5 w-5 text-gray-800" />} label="Gender" editing={isEditing}>
                 {isEditing ? (
                   <ShSelect
                     value={form?.gender ?? ""}
@@ -1259,11 +1341,7 @@ export default function InfluencerProfilePage() {
           <CardContent className="space-y-4">
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
               {/* Platform */}
-              <FieldCard
-                icon={<Users className="h-5 w-5 text-gray-800" />}
-                label="Primary Platform"
-                editing={isEditing}
-              >
+              <FieldCard icon={<Users className="h-5 w-5 text-gray-800" />} label="Primary Platform" editing={isEditing}>
                 {isEditing ? (
                   <ShSelect
                     value={selectedPlatform || ""}
@@ -1286,15 +1364,15 @@ export default function InfluencerProfilePage() {
               </FieldCard>
 
               {/* Category */}
-              <FieldCard
-                icon={<Pencil className="h-5 w-5 text-gray-800" />}
-                label="Category"
-                editing={isEditing}
-              >
+              <FieldCard icon={<Pencil className="h-5 w-5 text-gray-800" />} label="Category" editing={isEditing}>
                 {isEditing ? (
                   <ShSelect
                     value={selectedCategory?.value?.toString() || ""}
-                    onValueChange={(v) => setSelectedCategory(categories.find((c) => String(c.value) === v) || null)}
+                    onValueChange={(v) =>
+                      setSelectedCategory(
+                        categories.find((c) => String(c.value) === v) || null
+                      )
+                    }
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Select Category" />
@@ -1323,7 +1401,9 @@ export default function InfluencerProfilePage() {
                           values={selectedSubcats.map(toSO)}
                           onChange={(opts) => setSelectedSubcats(opts as SubcategoryOption[])}
                           options={subcategoryOptions.map(toSO)}
-                          placeholder={selectedCategory ? "Choose subcategories" : "Pick a category first"}
+                          placeholder={
+                            selectedCategory ? "Choose subcategories" : "Pick a category first"
+                          }
                         />
                         {!!selectedSubcats.length && (
                           <div className="flex flex-wrap gap-2 pt-1">
@@ -1338,7 +1418,11 @@ export default function InfluencerProfilePage() {
                     ) : influencer?.onboarding?.subcategories?.length ? (
                       <div className="flex flex-wrap gap-2">
                         {influencer.onboarding.subcategories.map((s) => (
-                          <Badge key={s.subcategoryId} variant="secondary" className="bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-800">
+                          <Badge
+                            key={s.subcategoryId}
+                            variant="secondary"
+                            className="bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-800"
+                          >
                             {s.subcategoryName}
                           </Badge>
                         ))}
@@ -1368,7 +1452,9 @@ export default function InfluencerProfilePage() {
                       <h3 className="text-lg font-semibold mb-1">Subscription</h3>
                       <p className="text-2xl font-bold">
                         {influencer?.subscription?.planName
-                          ? influencer.subscription.planName.replace(/^./u, (c) => c.toLocaleUpperCase())
+                          ? influencer.subscription.planName.replace(/^./u, (c) =>
+                              c.toLocaleUpperCase()
+                            )
                           : "No Plan"}
                       </p>
                       <div className="space-y-1 text-sm text-muted-foreground mt-2">
@@ -1384,7 +1470,9 @@ export default function InfluencerProfilePage() {
                             <span>
                               Expires: {formatDate(influencer.subscription.expiresAt)}
                               {influencer?.subscriptionExpired && (
-                                <Badge variant="destructive" className="ml-2">Expired</Badge>
+                                <Badge variant="destructive" className="ml-2">
+                                  Expired
+                                </Badge>
                               )}
                             </span>
                           </div>
@@ -1393,7 +1481,10 @@ export default function InfluencerProfilePage() {
                     </div>
 
                     <div className="w-full sm:w-auto">
-                      <Button className="w-full gap-2 bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-800" onClick={() => router.push('/influencer/subscriptions')}>
+                      <Button
+                        className="w-full gap-2 bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-800"
+                        onClick={() => router.push("/influencer/subscriptions")}
+                      >
                         <CreditCard className="h-5 w-5 text-gray-800" />
                         Upgrade Subscription
                       </Button>
@@ -1410,57 +1501,84 @@ export default function InfluencerProfilePage() {
                         const limit = Math.max(0, rawLimit);
                         const used = Math.max(0, Number.isFinite(f.used) ? f.used : 0);
 
-                        // Unlimited rule: treat 1 OR 0 as unlimited (per product rule)
-                        const unlimited = limit <= 1;
+                        // ✅ Unlimited rule (updated): ONLY 0 means Unlimited (per plans API “0 ⇒ Unlimited”)
+                        const unlimited = limit === 0;
 
-                        const label = isManager ? "Dedicated Manager Support" : titleizeFeatureKey(f.key);
+                        const label = isManager
+                          ? "Dedicated Manager Support"
+                          : titleizeFeatureKey(f.key);
 
                         if (isManager) {
-                          const status = unlimited ? "Unlimited" : limit >= 1 ? "Available" : "Not Included";
+                          const status = unlimited
+                            ? "Unlimited"
+                            : limit >= 1
+                            ? "Available"
+                            : "Not Included";
                           const ok = unlimited || limit >= 1;
 
                           return (
                             <div key={f.key} className="flex items-center justify-between">
                               <div className="flex items-center gap-2 text-sm">
-                                {ok ? <Check className="w-4 h-4 text-emerald-600" /> : <X className="w-4 h-4 text-gray-400" />}
+                                {ok ? (
+                                  <Check className="w-4 h-4 text-emerald-600" />
+                                ) : (
+                                  <X className="w-4 h-4 text-gray-400" />
+                                )}
                                 <span className="text-gray-800">{label}</span>
                               </div>
-                              <span className={`text-xs px-2 py-1 rounded-md border ${unlimited
-                                ? "bg-blue-100 text-blue-700 border-blue-200"
-                                : ok
-                                  ? "bg-emerald-100 text-emerald-800 border-emerald-200"
-                                  : "bg-gray-100 text-gray-700 border-gray-200"
-                                }`}>
+                              <span
+                                className={`text-xs px-2 py-1 rounded-md border ${
+                                  unlimited
+                                    ? "bg-blue-100 text-blue-700 border-blue-200"
+                                    : ok
+                                    ? "bg-emerald-100 text-emerald-800 border-emerald-200"
+                                    : "bg-gray-100 text-gray-700 border-gray-200"
+                                }`}
+                              >
                                 {status}
                               </span>
                             </div>
                           );
                         }
 
-                        const pct = unlimited ? 100 : limit > 0 ? Math.min(100, Math.round((used / limit) * 100)) : 0;
-                const barColorClass = unlimited
-  ? "[&>div]:bg-gradient-to-r [&>div]:from-[#FFBF00] [&>div]:to-[#FFDB58]"
-  : used >= limit
-    ? "[&>div]:bg-gradient-to-r [&>div]:from-red-500 [&>div]:to-red-400"
-    : pct >= 80
-      ? "[&>div]:bg-gradient-to-r [&>div]:from-orange-500 [&>div]:to-orange-300"
-      : "[&>div]:bg-gradient-to-r [&>div]:from-[#FFBF00] [&>div]:to-[#FFDB58]";
+                        const pct = unlimited
+                          ? 100
+                          : limit > 0
+                          ? Math.min(100, Math.round((used / limit) * 100))
+                          : 0;
 
+                        const barColorClass = unlimited
+                          ? "[&>div]:bg-gradient-to-r [&>div]:from-[#FFBF00] [&>div]:to-[#FFDB58]"
+                          : used >= limit
+                          ? "[&>div]:bg-gradient-to-r [&>div]:from-red-500 [&>div]:to-red-400"
+                          : pct >= 80
+                          ? "[&>div]:bg-gradient-to-r [&>div]:from-orange-500 [&>div]:to-orange-300"
+                          : "[&>div]:bg-gradient-to-r [&>div]:from-[#FFBF00] [&>div]:to-[#FFDB58]";
 
                         return (
                           <div key={f.key} className="group">
                             <div className="flex items-center justify-between mb-1 text-sm">
                               <span className="text-gray-800">{label}</span>
-                              <span className="text-gray-500 tabular-nums">{used} / {unlimited ? "∞" : limit}</span>
+                              <span className="text-gray-500 tabular-nums">
+                                {used} / {unlimited ? "∞" : limit}
+                              </span>
                             </div>
 
-                            <Progress value={pct} className={`h-2 rounded-full bg-gray-100 ${barColorClass}`} aria-label={`${label} usage: ${used} of ${unlimited ? "unlimited" : limit}`} />
+                            <Progress
+                              value={pct}
+                              className={`h-2 rounded-full bg-gray-100 ${barColorClass}`}
+                              aria-label={`${label} usage: ${used} of ${unlimited ? "unlimited" : limit}`}
+                            />
 
                             <div className="mt-1 flex items-center justify-between text-xs text-gray-500">
-                              <span className="tabular-nums">{unlimited ? "∞" : `${pct}%`}</span>
+                              <span className="tabular-nums">
+                                {unlimited ? "∞" : `${pct}%`}
+                              </span>
                               {unlimited ? (
                                 <span className="tabular-nums flex items-center gap-1">
-                                  <span className="px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200">Unlimited</span>
+                                  <span className="px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200">
+                                    Unlimited
+                                  </span>
                                 </span>
                               ) : (
                                 <span className="tabular-nums">{Math.max(0, limit - used)} left</span>
@@ -1488,7 +1606,11 @@ export default function InfluencerProfilePage() {
               onClick={saveProfile}
               disabled={saveDisabled}
               className="gap-2 bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-800"
-              title={emailFlow !== "idle" && emailFlow !== "verified" ? "Verify the new email to enable saving" : undefined}
+              title={
+                emailFlow !== "idle" && emailFlow !== "verified"
+                  ? "Verify the new email to enable saving"
+                  : undefined
+              }
             >
               {saving ? <Loader2 className="h-5 w-5 animate-spin" /> : <Check className="h-5 w-5" />}
               {saving ? "Saving…" : "Save Changes"}

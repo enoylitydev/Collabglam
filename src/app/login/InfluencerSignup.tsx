@@ -123,6 +123,9 @@ export default function InfluencerSignup({ onSuccess, onStepChange }: { onSucces
   const [otpVerified, setOtpVerified] = useState(false);
   const [passwordVisible, setPasswordVisible] = useState(false);
 
+  // NEW: local flag to lock Continue and show "Sending…" while requesting OTP
+  const [otpSending, setOtpSending] = useState(false);
+
   // Track influencerId returned from /influencer/register for follow-up onboarding
   const [influencerId, setInfluencerId] = useState<string>('');
 
@@ -269,6 +272,9 @@ export default function InfluencerSignup({ onSuccess, onStepChange }: { onSucces
   // ===== Step 1 — Basic + Email (auto-send OTP on continue)
   // UPDATED: make async; request OTP first, navigate to Verify only on success
   const completeBasicDetails = async () => {
+    // prevent double clicks while sending
+    if (otpSending) return;
+
     // reset hints first
     setShowBasicHints(false);
     setShowPwdHints(false);
@@ -302,7 +308,12 @@ export default function InfluencerSignup({ onSuccess, onStepChange }: { onSucces
     // Try OTP first; if it fails (e.g., user already present), keep user on this step and show error here
     setError('');
     setFormData((prev) => ({ ...prev, otp: '' }));
+
+    // show "Sending…" and disable the button
+    setOtpSending(true);
     const ok = await sendOTP();
+    setOtpSending(false);
+
     if (ok) {
       setOtpVerified(false);
       setStep('verify');
@@ -736,8 +747,15 @@ export default function InfluencerSignup({ onSuccess, onStepChange }: { onSucces
               </div>
 
               <div className="flex flex-col-reverse sm:flex-row gap-3 sm:justify-end">
-                <Button onClick={completeBasicDetails} variant="influencer" className="self-center sm:self-auto">
-                  Continue
+                <Button
+                  onClick={completeBasicDetails}
+                  variant="influencer"
+                  className="self-center sm:self-auto"
+                  loading={otpSending}
+                  disabled={otpSending}
+                  aria-busy={otpSending}
+                >
+                  {otpSending ? 'Sending…' : 'Continue'}
                 </Button>
               </div>
             </div>

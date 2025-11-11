@@ -986,11 +986,14 @@ export default function BrandProfilePage() {
                     const unlimited = limit === 0;
                     const label = isManager ? "Dedicated Manager Support" : titleizeFeatureKey(f.key);
 
+                    // your gradient
+                    const gradientSolid = "bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white";
+
                     if (isManager) {
                       // Special rendering for dedicated manager support
                       const status = unlimited ? "Unlimited" : limit >= 1 ? "Available" : "Not included";
                       const badgeClass = unlimited
-                        ? "bg-blue-100 text-blue-700 border border-blue-200"
+                        ? `${gradientSolid} border border-transparent`
                         : limit >= 1
                           ? "bg-emerald-100 text-emerald-800 border border-emerald-200"
                           : "bg-gray-100 text-gray-700 border border-gray-200";
@@ -999,7 +1002,7 @@ export default function BrandProfilePage() {
                       return (
                         <div key={f.key} className="flex items-center justify-between">
                           <div className="flex items-center gap-2 text-sm">
-                            <Icon className={(unlimited || limit >= 1) ? "w-4 h-4 text-emerald-600" : "w-4 h-4 text-gray-400"} />
+                            <Icon className={(unlimited || limit >= 1) ? "w-4 h-4 text-[#FF7236]" : "w-4 h-4 text-gray-400"} />
                             <span className="text-gray-800">{label}</span>
                           </div>
                           <span className={`text-xs px-2 py-1 rounded-md ${badgeClass}`}>{status}</span>
@@ -1009,9 +1012,11 @@ export default function BrandProfilePage() {
 
                     // Quota-like features (show bar)
                     const pct = unlimited ? 100 : limit > 0 ? Math.min(100, Math.round((used / limit) * 100)) : 0;
-                    const barColor =
+
+                    // use gradient when unlimited (was blue before)
+                    const barClasses =
                       unlimited
-                        ? "[&>div]:bg-blue-500"
+                        ? "[&>div]:bg-gradient-to-r [&>div]:from-[#FFA135] [&>div]:to-[#FF7236]"
                         : used >= limit
                           ? "[&>div]:bg-red-500"
                           : pct >= 80
@@ -1029,15 +1034,16 @@ export default function BrandProfilePage() {
 
                         <Progress
                           value={pct}
-                          className={`h-2 rounded-full bg-gray-100 ${barColor}`}
+                          className={`h-2 rounded-full bg-gray-100 ${barClasses}`}
                           aria-label={`${label} usage: ${used} of ${unlimited ? "unlimited" : limit}`}
                         />
 
                         <div className="mt-1 flex items-center justify-between text-xs text-gray-500">
                           <span className="tabular-nums">{unlimited ? "∞" : `${pct}%`}</span>
                           {unlimited ? (
-                            <span className="tabular-nums flex items-center gap-1">
-                              <span className="px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200">Unlimited</span>
+                            // gradient pill (was blue)
+                            <span className={`tabular-nums flex items-center gap-1 px-1.5 py-0.5 rounded ${gradientSolid}`}>
+                              Unlimited
                             </span>
                           ) : (
                             <span className="tabular-nums">{Math.max(0, limit - used)} left</span>
