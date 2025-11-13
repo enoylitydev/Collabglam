@@ -24,7 +24,8 @@ interface MenuItem {
   icon: React.ComponentType<{ size?: string | number; className?: string }>;
 }
 
-const menuItems: MenuItem[] = [
+// Base list (don’t change this; we’ll filter it below)
+const BASE_MENU_ITEMS: MenuItem[] = [
   { name: 'Dashboard', href: '/brand/dashboard', icon: HiHome },
   { name: 'Create New Campaign', href: '/brand/add-edit-campaign', icon: HiPlusCircle },
   { name: 'Created Campaign', href: '/brand/created-campaign', icon: HiPlay },
@@ -46,9 +47,28 @@ export default function BrandSidebar({ isOpen, onClose }: BrandSidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
 
+  // NEW: read plan from localStorage
+  const [planName, setPlanName] = React.useState<string | null>(null);
+  React.useEffect(() => {
+    try {
+      const pn =
+        window.localStorage.getItem('brandPlanName') ||
+        window.localStorage.getItem('planName');
+      setPlanName(pn ? pn.toLowerCase() : null);
+    } catch {
+      setPlanName(null);
+    }
+  }, []);
+
+  // NEW: filter menu for free plans
+  const menuItems = React.useMemo(() => {
+    if (!planName) return BASE_MENU_ITEMS;
+    const isFree = planName === 'free' || planName === 'brand_free';
+    if (!isFree) return BASE_MENU_ITEMS;
+    return BASE_MENU_ITEMS.filter((item) => item.href !== '/brand/disputes');
+  }, [planName]);
+
   const handleLogout = () => {
-    // Remove role-scoped and legacy tokens
-    localStorage.removeItem('brand_token');
     localStorage.removeItem('token');
     router.push('/');
   };

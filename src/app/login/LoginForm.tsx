@@ -1,3 +1,5 @@
+'use client';
+
 import { useState } from 'react';
 import { FloatingLabelInput } from '@/components/common/FloatingLabelInput';
 import { Button } from './Button';
@@ -10,6 +12,32 @@ interface LoginFormProps {
   onForgotPassword: () => void;
   onSuccess: () => void;
 }
+
+type BrandLoginResponse = {
+  token: string;
+  brandId: string;
+  subscriptionPlanName?: string;
+  subscription?: {
+    planId?: string;
+    planName?: string;
+    role?: string;
+    status?: string;
+    expiresAt?: string;
+  };
+};
+
+type InfluencerLoginResponse = {
+  token: string;
+  influencerId: string;
+  categoryId: string;
+  subscriptionPlanName?: string;
+  subscription?: {
+    planId?: string;
+    planName?: string;
+    startedAt?: string;
+    expiresAt?: string;
+  };
+};
 
 export function LoginForm({ role, onForgotPassword, onSuccess }: LoginFormProps) {
   const [formData, setFormData] = useState({
@@ -35,32 +63,74 @@ export function LoginForm({ role, onForgotPassword, onSuccess }: LoginFormProps)
 
     try {
       if (role === 'brand') {
-        const data = await post<{ token: string; brandId: string }>(
-          '/brand/login',
-          { email: formData.email, password: formData.password }
-        );
+        const data = await post<BrandLoginResponse>('/brand/login', {
+          email: formData.email,
+          password: formData.password,
+        });
+
+        console.log('Brand login response:', data);
+
         // Use role-scoped token storage
         localStorage.setItem('token', data.token);
         localStorage.setItem('brandId', data.brandId);
         localStorage.setItem('userType', 'brand');
         localStorage.setItem('userEmail', formData.email);
+
+        // 🔹 Brand plan info
+        const brandPlanName =
+          data.subscriptionPlanName ??
+          data.subscription?.planName ??
+          'free';
+
+        const brandPlanId = data.subscription?.planId ?? '';
+
+        console.log('Saving BRAND subscription:', { brandPlanName, brandPlanId });
+
+        localStorage.setItem('brandPlanName', brandPlanName);
+        if (brandPlanId) {
+          localStorage.setItem('brandPlanId', brandPlanId);
+        }
+
         onSuccess();
         router.replace('/brand/dashboard');
       } else {
-        const data = await post<{ token: string; influencerId: string; categoryId: string }>(
-          '/influencer/login',
-          { email: formData.email, password: formData.password }
-        );
+        const data = await post<InfluencerLoginResponse>('/influencer/login', {
+          email: formData.email,
+          password: formData.password,
+        });
+
+        console.log('Influencer login response:', data);
+
         // Use role-scoped token storage
         localStorage.setItem('token', data.token);
         localStorage.setItem('influencerId', data.influencerId);
         localStorage.setItem('categoryId', data.categoryId);
         localStorage.setItem('userType', 'influencer');
         localStorage.setItem('userEmail', formData.email);
+
+        // 🔹 Influencer plan info
+        const influencerPlanName =
+          data.subscriptionPlanName ??
+          data.subscription?.planName ??
+          'free';
+
+        const influencerPlanId = data.subscription?.planId ?? '';
+
+        console.log('Saving INFLUENCER subscription:', {
+          influencerPlanName,
+          influencerPlanId,
+        });
+
+        localStorage.setItem('influencerPlanName', influencerPlanName);
+        if (influencerPlanId) {
+          localStorage.setItem('influencerPlanId', influencerPlanId);
+        }
+
         onSuccess();
         router.replace('/influencer/dashboard');
       }
     } catch (err: any) {
+      console.error('Login error:', err);
       setError(err?.response?.data?.message || err?.message || 'Login failed');
     } finally {
       setLoading(false);
@@ -71,8 +141,8 @@ export function LoginForm({ role, onForgotPassword, onSuccess }: LoginFormProps)
     <form onSubmit={handleLogin} className="space-y-5">
       <div className="text-center space-y-2">
         <div className="flex justify-center">
-          <div className={`w-16 h-16 rounded-2xl flex items-center justify-center`}>
-            <img src='./logo.png' />
+          <div className="w-16 h-16 rounded-2xl flex items-center justify-center">
+            <img src="./logo.png" />
           </div>
         </div>
         <h2 className="text-3xl font-bold text-gray-900">Welcome back</h2>
@@ -112,10 +182,14 @@ export function LoginForm({ role, onForgotPassword, onSuccess }: LoginFormProps)
             checked={showPassword}
             onChange={(e) => setShowPassword(e.target.checked)}
             className={`rounded border-gray-300 ${
-              role === 'brand' ? 'text-orange-600 focus:ring-orange-500' : 'text-yellow-600 focus:ring-yellow-500'
+              role === 'brand'
+                ? 'text-orange-600 focus:ring-orange-500'
+                : 'text-yellow-600 focus:ring-yellow-500'
             }`}
           />
-          <span className="text-gray-600 group-hover:text-gray-900">Show password</span>
+          <span className="text-gray-600 group-hover:text-gray-900">
+            Show password
+          </span>
         </label>
 
         <button

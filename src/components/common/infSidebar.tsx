@@ -45,6 +45,9 @@ export default function InfluencerSidebar({ isOpen, onClose }: InfluencerSidebar
   // Manual override: null = follow auto; true/false = user override
   const [userCollapsed, setUserCollapsed] = useState<boolean | null>(null);
 
+  // 🔹 NEW: plan name from localStorage
+  const [planName, setPlanName] = useState<string | null>(null);
+
   const pathname = usePathname();
   const router = useRouter();
 
@@ -56,7 +59,7 @@ export default function InfluencerSidebar({ isOpen, onClose }: InfluencerSidebar
     const onResize = () => {
       const w = window.innerWidth;
       setAutoCollapsed(prev => {
-        if (w < COLLAPSE_AT) return true;0
+        if (w < COLLAPSE_AT) return true;
         if (w > EXPAND_AT) return false;
         return prev;
       });
@@ -66,24 +69,45 @@ export default function InfluencerSidebar({ isOpen, onClose }: InfluencerSidebar
     return () => window.removeEventListener("resize", onResize);
   }, []);
 
+  // 🔹 Load subscription plan from localStorage on mount
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const storedPlanName =
+      localStorage.getItem("influencerPlanName") ||
+      localStorage.getItem("brandPlanName"); // fallback if needed
+    setPlanName(storedPlanName);
+  }, []);
+
   // Effective state: manual override wins; otherwise follow auto
   const isCollapsed = (userCollapsed ?? autoCollapsed) === true;
 
   const handleToggle = () => {
-    // If we’re following auto (null), flip relative to auto state.
-    // If user already overrode, just flip that.
     setUserCollapsed(prev => (prev === null ? !autoCollapsed : !prev));
   };
 
   const handleLogout = () => {
-    // Remove role-scoped and legacy tokens
+    // Remove role-scoped and legacy tokens + plan info
     localStorage.removeItem("influencer_token");
     localStorage.removeItem("token");
+    localStorage.removeItem("influencerPlanName");
+    localStorage.removeItem("influencerPlanId");
     router.push("/");
   };
 
+  // 🔹 Filter menu items: hide Disputes for free plan
+  const filteredMenuItems = menuItems.filter((item) => {
+    if (item.name === "Disputes") {
+      const normalized = (planName || "").toLowerCase();
+      if (!normalized || normalized === "free") {
+        // no plan or free plan -> hide Disputes
+        return false;
+      }
+    }
+    return true;
+  });
+
   const renderLinks = () =>
-    menuItems.map((item) => {
+    filteredMenuItems.map((item) => {
       const isActive = pathname.startsWith(item.href);
       const base = "flex items-center py-3 px-4 rounded-md transition-all duration-200";
       const active = isActive

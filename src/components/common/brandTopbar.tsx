@@ -25,7 +25,7 @@ interface SearchResult {
 }
 
 type NotificationItem = {
-  id: string; // normalized from _id/notificationId
+  id: string;
   title: string;
   message?: string;
   createdAt: string;
@@ -59,7 +59,7 @@ type LegacyBrandResp = {
   name: string;
   email: string;
   walletBalance: number;
-  subscription: { planName: string; expiresAt: string };
+  subscription?: { planName?: string; expiresAt?: string };
 };
 
 export default function BrandTopbar({ onSidebarOpen }: { onSidebarOpen: () => void }) {
@@ -68,14 +68,15 @@ export default function BrandTopbar({ onSidebarOpen }: { onSidebarOpen: () => vo
   // IDs
   const [brandId, setBrandId] = useState<string | null>(null);
 
-  // Profile / subscription state
+  // Profile / subscription
   const [brandName, setBrandName] = useState("");
   const [budgetRemaining, setBudgetRemaining] = useState<number | null>(null);
   const [email, setEmail] = useState("");
   const [subscriptionName, setSubscriptionName] = useState("");
   const [subscriptionExpiresAt, setSubscriptionExpiresAt] = useState("");
+
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null); // soft errors only
 
   // Profile menu
   const [menuOpen, setMenuOpen] = useState(false);
@@ -89,14 +90,14 @@ export default function BrandTopbar({ onSidebarOpen }: { onSidebarOpen: () => vo
   const [notifError, setNotifError] = useState<string | null>(null);
   const [unreadCount, setUnreadCount] = useState(0);
 
-  // Search state (kept, but unchanged)
+  // Search
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
   const debounceRef = useRef<number | null>(null);
 
-  // Track desktop vs mobile
+  // Desktop vs Mobile
   const [isDesktop, setIsDesktop] = useState(false);
   useEffect(() => {
     const update = () => setIsDesktop(window.innerWidth >= 768);
@@ -105,82 +106,87 @@ export default function BrandTopbar({ onSidebarOpen }: { onSidebarOpen: () => vo
     return () => window.removeEventListener("resize", update);
   }, []);
 
-  // Read brandId from localStorage
+  // Bootstrap from localStorage (no UI error if missing; we’ll just wait)
   useEffect(() => {
-    const id = typeof window !== "undefined" ? localStorage.getItem("brandId") : null;
-    setBrandId(id);
+    try {
+      const id = localStorage.getItem("brandId");
+      const mail = localStorage.getItem("userEmail") || "";
+      const plan =
+        localStorage.getItem("brandPlanName") ||
+        localStorage.getItem("planName") ||
+        "";
+      setBrandId(id);
+      setEmail(mail);
+      if (plan) setSubscriptionName(plan.toLowerCase());
+    } catch {
+      // ignore
+    }
   }, []);
 
-  // Load brand details (dash → legacy fallback)
+  // Load brand details (dash -> legacy -> local fallbacks)
   useEffect(() => {
-    if (!brandId) {
-      setError("No brandId in localStorage");
-      setLoading(false);
-      return;
-    }
     let cancelled = false;
+    if (!brandId) return; // wait until we have brandId; don’t set a user-visible error here
 
     (async () => {
       setLoading(true);
+      setError(null);
+
+      // 1) Try modern dashboard endpoint (token-based)
       try {
         const dash = await post<BrandDashResp>(`/dash/brand`);
-
-        if (cancelled) return;
-
-        if (dash && (dash.brandName || dash.budgetRemaining !== undefined)) {
-          setBrandName(dash.brandName || "");
-          setBudgetRemaining(
-            typeof dash.budgetRemaining === "number" ? dash.budgetRemaining : null
-          );
-          setError(null);
-        } else {
-          const legacy = await get<LegacyBrandResp>(
-            `/brand?id=${encodeURIComponent(brandId)}`
-          );
-          if (cancelled) return;
-
-          setBrandName(legacy?.name || "");
-          setEmail(legacy?.email || "");
-          setBudgetRemaining(
-            typeof legacy?.walletBalance === "number" ? legacy.walletBalance : null
-          );
-          setSubscriptionName(legacy?.subscription?.planName || "");
-          setSubscriptionExpiresAt(legacy?.subscription?.expiresAt || "");
-          setError(null);
+        if (!cancelled && dash) {
+          if (dash.brandName) setBrandName(dash.brandName);
+          if (typeof dash.budgetRemaining === "number")
+            setBudgetRemaining(dash.budgetRemaining);
         }
-      } catch (err: any) {
-        console.error("Brand details load failed:", err);
+      } catch {
+        // swallow; we’ll try legacy
+      }
+
+      // 2) If name or budget not set, try legacy /brand?id=...
+      const stillNeedName = !brandName;
+      const stillNeedBudget = budgetRemaining == null;
+      if (!cancelled && (stillNeedName || stillNeedBudget)) {
         try {
           const legacy = await get<LegacyBrandResp>(
             `/brand?id=${encodeURIComponent(brandId)}`
           );
-          if (!cancelled) {
-            setBrandName(legacy?.name || "");
-            setEmail(legacy?.email || "");
-            setBudgetRemaining(
-              typeof legacy?.walletBalance === "number" ? legacy.walletBalance : null
-            );
-            setSubscriptionName(legacy?.subscription?.planName || "");
-            setSubscriptionExpiresAt(legacy?.subscription?.expiresAt || "");
-            setError(null);
+
+          if (!cancelled && legacy) {
+            if (stillNeedName) setBrandName(legacy?.name || "");
+            if (stillNeedBudget)
+              setBudgetRemaining(
+                typeof legacy?.walletBalance === "number"
+                  ? legacy.walletBalance
+                  : null
+              );
+
+            if (!email && legacy?.email) setEmail(legacy.email);
+            const plan = legacy?.subscription?.planName;
+            if (plan && !subscriptionName) setSubscriptionName(plan.toLowerCase());
+            const exp = legacy?.subscription?.expiresAt;
+            if (exp) setSubscriptionExpiresAt(exp);
           }
-        } catch (e2) {
-          if (!cancelled) {
-            console.error("Legacy brand load failed:", e2);
-            setError("Failed to load brand info");
+        } catch (e: any) {
+          // legacy failed (404 Brand not found or other) — don’t spam UI with error
+          // show soft error only if we have absolutely nothing to display
+          if (!cancelled && !brandName) {
+            setError(null); // keep UI clean; we’ll show placeholders instead
           }
         }
-      } finally {
-        if (!cancelled) setLoading(false);
       }
+
+      if (!cancelled) setLoading(false);
     })();
 
     return () => {
       cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [brandId]);
 
-  // click-outside close
+  // click-outside to close menus
   useEffect(() => {
     const handleClick = (e: MouseEvent) => {
       const target = e.target as Node;
@@ -222,12 +228,16 @@ export default function BrandTopbar({ onSidebarOpen }: { onSidebarOpen: () => vo
     setNotifError(null);
     try {
       const resp = await get<{ data?: any[]; unread?: number }>(
-        `/notifications/brand?recipientType=brand&brandId=${encodeURIComponent(brandId)}&limit=15`
+        `/notifications/brand?recipientType=brand&brandId=${encodeURIComponent(
+          brandId
+        )}&limit=15`
       );
       const list = (resp?.data ?? []).map(normalizeNotif);
       setNotifications(list);
       setUnreadCount(
-        typeof resp?.unread === "number" ? resp.unread : list.filter((n) => !n.isRead).length
+        typeof resp?.unread === "number"
+          ? resp.unread
+          : list.filter((n) => !n.isRead).length
       );
     } catch (err) {
       console.error("Failed to load notifications", err);
@@ -237,7 +247,7 @@ export default function BrandTopbar({ onSidebarOpen }: { onSidebarOpen: () => vo
     }
   }
 
-  // Notifications: fetch on load
+  // Notifications: fetch on load + when brandId changes
   useEffect(() => {
     if (!brandId) return;
     reloadNotifications();
@@ -254,30 +264,33 @@ export default function BrandTopbar({ onSidebarOpen }: { onSidebarOpen: () => vo
   async function onNotifClick(n: NotificationItem) {
     try {
       if (!n.isRead && brandId) {
-        setNotifications((prev) => prev.map((x) => (x.id === n.id ? { ...x, isRead: true } : x)));
+        setNotifications((prev) =>
+          prev.map((x) => (x.id === n.id ? { ...x, isRead: true } : x))
+        );
         setUnreadCount((c) => Math.max(0, c - 1));
-        await post(`notifications/brand/mark-read`, { id: n.id, brandId });
+        await post(`/notifications/brand/mark-read`, { id: n.id, brandId });
       }
     } catch (e) {
       // rollback
-      setNotifications((prev) => prev.map((x) => (x.id === n.id ? { ...x, isRead: n.isRead } : x)));
+      setNotifications((prev) =>
+        prev.map((x) => (x.id === n.id ? { ...x, isRead: n.isRead } : x))
+      );
       if (!n.isRead) setUnreadCount((c) => c + 1);
     } finally {
       const path = n.actionPath || "/brand/notifications";
-      router.push(path);
+      router.push(path.startsWith("/") ? path : `/${path}`);
     }
   }
 
-  // Mark all read (with UI button)
+  // Mark all read
   async function markAllRead() {
     if (!brandId || notifications.length === 0) return;
     const hadUnread = notifications.some((n) => !n.isRead);
     setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
     if (hadUnread) setUnreadCount(0);
     try {
-      await post(`notifications/brand/mark-all-read`, { brandId });
+      await post(`/notifications/brand/mark-all-read`, { brandId });
     } catch (err) {
-      // soft refresh on failure
       await reloadNotifications();
     }
   }
@@ -429,7 +442,7 @@ export default function BrandTopbar({ onSidebarOpen }: { onSidebarOpen: () => vo
           </div>
 
           {/* Budget Remaining */}
-          {!loading && !error && budgetRemaining !== null && (
+          {!loading && budgetRemaining !== null && (
             <button
               className="flex items-center space-x-1 bg-gray-100 hover:bg-gray-200 px-3 py-1 rounded-md text-md"
               title="Budget remaining"
@@ -441,13 +454,13 @@ export default function BrandTopbar({ onSidebarOpen }: { onSidebarOpen: () => vo
             </button>
           )}
 
-          {/* Brand name */}
+          {/* Brand name (no scary errors in UI) */}
           {loading ? (
             <span className="text-gray-500 text-sm">Loading…</span>
-          ) : error ? (
-            <span className="text-red-500 text-sm break-words">{error}</span>
           ) : (
-            <span className="text-gray-800 font-medium text-lg break-words">{brandName || "—"}</span>
+            <span className="text-gray-800 font-medium text-lg break-words">
+              {brandName || "—"}
+            </span>
           )}
 
           {/* Profile dropdown */}
@@ -459,10 +472,12 @@ export default function BrandTopbar({ onSidebarOpen }: { onSidebarOpen: () => vo
               <HiUserCircle size={24} className="text-gray-600" />
               <HiChevronDown size={16} className="text-gray-600" />
             </button>
-            {menuOpen && !loading && !error && (
+            {menuOpen && !loading && (
               <div className="absolute right-0 mt-2 w-64 bg-white border border-gray-200 rounded-md shadow-lg z-10">
                 <div className="px-4 py-3 border-b border-gray-100">
-                  <p className="text-md font-semibold text-gray-700 break-words">{brandName}</p>
+                  <p className="text-md font-semibold text-gray-700 break-words">
+                    {brandName || "Brand"}
+                  </p>
                   {email && <p className="text-sm text-gray-500 break-words">{email}</p>}
                   {subscriptionName && (
                     <p className="text-md text-gray-500 break-words">

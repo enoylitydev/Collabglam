@@ -106,16 +106,16 @@ const FEATURE_LABELS: Record<string, string> = {
 /** Semantics */
 const BOOLEAN_KEYS = new Set<string>([
   // flags if backend ever sends booleans/0-1 for these
-  "in_app_messaging","contract_esign_basic","contract_esign_download_pdf","dispute_channel","media_kit_builder",
+  "in_app_messaging", "contract_esign_basic", "contract_esign_download_pdf", "dispute_channel", "media_kit_builder",
 ]);
 const ZERO_IS_UNLIMITED = new Set<string>(["apply_to_campaigns_quota", "active_collaborations_limit"]);
 const TRUE_MEANS_UNLIMITED = new Set<string>(["in_app_messaging"]);
 
-const isUnlimited = (k:string,v:any) =>
+const isUnlimited = (k: string, v: any) =>
   v === Infinity || (typeof v === "number" && v === 0 && ZERO_IS_UNLIMITED.has(k)) ||
   (BOOLEAN_KEYS.has(k) && TRUE_MEANS_UNLIMITED.has(k) && Boolean(v));
 
-const formatValue = (key:string, value:any): string => {
+const formatValue = (key: string, value: any): string => {
   if (isUnlimited(key, value)) return "Unlimited";
 
   // Enum prettifiers
@@ -149,8 +149,8 @@ const formatValue = (key:string, value:any): string => {
   return String(value);
 };
 
-const isPositive = (key:string, v:any) => {
-  if (isUnlimited(key,v)) return true;
+const isPositive = (key: string, v: any) => {
+  if (isUnlimited(key, v)) return true;
   if (BOOLEAN_KEYS.has(key)) return Boolean(v);
   if (typeof v === "boolean") return v;
   if (typeof v === "number") return v > 0;
@@ -159,8 +159,8 @@ const isPositive = (key:string, v:any) => {
   return Boolean(v);
 };
 
-const loadScript = (src:string) => new Promise<boolean>((res)=>{
-  const s=document.createElement("script"); s.src=src; s.onload=()=>res(true); s.onerror=()=>res(false); document.body.appendChild(s);
+const loadScript = (src: string) => new Promise<boolean>((res) => {
+  const s = document.createElement("script"); s.src = src; s.onload = () => res(true); s.onerror = () => res(false); document.body.appendChild(s);
 });
 
 /** UI Component */
@@ -185,7 +185,7 @@ export default function InfluencerSubscriptionPage() {
         const { plans: fetched } = await post<any>("/subscription/list", { role: "Influencer" });
         // Prefer sortOrder if provided, else friendly rank fallback
         const rank = (n: string) => ({ free: 0, creator_plus: 2, creator_pro: 3, agency: 9 } as any)[n.toLowerCase()] ?? 5;
-        const sorted = (fetched || []).slice().sort((a:Plan,b:Plan) =>
+        const sorted = (fetched || []).slice().sort((a: Plan, b: Plan) =>
           (a.sortOrder ?? 999) - (b.sortOrder ?? 999) ||
           rank(a.name) - rank(b.name) ||
           a.monthlyCost - b.monthlyCost
@@ -217,21 +217,21 @@ export default function InfluencerSubscriptionPage() {
   const featureLoss = useMemo(() => {
     if (!currentPlanObj || !selectedPlan) return [] as { key: string; from: any; to: any }[];
     const mapNew = new Map(selectedPlan.features.map((f) => [f.key, f.value]));
-    const union = Array.from(new Set([...currentPlanObj.features.map(f=>f.key), ...selectedPlan.features.map(f=>f.key)]));
-    return union.map(k=>{
-      const from=currentPlanObj.features.find(f=>f.key===k)?.value;
-      const to=mapNew.get(k);
+    const union = Array.from(new Set([...currentPlanObj.features.map(f => f.key), ...selectedPlan.features.map(f => f.key)]));
+    return union.map(k => {
+      const from = currentPlanObj.features.find(f => f.key === k)?.value;
+      const to = mapNew.get(k);
       const loss = (() => {
-        if (isUnlimited(k,from) && !isUnlimited(k,to)) return true;
+        if (isUnlimited(k, from) && !isUnlimited(k, to)) return true;
         if (BOOLEAN_KEYS.has(k)) return Boolean(from) && !Boolean(to);
-        if (typeof from==="number" && typeof to==="number") return to < from;
-        if (typeof from==="boolean" && typeof to==="boolean") return from && !to;
+        if (typeof from === "number" && typeof to === "number") return to < from;
+        if (typeof from === "boolean" && typeof to === "boolean") return from && !to;
         if (Array.isArray(from) && Array.isArray(to)) return to.length < from.length;
-        if ((from==null)!==(to==null)) return from!=null && to==null;
+        if ((from == null) !== (to == null)) return from != null && to == null;
         return false;
       })();
-      return loss ? { key:k, from, to } : null;
-    }).filter(Boolean) as {key:string;from:any;to:any}[];
+      return loss ? { key: k, from, to } : null;
+    }).filter(Boolean) as { key: string; from: any; to: any }[];
   }, [currentPlanObj, selectedPlan]);
 
   /** Checkout / assignment */
@@ -280,8 +280,14 @@ export default function InfluencerSubscriptionPage() {
           try {
             await post("/payment/verify", { ...response, planId: plan.planId, influencerId });
             await post("/subscription/assign", { userType: "Influencer", userId: influencerId, planId: plan.planId });
+
+            // 🔹 Update React state
             setCurrentPlan(plan.name);
-            setExpiresAt(new Date(Date.now()+30*24*60*60*1000).toISOString());
+            setExpiresAt(new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString());
+
+            localStorage.setItem("influencerPlanName", plan.name);
+            localStorage.setItem("influencerPlanId", plan.planId);
+
             setPaymentStatus("success");
             setPaymentMessage("Subscription updated successfully!");
             window.location.reload();
@@ -294,7 +300,7 @@ export default function InfluencerSubscriptionPage() {
         prefill: { name: "", email: "", contact: "" },
         theme: { color: "#FFA135" },
       });
-      rzp.on("payment.failed", (resp:any) => {
+      rzp.on("payment.failed", (resp: any) => {
         setPaymentStatus("failed");
         setPaymentMessage(`Payment Failed: ${resp.error.description}`);
       });
@@ -320,10 +326,14 @@ export default function InfluencerSubscriptionPage() {
       await post("/subscription/assign", { userType: "Influencer", userId: influencerId, planId: selectedPlan.planId });
       setCurrentPlan(selectedPlan.name);
       setExpiresAt(null);
+      localStorage.setItem("influencerPlanName", selectedPlan.name);
+      localStorage.setItem("influencerPlanId", selectedPlan.planId);
+
       setPaymentStatus("success");
       setPaymentMessage(`You've moved to the ${planTitle(selectedPlan)} plan.`);
       setShowDowngradeModal(false);
       setConfirmText("");
+
     } catch {
       setPaymentStatus("failed");
       setPaymentMessage("Could not change your plan right now. Please try again.");
@@ -356,7 +366,7 @@ export default function InfluencerSubscriptionPage() {
     "team_manager_tools_managed_creators",
     "dashboard_access",
     // extras (if backend ever adds)
-    "in_app_messaging","contract_esign_basic","contract_esign_download_pdf","dispute_channel","media_kit_sections","media_kit_builder",
+    "in_app_messaging", "contract_esign_basic", "contract_esign_download_pdf", "dispute_channel", "media_kit_sections", "media_kit_builder",
   ];
 
   function planTitle(p: Plan) { return p.displayName || capitalize(p.name); }
@@ -400,14 +410,13 @@ export default function InfluencerSubscriptionPage() {
         {/* Status toast */}
         {paymentStatus !== "idle" && (
           <div className="max-w-md mx-auto mb-8">
-            <div className={`p-4 rounded-2xl border flex items-center justify-center gap-3 ${
-              paymentStatus==="success" ? "bg-emerald-50 border-emerald-200 text-emerald-800"
-              : paymentStatus==="processing" ? "bg-orange-50 border-orange-200 text-orange-800"
-              : "bg-red-50 border-red-200 text-red-800"}`}>
-              {paymentStatus==="success" ? <CheckCircle className="w-6 h-6" /> :
-               paymentStatus==="processing" ? <Loader2 className="w-6 h-6 animate-spin" /> :
-               <XCircle className="w-6 h-6" />}
-              <p className="font-medium">{paymentMessage || (paymentStatus==="processing" ? "Working on it…" : null)}</p>
+            <div className={`p-4 rounded-2xl border flex items-center justify-center gap-3 ${paymentStatus === "success" ? "bg-emerald-50 border-emerald-200 text-emerald-800"
+              : paymentStatus === "processing" ? "bg-orange-50 border-orange-200 text-orange-800"
+                : "bg-red-50 border-red-200 text-red-800"}`}>
+              {paymentStatus === "success" ? <CheckCircle className="w-6 h-6" /> :
+                paymentStatus === "processing" ? <Loader2 className="w-6 h-6 animate-spin" /> :
+                  <XCircle className="w-6 h-6" />}
+              <p className="font-medium">{paymentMessage || (paymentStatus === "processing" ? "Working on it…" : null)}</p>
             </div>
           </div>
         )}
@@ -418,20 +427,19 @@ export default function InfluencerSubscriptionPage() {
             const isActive = plan.name.toLowerCase() === currentPlan?.toLowerCase();
             const isProcessing = processing === plan.name;
             const isFree = plan.monthlyCost <= 0;
-            const highlighted = ["best value","popular"].includes((plan.label || "").toLowerCase());
+            const highlighted = ["best value", "popular"].includes((plan.label || "").toLowerCase());
             const sym = currencySym(plan.currency);
 
-            const fmap = new Map(plan.features.map(f=>[f.key,f]));
-            const ordered = ORDER.map(k=>fmap.get(k)).filter(Boolean) as Feature[];
+            const fmap = new Map(plan.features.map(f => [f.key, f]));
+            const ordered = ORDER.map(k => fmap.get(k)).filter(Boolean) as Feature[];
             const leftovers = plan.features.filter(f => !ORDER.includes(f.key));
             const features = [...ordered, ...leftovers]; // ensures we show ALL fields
 
             return (
               <div
                 key={plan.planId}
-                className={`relative bg-white rounded-3xl border shadow-sm hover:shadow-lg transition-all flex flex-col h-full ${
-                  highlighted ? "border-orange-300" : "border-gray-200"
-                } ${isActive ? "ring-2 ring-orange-400" : ""}`}
+                className={`relative bg-white rounded-3xl border shadow-sm hover:shadow-lg transition-all flex flex-col h-full ${highlighted ? "border-orange-300" : "border-gray-200"
+                  } ${isActive ? "ring-2 ring-orange-400" : ""}`}
               >
                 {/* Badge */}
                 {highlighted && (
@@ -473,14 +481,14 @@ export default function InfluencerSubscriptionPage() {
                 {/* CTA directly below price – rectangular */}
                 <div className="px-8 pb-2">
                   <button
-                    onClick={()=>handleSelect(plan)}
+                    onClick={() => handleSelect(plan)}
                     disabled={isActive || isProcessing}
                     className={`w-full py-4 text-base font-semibold rounded-md flex items-center justify-center gap-2 transition-all
                       ${isActive
                         ? "bg-gray-100 text-gray-500 cursor-not-allowed border border-gray-200"
                         : isProcessing
-                        ? "bg-orange-100 text-orange-700 cursor-not-allowed border border-orange-200"
-                        : "bg-gradient-to-r from-[#FFA135] to-[#FF7236] hover:from-[#FF7236] hover:to-[#FFA135] text-white shadow-lg hover:shadow-xl"}`}
+                          ? "bg-orange-100 text-orange-700 cursor-not-allowed border border-orange-200"
+                          : "bg-gradient-to-r from-[#FFA135] to-[#FF7236] hover:from-[#FF7236] hover:to-[#FFA135] text-white shadow-lg hover:shadow-xl"}`}
                   >
                     {isActive ? (
                       <><CheckCircle className="w-5 h-5" /><span>Current Plan</span></>
@@ -495,7 +503,7 @@ export default function InfluencerSubscriptionPage() {
                 {/* Features */}
                 <div className="px-8 pt-5 pb-6 flex-1">
                   <ul className="space-y-4">
-                    {features.map((f)=> {
+                    {features.map((f) => {
                       const label = FEATURE_LABELS[f.key] || prettifyKey(f.key);
                       const val = formatValue(f.key, f.value);
                       const ok = isPositive(f.key, f.value);
@@ -503,7 +511,7 @@ export default function InfluencerSubscriptionPage() {
                       return (
                         <li key={f.key} className="flex items-start gap-3">
                           {ok ? <CheckCircle className="w-5 h-5 text-emerald-600 mt-0.5" />
-                              : <XCircle className="w-5 h-5 text-red-500 mt-0.5" />}
+                            : <XCircle className="w-5 h-5 text-red-500 mt-0.5" />}
                           <div className="text-gray-700">
                             <span className="font-medium">{label}:</span>{" "}
                             <span className="font-semibold">{val}</span>
@@ -525,12 +533,12 @@ export default function InfluencerSubscriptionPage() {
                             <Plus className="w-4 h-4 mr-2" /> Available Add-ons
                           </div>
                           <ul className="space-y-2">
-                            {plan.addons.map((a)=> {
+                            {plan.addons.map((a) => {
                               const symb = currencySym(a.currency);
                               return (
                                 <li key={a.key} className="text-sm text-orange-800">
                                   <span className="font-medium">{a.name}</span>{" "}
-                                  <span className="opacity-80">— {symb}{a.price} {a.type==="one_time" ? "one-time" : "/mo"}</span>
+                                  <span className="opacity-80">— {symb}{a.price} {a.type === "one_time" ? "one-time" : "/mo"}</span>
                                 </li>
                               );
                             })}
@@ -560,7 +568,7 @@ export default function InfluencerSubscriptionPage() {
       {/* Downgrade modal */}
       {showDowngradeModal && selectedPlan && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/60" onClick={()=>setShowDowngradeModal(false)} />
+          <div className="absolute inset-0 bg-black/60" onClick={() => setShowDowngradeModal(false)} />
           <div className="relative bg-white w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden">
             <div className="bg-orange-50 px-8 py-6 border-b border-orange-100">
               <div className="flex items-start justify-between">
@@ -571,7 +579,7 @@ export default function InfluencerSubscriptionPage() {
                     <p className="text-gray-600 mt-1">Some features may be reduced 😢</p>
                   </div>
                 </div>
-                <button onClick={()=>setShowDowngradeModal(false)} className="p-2 rounded-full hover:bg-white/50">
+                <button onClick={() => setShowDowngradeModal(false)} className="p-2 rounded-full hover:bg-white/50">
                   <X className="w-6 h-6 text-gray-500" />
                 </button>
               </div>
@@ -591,7 +599,7 @@ export default function InfluencerSubscriptionPage() {
                     <p className="font-semibold text-red-900">You’ll lose access or limits will be reduced on:</p>
                   </div>
                   <ul className="space-y-3">
-                    {featureLoss.map((d)=>(
+                    {featureLoss.map((d) => (
                       <li key={d.key} className="flex items-center gap-3">
                         <div className="w-2 h-2 bg-red-400 rounded-full" />
                         <span className="text-red-800">
@@ -614,7 +622,7 @@ export default function InfluencerSubscriptionPage() {
                     <p className="text-orange-800 text-sm">
                       Need a custom plan, a pause, or a startup discount? Email{" "}
                       <a className="inline-flex items-center gap-1 font-semibold underline hover:text-orange-900"
-                         href="mailto:support@collabglam.com?subject=Plan%20change%20help">
+                        href="mailto:support@collabglam.com?subject=Plan%20change%20help">
                         <Mail className="w-4 h-4" /><span>support@collabglam.com</span>
                       </a>
                     </p>
@@ -631,7 +639,7 @@ export default function InfluencerSubscriptionPage() {
                     className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-orange-400 focus:border-orange-400 outline-none"
                     placeholder="Type CANCEL here..."
                     value={confirmText}
-                    onChange={(e)=>setConfirmText(e.target.value)}
+                    onChange={(e) => setConfirmText(e.target.value)}
                   />
                 </label>
               </div>
@@ -639,7 +647,7 @@ export default function InfluencerSubscriptionPage() {
 
             <div className="bg-gray-50 px-8 py-6 flex flex-col sm:flex-row gap-3 justify-end">
               <button
-                onClick={()=>setShowDowngradeModal(false)}
+                onClick={() => setShowDowngradeModal(false)}
                 className="px-6 py-3 rounded-xl bg-white border-2 border-gray-200 hover:border-gray-300 text-gray-800 font-semibold"
                 disabled={confirming}
               >
@@ -647,12 +655,11 @@ export default function InfluencerSubscriptionPage() {
               </button>
               <button
                 onClick={handleConfirmDowngrade}
-                disabled={confirmText.trim().toUpperCase()!=="CANCEL" || confirming}
-                className={`px-6 py-3 rounded-xl font-semibold text-white transition-colors ${
-                  confirmText.trim().toUpperCase()==="CANCEL" && !confirming
-                    ? "bg-gradient-to-r from-[#FFA135] to-[#FF7236] hover:from-[#FF7236] hover:to-[#FFA135] shadow-lg"
-                    : "bg-gray-400 cursor-not-allowed"
-                }`}
+                disabled={confirmText.trim().toUpperCase() !== "CANCEL" || confirming}
+                className={`px-6 py-3 rounded-xl font-semibold text-white transition-colors ${confirmText.trim().toUpperCase() === "CANCEL" && !confirming
+                  ? "bg-gradient-to-r from-[#FFA135] to-[#FF7236] hover:from-[#FF7236] hover:to-[#FFA135] shadow-lg"
+                  : "bg-gray-400 cursor-not-allowed"
+                  }`}
               >
                 {confirming ? <span className="inline-flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" /> Applying…</span> : "Confirm change"}
               </button>

@@ -161,7 +161,12 @@ export default function BrandSubscriptionPage() {
           const { subscription } = await get<BrandData>(`/brand?id=${id}`);
           setCurrentPlan(subscription?.planName || null);
           setExpiresAt(subscription?.expiresAt ?? null);
+
+          if (subscription?.planName) {
+            localStorage.setItem("brandPlanName", subscription.planName);
+          }
         }
+
       } catch {
         setPaymentStatus("failed"); setPaymentMessage("Unable to load subscription info.");
       } finally { setLoading(false); }
@@ -221,10 +226,16 @@ export default function BrandSubscriptionPage() {
           try {
             await post("/payment/verify", { ...response, planId: plan.planId, brandId });
             await post("/subscription/assign", { userType: "Brand", userId: brandId, planId: plan.planId });
+
             setCurrentPlan(plan.name);
             setExpiresAt(new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString());
-            setPaymentStatus("success"); setPaymentMessage("Subscription updated successfully!");
-            window.location.reload();
+
+            localStorage.setItem("brandPlanName", plan.name);
+            localStorage.setItem("brandPlanId", plan.planId);
+
+            setPaymentStatus("success");
+            setPaymentMessage("Subscription updated successfully!");
+            window.location.reload(); // optional, state + LS are already correct
           } catch {
             setPaymentStatus("failed");
             setPaymentMessage("Payment verified but failed to assign subscription. Please contact support.");
@@ -247,9 +258,18 @@ export default function BrandSubscriptionPage() {
     try {
       const brandId = localStorage.getItem("brandId");
       await post("/subscription/assign", { userType: "Brand", userId: brandId, planId: selectedPlan.planId });
-      setCurrentPlan(selectedPlan.name); setExpiresAt(null);
-      setPaymentStatus("success"); setPaymentMessage(`You've moved to the ${capitalize(selectedPlan.name)} plan.`);
-      setShowDowngradeModal(false); setConfirmText("");
+
+      setCurrentPlan(selectedPlan.name);
+      setExpiresAt(null);
+
+      localStorage.setItem("brandPlanName", selectedPlan.name);
+      localStorage.setItem("brandPlanId", selectedPlan.planId);
+
+      setPaymentStatus("success");
+      setPaymentMessage(`You've moved to the ${capitalize(selectedPlan.name)} plan.`);
+      setShowDowngradeModal(false);
+      setConfirmText("");
+
     } catch {
       setPaymentStatus("failed"); setPaymentMessage("Could not change your plan right now. Please try again.");
     } finally { setSubmittingDowngrade(false); }
@@ -315,8 +335,8 @@ export default function BrandSubscriptionPage() {
         {paymentStatus !== "idle" && (
           <div className="max-w-md mx-auto mb-8">
             <div className={`p-4 rounded-2xl border flex items-center justify-center gap-3 ${paymentStatus === "success" ? "bg-emerald-50 border-emerald-200 text-emerald-800"
-                : paymentStatus === "processing" ? "bg-orange-50 border-orange-200 text-orange-800"
-                  : "bg-red-50 border-red-200 text-red-800"}`}>
+              : paymentStatus === "processing" ? "bg-orange-50 border-orange-200 text-orange-800"
+                : "bg-red-50 border-red-200 text-red-800"}`}>
               {paymentStatus === "success" ? <CheckCircle className="w-6 h-6" /> :
                 paymentStatus === "processing" ? <Loader2 className="w-6 h-6 animate-spin" /> :
                   <XCircle className="w-6 h-6" />}
@@ -553,8 +573,8 @@ export default function BrandSubscriptionPage() {
                 onClick={handleConfirmDowngrade}
                 disabled={confirmText.trim().toUpperCase() !== "CANCEL" || submittingDowngrade}
                 className={`px-6 py-3 rounded-xl font-semibold text-white transition-colors ${confirmText.trim().toUpperCase() === "CANCEL" && !submittingDowngrade
-                    ? "bg-gradient-to-r from-[#FFA135] to-[#FF7236] hover:from-[#FF7236] hover:to-[#FFA135] shadow-lg"
-                    : "bg-gray-400 cursor-not-allowed"
+                  ? "bg-gradient-to-r from-[#FFA135] to-[#FF7236] hover:from-[#FF7236] hover:to-[#FFA135] shadow-lg"
+                  : "bg-gray-400 cursor-not-allowed"
                   }`}
               >
                 {submittingDowngrade ? <span className="inline-flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" /> Applying…</span> : "Confirm change"}
