@@ -24,6 +24,7 @@ type Dispute = {
   campaignId: string;
   brandId: string;
   influencerId: string;
+  campaignName?: string | null;
   brandName?: string | null;
   influencerName?: string | null;
     createdBy?: { id?: string; role?: "Brand" | "Influencer" };
@@ -175,6 +176,7 @@ export default function AdminDisputesPage() {
           <table className="min-w-full text-sm">
             <thead className="bg-gray-50">
               <tr>
+                <th className="text-left p-3">Dispute ID</th>
                 <th className="text-left p-3">Subject</th>
                 <th className="text-left p-3">Campaign</th>
                 <th className="text-left p-3">Brand</th>
@@ -190,10 +192,29 @@ export default function AdminDisputesPage() {
                   className="border-t align-top cursor-pointer hover:bg-gray-50"
                   onClick={() => router.push(`/admin/disputes/${d.disputeId}`)}
                 >
+                  <td className="p-3 font-mono text-xs">{d.disputeId}</td>
                   <td className="p-3 font-medium">{d.subject}</td>
-                  <td className="p-3 font-mono text-xs">{d.campaignId || '—'}</td>
-                  <td className="p-3">{d.brandName || <span className="font-mono text-xs">{d.brandId}</span>}</td>
-                  <td className="p-3"><span className="font-mono text-xs">{d.influencerId}</span></td>
+                  <td className="p-3">
+                    {d.campaignName ? (
+                      d.campaignName
+                    ) : (
+                      <span className="font-mono text-xs">{d.campaignId || '—'}</span>
+                    )}
+                  </td>
+                  <td className="p-3">
+                    {d.brandName ? (
+                      d.brandName
+                    ) : (
+                      <span className="font-mono text-xs">{d.brandId || '—'}</span>
+                    )}
+                  </td>
+                  <td className="p-3">
+                    {d.influencerName ? (
+                      d.influencerName
+                    ) : (
+                      <span className="font-mono text-xs">{d.influencerId || '—'}</span>
+                    )}
+                  </td>
                   <td className="p-3">
                     {d.createdBy?.role ? (
                       <span className="px-1.5 py-0.5 rounded bg-gray-100 text-gray-800 text-xs font-medium">
