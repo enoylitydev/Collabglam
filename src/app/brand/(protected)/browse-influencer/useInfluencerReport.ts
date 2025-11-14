@@ -7,7 +7,14 @@ interface UseInfluencerReportReturn {
   rawReport: any;
   loading: boolean;
   error: string | null;
-  fetchReport: (id: string, platform: Platform, calc: "median" | "average") => Promise<void>;
+  lastFetchedAt: string | null;
+  fetchReport: (
+    id: string,
+    platform: Platform,
+    calc: 'median' | 'average',
+    influencerId?: string,
+    forceRefresh?: boolean
+  ) => Promise<void>;
 }
 
 const BACKEND_BASE_URL = process.env.NEXT_PUBLIC_API_URL
@@ -18,9 +25,16 @@ export function useInfluencerReport(): UseInfluencerReportReturn {
   const [rawReport, setRawReport] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [lastFetchedAt, setLastFetchedAt] = useState<string | null>(null);
 
-  const fetchReport = useCallback(
-    async (id: string, platform: Platform, calc: "median" | "average", influencerId?: string) => {
+    const fetchReport = useCallback(
+    async (
+      id: string,
+      platform: Platform,
+      calc: 'median' | 'average',
+      influencerId?: string,
+      forceRefresh: boolean = false
+    ) => {
       try {
         setLoading(true);
         setError(null);
@@ -30,23 +44,33 @@ export function useInfluencerReport(): UseInfluencerReportReturn {
           userId: id,
           calculationMethod: calc,
         };
+
         if (influencerId) params.influencerId = influencerId;
+        if (forceRefresh) params.force = '1'; // 👈 tells backend to bypass cache
 
         const q = new URLSearchParams(params);
         const res = await fetch(`${API_REPORT_ENDPOINT}?${q.toString()}`);
         const raw = await res.json();
 
         if (!res.ok || raw?.error) {
-          throw new Error(raw?.message || raw?.error || `Failed to fetch report (${res.status})`);
+          throw new Error(
+            raw?.message || raw?.error || `Failed to fetch report (${res.status})`
+          );
         }
 
         const normalized = normalizeReport(raw as ReportResponse, platform);
         setReport(normalized);
         setRawReport(raw);
+
+        // ⬇️ pick up timestamp from backend (_lastFetchedAt)
+        const fetchedAt =
+          typeof raw?._lastFetchedAt === 'string' ? raw._lastFetchedAt : null;
+        setLastFetchedAt(fetchedAt);
       } catch (e: any) {
-        setError(e?.message || "Something went wrong");
+        setError(e?.message || 'Something went wrong');
         setReport(null);
         setRawReport(null);
+        setLastFetchedAt(null);
       } finally {
         setLoading(false);
       }
@@ -59,6 +83,7 @@ export function useInfluencerReport(): UseInfluencerReportReturn {
     rawReport,
     loading,
     error,
+    lastFetchedAt,
     fetchReport,
   };
 }

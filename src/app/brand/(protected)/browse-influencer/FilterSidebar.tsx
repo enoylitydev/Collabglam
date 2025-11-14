@@ -7,6 +7,8 @@ import { AudienceFilters } from './AudienceFilters';
 import type { FilterState, Platform } from './filters';
 import { PlatformSelector } from './PlatformSelector';
 
+type PlanName = 'free' | 'growth' | 'pro' | 'premium';
+
 interface FilterSidebarProps {
   platforms: Platform[];
   setPlatforms: (p: Platform[]) => void;
@@ -15,6 +17,17 @@ interface FilterSidebarProps {
   onReset: () => void;
   onApply: () => void;
   loading?: boolean;
+}
+
+const PLAN_VALUES: PlanName[] = ['free', 'growth', 'pro', 'premium'];
+
+function normalizePlan(raw: string | null | undefined): PlanName {
+  if (!raw) return 'free';
+  const value = raw.toLowerCase().trim();
+  if (PLAN_VALUES.includes(value as PlanName)) {
+    return value as PlanName;
+  }
+  return 'free';
 }
 
 export function FilterSidebar({
@@ -27,9 +40,26 @@ export function FilterSidebar({
   loading,
 }: FilterSidebarProps) {
   const [entered, setEntered] = useState(false);
+  const [plan, setPlan] = useState<PlanName>('free');
+
   useEffect(() => {
     const id = requestAnimationFrame(() => setEntered(true));
     return () => cancelAnimationFrame(id);
+  }, []);
+
+  // 🔐 Read plan from localStorage
+  useEffect(() => {
+    try {
+      if (typeof window === 'undefined') return;
+
+      // 👉 adjust key here if you use something else like "subscriptionPlan"
+      const stored = window.localStorage.getItem('brandPlanName');
+      const normalized = normalizePlan(stored);
+      setPlan(normalized);
+    } catch (err) {
+      console.warn('Failed to read plan from localStorage, defaulting to free', err);
+      setPlan('free');
+    }
   }, []);
 
   return (
@@ -37,12 +67,9 @@ export function FilterSidebar({
       role="complementary"
       aria-label="Filter sidebar"
       className={[
-        // Full screen height for desktop, flexible for mobile
         'flex flex-col h-screen min-h-screen overflow-hidden',
         'flex-shrink-0 bg-white border-r border-gray-200',
-        // Full width on mobile, fixed width on desktop
         'w-full lg:w-full',
-        // mount animation (safe-respects reduced motion)
         'motion-safe:transition-[opacity,transform] motion-safe:duration-300 motion-safe:ease-out will-change-transform',
         entered ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-3',
       ].join(' ')}
@@ -50,7 +77,7 @@ export function FilterSidebar({
       {/* Scrollable content area */}
       <div className="flex-1 overflow-y-auto overscroll-contain">
         <div className="p-4 md:p-5 lg:p-5 xl:p-6">
-          {/* Header - stays at top */}
+          {/* Header */}
           <div className="flex items-center justify-between mb-4 md:mb-5">
             <h2 className="text-lg font-semibold text-gray-900">Filters</h2>
             <button
@@ -75,7 +102,10 @@ export function FilterSidebar({
             <InfluencerFilters
               platforms={platforms}
               filters={filters.influencer}
-              updateFilter={(path, value) => updateFilter(`influencer.${path}`, value)}
+              updateFilter={(path, value) =>
+                updateFilter(`influencer.${path}`, value)
+              }
+              plan={plan}
             />
           </div>
 
@@ -87,13 +117,16 @@ export function FilterSidebar({
             <AudienceFilters
               platforms={platforms}
               filters={filters.audience}
-              updateFilter={(path, value) => updateFilter(`audience.${path}`, value)}
+              updateFilter={(path, value) =>
+                updateFilter(`audience.${path}`, value)
+              }
+              plan={plan}
             />
           </div>
         </div>
       </div>
 
-      {/* Apply button - fixed at bottom */}
+      {/* Apply button */}
       <div className="flex-shrink-0 p-4 md:p-5 lg:p-5 xl:p-[29.5px] pt-1 md:pt-2 bg-white border-t border-gray-100">
         <button
           type="button"

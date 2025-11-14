@@ -4,10 +4,20 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import type { AudienceFilters as AF, Platform } from './filters';
 
+type PlanName = 'free' | 'growth' | 'pro' | 'premium';
+
+const PLAN_RANK: Record<PlanName, number> = {
+  free: 0,
+  growth: 1,
+  pro: 2,
+  premium: 3,
+};
+
 interface Props {
   filters: AF;
   updateFilter: (path: string, value: any) => void;
   platforms?: Platform[];
+  plan?: PlanName;
 }
 
 type ApiCountry = {
@@ -19,20 +29,28 @@ type ApiCountry = {
 };
 
 type Country = {
-  id: string;    // from _id
-  code: string;  // ISO (uppercased)
-  name: string;  // human name
+  id: string; // from _id
+  code: string; // ISO (uppercased)
+  name: string; // human name
   label: string; // e.g. "🇦🇩 Andorra (AD)"
 };
 
 const API_URL = 'http://localhost:5000/country/getAll';
 
-export function AudienceFilters({ filters, updateFilter, platforms }: Props) {
+export function AudienceFilters({
+  filters,
+  updateFilter,
+  platforms,
+  plan = 'free',
+}: Props) {
   const [countries, setCountries] = useState<Country[]>([]);
   const [loadingCountries, setLoadingCountries] = useState(false);
   const [countriesError, setCountriesError] = useState<string | null>(null);
 
   const hasInstagram = (platforms ?? []).includes('instagram');
+
+  const rank = PLAN_RANK[plan] ?? PLAN_RANK.free;
+  const isProPlus = rank >= PLAN_RANK.pro; // Pro / Enterprise only
 
   useEffect(() => {
     const controller = new AbortController();
@@ -41,7 +59,10 @@ export function AudienceFilters({ filters, updateFilter, platforms }: Props) {
         setLoadingCountries(true);
         setCountriesError(null);
 
-        const res = await fetch(API_URL, { method: 'GET', signal: controller.signal });
+        const res = await fetch(API_URL, {
+          method: 'GET',
+          signal: controller.signal,
+        });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
         const raw = (await res.json()) as unknown;
@@ -56,7 +77,9 @@ export function AudienceFilters({ filters, updateFilter, platforms }: Props) {
             id: c._id || `${code}-${name}`, // stable unique key
             code,
             name,
-            label: `${flag ? flag + ' ' : ''}${name}${code ? ` (${code})` : ''}`,
+            label: `${flag ? flag + ' ' : ''}${name}${
+              code ? ` (${code})` : ''
+            }`,
           };
         });
 
@@ -108,22 +131,42 @@ export function AudienceFilters({ filters, updateFilter, platforms }: Props) {
     else updateFilter('ageRange', { min, max });
   };
 
-  const credibilityValue = (filters as any).credibility as number | undefined;
+  const credibilityValue = (filters as any).credibility as
+    | number
+    | undefined;
   const shownCredibility =
     credibilityValue != null && !Number.isNaN(credibilityValue)
       ? Math.floor(credibilityValue * 100)
       : null;
 
+  // ❌ Free / Growth → show upgrade prompt instead of filters
+  if (!isProPlus) {
+    return (
+      <div className="space-y-4 mb-4">
+        <p className="text-xs text-gray-500">
+          Audience filters (language, location, age & gender) are available on
+          Pro and Premium plans.
+        </p>
+      </div>
+    );
+  }
+
+  // ✅ Pro / Enterprise – full audience filters
   return (
     <div className="space-y-4 mb-4">
-      {/* Audience Language (weighted) */}
+      {/* Audience Language – ✅ Pro+ */}
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-2">Audience Language</label>
+        <label className="block text-sm font-medium text-gray-700 mb-2">
+          Audience Language
+        </label>
         <select
           className="w-full px-3 py-2 border rounded-md text-sm"
           value={(filters as any).language?.id ?? ''}
           onChange={(e) =>
-            updateFilter('language', e.target.value ? { id: e.target.value, weight: 0.2 } : undefined)
+            updateFilter(
+              'language',
+              e.target.value ? { id: e.target.value, weight: 0.2 } : undefined,
+            )
           }
         >
           <option value="">Any</option>
@@ -140,7 +183,7 @@ export function AudienceFilters({ filters, updateFilter, platforms }: Props) {
         </select>
       </div>
 
-      {/* Audience Location — ISO code */}
+      {/* Audience Location — ISO code – ✅ Pro+ */}
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-2">
           Audience Location (country)
@@ -148,12 +191,18 @@ export function AudienceFilters({ filters, updateFilter, platforms }: Props) {
         <select
           className="w-full px-3 py-2 border rounded-md text-sm"
           value={selectedCountryCode}
-          onChange={(e) => updateFilter('location', e.target.value || undefined)}
+          onChange={(e) =>
+            updateFilter('location', e.target.value || undefined)
+          }
           disabled={loadingCountries}
         >
           {loadingCountries && <option value="">Loading countries…</option>}
-          {countriesError && <option value="">Failed to load countries</option>}
-          {!loadingCountries && !countriesError && <option value="">Any</option>}
+          {countriesError && (
+            <option value="">Failed to load countries</option>
+          )}
+          {!loadingCountries && !countriesError && (
+            <option value="">Any</option>
+          )}
 
           {!loadingCountries &&
             !countriesError &&
@@ -170,9 +219,11 @@ export function AudienceFilters({ filters, updateFilter, platforms }: Props) {
         )}
       </div>
 
-      {/* Audience Age Range (no defaults) */}
+      {/* Audience Age Range – ✅ Pro+ */}
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-2">Audience Age Range</label>
+        <label className="block text-sm font-medium text-gray-700 mb-2">
+          Audience Age Range
+        </label>
         <div className="grid grid-cols-2 gap-3">
           <input
             type="number"
@@ -195,14 +246,19 @@ export function AudienceFilters({ filters, updateFilter, platforms }: Props) {
         </div>
       </div>
 
-      {/* Audience Gender (weighted) */}
+      {/* Audience Gender – ✅ Pro+ */}
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-2">Audience Gender</label>
+        <label className="block text-sm font-medium text-gray-700 mb-2">
+          Audience Gender
+        </label>
         <select
           className="w-full px-3 py-2 border rounded-md text-sm"
           value={(filters as any).gender?.id ?? ''}
           onChange={(e) =>
-            updateFilter('gender', e.target.value ? { id: e.target.value, weight: 0.5 } : undefined)
+            updateFilter(
+              'gender',
+              e.target.value ? { id: e.target.value, weight: 0.5 } : undefined,
+            )
           }
         >
           <option value="">Any</option>
@@ -212,7 +268,7 @@ export function AudienceFilters({ filters, updateFilter, platforms }: Props) {
         </select>
       </div>
 
-      {/* Audience Credibility — IG only */}
+      {/* Audience Credibility — IG only, also treat as Pro+ */}
       {hasInstagram && (
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -225,7 +281,9 @@ export function AudienceFilters({ filters, updateFilter, platforms }: Props) {
             step={0.05}
             className="w-full"
             value={credibilityValue ?? 0}
-            onChange={(e) => updateFilter('credibility', Number(e.target.value))}
+            onChange={(e) =>
+              updateFilter('credibility', Number(e.target.value))
+            }
           />
           <div className="flex justify-between text-xs text-gray-500">
             <span>0%</span>
