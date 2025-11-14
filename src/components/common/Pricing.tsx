@@ -254,7 +254,6 @@ const Pricing: React.FC = () => {
                   ) : isFree ? (
                     <>
                       <span className="text-4xl font-extrabold tracking-tight text-gray-900">Free</span>
-                      <span className="ml-2 text-sm text-gray-500">(forever)</span>
                     </>
                   ) : (
                     <div className="flex items-baseline justify-center gap-2">
