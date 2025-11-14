@@ -36,8 +36,9 @@ interface SearchState {
   hasMore: boolean;
 }
 
-const API_SEARCH_ENDPOINT = '/api/modash/search';
-const API_USERS_ENDPOINT = '/api/modash/users';
+const BACKEND_BASE_URL = process.env.NEXT_PUBLIC_API_URL
+const API_SEARCH_ENDPOINT = `${BACKEND_BASE_URL}modash/search`;
+const API_USERS_ENDPOINT = `${BACKEND_BASE_URL}modash/users`;
 
 // ----------------------------------------------------
 // Utilities
@@ -436,6 +437,7 @@ export function useInfluencerSearch(platforms: Platform[]) {
     const resp = await fetch(API_SEARCH_ENDPOINT, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      // ⬇️ body/shape expected by your backend Modash route
       body: JSON.stringify({ platforms, body: payload }),
       signal: abortRef.current?.signal,
     });
@@ -445,6 +447,7 @@ export function useInfluencerSearch(platforms: Platform[]) {
     if (!resp.ok) throw new Error(data?.error || 'Search failed');
     return data;
   };
+
 
   // --- main search: combines exact username preflight + discovery ---
   const runSearch = useCallback(async (opts?: { reset?: boolean; queryText?: string }) => {
