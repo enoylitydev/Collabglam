@@ -7,6 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { MessageSquare, User, Building2, Calendar, AlertCircle, CheckCircle2, Clock, XCircle, FileText, Link } from "lucide-react";
+import { HiOutlineEye } from "react-icons/hi";
 
 type Comment = {
   commentId: string;
@@ -73,7 +75,6 @@ export default function AdminDisputeDetailPage() {
 
   useEffect(() => {
     load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
   const postComment = async () => {
@@ -109,121 +110,310 @@ export default function AdminDisputeDetailPage() {
     }
   };
 
-  const statusTone = (s: Dispute["status"]) => ({
-    open: "bg-blue-100 text-blue-800",
-    in_review: "bg-purple-100 text-purple-800",
-    awaiting_user: "bg-amber-100 text-amber-800",
-    resolved: "bg-green-100 text-green-700",
-    rejected: "bg-red-100 text-red-700",
-  }[s]);
+  const getStatusConfig = (s: Dispute["status"]) => {
+    const configs = {
+      open: {
+        bg: "bg-blue-50",
+        text: "text-blue-700",
+        border: "border-blue-200",
+        icon: AlertCircle
+      },
+      in_review: {
+        bg: "bg-purple-50",
+        text: "text-purple-700",
+        border: "border-purple-200",
+        icon: Clock
+      },
+      awaiting_user: {
+        bg: "bg-amber-50",
+        text: "text-amber-700",
+        border: "border-amber-200",
+        icon: Clock
+      },
+      resolved: {
+        bg: "bg-green-50",
+        text: "text-green-700",
+        border: "border-green-200",
+        icon: CheckCircle2
+      },
+      rejected: {
+        bg: "bg-red-50",
+        text: "text-red-700",
+        border: "border-red-200",
+        icon: XCircle
+      },
+    };
+    return configs[s];
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Loading dispute details...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-6">
+        <div className="bg-white rounded-lg shadow-lg p-8 max-w-md w-full text-center">
+          <XCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
+          <h2 className="text-xl font-semibold text-gray-900 mb-2">Error Loading Dispute</h2>
+          <p className="text-red-600 mb-6">{error}</p>
+          <Button variant="outline" onClick={() => router.back()}>Go Back</Button>
+        </div>
+      </div>
+    );
+  }
+
+  if (!d) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <AlertCircle className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+          <p className="text-gray-600">Dispute not found</p>
+        </div>
+      </div>
+    );
+  }
+
+  const statusConfig = getStatusConfig(d.status);
+  const StatusIcon = statusConfig.icon;
+  const isFinalized = d.status === "resolved" || d.status === "rejected";
 
   return (
-    <div className="p-6 max-w-5xl mx-auto">
-      {loading ? (
-        <p>Loading…</p>
-      ) : error ? (
-        <div>
-          <p className="text-red-600">{error}</p>
-          <Button variant="outline" className="mt-3" onClick={() => router.back()}>Back</Button>
+    <div className="min-h-screen bg-gray-50 py-8">
+      <div className="max-w-6xl mx-auto px-6">
+        {/* Header */}
+        <div className="mb-6">
+          <Button
+            variant="outline"
+            onClick={() => router.push("/admin/disputes")}
+            className="mb-4"
+          >
+            ← Back to Disputes
+          </Button>
+
+          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex-1 min-w-0">
+                <h1 className="text-3xl font-bold text-gray-900 mb-2">{d.subject}</h1>
+                <div className="flex items-center gap-2 text-sm text-gray-500">
+                  <Calendar className="h-4 w-4" />
+                  <span>Created {new Date(d.createdAt).toLocaleDateString()}</span>
+                  <span className="mx-2">•</span>
+                  <span>Updated {new Date(d.updatedAt).toLocaleDateString()}</span>
+                </div>
+              </div>
+              <div className={`flex items-center gap-2 px-4 py-2 rounded-lg border ${statusConfig.bg} ${statusConfig.text} ${statusConfig.border}`}>
+                <StatusIcon className="h-5 w-5" />
+                <span className="font-semibold capitalize">{d.status.replace("_", " ")}</span>
+              </div>
+            </div>
+          </div>
         </div>
-      ) : !d ? (
-        <p>Not found</p>
-      ) : (
-        <div className="space-y-6">
-          <div className="flex items-start justify-between gap-4">
-            <div className="min-w-0">
-              <h1 className="text-2xl font-semibold truncate">{d.subject}</h1>
-              <div className="text-gray-600 mt-1 space-x-3 text-sm">
-                <span>Campaign: <span className="font-mono text-xs">{d.campaignId || '—'}</span></span>
-                <span>Brand: <span>{d.brandName || <span className="font-mono text-xs">{d.brandId}</span>}</span></span>
-                <span>Influencer: <span>{d.influencerName || <span className="font-mono text-xs">{d.influencerId}</span>}</span></span>
-                <span>Assigned: <span className="font-mono text-xs">{d.assignedTo?.name || d.assignedTo?.adminId || '—'}</span></span>
-                <span>
-                  Opened by: <span className="font-mono text-xs">
-                    {d.createdBy?.role
-                      ? `${d.createdBy.role}${
-                          d.createdBy.role === 'Brand'
-                            ? ` · ${(d.brandName || d.brandId || '—')}`
-                            : d.createdBy.role === 'Influencer'
-                              ? ` · ${(d.influencerName || d.influencerId || '—')}`
-                              : ''
-                        }`
-                      : '—'}
-                  </span>
-                </span>
+
+        {/* Party Information */}
+        
+        <div className="grid md:grid-cols-2 gap-6 mb-6">
+          {/* Brand */}
+          <div
+      onClick={() => router.push(`/admin/brands/view?brandId=${d.brandId}`)}
+      className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 
+                 cursor-pointer hover:shadow-md transition"
+    >
+      <div className="flex items-start gap-3">
+        
+        <div className="bg-blue-100 rounded-lg p-3">
+          <Building2 className="h-6 w-6 text-blue-600" />
+        </div>
+
+        <div className="flex-1 min-w-0">
+          <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-1">
+            Brand
+          </h3>
+
+          <p className="text-lg font-semibold text-gray-900 truncate">
+            {d.brandName || "Unknown Brand"}
+          </p>
+
+          <p className="text-xs text-gray-500 font-mono mt-1">
+            {d.brandId}
+          </p>
+        </div>
+
+      </div>
+    </div>
+
+
+          {/* Influencer */}
+          <div 
+          onClick={() => router.push(`/admin/influencers/view?influencerId=${d.influencerId}`)}
+          className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+            <div className="flex items-start gap-3">
+              <div className="bg-purple-100 rounded-lg p-3">
+                <User className="h-6 w-6 text-purple-600" />
               </div>
-            </div>
-            <div className="flex items-center gap-2 shrink-0">
-              <span className={`px-2 py-1 rounded text-xs font-medium ${statusTone(d.status)}`}>{d.status.replace("_", " ")}</span>
+              <div className="flex-1 min-w-0">
+                <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-1">Influencer</h3>
+                <p className="text-lg font-semibold text-gray-900 truncate">
+                  {d.influencerName || "Unknown Influencer"}
+                </p>
+                <p className="text-xs text-gray-500 font-mono mt-1">{d.influencerId}</p>
+              </div>
             </div>
           </div>
+        </div>
 
-          <div className="bg-white rounded border p-4">
-            <div className="flex flex-col gap-3 md:flex-row md:items-end md:gap-3">
-              <div className="w-48">
-                <Select value={pendingStatus} onValueChange={(v) => setPendingStatus(v as Dispute["status"]) }>
-                  <SelectTrigger className="!bg-white">
-                    <SelectValue placeholder="Set status" />
-                  </SelectTrigger>
-                  <SelectContent className="!bg-white">
-                    {statusOptions.map((o) => (
-                      <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="flex-1">
-                <Input
-                  placeholder="Resolution note (optional)"
-                  value={resolutionNote}
-                  onChange={(e) => setResolutionNote(e.target.value)}
-                />
-              </div>
-              <Button onClick={updateStatus} disabled={updating || !pendingStatus}>Update</Button>
-            </div>
+        {/* Campaign & Assignment Info */}
+        <div 
+        className="grid md:grid-cols-2 gap-6 mb-6">
+          <div 
+          onClick={() => router.push(`/admin/campaigns/view?id=${d.campaignId}`)}
+          className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
+            <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-3">Campaign ID</h3>
+            <p className="text-sm font-mono bg-gray-50 rounded px-3 py-2 break-all">
+              {d.campaignId || "No campaign linked"}
+            </p>
           </div>
 
-          {d.description && (
-            <div className="bg-white rounded border p-4">
-              <h2 className="font-medium mb-1">Description</h2>
-              <p className="text-gray-800 whitespace-pre-wrap">{d.description}</p>
+          {/* Opened By */}
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
+          <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-3">Dispute By</h3>
+          <div className="flex items-center gap-2">
+            <span className="px-3 py-1 bg-gray-100 text-gray-700 rounded-full text-sm font-medium">
+              {d.createdBy?.role || "Unknown"}
+            </span>
+            {d.createdBy?.role === 'Brand' && (
+              <span className="text-sm text-gray-600">• {d.brandName || d.brandId}</span>
+            )}
+            {d.createdBy?.role === 'Influencer' && (
+              <span className="text-sm text-gray-600">• {d.influencerName || d.influencerId}</span>
+            )}
+          </div>
+        </div>
+        </div>
+
+        
+
+        {/* Status Update Section */}
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
+          <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+            <FileText className="h-5 w-5 text-gray-600" />
+            Update Status
+          </h2>
+          <div className="flex flex-col md:flex-row gap-3">
+            <div className="md:w-56">
+              <Select value={pendingStatus} onValueChange={(v) => setPendingStatus(v as Dispute["status"])}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select new status" />
+                </SelectTrigger>
+                <SelectContent className="bg-white border border-gray-200 shadow-lg">
+                  {statusOptions.map((o) => (
+                    <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex-1">
+              <Input
+                placeholder="Add a resolution note (optional)"
+                value={resolutionNote}
+                onChange={(e) => setResolutionNote(e.target.value)}
+              />
+            </div>
+            <Button
+              onClick={updateStatus}
+              disabled={updating || !pendingStatus}
+              className="md:w-32 bg-red-100 text-black hover:bg-red-700 border-red-200 hover:text-white"
+            >
+              {updating ? "Updating..." : "Update"}
+            </Button>
+          </div>
+        </div>
+
+        {/* Description */}
+        {d.description && (
+          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
+            <h2 className="text-lg font-semibold text-gray-900 mb-3">Description</h2>
+            <div className="prose prose-sm max-w-none">
+              <p className="text-gray-700 whitespace-pre-wrap leading-relaxed">{d.description}</p>
+            </div>
+          </div>
+        )}
+
+        {/* Comments Section */}
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+          <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+            <MessageSquare className="h-5 w-5 text-gray-600" />
+            Comments
+            <span className="text-sm font-normal text-gray-500">
+              ({d.comments?.length || 0})
+            </span>
+          </h2>
+
+          {d.comments && d.comments.length > 0 ? (
+            <div className="space-y-4 mb-6">
+              {d.comments.map((c) => {
+                const roleColors = {
+                  Admin: "bg-red-100 text-red-700",
+                  Brand: "bg-blue-100 text-blue-700",
+                  Influencer: "bg-purple-100 text-purple-700",
+                };
+                return (
+                  <div key={c.commentId} className="bg-gray-50 rounded-lg border border-gray-200 p-4">
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className={`px-2 py-1 rounded text-xs font-semibold ${roleColors[c.authorRole]}`}>
+                        {c.authorRole}
+                      </span>
+                      <span className="text-xs text-gray-500">
+                        {new Date(c.createdAt).toLocaleString()}
+                      </span>
+                    </div>
+                    <p className="text-gray-800 whitespace-pre-wrap leading-relaxed">{c.text}</p>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="text-center py-8 mb-6">
+              <MessageSquare className="h-12 w-12 text-gray-300 mx-auto mb-3" />
+              <p className="text-gray-500">No comments yet</p>
             </div>
           )}
 
-          <div className="bg-white rounded border p-4">
-            <h2 className="font-medium mb-3">Comments</h2>
-            {d.comments && d.comments.length ? (
-              <ul className="space-y-3">
-                {d.comments.map((c) => (
-                  <li key={c.commentId} className="border rounded p-3 bg-gray-50">
-                    <div className="text-xs text-gray-600 mb-1">
-                      <span className="font-medium">{c.authorRole}</span> • {new Date(c.createdAt).toLocaleString()}
-                    </div>
-                    <div className="text-gray-900 whitespace-pre-wrap">{c.text}</div>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="text-gray-600">No comments yet.</p>
-            )}
-
-            {d.status === "resolved" || d.status === "rejected" ? (
-              <p className="text-sm text-gray-500 mt-4">This dispute is finalized and can no longer receive comments.</p>
-            ) : (
-              <div className="mt-4 space-y-2">
-                <Textarea rows={3} placeholder="Write a comment" value={comment} onChange={(e) => setComment(e.target.value)} />
-                <div className="flex justify-end">
-                  <Button onClick={postComment} disabled={posting || !comment.trim()}>Post Comment</Button>
-                </div>
+          {isFinalized ? (
+            <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 text-center">
+              <p className="text-sm text-gray-600">
+                This dispute has been {d.status}. Comments are no longer allowed.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <Textarea
+                rows={4}
+                placeholder="Write your comment here..."
+                value={comment}
+                onChange={(e) => setComment(e.target.value)}
+                className="resize-none"
+              />
+              <div className="flex justify-end">
+                <Button
+                  onClick={postComment}
+                  disabled={posting || !comment.trim()}
+                  className="min-w-32"
+                >
+                  {posting ? "Posting..." : "Post Comment"}
+                </Button>
               </div>
-            )}
-          </div>
-
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={() => router.push("/admin/disputes")}>Back to list</Button>
-          </div>
+            </div>
+          )}
         </div>
-      )}
+      </div>
     </div>
   );
 }
