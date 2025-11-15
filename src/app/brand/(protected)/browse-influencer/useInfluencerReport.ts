@@ -17,8 +17,19 @@ interface UseInfluencerReportReturn {
   ) => Promise<void>;
 }
 
-const BACKEND_BASE_URL = process.env.NEXT_PUBLIC_API_URL
+const BACKEND_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
 const API_REPORT_ENDPOINT = `${BACKEND_BASE_URL}modash/report`;
+
+// Safely read brandId from localStorage (browser only)
+const getBrandIdFromStorage = (): string | null => {
+  if (typeof window === 'undefined') return null;
+  try {
+    const id = window.localStorage.getItem('brandId');
+    return id && id.trim() ? id.trim() : null;
+  } catch {
+    return null;
+  }
+};
 
 export function useInfluencerReport(): UseInfluencerReportReturn {
   const [report, setReport] = useState<ReportResponse | null>(null);
@@ -27,7 +38,7 @@ export function useInfluencerReport(): UseInfluencerReportReturn {
   const [error, setError] = useState<string | null>(null);
   const [lastFetchedAt, setLastFetchedAt] = useState<string | null>(null);
 
-    const fetchReport = useCallback(
+  const fetchReport = useCallback(
     async (
       id: string,
       platform: Platform,
@@ -45,8 +56,14 @@ export function useInfluencerReport(): UseInfluencerReportReturn {
           calculationMethod: calc,
         };
 
+        // 🔹 brandId for quota tracking
+        const brandId = getBrandIdFromStorage();
+        if (brandId) {
+          params.brandId = brandId;
+        }
+
         if (influencerId) params.influencerId = influencerId;
-        if (forceRefresh) params.force = '1'; // 👈 tells backend to bypass cache
+        if (forceRefresh) params.force = '1';
 
         const q = new URLSearchParams(params);
         const res = await fetch(`${API_REPORT_ENDPOINT}?${q.toString()}`);
@@ -62,7 +79,6 @@ export function useInfluencerReport(): UseInfluencerReportReturn {
         setReport(normalized);
         setRawReport(raw);
 
-        // ⬇️ pick up timestamp from backend (_lastFetchedAt)
         const fetchedAt =
           typeof raw?._lastFetchedAt === 'string' ? raw._lastFetchedAt : null;
         setLastFetchedAt(fetchedAt);

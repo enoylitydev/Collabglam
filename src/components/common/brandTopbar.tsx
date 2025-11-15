@@ -8,11 +8,11 @@ import {
   HiChevronDown,
   HiMenu,
   HiCreditCard,
-  HiX,
   HiBell,
   HiRefresh,
   HiCheckCircle,
   HiExclamationCircle,
+  HiLightningBolt,
 } from "react-icons/hi";
 import { get, post } from "@/lib/api";
 import { useRouter } from "next/navigation";
@@ -55,14 +55,29 @@ type BrandDashResp = {
   budgetRemaining?: number;
 };
 
+type SubscriptionFeature = {
+  key: string;
+  limit?: number;
+  value?: number;
+  used?: number;
+};
+
 type LegacyBrandResp = {
   name: string;
   email: string;
   walletBalance: number;
-  subscription?: { planName?: string; expiresAt?: string };
+  subscription?: {
+    planName?: string;
+    expiresAt?: string;
+    features?: SubscriptionFeature[];
+  };
 };
 
-export default function BrandTopbar({ onSidebarOpen }: { onSidebarOpen: () => void }) {
+export default function BrandTopbar({
+  onSidebarOpen,
+}: {
+  onSidebarOpen: () => void;
+}) {
   const router = useRouter();
 
   // IDs
@@ -80,24 +95,35 @@ export default function BrandTopbar({ onSidebarOpen }: { onSidebarOpen: () => vo
 
   // Profile menu
   const [menuOpen, setMenuOpen] = useState(false);
-  const menuRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
 
   // Notifications
   const [notifOpen, setNotifOpen] = useState(false);
-  const notifRef = useRef<HTMLDivElement>(null);
+  const notifRef = useRef<HTMLDivElement | null>(null);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [notifLoading, setNotifLoading] = useState(false);
   const [notifError, setNotifError] = useState<string | null>(null);
   const [unreadCount, setUnreadCount] = useState(0);
 
-  // Search
+  // Credits dropdown
+  const [creditsOpen, setCreditsOpen] = useState(false);
+  const creditsRef = useRef<HTMLDivElement | null>(null);
+
+  // Credits: searches / profile views
+  const [searchLimit, setSearchLimit] = useState<number | null>(null);
+  const [searchUsed, setSearchUsed] = useState<number | null>(null);
+  const [profileLimit, setProfileLimit] = useState<number | null>(null);
+  const [profileUsed, setProfileUsed] = useState<number | null>(null);
+
+  // Search (topbar quick search)
   const [searchOpen, setSearchOpen] = useState(false);
+  const searchRef = useRef<HTMLDivElement | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
   const debounceRef = useRef<number | null>(null);
 
-  // Desktop vs Mobile
+  // Desktop vs Mobile (for layout tweaks)
   const [isDesktop, setIsDesktop] = useState(false);
   useEffect(() => {
     const update = () => setIsDesktop(window.innerWidth >= 768);
@@ -106,7 +132,7 @@ export default function BrandTopbar({ onSidebarOpen }: { onSidebarOpen: () => vo
     return () => window.removeEventListener("resize", update);
   }, []);
 
-  // Bootstrap from localStorage (no UI error if missing; we’ll just wait)
+  // Bootstrap from localStorage
   useEffect(() => {
     try {
       const id = localStorage.getItem("brandId");
@@ -123,28 +149,56 @@ export default function BrandTopbar({ onSidebarOpen }: { onSidebarOpen: () => vo
     }
   }, []);
 
+  // Helper to extract a feature by key
+  function extractFeature(
+    features: SubscriptionFeature[] | undefined,
+    key: string
+  ) {
+    if (!Array.isArray(features)) return { limit: null, used: null };
+    const row = features.find((f) => f.key === key);
+    if (!row) return { limit: null, used: null };
+
+    const rawLimit = row.limit ?? row.value;
+    const limit =
+      rawLimit === undefined || rawLimit === null
+        ? null
+        : Number.isFinite(Number(rawLimit))
+        ? Number(rawLimit)
+        : null;
+
+    const used =
+      row.used === undefined || row.used === null
+        ? 0
+        : Number.isFinite(Number(row.used))
+        ? Number(row.used)
+        : 0;
+
+    return { limit, used };
+  }
+
   // Load brand details (dash -> legacy -> local fallbacks)
   useEffect(() => {
     let cancelled = false;
-    if (!brandId) return; // wait until we have brandId; don’t set a user-visible error here
+    if (!brandId) return;
 
     (async () => {
       setLoading(true);
       setError(null);
 
-      // 1) Try modern dashboard endpoint (token-based)
+      // 1) Try modern dashboard endpoint
       try {
         const dash = await post<BrandDashResp>(`/dash/brand`);
         if (!cancelled && dash) {
           if (dash.brandName) setBrandName(dash.brandName);
-          if (typeof dash.budgetRemaining === "number")
+          if (typeof dash.budgetRemaining === "number") {
             setBudgetRemaining(dash.budgetRemaining);
+          }
         }
       } catch {
-        // swallow; we’ll try legacy
+        // swallow; fallback to legacy
       }
 
-      // 2) If name or budget not set, try legacy /brand?id=...
+      // 2) Try legacy /brand?id=...
       const stillNeedName = !brandName;
       const stillNeedBudget = budgetRemaining == null;
       if (!cancelled && (stillNeedName || stillNeedBudget)) {
@@ -152,27 +206,40 @@ export default function BrandTopbar({ onSidebarOpen }: { onSidebarOpen: () => vo
           const legacy = await get<LegacyBrandResp>(
             `/brand?id=${encodeURIComponent(brandId)}`
           );
-
           if (!cancelled && legacy) {
             if (stillNeedName) setBrandName(legacy?.name || "");
-            if (stillNeedBudget)
+            if (stillNeedBudget) {
               setBudgetRemaining(
                 typeof legacy?.walletBalance === "number"
                   ? legacy.walletBalance
                   : null
               );
+            }
 
             if (!email && legacy?.email) setEmail(legacy.email);
             const plan = legacy?.subscription?.planName;
-            if (plan && !subscriptionName) setSubscriptionName(plan.toLowerCase());
+            if (plan && !subscriptionName)
+              setSubscriptionName(plan.toLowerCase());
             const exp = legacy?.subscription?.expiresAt;
             if (exp) setSubscriptionExpiresAt(exp);
+
+            // 🔥 Credits from features
+            const features = legacy?.subscription?.features;
+            const searchFeat = extractFeature(features, "searches_per_month");
+            const profileFeat = extractFeature(
+              features,
+              "profile_views_per_month"
+            );
+
+            setSearchLimit(searchFeat.limit);
+            setSearchUsed(searchFeat.used);
+
+            setProfileLimit(profileFeat.limit);
+            setProfileUsed(profileFeat.used);
           }
-        } catch (e: any) {
-          // legacy failed (404 Brand not found or other) — don’t spam UI with error
-          // show soft error only if we have absolutely nothing to display
+        } catch (e) {
           if (!cancelled && !brandName) {
-            setError(null); // keep UI clean; we’ll show placeholders instead
+            setError(null); // keep UI clean; show placeholders instead
           }
         }
       }
@@ -186,12 +253,18 @@ export default function BrandTopbar({ onSidebarOpen }: { onSidebarOpen: () => vo
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [brandId]);
 
-  // click-outside to close menus
+  // click-outside to close menus/dropdowns
   useEffect(() => {
     const handleClick = (e: MouseEvent) => {
       const target = e.target as Node;
-      if (menuRef.current && !menuRef.current.contains(target)) setMenuOpen(false);
-      if (notifRef.current && !notifRef.current.contains(target)) setNotifOpen(false);
+      if (menuRef.current && !menuRef.current.contains(target))
+        setMenuOpen(false);
+      if (notifRef.current && !notifRef.current.contains(target))
+        setNotifOpen(false);
+      if (creditsRef.current && !creditsRef.current.contains(target))
+        setCreditsOpen(false);
+      if (searchRef.current && !searchRef.current.contains(target))
+        setSearchOpen(false);
     };
     document.addEventListener("mousedown", handleClick);
     return () => document.removeEventListener("mousedown", handleClick);
@@ -206,6 +279,7 @@ export default function BrandTopbar({ onSidebarOpen }: { onSidebarOpen: () => vo
     }
     setSearchLoading(true);
     if (debounceRef.current !== null) window.clearTimeout(debounceRef.current);
+
     debounceRef.current = window.setTimeout(async () => {
       try {
         const results = await get<SearchResult[]>(
@@ -221,7 +295,7 @@ export default function BrandTopbar({ onSidebarOpen }: { onSidebarOpen: () => vo
     }, 300);
   }, [searchQuery]);
 
-  // --- Notifications helpers ---
+  // Notifications helpers
   async function reloadNotifications() {
     if (!brandId) return;
     setNotifLoading(true);
@@ -260,7 +334,6 @@ export default function BrandTopbar({ onSidebarOpen }: { onSidebarOpen: () => vo
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [notifOpen]);
 
-  // Mark single read (optimistic)
   async function onNotifClick(n: NotificationItem) {
     try {
       if (!n.isRead && brandId) {
@@ -282,7 +355,6 @@ export default function BrandTopbar({ onSidebarOpen }: { onSidebarOpen: () => vo
     }
   }
 
-  // Mark all read
   async function markAllRead() {
     if (!brandId || notifications.length === 0) return;
     const hadUnread = notifications.some((n) => !n.isRead);
@@ -305,26 +377,126 @@ export default function BrandTopbar({ onSidebarOpen }: { onSidebarOpen: () => vo
     }
   }
 
+  function goToSearchResult(r: SearchResult) {
+    setSearchOpen(false);
+    if (!r.url) return;
+    if (r.url.startsWith("http")) {
+      window.open(r.url, "_blank");
+    } else {
+      router.push(r.url);
+    }
+  }
+
   const formattedExpiry = subscriptionExpiresAt
     ? new Date(subscriptionExpiresAt).toLocaleDateString()
     : "";
 
+  // Credits math
+  const hasSearchCap = searchLimit != null && searchLimit > 0;
+  const hasProfileCap = profileLimit != null && profileLimit > 0;
+
+  const searchPercent =
+    hasSearchCap && searchUsed != null && searchLimit
+      ? Math.min(100, (searchUsed / searchLimit) * 100)
+      : 0;
+  const profilePercent =
+    hasProfileCap && profileUsed != null && profileLimit
+      ? Math.min(100, (profileUsed / profileLimit) * 100)
+      : 0;
+
+  const searchRemaining =
+    hasSearchCap && searchUsed != null && searchLimit
+      ? Math.max(0, searchLimit - searchUsed)
+      : null;
+
+  const profileRemaining =
+    hasProfileCap && profileUsed != null && profileLimit
+      ? Math.max(0, profileLimit - profileUsed)
+      : null;
+
+  const hasAnyCredits =
+    (searchLimit != null && searchLimit >= 0) ||
+    (profileLimit != null && profileLimit >= 0);
+
   return (
     <header className="w-full bg-white shadow-sm relative z-20">
-      <div className="flex items-center justify-end h-16 px-4 border-b border-gray-200">
-        {/* Left: Hamburger */}
-        <div className="flex items-center space-x-4">
+      <div className="flex items-center justify-between h-16 px-4 border-b border-gray-200">
+        {/* Left side: Hamburger + Search */}
+        <div className="flex items-center gap-3">
+          {/* Hamburger (mobile) */}
           <button
             onClick={onSidebarOpen}
             className="md:hidden p-2 rounded-md hover:bg-gray-100 focus:outline-none"
           >
             <HiMenu size={24} className="text-gray-600" />
           </button>
+
+          {/* Search (desktop) */}
+          <div className="hidden md:block relative" ref={searchRef}>
+            <button
+              type="button"
+              onClick={() => setSearchOpen((o) => !o)}
+              className="flex items-center gap-1 px-3 py-1.5 rounded-md bg-gray-50 hover:bg-gray-100 text-sm text-gray-700"
+            >
+              <HiSearch size={18} className="text-gray-500" />
+              <span className="hidden lg:inline">Search</span>
+            </button>
+
+            {searchOpen && (
+              <div className="absolute left-0 mt-2 w-80 bg-white border border-gray-200 rounded-xl shadow-lg z-[900]">
+                <div className="px-3 py-2 border-b border-gray-100">
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Search campaigns, influencers..."
+                    className="w-full text-sm px-2 py-1.5 border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    autoFocus
+                  />
+                </div>
+
+                <div className="max-h-72 overflow-auto">
+                  {searchLoading ? (
+                    <div className="p-3 text-xs text-gray-500">
+                      Searching...
+                    </div>
+                  ) : !searchQuery.trim() ? (
+                    <div className="p-3 text-xs text-gray-400">
+                      Type to search.
+                    </div>
+                  ) : searchResults.length === 0 ? (
+                    <div className="p-3 text-xs text-gray-500">
+                      No results found.
+                    </div>
+                  ) : (
+                    <ul className="divide-y divide-gray-100">
+                      {searchResults.map((r) => (
+                        <li
+                          key={r.id}
+                          className="px-3 py-2 hover:bg-gray-50 cursor-pointer"
+                          onClick={() => goToSearchResult(r)}
+                        >
+                          <p className="text-sm font-medium text-gray-800 truncate">
+                            {r.title}
+                          </p>
+                          {r.subtitle && (
+                            <p className="text-xs text-gray-500 truncate">
+                              {r.subtitle}
+                            </p>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
 
-        {/* Right: Notifications, Budget Remaining, Name, Profile */}
+        {/* Right side: Notifications, Credits, Budget, Brand name, Profile */}
         <div className="flex items-center space-x-6">
-          {/* Notifications bell */}
+          {/* Notifications */}
           <div className="relative" ref={notifRef}>
             <button
               onClick={() => setNotifOpen((o) => !o)}
@@ -345,7 +517,9 @@ export default function BrandTopbar({ onSidebarOpen }: { onSidebarOpen: () => vo
             {notifOpen && (
               <div className="absolute right-0 mt-2 w-96 max-w-[95vw] bg-white border border-gray-200 rounded-md shadow-lg z-[1000]">
                 <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
-                  <p className="text-lg font-semibold text-gray-800">Notifications</p>
+                  <p className="text-lg font-semibold text-gray-800">
+                    Notifications
+                  </p>
 
                   <div className="flex items-center gap-3">
                     {notifError ? (
@@ -441,6 +615,141 @@ export default function BrandTopbar({ onSidebarOpen }: { onSidebarOpen: () => vo
             )}
           </div>
 
+          {/* Credits (Desktop) – icon + dropdown */}
+          {isDesktop && !loading && hasAnyCredits && (
+            <div
+              className="hidden md:block relative"
+              ref={creditsRef}
+              onMouseEnter={() => setCreditsOpen(true)}
+              onMouseLeave={() => setCreditsOpen(false)}
+            >
+              {/* Trigger */}
+              <button
+                type="button"
+                onClick={() => setCreditsOpen((o) => !o)}
+                className="flex items-center gap-1 px-3 py-1.5 rounded-md bg-gray-100 hover:bg-gray-200 text-xs text-gray-700 shadow-sm"
+                title="View plan credits"
+              >
+                <HiLightningBolt className="text-yellow-500" size={18} />
+                <span className="font-semibold">Credits</span>
+              </button>
+
+              {/* Dropdown */}
+              {creditsOpen && (
+                <div className="absolute right-0 mt-2 w-80 bg-white border border-gray-200 rounded-xl shadow-lg z-[900] overflow-hidden">
+                  {/* Header */}
+                  <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between bg-gray-50">
+                    <div className="flex flex-col">
+                      <span className="text-sm font-semibold text-gray-800">
+                        Plan credits
+                      </span>
+                      {formattedExpiry && (
+                        <span className="text-[11px] text-gray-500">
+                          Renews / ends: {formattedExpiry}
+                        </span>
+                      )}
+                    </div>
+                    {subscriptionName && (
+                      <span className="text-[11px] px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-600 font-medium">
+                        {subscriptionName.charAt(0).toUpperCase() +
+                          subscriptionName.slice(1)}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Body */}
+                  <div className="px-4 py-3 space-y-3">
+                    {/* Searches */}
+                    {searchLimit != null && (
+                      <div>
+                        <div className="flex items-center justify-between mb-0.5">
+                          <span className="text-[11px] text-gray-500">
+                            Searches / month
+                          </span>
+                          <span className="text-[11px] font-medium text-gray-800">
+                            {searchLimit === 0
+                              ? "Unlimited"
+                              : `${searchUsed ?? 0}/${searchLimit}`}
+                          </span>
+                        </div>
+                        {hasSearchCap ? (
+                          <>
+                            <div className="w-full h-1.5 rounded-full bg-gray-200 overflow-hidden">
+                              <div
+                                className={`h-full rounded-full ${
+                                  searchPercent > 80
+                                    ? "bg-red-500"
+                                    : searchPercent > 50
+                                    ? "bg-yellow-400"
+                                    : "bg-green-500"
+                                }`}
+                                style={{ width: `${searchPercent}%` }}
+                              />
+                            </div>
+                            {searchRemaining != null && (
+                              <p className="mt-1 text-[11px] text-gray-500">
+                                {searchRemaining} search
+                                {searchRemaining === 1 ? "" : "es"} left this
+                                month
+                              </p>
+                            )}
+                          </>
+                        ) : (
+                          <p className="mt-1 text-[11px] text-gray-500">
+                            Unlimited searches on this plan.
+                          </p>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Profile views */}
+                    {profileLimit != null && (
+                      <div>
+                        <div className="flex items-center justify-between mb-0.5">
+                          <span className="text-[11px] text-gray-500">
+                            Profile views / month
+                          </span>
+                          <span className="text-[11px] font-medium text-gray-800">
+                            {profileLimit === 0
+                              ? "Unlimited"
+                              : `${profileUsed ?? 0}/${profileLimit}`}
+                          </span>
+                        </div>
+                        {hasProfileCap ? (
+                          <>
+                            <div className="w-full h-1.5 rounded-full bg-gray-200 overflow-hidden">
+                              <div
+                                className={`h-full rounded-full ${
+                                  profilePercent > 80
+                                    ? "bg-red-500"
+                                    : profilePercent > 50
+                                    ? "bg-yellow-400"
+                                    : "bg-green-500"
+                                }`}
+                                style={{ width: `${profilePercent}%` }}
+                              />
+                            </div>
+                            {profileRemaining != null && (
+                              <p className="mt-1 text-[11px] text-gray-500">
+                                {profileRemaining} profile view
+                                {profileRemaining === 1 ? "" : "s"} left this
+                                month
+                              </p>
+                            )}
+                          </>
+                        ) : (
+                          <p className="mt-1 text-[11px] text-gray-500">
+                            Unlimited profile views on this plan.
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Budget Remaining */}
           {!loading && budgetRemaining !== null && (
             <button
@@ -448,17 +757,17 @@ export default function BrandTopbar({ onSidebarOpen }: { onSidebarOpen: () => vo
               title="Budget remaining"
             >
               <HiCreditCard size={20} className="text-gray-600" />
-              <span className="font-large text-gray-800">
+              <span className="font-medium text-gray-800">
                 ${budgetRemaining.toFixed(2)}
               </span>
             </button>
           )}
 
-          {/* Brand name (no scary errors in UI) */}
+          {/* Brand name */}
           {loading ? (
             <span className="text-gray-500 text-sm">Loading…</span>
           ) : (
-            <span className="text-gray-800 font-medium text-lg break-words">
+            <span className="text-gray-800 font-medium text-lg break-words max-w-[180px] md:max-w-xs text-right line-clamp-1">
               {brandName || "—"}
             </span>
           )}
@@ -478,15 +787,21 @@ export default function BrandTopbar({ onSidebarOpen }: { onSidebarOpen: () => vo
                   <p className="text-md font-semibold text-gray-700 break-words">
                     {brandName || "Brand"}
                   </p>
-                  {email && <p className="text-sm text-gray-500 break-words">{email}</p>}
-                  {subscriptionName && (
-                    <p className="text-md text-gray-500 break-words">
-                      Plan: {subscriptionName.charAt(0).toUpperCase() + subscriptionName.slice(1)}
+                  {email && (
+                    <p className="text-sm text-gray-500 break-words">
+                      {email}
                     </p>
                   )}
-                  {subscriptionExpiresAt && (
-                    <p className="text-md text-gray-500">
-                      Expires: {new Date(subscriptionExpiresAt).toLocaleDateString()}
+                  {subscriptionName && (
+                    <p className="text-sm text-gray-500 break-words">
+                      Plan:{" "}
+                      {subscriptionName.charAt(0).toUpperCase() +
+                        subscriptionName.slice(1)}
+                    </p>
+                  )}
+                  {formattedExpiry && (
+                    <p className="text-sm text-gray-500">
+                      Expires: {formattedExpiry}
                     </p>
                   )}
                 </div>
