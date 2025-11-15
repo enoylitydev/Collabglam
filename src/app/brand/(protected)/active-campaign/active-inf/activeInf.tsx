@@ -36,17 +36,6 @@ const toast = (opts: { icon: "success" | "error"; title: string; text?: string }
 /* ------------------------ Raw API types (minimal) ------------------------ */
 type Provider = "instagram" | "youtube" | "tiktok" | string;
 
-interface RawSocialProfile {
-  provider?: Provider;
-  username?: string;
-  handle?: string;
-  url?: string;
-  followers?: number;
-  stats?: { followers?: { value?: number } };
-  categories?: { categoryName?: string }[];
-  updatedAt?: string;
-}
-
 interface RawOnboarding {
   categoryName?: string;
   subcategories?: { subcategoryName?: string }[];
@@ -56,12 +45,16 @@ interface RawInfluencer {
   _id?: string;
   influencerId?: string;
   name?: string;
+  email?: string;
   primaryPlatform?: Provider;
-  socialProfiles?: RawSocialProfile[];
   onboarding?: RawOnboarding;
   updatedAt?: string;
   isAccepted?: number;
   isAssigned?: number;
+
+  // 🔥 New fields from backend
+  socialHandle?: string | null;
+  audienceSize?: number | null;
 }
 
 interface Meta {
@@ -92,15 +85,9 @@ const PAGE_SIZE = 10;
 /* --------------------------- Helper functions --------------------------- */
 const formatNumber = (n?: number | null) =>
   typeof n === "number" ? n.toLocaleString() : "—";
+
 const formatDate = (iso?: string | null) =>
   iso ? new Date(iso).toLocaleDateString() : "—";
-
-const pickPrimaryProfile = (doc: RawInfluencer): RawSocialProfile | null => {
-  const profiles = Array.isArray(doc.socialProfiles) ? doc.socialProfiles : [];
-  if (!profiles.length) return null;
-  const preferred = profiles.find((p) => p.provider === doc.primaryPlatform);
-  return preferred || profiles[0];
-};
 
 const buildSocialUrl = (provider: Provider | undefined, username: string): string => {
   const u = username.replace(/^@/, "");
@@ -113,31 +100,22 @@ const buildSocialUrl = (provider: Provider | undefined, username: string): strin
 const dedupe = <T,>(arr: T[]) => Array.from(new Set(arr));
 
 const toRow = (doc: RawInfluencer): InfluencerRow => {
-  const profile = pickPrimaryProfile(doc);
-  const provider = profile?.provider ?? doc.primaryPlatform;
-
   const username =
-    profile?.username ??
-    profile?.handle ??
-    null;
+    (doc.socialHandle && doc.socialHandle.trim()) || null;
 
   const socialUrl =
-    profile?.url ??
-    (username ? buildSocialUrl(provider, username) : null);
+    username && doc.primaryPlatform
+      ? buildSocialUrl(doc.primaryPlatform, username)
+      : null;
 
-  const fromOnboarding = [
-    doc.onboarding?.categoryName,
-  ].filter(Boolean) as string[];
-
-  const fromSocial =
-    profile?.categories?.map((c) => c.categoryName).filter(Boolean) ?? [];
-
-  const categoryNames = dedupe<string>([...fromOnboarding, ...fromSocial].filter((x): x is string => typeof x === 'string'));
+  const categoryNames = dedupe<string>(
+    [
+      doc.onboarding?.categoryName
+    ].filter((x): x is string => typeof x === "string" && !!x.trim())
+  );
 
   const followers =
-    typeof profile?.followers === "number"
-      ? profile!.followers
-      : (profile?.stats?.followers?.value ?? null);
+    typeof doc.audienceSize === "number" ? doc.audienceSize : null;
 
   return {
     _id: (doc._id as string) || doc.influencerId || crypto.randomUUID(),
@@ -146,16 +124,16 @@ const toRow = (doc: RawInfluencer): InfluencerRow => {
     username,
     socialUrl,
     platformName:
-      provider === "instagram"
+      doc.primaryPlatform === "instagram"
         ? "Instagram"
-        : provider === "youtube"
+        : doc.primaryPlatform === "youtube"
         ? "YouTube"
-        : provider === "tiktok"
+        : doc.primaryPlatform === "tiktok"
         ? "TikTok"
-        : provider || undefined,
+        : doc.primaryPlatform || undefined,
     categoryNames,
     followers,
-    updatedAt: doc.updatedAt ?? profile?.updatedAt ?? null,
+    updatedAt: doc.updatedAt ?? null,
     isAccepted: doc.isAccepted,
     isAssigned: doc.isAssigned,
   };
@@ -179,6 +157,11 @@ export default function ActiveInfluencersPage() {
   const [sortOrder, setSortOrder] = useState<1 | 0>(1); // 1=desc, 0=asc
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
 
+  const [showMilestoneModal, setShowMilestoneModal] = useState(false);
+  const [selectedInf, setSelectedInf] = useState<InfluencerRow | null>(null);
+  const [milestoneForm, setMilestoneForm] = useState({ title: "", amount: "", description: "" });
+  const [isSavingMilestone, setIsSavingMilestone] = useState(false);
+
   const toggleExpand = (id: string) => setExpandedRow((cur) => (cur === id ? null : id));
   const toggleSort = (field: SortKey) => {
     setPage(1);
@@ -190,7 +173,11 @@ export default function ActiveInfluencersPage() {
   };
   const SortIndicator = ({ field }: { field: SortKey }) =>
     sortField === field ? (
-      sortOrder === 1 ? <HiOutlineChevronDown className="inline ml-1 w-4 h-4" /> : <HiOutlineChevronUp className="inline ml-1 w-4 h-4" />
+      sortOrder === 1 ? (
+        <HiOutlineChevronDown className="inline ml-1 w-4 h-4" />
+      ) : (
+        <HiOutlineChevronUp className="inline ml-1 w-4 h-4" />
+      )
     ) : null;
 
   useEffect(() => {
@@ -203,15 +190,18 @@ export default function ActiveInfluencersPage() {
       setLoading(true);
       setError(null);
       try {
-        // NOTE: backend still supports sortBy/order params
-        const resp = await post<{ meta: Meta; influencers: RawInfluencer[] }>("campaign/accepted-inf", {
-          campaignId,
-          page,
-          limit: PAGE_SIZE,
-          search: searchTerm.trim(),
-          sortBy: sortField,
-          order: sortOrder === 1 ? "desc" : "asc",
-        });
+        const resp = await post<{ meta: Meta; influencers: RawInfluencer[] }>(
+          "campaign/accepted-inf",
+          {
+            campaignId,
+            page,
+            limit: PAGE_SIZE,
+            search: searchTerm.trim(),
+            // backend still accepts these; it will ignore unknown sort fields safely
+            sortBy: sortField,
+            order: sortOrder === 1 ? "desc" : "asc",
+          }
+        );
 
         const list = Array.isArray(resp.influencers) ? resp.influencers : [];
         setRowsData(list.map(toRow));
@@ -230,9 +220,11 @@ export default function ActiveInfluencersPage() {
     setMilestoneForm({ title: "", amount: "", description: "" });
     setShowMilestoneModal(true);
   };
+
   const handleSaveMilestone = async () => {
     if (!selectedInf?.influencerId) return;
     try {
+      setIsSavingMilestone(true);
       await post("milestone/create", {
         influencerId: selectedInf.influencerId,
         campaignId,
@@ -243,20 +235,24 @@ export default function ActiveInfluencersPage() {
       });
       Swal.fire("Added!", "Milestone has been added.", "success");
       setShowMilestoneModal(false);
+      setMilestoneForm({ title: "", amount: "", description: "" });
       setPage(1);
     } catch (err: any) {
       console.error(err);
-      toast({ icon: "error", title: "Error", text: err?.response?.data?.message || err.message || "Something went wrong" });
+      toast({
+        icon: "error",
+        title: "Error",
+        text: err?.response?.data?.message || err.message || "Something went wrong",
+      });
+    } finally {
+      setIsSavingMilestone(false);
     }
   };
+
   const handleViewDetails = (inf: InfluencerRow) => {
     if (!inf.influencerId) return;
     router.push(`/brand/influencers?id=${inf.influencerId}`);
   };
-
-  const [showMilestoneModal, setShowMilestoneModal] = useState(false);
-  const [selectedInf, setSelectedInf] = useState<InfluencerRow | null>(null);
-  const [milestoneForm, setMilestoneForm] = useState({ title: "", amount: "", description: "" });
 
   const tableRows = useMemo(() => {
     return rowsData.flatMap((inf, idx) => {
@@ -288,14 +284,20 @@ export default function ActiveInfluencersPage() {
             ) : (
               "—"
             )}
-            {inf.platformName && <span className="ml-1 text-xs text-gray-500">({inf.platformName})</span>}
+            {inf.platformName && (
+              <span className="ml-1 text-xs text-gray-500">({inf.platformName})</span>
+            )}
           </TableCell>
 
-          {/* Categories — from onboarding main + subcategories (fallback social categories) */}
+          {/* Categories — from onboarding main + subcategories */}
           <TableCell className="space-x-1">
             {inf.categoryNames.length ? (
               inf.categoryNames.map((cat, i) => (
-                <Badge key={`${inf._id}-cat-${i}`} variant="secondary" className="capitalize inline-block">
+                <Badge
+                  key={`${inf._id}-cat-${i}`}
+                  variant="secondary"
+                  className="capitalize inline-block"
+                >
                   {cat}
                 </Badge>
               ))
@@ -304,14 +306,14 @@ export default function ActiveInfluencersPage() {
             )}
           </TableCell>
 
-          {/* Audience — Followers + Updated */}
+          {/* Audience — Followers */}
           <TableCell>
             <div>
               <strong>{formatNumber(inf.followers)}</strong>
             </div>
           </TableCell>
 
-          {/* Updated column (icon kept) */}
+          {/* Updated column */}
           <TableCell className="whitespace-nowrap">
             <HiOutlineCalendar className="inline mr-1" />
             {formatDate(inf.updatedAt)}
@@ -319,7 +321,13 @@ export default function ActiveInfluencersPage() {
 
           {/* Status */}
           <TableCell className="text-center">
-            {inf.isAccepted === 1 ? <p>Working</p> : inf.isAssigned === 1 ? <p>Contract Sent</p> : <p>Applied</p>}
+            {inf.isAccepted === 1 ? (
+              <p>Working</p>
+            ) : inf.isAssigned === 1 ? (
+              <p>Contract Sent</p>
+            ) : (
+              <p>Applied</p>
+            )}
           </TableCell>
 
           {/* Actions */}
@@ -364,7 +372,11 @@ export default function ActiveInfluencersPage() {
               disabled={!inf.influencerId}
               title={inf.influencerId ? "Toggle history" : "Missing influencerId"}
             >
-              {expandedRow === rowKey ? <HiOutlineChevronUp className="w-4 h-4" /> : <HiOutlineChevronDown className="w-4 h-4" />}
+              {expandedRow === rowKey ? (
+                <HiOutlineChevronUp className="w-4 h-4" />
+              ) : (
+                <HiOutlineChevronDown className="w-4 h-4" />
+              )}
             </Button>
           </TableCell>
         </TableRow>
@@ -392,7 +404,9 @@ export default function ActiveInfluencersPage() {
     <div className="min-h-screen p-4 md:p-8 space-y-8">
       {/* Header */}
       <header className="flex items-center justify-between p-4 rounded-md">
-        <h1 className="text-3xl font-bold text-gray-800">Campaign: {campaignName || "Unknown Campaign"}</h1>
+        <h1 className="text-3xl font-bold text-gray-800">
+          Campaign: {campaignName || "Unknown Campaign"}
+        </h1>
         <Button
           size="sm"
           variant="outline"
@@ -430,20 +444,34 @@ export default function ActiveInfluencersPage() {
           <Table className="min-w-[960px]">
             <TableHeader
               className="text-white"
-              style={{ backgroundImage: `linear-gradient(to right, ${TABLE_GRADIENT_FROM}, ${TABLE_GRADIENT_TO})` }}
+              style={{
+                backgroundImage: `linear-gradient(to right, ${TABLE_GRADIENT_FROM}, ${TABLE_GRADIENT_TO})`,
+              }}
             >
               <TableRow>
-                <TableHead onClick={() => toggleSort("name")} className="cursor-pointer select-none font-semibold">
-                  {meta.total} Applied <SortIndicator field="name" />
+                <TableHead
+                  onClick={() => toggleSort("name")}
+                  className="cursor-pointer select-none font-semibold"
+                >
+                  {meta.total} Accepted <SortIndicator field="name" />
                 </TableHead>
-                <TableHead onClick={() => toggleSort("username")} className="cursor-pointer select-none font-semibold">
+                <TableHead
+                  onClick={() => toggleSort("username")}
+                  className="cursor-pointer select-none font-semibold"
+                >
                   Social Handle <SortIndicator field="username" />
                 </TableHead>
                 <TableHead className="font-semibold">Categories</TableHead>
-                <TableHead onClick={() => toggleSort("followers")} className="cursor-pointer select-none font-semibold">
+                <TableHead
+                  onClick={() => toggleSort("followers")}
+                  className="cursor-pointer select-none font-semibold"
+                >
                   Audience <SortIndicator field="followers" />
                 </TableHead>
-                <TableHead onClick={() => toggleSort("updatedAt")} className="cursor-pointer select-none font-semibold">
+                <TableHead
+                  onClick={() => toggleSort("updatedAt")}
+                  className="cursor-pointer select-none font-semibold"
+                >
                   Updated <SortIndicator field="updatedAt" />
                 </TableHead>
                 <TableHead>Status</TableHead>
@@ -468,7 +496,12 @@ export default function ActiveInfluencersPage() {
       {/* Pagination */}
       {meta.totalPages > 1 && (
         <div className="flex justify-center md:justify-end items-center gap-2">
-          <Button variant="outline" size="icon" disabled={page === 1} onClick={() => setPage((p) => Math.max(p - 1, 1))}>
+          <Button
+            variant="outline"
+            size="icon"
+            disabled={page === 1}
+            onClick={() => setPage((p) => Math.max(p - 1, 1))}
+          >
             <HiChevronLeft />
           </Button>
           <span className="text-sm">
@@ -485,45 +518,99 @@ export default function ActiveInfluencersPage() {
         </div>
       )}
 
-      {/* Milestone Modal */}
+      {/* Milestone Modal - Updated UI */}
       {showMilestoneModal && selectedInf && (
-        <div className="fixed inset-0 backdrop-blur-sm bg-opacity-30 flex items-center justify-center z-50">
-          <div
-            className="max-w-xl bg-white rounded-lg p-6 w-full max-w-lg max-h-[90vh] overflow-auto border-2 border-transparent"
-            style={{ borderImage: `linear-gradient(to right, ${TABLE_GRADIENT_FROM}, ${TABLE_GRADIENT_TO}) 1` }}
-          >
-            <h2 className="text-xl font-semibold mb-4">Add Milestone</h2>
-            <div className="space-y-4">
-              <FloatingLabelInput
-                id="milestoneTitle"
-                label="Milestone Title"
-                value={milestoneForm.title}
-                onChange={(e) => setMilestoneForm((f) => ({ ...f, title: e.target.value }))}
-              />
-              <FloatingLabelInput
-                id="milestoneAmount"
-                label="Amount"
-                value={milestoneForm.amount}
-                onChange={(e) => setMilestoneForm((f) => ({ ...f, amount: e.target.value }))}
-              />
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm px-4">
+          <div className="w-full max-w-xl overflow-hidden rounded-2xl bg-white shadow-2xl">
+            {/* Header */}
+            <div
+              className="px-6 py-4 flex items-start justify-between"
+              style={{
+                backgroundImage: `linear-gradient(to right, ${TABLE_GRADIENT_FROM}, ${TABLE_GRADIENT_TO})`,
+              }}
+            >
+              <div className="text-white">
+                <p className="text-xs uppercase tracking-wide">
+                  Create milestone
+                </p>
+                <h2 className="text-lg font-semibold mt-1">
+                  {selectedInf.name}
+                </h2>
+                <div className="mt-1 text-xs text-white flex flex-wrap items-center gap-2">
+                  {selectedInf.username && (
+                    <span>@{selectedInf.username.replace(/^@/, "")}</span>
+                  )}
+                  {selectedInf.platformName && (
+                    <span className="rounded-full bg-white/15 px-2 py-0.5 text-[10px] uppercase tracking-wide">
+                      {selectedInf.platformName}
+                    </span>
+                  )}
+                  {campaignName && (
+                    <span className="truncate max-w-[170px]" title={campaignName}>
+                      Campaign: <span className="font-medium">{campaignName}</span>
+                    </span>
+                  )}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowMilestoneModal(false)}
+                className="ml-3 text-white/90 hover:text-white text-lg leading-none"
+                aria-label="Close"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="px-6 py-5 space-y-5">
+              <div className="grid gap-4 md:grid-cols-2">
+                <FloatingLabelInput
+                  id="milestoneTitle"
+                  label="Milestone Title"
+                  value={milestoneForm.title}
+                  onChange={(e) =>
+                    setMilestoneForm((f) => ({ ...f, title: e.target.value }))
+                  }
+                />
+                <FloatingLabelInput
+                  id="milestoneAmount"
+                  label="Amount"
+                  value={milestoneForm.amount}
+                  onChange={(e) =>
+                    setMilestoneForm((f) => ({ ...f, amount: e.target.value }))
+                  }
+                  type="number"
+                />
+              </div>
               <FloatingLabelInput
                 id="milestoneDesc"
                 label="Milestone Description"
                 value={milestoneForm.description}
-                onChange={(e) => setMilestoneForm((f) => ({ ...f, description: e.target.value }))}
+                onChange={(e) =>
+                  setMilestoneForm((f) => ({ ...f, description: e.target.value }))
+                }
               />
             </div>
-            <div className="mt-6 flex justify-end space-x-2">
-              <Button variant="outline" onClick={() => setShowMilestoneModal(false)}>
-                Cancel
-              </Button>
-              <Button
-                onClick={handleSaveMilestone}
-                disabled={!selectedInf?.influencerId}
-                className="bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white hover:from-[#FF8A1F] hover:to-[#FF5A2E] focus:outline-none focus:ring-2 focus:ring-[#FFA135]/40 cursor-pointer"
-              >
-                Add
-              </Button>
+
+            {/* Footer */}
+            <div className="flex flex-col gap-3 border-t bg-gray-50 px-6 py-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex justify-end gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => setShowMilestoneModal(false)}
+                  className="cursor-pointer"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleSaveMilestone}
+                  disabled={!selectedInf?.influencerId || isSavingMilestone}
+                  className="bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white hover:from-[#FF8A1F] hover:to-[#FF5A2E] focus:outline-none focus:ring-2 focus:ring-[#FFA135]/40 cursor-pointer disabled:opacity-60"
+                >
+                  {isSavingMilestone ? "Saving..." : "Add Milestone"}
+                </Button>
+              </div>
             </div>
           </div>
         </div>

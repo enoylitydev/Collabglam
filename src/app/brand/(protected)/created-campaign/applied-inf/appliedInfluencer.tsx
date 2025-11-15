@@ -787,46 +787,66 @@ export default function AppliedInfluencersPage() {
   };
 
   /* ---------------- Preview (MUST happen before Send/Update) ---------------- */
+  // 1) Update the preview handler for edit mode
   const handleGeneratePreview = async () => {
     if (!selectedInf) return;
     if (!validateForPreview()) return;
+
     try {
-      const brand = buildBrandPayload();
       if (panelMode === "send") {
+        // unchanged
+        const brand = buildBrandPayload();
         const payload: any = {
           brandId: localStorage.getItem("brandId"),
           campaignId,
           influencerId: selectedInf.influencerId,
           brand,
           preview: true,
+          ...(requestedEffDate && { requestedEffectiveDate: requestedEffDate }),
+          ...(requestedEffTz && { requestedEffectiveDateTimezone: requestedEffTz }),
         };
-        if (requestedEffDate) payload.requestedEffectiveDate = requestedEffDate;
-        if (requestedEffTz) payload.requestedEffectiveDateTimezone = requestedEffTz;
-        const res = await api.post("/contract/initiate", payload, { responseType: "blob" });
+
+        const res = await api.post("/contract/initiate", payload, {
+          responseType: "blob",
+        });
+
         clearPreview();
-        const url = URL.createObjectURL(res.data);
-        setPdfUrl(url);
+        setPdfUrl(URL.createObjectURL(res.data));
       } else {
+        // EDIT MODE: first persist the updates, then fetch preview
         if (!selectedMeta?.contractId) {
           toast({ icon: "error", title: "No Contract", text: "Cannot edit before a contract exists." });
           return;
         }
-        const payload: any = {
+
+        const brandUpdates = buildBrandPayload();
+
+        await post("/contract/brand/update", {
           contractId: selectedMeta.contractId,
-          brandUpdates: brand,
-          preview: true,
-        };
-        if (requestedEffDate) payload.requestedEffectiveDate = requestedEffDate;
-        if (requestedEffTz) payload.requestedEffectiveDateTimezone = requestedEffTz;
-        const res = await api.post("/contract/resend", payload, { responseType: "blob" });
+          brandId: localStorage.getItem("brandId"),
+          type: 1, // preview update
+          brandUpdates,
+          ...(requestedEffDate && { requestedEffectiveDate: requestedEffDate }),
+          ...(requestedEffTz && { requestedEffectiveDateTimezone: requestedEffTz }),
+        });
+
+        // Now fetch preview for the updated contract
+        const res = await api.get("/contract/preview", {
+          params: { contractId: selectedMeta.contractId },
+          responseType: "blob",
+        });
+
         clearPreview();
-        const url = URL.createObjectURL(res.data);
-        setPdfUrl(url);
+        setPdfUrl(URL.createObjectURL(res.data));
       }
+
       toast({ icon: "success", title: "Preview ready", text: "Review the PDF on the left." });
     } catch (e: any) {
-      const msg = e?.response?.data?.message || e?.message || "Could not generate preview.";
-      toast({ icon: "error", title: "Preview failed", text: msg });
+      toast({
+        icon: "error",
+        title: "Preview failed",
+        text: e?.response?.data?.message || e?.message || "Could not generate preview.",
+      });
     }
   };
 
@@ -878,22 +898,33 @@ export default function AppliedInfluencersPage() {
 
   const handleEditContract = async () => {
     if (!selectedMeta?.contractId) return;
-    if (!pdfUrl) { toast({ icon: "info", title: "Preview required", text: "Generate preview before updating." }); return; }
+    if (!pdfUrl) {
+      toast({ icon: "info", title: "Preview required", text: "Generate preview before updating." });
+      return;
+    }
     if (!validateForPreview()) return;
+
     try {
       const brandUpdates = buildBrandPayload();
-      await post("/contract/resend", {
+      await post("/contract/brand/update", {
         contractId: selectedMeta.contractId,
+        brandId: localStorage.getItem("brandId"),
+        type: 0,
         brandUpdates,
-        ...(requestedEffDate ? { requestedEffectiveDate: requestedEffDate } : {}),
-        ...(requestedEffTz ? { requestedEffectiveDateTimezone: requestedEffTz } : {}),
+        ...(requestedEffDate && { requestedEffectiveDate: requestedEffDate }),
+        ...(requestedEffTz && { requestedEffectiveDateTimezone: requestedEffTz }),
       });
+
       toast({ icon: "success", title: "Updated", text: "Contract updated (new version sent)." });
       closeSidebar();
       fetchApplicants();
       loadMetaCache(influencers);
     } catch (e: any) {
-      toast({ icon: "error", title: "Update failed", text: e?.response?.data?.message || e?.message || "Could not update contract." });
+      toast({
+        icon: "error",
+        title: "Update failed",
+        text: e?.response?.data?.message || e?.message || "Could not update contract.",
+      });
     }
   };
 

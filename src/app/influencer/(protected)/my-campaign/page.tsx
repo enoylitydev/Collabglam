@@ -1125,7 +1125,7 @@ function CampaignTable({ data, loading, error, emptyMessage, page, totalPages, o
                     {/* If brand signed and influencer hasn't, show Sign action here */}
                     {brandSigned && !influencerSigned && (
                       <Button
-                        className="bg-indigo-600 hover:bg-indigo-700 text-white"
+                        className="bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-900"
                         onClick={() => onSignDirect({ contractId: effectiveContractId, influencerConfirmed, isLocked, brandConfirmed })}
                         title={influencerConfirmed ? "Sign as Influencer" : "Accept first to sign"}
                       >
