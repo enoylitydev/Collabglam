@@ -163,15 +163,15 @@ export default function BrandTopbar({
       rawLimit === undefined || rawLimit === null
         ? null
         : Number.isFinite(Number(rawLimit))
-        ? Number(rawLimit)
-        : null;
+          ? Number(rawLimit)
+          : null;
 
     const used =
       row.used === undefined || row.used === null
         ? 0
         : Number.isFinite(Number(row.used))
-        ? Number(row.used)
-        : 0;
+          ? Number(row.used)
+          : 0;
 
     return { limit, used };
   }
@@ -433,14 +433,6 @@ export default function BrandTopbar({
 
           {/* Search (desktop) */}
           <div className="hidden md:block relative" ref={searchRef}>
-            <button
-              type="button"
-              onClick={() => setSearchOpen((o) => !o)}
-              className="flex items-center gap-1 px-3 py-1.5 rounded-md bg-gray-50 hover:bg-gray-100 text-sm text-gray-700"
-            >
-              <HiSearch size={18} className="text-gray-500" />
-              <span className="hidden lg:inline">Search</span>
-            </button>
 
             {searchOpen && (
               <div className="absolute left-0 mt-2 w-80 bg-white border border-gray-200 rounded-xl shadow-lg z-[900]">
@@ -571,9 +563,8 @@ export default function BrandTopbar({
                       {notifications.map((n) => (
                         <li
                           key={n.id}
-                          className={`px-4 py-3 hover:bg-gray-50 cursor-pointer ${
-                            n.isRead ? "bg-white" : "bg-yellow-50"
-                          }`}
+                          className={`px-4 py-3 hover:bg-gray-50 cursor-pointer ${n.isRead ? "bg-white" : "bg-yellow-50"
+                            }`}
                           onClick={() => onNotifClick(n)}
                         >
                           <div className="flex items-start gap-2">
@@ -616,12 +607,11 @@ export default function BrandTopbar({
           </div>
 
           {/* Credits (Desktop) – icon + dropdown */}
+          {/* Credits (Desktop) – icon + dropdown */}
           {isDesktop && !loading && hasAnyCredits && (
             <div
               className="hidden md:block relative"
               ref={creditsRef}
-              onMouseEnter={() => setCreditsOpen(true)}
-              onMouseLeave={() => setCreditsOpen(false)}
             >
               {/* Trigger */}
               <button
@@ -676,21 +666,19 @@ export default function BrandTopbar({
                           <>
                             <div className="w-full h-1.5 rounded-full bg-gray-200 overflow-hidden">
                               <div
-                                className={`h-full rounded-full ${
-                                  searchPercent > 80
+                                className={`h-full rounded-full ${searchPercent > 80
                                     ? "bg-red-500"
                                     : searchPercent > 50
-                                    ? "bg-yellow-400"
-                                    : "bg-green-500"
-                                }`}
+                                      ? "bg-yellow-400"
+                                      : "bg-green-500"
+                                  }`}
                                 style={{ width: `${searchPercent}%` }}
                               />
                             </div>
                             {searchRemaining != null && (
                               <p className="mt-1 text-[11px] text-gray-500">
                                 {searchRemaining} search
-                                {searchRemaining === 1 ? "" : "es"} left this
-                                month
+                                {searchRemaining === 1 ? "" : "es"} left this month
                               </p>
                             )}
                           </>
@@ -719,21 +707,19 @@ export default function BrandTopbar({
                           <>
                             <div className="w-full h-1.5 rounded-full bg-gray-200 overflow-hidden">
                               <div
-                                className={`h-full rounded-full ${
-                                  profilePercent > 80
+                                className={`h-full rounded-full ${profilePercent > 80
                                     ? "bg-red-500"
                                     : profilePercent > 50
-                                    ? "bg-yellow-400"
-                                    : "bg-green-500"
-                                }`}
+                                      ? "bg-yellow-400"
+                                      : "bg-green-500"
+                                  }`}
                                 style={{ width: `${profilePercent}%` }}
                               />
                             </div>
                             {profileRemaining != null && (
                               <p className="mt-1 text-[11px] text-gray-500">
                                 {profileRemaining} profile view
-                                {profileRemaining === 1 ? "" : "s"} left this
-                                month
+                                {profileRemaining === 1 ? "" : "s"} left this month
                               </p>
                             )}
                           </>

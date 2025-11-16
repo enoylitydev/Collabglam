@@ -24,10 +24,6 @@ export default function BrandDashboardHome() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [fatalError, setFatalError] = useState<string | null>(null);
 
-  // Search modal state
-  const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
-  const [favorites, setFavorites] = useState<string[]>([]);
-
   const today = format(new Date(), "MMMM d, yyyy");
 
   useEffect(() => {
@@ -47,11 +43,6 @@ export default function BrandDashboardHome() {
       }
     })();
   }, []);
-
-
-  const handleToggleFavorite = (id: string) => {
-    setFavorites((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
-  };
 
   if (fatalError)
     return (
@@ -104,10 +95,10 @@ export default function BrandDashboardHome() {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
             <StatCard
               icon={<HiOutlineChartBar className="text-[#ef2f5b]" size={32} />}
-              label="Active Campaigns"
+              label="Created Campaigns"
               value={totalActiveCampaigns}
               accentFrom={accentFrom}
-              onClick={() => router.push("/brand/active-campaign")}
+              onClick={() => router.push("/brand/created-campaign")}
             />
 
             <StatCard
