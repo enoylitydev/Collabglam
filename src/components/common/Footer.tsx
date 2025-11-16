@@ -1,6 +1,8 @@
 "use client";
 
 import React, { useState } from "react";
+import Link from "next/link";
+
 import {
   Facebook,
   Twitter,
@@ -28,7 +30,7 @@ export default function FooterWithNewsletter() {
         { label: "About Us", href: "/about-us" },
         { label: "Contact Us", href: "/contact-us" },
         { label: "FAQs", href: "/faqs" },
-                { label: "How It Works", href: "#how-it-works" },
+        { label: "How It Works", href: "#how-it-works" },
         { label: "Features", href: "#features" },
         { label: "Pricing", href: "#pricing" },
       ],
@@ -112,7 +114,7 @@ export default function FooterWithNewsletter() {
         <div className="pt-16 pb-12 flex flex-col lg:flex-row lg:items-start lg:justify-between">
           {/* Brand Section */}
           <div className="mb-12 lg:mb-0 lg:flex-shrink-0 flex flex-col items-center text-center lg:items-start lg:text-left">
-            <div className="flex items-center mb-6">
+            <Link href="/" className="flex items-center mb-6">
               <img
                 src="./logo.png"
                 alt="Collabglam Logo"
@@ -121,7 +123,7 @@ export default function FooterWithNewsletter() {
                 className="rounded-lg"
               />
               <span className="ml-3 text-2xl font-bold">CollabGlam</span>
-            </div>
+            </Link>
 
             <p className="text-gray-300 mb-6 leading-relaxed max-w-sm">
               Connect, create, and drive revenue with CollabGlam’s intelligent
@@ -183,39 +185,6 @@ export default function FooterWithNewsletter() {
             ))}
           </div>
         </div>
-
-        {/* Newsletter Subscription */}
-        <form
-          onSubmit={handleSubscribe}
-          className="py-8 border-t border-gray-800 flex flex-col lg:flex-row lg:items-center lg:justify-between space-y-4 lg:space-y-0"
-        >
-          <div className="text-center lg:text-left">
-            <h3 className="text-xl font-bold mb-2">Stay Updated</h3>
-            <p className="text-gray-300 max-w-md">
-              Get the latest updates, tips, and exclusive CollabGlam deals
-              delivered to your inbox.
-            </p>
-          </div>
-
-          <div className="flex w-full max-w-lg mx-auto lg:mx-0">
-            <input
-              type="email"
-              placeholder="Enter your email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              disabled={loading}
-              className="flex-1 px-4 py-3 bg-gray-800 border border-gray-700 rounded-l-md focus:outline-none focus:ring-2 focus:ring-pink-600"
-            />
-            <button
-              onClick={handleSubscribe}
-              disabled={loading}
-              className="px-6 py-3 bg-gradient-to-r from-[#FFA135] to-[#FF7236]
-    text-white font-bold text-lg text-white font-semibold rounded-r-md hover:bg-pink-700 transition-colors disabled:opacity-50"
-            >
-              {loading ? "Subscribing…" : "Subscribe"}
-            </button>
-          </div>
-        </form>
 
         {/* Bottom Bar */}
         <div className="py-6 border-t border-gray-800">

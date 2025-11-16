@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import Image from 'next/image';
 import { Menu, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
+import Link from "next/link";
 
 const Header: React.FC = () => {
   const router = useRouter();
@@ -35,8 +36,20 @@ const Header: React.FC = () => {
     >
       <div className="w-full mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16 lg:h-20">
+
+          <Link href="/" className="flex items-center space-x-2">
+            <img
+              src="./logo.png"
+              alt="Collabglam Logo"
+              width={50}
+              height={50}
+              className="rounded-lg"
+            />
+            <span className="ml-3 text-2xl font-bold">CollabGlam</span>
+          </Link>
+
           {/* Logo */}
-          <div className="flex items-center space-x-2">
+          {/* <div className="flex items-center space-x-2">
             <img
               src="./logo.png"
               alt="Collabglam Logo"
@@ -45,7 +58,7 @@ const Header: React.FC = () => {
               className="rounded-lg"
             />
             <span className="text-xl font-bold text-gray-900">CollabGlam</span>
-          </div>
+          </div> */}
 
           {/* Desktop Navigation */}
           <nav className="hidden lg:flex items-center space-x-8">
