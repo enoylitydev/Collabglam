@@ -14,8 +14,8 @@ import { ArrowRight, PlayCircle } from "lucide-react";
 
 interface DashboardData {
   brandName: string;
-  totalActiveCampaigns: number;
-  totalInfluencers: number;
+  totalCreatedCampaigns: number;
+  totalHiredInfluencers: number;
   budgetRemaining: number;
 }
 
@@ -58,7 +58,7 @@ export default function BrandDashboardHome() {
       </div>
     );
 
-  const { brandName, totalActiveCampaigns, totalInfluencers, budgetRemaining } = data;
+  const { brandName, totalCreatedCampaigns, totalHiredInfluencers, budgetRemaining } = data;
   const accentFrom = "#FFA135";
   const accentTo = "#FF7236";
 
@@ -68,7 +68,7 @@ export default function BrandDashboardHome() {
         <main className="flex-1 px-6 py-8">
 
           {/* Zero campaigns CTA */}
-          {totalActiveCampaigns === 0 && (
+          {totalCreatedCampaigns === 0 && (
             <ZeroCampaignCTA
               onClick={() => router.push("/brand/add-edit-campaign")}
               accentFrom={accentFrom}
@@ -96,7 +96,7 @@ export default function BrandDashboardHome() {
             <StatCard
               icon={<HiOutlineChartBar className="text-[#ef2f5b]" size={32} />}
               label="Created Campaigns"
-              value={totalActiveCampaigns}
+              value={totalCreatedCampaigns}
               accentFrom={accentFrom}
               onClick={() => router.push("/brand/created-campaign")}
             />
@@ -104,7 +104,7 @@ export default function BrandDashboardHome() {
             <StatCard
               icon={<HiOutlineUsers className="text-[#4f46e5]" size={32} />}
               label="Hired Influencers"
-              value={totalInfluencers.toLocaleString()}
+              value={totalHiredInfluencers.toLocaleString()}
               accentFrom={accentFrom}
               // onClick={() => router.push("/brand/browse-influencers")}
             />

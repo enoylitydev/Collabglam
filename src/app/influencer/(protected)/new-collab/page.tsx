@@ -8,6 +8,10 @@ import {
   HiFilter,
   HiChevronLeft,
   HiChevronRight,
+  HiOutlineLocationMarker,
+  HiOutlineCalendar,
+  HiOutlineUser,
+  HiOutlineCash,
 } from "react-icons/hi";
 import { get, post } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -20,20 +24,19 @@ import {
   SelectItem,
 } from "@/components/ui/select";
 import {
-  Table,
-  TableHeader,
-  TableBody,
-  TableRow,
-  TableHead,
-  TableCell,
-} from "@/components/ui/table";
-import {
   Dialog,
   DialogTrigger,
   DialogContent,
   DialogTitle,
   DialogClose,
 } from "@/components/ui/dialog";
+import {
+  Card,
+  CardHeader,
+  CardTitle,
+  CardContent,
+  CardFooter,
+} from "@/components/ui/card";
 import { useRouter } from "next/navigation";
 import dayjs from "dayjs";
 import ReactSelect from "react-select";
@@ -122,7 +125,7 @@ export default function BrowseCampaignsPage() {
   /* filters */
   const [tempGender, setTempGender] = useState("all");
   const [tempAge, setTempAge] = useState<{ min?: number; max?: number }>({});
-  const [tempGoal, setTempGoal] = useState("all");
+  const [tempGoal, setTempGoal] = useState<string>("all");
   const [tempBudgetRange, setTempBudgetRange] = useState<[number, number]>([
     BUDGET_MIN,
     BUDGET_MAX,
@@ -206,11 +209,11 @@ export default function BrowseCampaignsPage() {
   /* Sidebar (filters)                                                 */
   /* ────────────────────────────────────────────────────────────────── */
   const filterContent = (
-    <div className="w-full md:w-72 h-screen overflow-y-auto bg-white p-6 flex flex-col border-l-2 border-r">
+    <div className="border-l-2 w-full md:w-72 h-full md:h-screen overflow-y-auto bg-white p-6 flex flex-col border-r">
       <h2 className="text-xl font-semibold mb-6 text-gray-800">
         Filter Campaigns
       </h2>
-      <div className="flex-1 space-y-6 pr-2">
+      <div className="flex-1 space-y-6 pr-1">
         {/* Gender */}
         <div>
           <button
@@ -222,7 +225,7 @@ export default function BrowseCampaignsPage() {
           </button>
           {openSections.gender && (
             <UiSelect value={tempGender} onValueChange={setTempGender}>
-              <SelectTrigger className="w-full">
+              <SelectTrigger className="w-full mt-2">
                 <SelectValue placeholder="All" />
               </SelectTrigger>
               <SelectContent className="bg-white">
@@ -306,8 +309,11 @@ export default function BrowseCampaignsPage() {
             {openSections.goal ? <HiChevronUp /> : <HiChevronDown />}
           </button>
           {openSections.goal && (
-            <UiSelect value={tempGoal} onValueChange={setTempGoal}>
-              <SelectTrigger className="w-full">
+            <UiSelect
+              value={tempGoal}
+              onValueChange={(v) => setTempGoal(v as string)}
+            >
+              <SelectTrigger className="w-full mt-2">
                 <SelectValue placeholder="All Goals" />
               </SelectTrigger>
               <SelectContent className="bg-white">
@@ -399,7 +405,7 @@ export default function BrowseCampaignsPage() {
   /* Layout                                                            */
   /* ────────────────────────────────────────────────────────────────── */
   return (
-    <div className="flex min-h-screen">
+    <div className="flex min-h-screen bg-gray-50">
       {/* Sidebar (desktop) */}
       <aside className="hidden md:block fixed h-screen w-72 overflow-y-auto bg-white border-r z-10">
         {filterContent}
@@ -424,104 +430,206 @@ export default function BrowseCampaignsPage() {
                   </DialogTitle>
                   <DialogClose className="text-gray-600" />
                 </div>
-                <div className="flex-1 overflow-auto p-6">{filterContent}</div>
+                <div className="flex-1 overflow-auto p-0">
+                  {filterContent}
+                </div>
               </div>
             </DialogContent>
           </Dialog>
         </div>
 
-        {/* Search */}
-        <div className="my-6 px-6 flex items-center">
-          <div className="relative w-full max-w-3xl bg-white rounded-full">
-            <Input
-              placeholder="Search for campaign..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-6 pr-20 h-16 text-lg rounded-full border border-yellow-300 focus:outline-none focus:ring-2 focus:ring-yellow-400"
-            />
-            <div className="absolute inset-y-0 right-6 flex items-center pointer-events-none">
-              <span className="bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] p-3 rounded-full shadow">
-                <HiOutlineSearch className="w-6 h-6 text-gray-800" />
-              </span>
+        {/* Header + Search + Quick Goal Filters */}
+        <section className="px-4 md:px-6 mt-2 md:mt-4 space-y-4">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div className="space-y-1">
+              <h1 className="text-xl md:text-2xl font-semibold text-gray-900">
+                Browse Campaigns
+              </h1>
+              <p className="text-sm text-gray-500">
+                Discover collaboration opportunities that match your audience.
+              </p>
+            </div>
+
+            <div className="w-full md:w-auto flex justify-center md:justify-end">
+              <div className="relative w-full max-w-md md:max-w-lg">
+                <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none">
+                  <HiOutlineSearch className="w-5 h-5 text-gray-400" />
+                </div>
+                <Input
+                  placeholder="Search by brand, product, or goal..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-11 pr-4 h-12 md:h-14 text-sm md:text-base rounded-full border border-yellow-200 bg-white focus:outline-none focus:ring-2 focus:ring-yellow-400"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Quick goal filter chips */}
+          <div className="flex flex-wrap gap-2 justify-center md:justify-start">
+            {["all", ...GOALS].map((g) => {
+              const value = g === "all" ? "all" : g;
+              const isActive = tempGoal === value;
+              const label = g === "all" ? "All Goals" : g;
+
+              return (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => {
+                    setTempGoal(value);
+                    setCurrentPage(1);
+                  }}
+                  className={
+                    "px-3 py-1.5 rounded-full text-xs md:text-sm border transition-colors " +
+                    (isActive
+                      ? "bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-900 border-transparent"
+                      : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50")
+                  }
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+        </section>
+
+        {/* Cards */}
+        <div className="flex-1 overflow-y-auto px-4 md:px-6 pb-6 pt-4">
+          {loading ? (
+            <div className="flex justify-center items-center py-16 text-gray-500">
+              Loading campaigns…
+            </div>
+          ) : error ? (
+            <div className="flex justify-center items-center py-16 text-red-600">
+              {error}
+            </div>
+          ) : campaigns.length ? (
+            <>
+              <div className="grid gap-5 sm:grid-cols-1 md:grid-cols-2 xl:grid-cols-3">
+                {campaigns.map((c) => (
+                  <CampaignCard
+                    key={c.id}
+                    campaign={c}
+                    onView={() =>
+                      router.push(
+                        `/influencer/new-collab/view-campaign?id=${c.campaignId}`
+                      )
+                    }
+                  />
+                ))}
+              </div>
+              <Pagination
+                currentPage={currentPage}
+                totalPages={totalPages}
+                onPrev={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                onNext={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+              />
+            </>
+          ) : (
+            <div className="flex flex-col items-center justify-center py-16 text-gray-500">
+              <p className="text-lg font-medium">No campaigns found</p>
+              <p className="text-sm mt-1">
+                Try adjusting your filters or search keywords.
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ──────────────────────────────────────────────────────────────────── */
+/* Campaign Card                                                       */
+/* ──────────────────────────────────────────────────────────────────── */
+function CampaignCard({
+  campaign,
+  onView,
+}: {
+  campaign: UICampaign;
+  onView: () => void;
+}) {
+  return (
+    <Card className="flex flex-col h-full rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow bg-white">
+      <CardHeader className="pb-3">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <span className="inline-flex items-center rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-gray-600">
+              {campaign.brand}
+            </span>
+            <CardTitle className="mt-3 text-lg md:text-xl text-gray-900 line-clamp-2">
+              {campaign.product}
+            </CardTitle>
+          </div>
+          <span className="inline-flex items-center rounded-full bg-yellow-50 px-3 py-1 text-xs font-medium text-yellow-800">
+            {campaign.goal}
+          </span>
+        </div>
+      </CardHeader>
+
+      <CardContent className="space-y-4 text-sm text-gray-700">
+        {/* Budget & Timeline */}
+        <div className="flex flex-wrap gap-3 justify-between">
+          <div className="flex items-center gap-2">
+            <span className="inline-flex items-center justify-center rounded-full bg-gray-100 p-2">
+              <HiOutlineCash className="w-4 h-4 text-gray-700" />
+            </span>
+            <div>
+              <p className="text-xs text-gray-500">Budget</p>
+              <p className="font-semibold">
+                ${campaign.budget.toLocaleString()}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="inline-flex items-center justify-center rounded-full bg-gray-100 p-2">
+              <HiOutlineCalendar className="w-4 h-4 text-gray-700" />
+            </span>
+            <div>
+              <p className="text-xs text-gray-500">Timeline</p>
+              <p className="font-semibold">{campaign.timeline}</p>
             </div>
           </div>
         </div>
 
-        {/* Table */}
-        <div className="flex-1 overflow-x-auto overflow-y-auto px-6 pb-6">
-          <Table className="min-w-full border rounded-lg bg-white overflow-x-auto">
-            <TableHeader className="bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-800 sticky top-0">
-              <TableRow>
-                <TableHead>Brand</TableHead>
-                <TableHead>Product / Service</TableHead>
-                <TableHead>Goal</TableHead>
-                <TableHead>Budget</TableHead>
-                <TableHead>Gender</TableHead>
-                <TableHead>Age</TableHead>
-                <TableHead>Location</TableHead>
-                <TableHead>Timeline</TableHead>
-                <TableHead />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {loading ? (
-                <TableRow>
-                  <TableCell colSpan={9} className="text-center py-4">
-                    Loading campaigns…
-                  </TableCell>
-                </TableRow>
-              ) : error ? (
-                <TableRow>
-                  <TableCell colSpan={9} className="text-center py-4 text-red-600">
-                    {error}
-                  </TableCell>
-                </TableRow>
-              ) : campaigns.length ? (
-                campaigns.map((c) => (
-                  <TableRow key={c.id} className="hover:bg-yellow-50">
-                    <TableCell>{c.brand}</TableCell>
-                    <TableCell>{c.product}</TableCell>
-                    <TableCell>{c.goal}</TableCell>
-                    <TableCell>${c.budget.toLocaleString()}</TableCell>
-                    <TableCell>{genderLabel(c.gender)}</TableCell>
-                    <TableCell>{c.ageRange}</TableCell>
-                    <TableCell>{c.locations}</TableCell>
-                    <TableCell>{c.timeline}</TableCell>
-                    <TableCell>
-                      <Button
-                        size="sm"
-                        className="bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-800"
-                        onClick={() =>
-                          router.push(
-                            `/influencer/new-collab/view-campaign?id=${c.campaignId}`
-                          )
-                        }
-                      >
-                        View
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))
-              ) : (
-                <TableRow>
-                  <TableCell colSpan={9} className="text-center py-4">
-                    No campaigns found
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
+        {/* Audience */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="space-y-1">
+            <p className="text-xs uppercase tracking-wide text-gray-500">
+              Target Audience
+            </p>
+            <div className="flex items-center gap-2 text-sm">
+              <HiOutlineUser className="w-4 h-4 text-gray-600" />
+              <span>{genderLabel(campaign.gender)}</span>
+              <span className="mx-1 text-gray-300">•</span>
+              <span>Age {campaign.ageRange}</span>
+            </div>
+          </div>
 
-          {/* Pagination */}
-          <Pagination
-            currentPage={currentPage}
-            totalPages={totalPages}
-            onPrev={() => setCurrentPage((p) => Math.max(1, p - 1))}
-            onNext={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-          />
+          <div className="space-y-1">
+            <p className="text-xs uppercase tracking-wide text-gray-500">
+              Locations
+            </p>
+            <div className="flex items-start gap-2 text-sm">
+              <HiOutlineLocationMarker className="w-4 h-4 mt-0.5 text-gray-600" />
+              <span className="line-clamp-2">{campaign.locations}</span>
+            </div>
+          </div>
         </div>
-      </div>
-    </div>
+      </CardContent>
+
+      <CardFooter className="mt-auto flex items-center justify-end pt-3 border-t border-gray-100">
+        <Button
+          size="sm"
+          className="bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-900 font-semibold rounded-full px-4"
+          onClick={onView}
+        >
+          View Details
+        </Button>
+      </CardFooter>
+    </Card>
   );
 }
 
@@ -539,24 +647,26 @@ function Pagination({
   onPrev: () => void;
   onNext: () => void;
 }) {
+  // Always show pagination, even if there's only 1 page
   return (
-    <div className="flex justify-end items-center p-4 space-x-2">
+    <div className="flex justify-end items-center mt-6 space-x-3">
       <button
         onClick={onPrev}
         disabled={currentPage === 1}
-        className="p-2 bg-gray-100 rounded-full hover:bg-gray-200 disabled:opacity-50"
+        className="inline-flex items-center justify-center px-3 py-2 rounded-full bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
       >
-        <HiChevronLeft size={20} />
+        <HiChevronLeft size={18} />
       </button>
-      <span className="text-gray-800">
-        Page {currentPage} of {totalPages}
+      <span className="text-sm text-gray-700">
+        Page <span className="font-semibold">{currentPage}</span> of{" "}
+        <span className="font-semibold">{totalPages}</span>
       </span>
       <button
         onClick={onNext}
         disabled={currentPage === totalPages}
-        className="p-2 bg-gray-100 rounded-full hover:bg-gray-200 disabled:opacity-50"
+        className="inline-flex items-center justify-center px-3 py-2 rounded-full bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
       >
-        <HiChevronRight size={20} />
+        <HiChevronRight size={18} />
       </button>
     </div>
   );

@@ -31,7 +31,7 @@ export default function ModashDashboard() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedPlatform, setSelectedPlatform] = useState<ReportPlatform | null>(null);
   const [selectedHandle, setSelectedHandle] = useState<string | null>(null);
-  const [calculationMethod, setCalculationMethod] = useState<'median' | 'average'>('median');
+  const [calculationMethod, setCalculationMethod] = useState<'median' | 'average'>('average');
 
   const {
     report,
@@ -225,7 +225,6 @@ export default function ModashDashboard() {
         data={report}
         raw={rawReport}
         platform={selectedPlatform}
-        calc={calculationMethod}
         onChangeCalc={(calc) => {
           setCalculationMethod(calc);
           if (selectedId && selectedPlatform) {

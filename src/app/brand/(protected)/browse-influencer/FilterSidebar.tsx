@@ -62,6 +62,8 @@ export function FilterSidebar({
     }
   }, []);
 
+  const planLabel = plan.charAt(0).toUpperCase() + plan.slice(1);
+
   return (
     <aside
       role="complementary"
@@ -74,21 +76,17 @@ export function FilterSidebar({
         entered ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-3',
       ].join(' ')}
     >
+      {/* Top header */}
+      <div className="flex items-center justify-between px-4 md:px-5 lg:px-5 xl:px-6 py-3 border-b border-gray-100">
+        <h2 className="text-lg font-semibold text-gray-900">Filters</h2>
+        <span className="inline-flex items-center rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-700 capitalize">
+          {planLabel} plan
+        </span>
+      </div>
+
       {/* Scrollable content area */}
       <div className="flex-1 overflow-y-auto overscroll-contain">
         <div className="p-4 md:p-5 lg:p-5 xl:p-6">
-          {/* Header */}
-          <div className="flex items-center justify-between mb-4 md:mb-5">
-            <h2 className="text-lg font-semibold text-gray-900">Filters</h2>
-            <button
-              onClick={onReset}
-              className="inline-flex items-center px-3 py-2 text-xs font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-md transition-colors"
-            >
-              <RefreshCw className="w-3 h-3 mr-1" />
-              Reset
-            </button>
-          </div>
-
           {/* Platform Selector */}
           <div className="mb-5 md:mb-6">
             <PlatformSelector selected={platforms} onChange={setPlatforms} />
@@ -126,17 +124,28 @@ export function FilterSidebar({
         </div>
       </div>
 
-      {/* Apply button */}
-      <div className="flex-shrink-0 p-4 md:p-5 lg:p-5 xl:p-[29.5px] pt-1 md:pt-2 bg-white border-t border-gray-100">
-        <button
-          type="button"
-          onClick={onApply}
-          disabled={loading}
-          className="w-full inline-flex items-center justify-center px-4 py-2 bg-gray-900 text-white text-sm font-medium rounded-lg hover:bg-gray-800 transition-colors disabled:opacity-50"
-        >
-          {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
-          Apply Filters
-        </button>
+      {/* Bottom actions: Reset + Apply side by side */}
+      <div className="flex-shrink-0 px-4 md:px-5 lg:px-5 xl:px-[29.5px] py-3 md:py-4 bg-white border-t border-gray-100 mb-3">
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={onReset}
+            className="inline-flex flex-1 items-center justify-center px-3 py-2 text-xs md:text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+          >
+            <RefreshCw className="w-3 h-3 mr-1.5" />
+            Reset
+          </button>
+
+          <button
+            type="button"
+            onClick={onApply}
+            disabled={loading}
+            className="inline-flex flex-[1.4] items-center justify-center px-4 py-2 bg-gray-900 text-white text-xs md:text-sm font-medium rounded-lg hover:bg-gray-800 transition-colors disabled:opacity-50"
+          >
+            {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+            Apply Filters
+          </button>
+        </div>
       </div>
     </aside>
   );

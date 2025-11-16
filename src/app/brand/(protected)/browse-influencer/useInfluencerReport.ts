@@ -1,10 +1,10 @@
 import { useState, useCallback } from 'react';
-import { Platform, ReportResponse } from './types';
+import { Platform, ReportResponse, ModashReportRaw } from './types';
 import { normalizeReport } from './utils';
 
 interface UseInfluencerReportReturn {
   report: ReportResponse | null;
-  rawReport: any;
+  rawReport: ModashReportRaw | null;
   loading: boolean;
   error: string | null;
   lastFetchedAt: string | null;
@@ -33,7 +33,7 @@ const getBrandIdFromStorage = (): string | null => {
 
 export function useInfluencerReport(): UseInfluencerReportReturn {
   const [report, setReport] = useState<ReportResponse | null>(null);
-  const [rawReport, setRawReport] = useState<any>(null);
+  const [rawReport, setRawReport] = useState<ModashReportRaw | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastFetchedAt, setLastFetchedAt] = useState<string | null>(null);
@@ -56,26 +56,26 @@ export function useInfluencerReport(): UseInfluencerReportReturn {
           calculationMethod: calc,
         };
 
-        // 🔹 brandId for quota tracking
         const brandId = getBrandIdFromStorage();
-        if (brandId) {
-          params.brandId = brandId;
-        }
-
+        if (brandId) params.brandId = brandId;
         if (influencerId) params.influencerId = influencerId;
         if (forceRefresh) params.force = '1';
 
         const q = new URLSearchParams(params);
         const res = await fetch(`${API_REPORT_ENDPOINT}?${q.toString()}`);
-        const raw = await res.json();
+        const raw: ModashReportRaw = await res.json();
 
         if (!res.ok || raw?.error) {
-          throw new Error(
-            raw?.message || raw?.error || `Failed to fetch report (${res.status})`
-          );
+          const msg =
+            raw?.message ||
+            (typeof raw?.error === 'string'
+              ? raw.error
+              : `Failed to fetch report (${res.status})`);
+          throw new Error(msg);
         }
 
-        const normalized = normalizeReport(raw as ReportResponse, platform);
+        const normalized: ReportResponse = normalizeReport(raw, platform);
+
         setReport(normalized);
         setRawReport(raw);
 

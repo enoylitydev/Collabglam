@@ -17,10 +17,8 @@ import { AboutSection } from './detail-panel/AboutSection';
 import { AudienceDistribution } from './detail-panel/AudienceDistribution';
 import { BrandAffinity } from './detail-panel/BrandAffinity';
 import { MiniUserSection } from './detail-panel/MiniUserSection';
-import type { ReportResponse, StatHistoryEntry } from './types';
+import type { ReportResponse, StatHistoryEntry, Platform } from './types';
 import { post, post2 } from '@/lib/api';
-
-export type Platform = 'instagram' | 'tiktok' | 'youtube';
 
 interface DetailPanelProps {
   open: boolean;
@@ -31,7 +29,6 @@ interface DetailPanelProps {
   raw: any;
   platform: Platform | null;
   emailExists?: boolean | null;
-  calc: 'median' | 'average';
   onChangeCalc: (calc: 'median' | 'average') => void;
   brandId: string;
   /** passed from parent; the creator's handle */
@@ -81,7 +78,6 @@ export const DetailPanel = React.memo<DetailPanelProps>(
     raw,
     platform,
     emailExists,
-    calc,
     onChangeCalc,
     brandId,
     handle,
@@ -141,11 +137,6 @@ export const DetailPanel = React.memo<DetailPanelProps>(
       '';
 
     const hasEmail = emailExists === true;
-    const emailBadgeText = hasEmail ? 'Email on file' : 'No email yet';
-    const emailBadgeTone = hasEmail
-      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-      : 'bg-gray-50 text-gray-600 border-gray-200';
-
     /* ------------------------------------------------------------------ */
     /*                          Refresh Modash data                       */
     /* ------------------------------------------------------------------ */
@@ -366,53 +357,11 @@ export const DetailPanel = React.memo<DetailPanelProps>(
                     {platform}
                   </span>
                 )}
-                {hasUserId && (
-                  <span
-                    className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-[11px] font-medium ${emailBadgeTone}`}
-                  >
-                    <span
-                      className={`mr-1 h-1.5 w-1.5 rounded-full ${
-                        hasEmail ? 'bg-emerald-500' : 'bg-gray-400'
-                      }`}
-                    />
-                    {emailBadgeText}
-                  </span>
-                )}
               </div>
             </div>
 
             {/* Right: controls */}
             <div className="ml-auto flex flex-col items-end gap-1 sm:flex-row sm:items-center">
-              {/* calc method toggle */}
-              <div className="flex flex-col items-end gap-1">
-                <span className="text-[10px] uppercase tracking-wide text-gray-500">
-                  Metrics based on
-                </span>
-                <div className="inline-flex rounded-xl bg-gray-100 p-0.5 text-xs shadow-inner">
-                  <button
-                    type="button"
-                    onClick={() => onChangeCalc('median')}
-                    className={`px-2.5 py-1 rounded-lg font-medium transition-colors ${
-                      calc === 'median'
-                        ? 'bg-white text-gray-900 shadow-sm'
-                        : 'text-gray-600 hover:text-gray-900'
-                    }`}
-                  >
-                    Median
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => onChangeCalc('average')}
-                    className={`px-2.5 py-1 rounded-lg font-medium transition-colors ${
-                      calc === 'average'
-                        ? 'bg-white text-gray-900 shadow-sm'
-                        : 'text-gray-600 hover:text-gray-900'
-                    }`}
-                  >
-                    Average
-                  </button>
-                </div>
-              </div>
 
               {/* last updated + refresh + CTA */}
               <div className="flex flex-col items-end gap-1 sm:items-end sm:ml-3">

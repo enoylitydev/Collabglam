@@ -9,6 +9,7 @@ import {
   HiChevronRight,
   HiOutlineUserGroup,
   HiOutlinePencil,
+  HiOutlineUserAdd
 } from "react-icons/hi";
 import { get } from "@/lib/api";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -265,6 +266,7 @@ function TableView({
                   <td className="px-6 py-4 text-center align-top">{c.applicantCount ?? "0"}</td>
                   <td className="px-6 py-4 whitespace-nowrap align-top text-center">
                     <div className="flex items-center space-x-2 justify-center">
+                      {/* View Campaign */}
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <Link
@@ -277,6 +279,7 @@ function TableView({
                         <TooltipContent>View Campaign</TooltipContent>
                       </Tooltip>
 
+                      {/* View Influencers */}
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <Link
@@ -294,6 +297,7 @@ function TableView({
                         <TooltipContent>View Influencers</TooltipContent>
                       </Tooltip>
 
+                      {/* Edit Campaign */}
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <Link
@@ -304,6 +308,19 @@ function TableView({
                           </Link>
                         </TooltipTrigger>
                         <TooltipContent>Edit Campaign</TooltipContent>
+                      </Tooltip>
+
+                      {/* Invite Influencer */}
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Link
+                            href={`/brand/browse-influencer?campaignId=${c.id}`}
+                            className="p-2 bg-gray-100 text-gray-800 rounded-full hover:bg-gray-200 focus:outline-none"
+                          >
+                            <HiOutlineUserAdd size={18} />
+                          </Link>
+                        </TooltipTrigger>
+                        <TooltipContent>Invite Influencer</TooltipContent>
                       </Tooltip>
                     </div>
                   </td>
