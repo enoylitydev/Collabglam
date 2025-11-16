@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Home,
@@ -16,6 +16,8 @@ import {
   FileText,
   ChevronDown,
   ChevronUp,
+  LogOut,
+  Bell,             // 👈 NEW
 } from "lucide-react";
 
 const navItems = [
@@ -28,6 +30,9 @@ const navItems = [
   { label: "E-Mails", href: "/admin/emails", icon: MailCheckIcon },
   { label: "Influencer-Email", href: "/admin/influencerdetails", icon: MailCheckIcon },
   { label: "Missing-Email", href: "/admin/missingemail", icon: MailCheckIcon },
+
+  // 👇 NEW payment notification item
+  { label: "Payment Notification", href: "/admin/payment", icon: Bell },
 ];
 
 const documentLinks = [
@@ -42,6 +47,7 @@ const documentLinks = [
 
 export default function AdminSidebar() {
   const pathname = usePathname();
+  const router = useRouter();
 
   const initialDocsOpen = pathname.startsWith("/admin/documents/");
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -62,22 +68,38 @@ export default function AdminSidebar() {
     visible: { x: "0%" },
   };
 
-  const renderLink = ({ label, href, icon: Icon }: any, onClick?: () => void) => {
+  const handleLogout = () => {
+    try {
+      if (typeof window !== "undefined") {
+        localStorage.clear();
+      }
+    } catch (e) {
+      // ignore
+    }
+    router.push("/admin/login");
+  };
+
+  const renderLink = (
+    { label, href, icon: Icon }: any,
+    onClick?: () => void
+  ) => {
     const active = pathname === href || pathname.startsWith(href + "/");
     return (
       <Link
         key={href}
         href={href}
         onClick={onClick}
-        className={`flex items-center px-3 py-2 rounded-lg text-sm font-medium transition-colors focus:outline-none ${active
+        className={`flex items-center px-3 py-2 rounded-lg text-sm font-medium transition-colors focus:outline-none ${
+          active
             ? "bg-[#ef2f5b]/20 text-[#ef2f5b]"
             : "text-gray-700 hover:bg-gray-100 hover:text-gray-900"
-          }`}
+        }`}
       >
         {Icon && (
           <Icon
-            className={`mr-3 h-5 w-5 transition-colors ${active ? "text-[#ef2f5b]" : "text-gray-400 hover:text-gray-500"
-              }`}
+            className={`mr-3 h-5 w-5 transition-colors ${
+              active ? "text-[#ef2f5b]" : "text-gray-400 hover:text-gray-500"
+            }`}
           />
         )}
         <span className="whitespace-nowrap flex-1">{label}</span>
@@ -116,10 +138,11 @@ export default function AdminSidebar() {
                   onClick={() => {
                     if (isMobile) setDrawerOpen(false);
                   }}
-                  className={`block px-3 py-1 text-sm rounded-lg transition-colors focus:outline-none ${active
+                  className={`block px-3 py-1 text-sm rounded-lg transition-colors focus:outline-none ${
+                    active
                       ? "bg-[#ef2f5b]/20 text-[#ef2f5b]"
                       : "text-gray-600 hover:bg-gray-100 hover:text-gray-800"
-                    }`}
+                  }`}
                 >
                   {label}
                 </Link>
@@ -142,25 +165,35 @@ export default function AdminSidebar() {
         >
           <Menu className="h-6 w-6 text-gray-700" />
         </button>
-        <Link href="/admin" className="flex items-center space-x-2 ml-4">
+
+        <div className="flex items-center space-x-2 px-4 py-3 hover:bg-gray-50 focus:outline-none focus:bg-gray-100">
           <img src="/logo.png" alt="CollabGlam logo" className="h-8 w-auto" />
-          <span className="text-lg font-semibold">CollabGlam</span>
-        </Link>
+          <span className="text-xl font-semibold">CollabGlam</span>
+        </div>
       </header>
 
       {/* Desktop Sidebar */}
       <aside className="hidden md:flex md:fixed md:inset-y-0 md:left-0 md:flex-col w-64 bg-white border-r transition-all duration-200 lg:w-72">
-        <Link
-          href="/admin"
-          className="flex items-center space-x-2 px-4 py-3 hover:bg-gray-50 focus:outline-none focus:bg-gray-100"
-        >
+        <div className="flex items-center space-x-2 px-4 py-3 hover:bg-gray-50 focus:outline-none focus:bg-gray-100">
           <img src="/logo.png" alt="CollabGlam logo" className="h-8 w-auto" />
           <span className="text-xl font-semibold">CollabGlam</span>
-        </Link>
+        </div>
+
         <nav className="flex-1 overflow-y-auto px-2 py-4 space-y-1">
           {navItems.map((item) => renderLink(item))}
           {renderDocuments(false)}
         </nav>
+
+        {/* Desktop Logout Footer */}
+        <div className="border-t px-2 py-3">
+          <button
+            onClick={handleLogout}
+            className="w-full flex items-center justify-start px-3 py-2 rounded-lg text-sm font-medium text-red-600 hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-red-400 cursor-pointer"
+          >
+            <LogOut className="mr-3 h-5 w-5" />
+            <span>Logout</span>
+          </button>
+        </div>
       </aside>
 
       {/* Mobile Drawer */}
@@ -196,12 +229,27 @@ export default function AdminSidebar() {
                   <X className="h-6 w-6 text-gray-700" />
                 </button>
               </div>
+
               <nav className="flex-1 overflow-y-auto px-4 py-6 space-y-1">
                 {navItems.map((item) =>
                   renderLink(item, () => setDrawerOpen(false))
                 )}
                 {renderDocuments(true)}
               </nav>
+
+              {/* Mobile Logout Footer */}
+              <div className="border-t px-4 py-3">
+                <button
+                  onClick={() => {
+                    setDrawerOpen(false);
+                    handleLogout();
+                  }}
+                  className="w-full flex items-center justify-start px-3 py-2 rounded-lg text-sm font-medium text-red-600 hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-red-400"
+                >
+                  <LogOut className="mr-3 h-5 w-5" />
+                  <span>Logout</span>
+                </button>
+              </div>
             </motion.aside>
           </>
         )}

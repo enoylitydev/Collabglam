@@ -4,6 +4,7 @@ import React, { useState, useEffect, useMemo } from "react";
 import { Check, X, Star } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { post } from "@/lib/api";
+import Link from "next/link";
 
 type Role = "Brand" | "Influencer";
 type FeatureValue =
@@ -207,7 +208,7 @@ const isEnterpriseBrand = (p: Plan) =>
 const computedLabel = (role: Role, plan: Plan) =>
   plan.label ||
   ((role === "Brand" && plan.name === "growth") ||
-  (role === "Influencer" && plan.name === "creator_plus")
+    (role === "Influencer" && plan.name === "creator_plus")
     ? "Popular"
     : undefined);
 
@@ -343,11 +344,10 @@ const Pricing: React.FC = () => {
                 key={role}
                 onClick={() => setActiveRole(role)}
                 aria-pressed={activeRole === role}
-                className={`px-6 py-2 rounded-xl font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-orange-400 ${
-                  activeRole === role
-                    ? "bg-white shadow text-gray-900"
-                    : "text-gray-600 hover:text-gray-900"
-                }`}
+                className={`px-6 py-2 rounded-xl font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-orange-400 ${activeRole === role
+                  ? "bg-white shadow text-gray-900"
+                  : "text-gray-600 hover:text-gray-900"
+                  }`}
               >
                 {role}s
               </button>
@@ -375,8 +375,7 @@ const Pricing: React.FC = () => {
                 plan.monthlyCost <= 0 && !plan.isCustomPricing;
               const sym = currencySymbol(plan.currency);
               const isInfluencerPlan =
-                plan.role === "Influencer" ||
-                activeRole === "Influencer";
+                plan.role === "Influencer" || activeRole === "Influencer";
 
               const badgeClasses = isInfluencerPlan
                 ? "bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-900"
@@ -392,6 +391,94 @@ const Pricing: React.FC = () => {
                   : "border-orange-300"
                 : "border-gray-200";
 
+              const isBrandEnterpriseLayout =
+                isEnterprise && activeRole === "Brand";
+
+              // SPECIAL ENTERPRISE LAYOUT (like screenshot)
+              if (isBrandEnterpriseLayout) {
+                return (
+                  <div
+                    key={id}
+                    className="group relative col-span-1 md:col-span-2 lg:col-span-3 xl:col-span-4 rounded-3xl bg-white shadow-sm border border-gray-200 lg:flex lg:items-stretch"
+                  >
+                    {badge && (
+                      <div className="absolute -top-3 left-1/2 -translate-x-1/2">
+                        <span
+                          className={`inline-flex items-center gap-1 text-xs font-bold py-1.5 px-3 rounded-full shadow ${badgeClasses}`}
+                        >
+                          <Star className="w-3 h-3 fill-current" /> {badge}
+                        </span>
+                      </div>
+                    )}
+
+                    {/* Left: title + description + CTA */}
+                    <div className="w-full lg:w-5/12 px-8 py-10 flex flex-col justify-center gap-4">
+                      <h3 className="text-3xl lg:text-4xl font-bold text-gray-900">
+                        {plan.displayName || nice(plan.name)}
+                      </h3>
+                      <p className="text-base lg:text-lg text-gray-600">
+                        {plan.overview ||
+                          "The best way to run CollabGlam at scale with custom quotas, security, and billing."}
+                      </p>
+
+                      <div className="mt-4 flex items-center gap-4">
+                        <button
+                          onClick={() => handleSelect(plan)}
+                          className={`inline-flex items-center justify-center px-6 py-3 text-sm font-semibold rounded-md shadow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 ${buttonClasses}`}
+                        >
+                          Contact Us
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Right: features in 2 columns */}
+                    <div className="w-full lg:w-7/12 px-8 py-10 border-t lg:border-t-0 lg:border-l border-gray-200">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-10 gap-y-3">
+                        {(plan as any)._ordered
+                          ?.filter(({ key, value }: Feature) =>
+                            isPositive(key, value)
+                          )
+                          .map(({ key, value, note }: Feature) => {
+                            const display = formatValue(key, value);
+                            const label = LABELS[key] || nice(key);
+
+                            return (
+                              <div
+                                key={key}
+                                className="flex items-start gap-2 text-sm text-gray-800"
+                              >
+                                <Check className="mt-0.5 h-4 w-4 text-emerald-500" />
+                                <span className="leading-6">
+                                  {label}
+                                  {display &&
+                                    display !== "Yes" &&
+                                    display !== "Unlimited" &&
+                                    display !== "—" ? (
+                                    <>
+                                      : <strong>{display}</strong>
+                                    </>
+                                  ) : display === "Unlimited" ? (
+                                    <>
+                                      {" "}
+                                      — <strong>Unlimited</strong>
+                                    </>
+                                  ) : null}
+                                  {note && (
+                                    <span className="ml-1 text-[11px] text-gray-500">
+                                      ({note})
+                                    </span>
+                                  )}
+                                </span>
+                              </div>
+                            );
+                          })}
+                      </div>
+                    </div>
+                  </div>
+                );
+              }
+
+              // DEFAULT LAYOUT (all other plans stay as you had)
               return (
                 <div
                   key={id}
@@ -424,7 +511,7 @@ const Pricing: React.FC = () => {
                   {/* Divider */}
                   <div className="border-t border-gray-200" />
 
-                  {/* Price + CTA */}
+                  {/* Price + CTA (unchanged for normal plans) */}
                   <div className="px-8 py-6 text-center min-h-[140px] flex flex-col items-center justify-center">
                     {isEnterprise ? (
                       <span className="text-4xl font-extrabold tracking-tight text-gray-900">
@@ -453,8 +540,8 @@ const Pricing: React.FC = () => {
                       {isEnterprise
                         ? "Contact Us"
                         : isFree
-                        ? "Start for Free"
-                        : "Choose Plan"}
+                          ? "Start for Free"
+                          : "Choose Plan"}
                     </button>
                   </div>
 
@@ -464,24 +551,19 @@ const Pricing: React.FC = () => {
                       ({ key, value, note }: Feature) => {
                         const display = formatValue(key, value);
                         const ok = isPositive(key, value);
-                        const label =
-                          LABELS[key] || nice(key);
+                        const label = LABELS[key] || nice(key);
 
                         return (
                           <li
                             key={key}
-                            className={`flex items-start gap-3 ${
-                              ok
-                                ? "text-gray-800"
-                                : "text-gray-400"
-                            }`}
+                            className={`flex items-start gap-3 ${ok ? "text-gray-800" : "text-gray-400"
+                              }`}
                           >
                             <span
-                              className={`mt-0.5 inline-flex items-center justify-center rounded-sm ring-1 h-5 w-5 flex-shrink-0 ${
-                                ok
-                                  ? "bg-green-50 text-green-600 ring-green-200"
-                                  : "bg-gray-100 text-gray-400 ring-gray-200"
-                              }`}
+                              className={`mt-0.5 inline-flex items-center justify-center rounded-sm ring-1 h-5 w-5 flex-shrink-0 ${ok
+                                ? "bg-green-50 text-green-600 ring-green-200"
+                                : "bg-gray-100 text-gray-400 ring-gray-200"
+                                }`}
                             >
                               {ok ? (
                                 <Check className="h-3.5 w-3.5" />
@@ -492,9 +574,9 @@ const Pricing: React.FC = () => {
                             <span className="text-[15px] leading-6">
                               {label}
                               {display &&
-                              display !== "Yes" &&
-                              display !== "Unlimited" &&
-                              display !== "—" ? (
+                                display !== "Yes" &&
+                                display !== "Unlimited" &&
+                                display !== "—" ? (
                                 <>
                                   : <strong>{display}</strong>
                                 </>
@@ -518,6 +600,7 @@ const Pricing: React.FC = () => {
                 </div>
               );
             })}
+
         </div>
 
         {error && (
@@ -528,8 +611,15 @@ const Pricing: React.FC = () => {
 
         {/* Footnote */}
         <p className="text-center text-gray-500 text-sm mt-12">
-          All paid plans include a 7-day Money-Back Guarantee • No
-          setup fees • Cancel any time
+          All paid plans include a 7-day Money-Back Guarantee • No setup fees • Cancel any time •{" "}
+          <Link
+            href="/policy/terms-of-service"
+            className="underline underline-offset-2 hover:text-gray-700"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Terms of Service
+          </Link>
         </p>
       </div>
     </section>

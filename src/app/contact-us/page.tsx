@@ -8,42 +8,54 @@ import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { post } from "@/lib/api";
 
+type FormState = {
+  name: string;
+  email: string;
+  subject: string;
+  message: string;
+};
+
+// 🔹 Move this OUTSIDE the component
+const TITLE_BOX =
+  "bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white " +
+  "inline-block rounded-2xl px-8 py-5 shadow " +
+  "transition-all duration-300 transform " +
+  "hover:shadow-2xl hover:scale-[1.03] hover:saturate-125 " +
+  "outline-none focus:ring-0 focus-visible:ring-0";
+
+// 🔹 Also move GradientBorder OUTSIDE so it doesn't remount every render
+const GradientBorder: React.FC<{ children: React.ReactNode; className?: string }> = ({
+  children,
+  className = "",
+}) => (
+  <div className="relative group">
+    <div className="p-[2px] rounded-2xl bg-gradient-to-r from-[#FFA135] to-[#FF7236] transition-transform duration-300 group-hover:scale-[1.01]">
+      <div className={`rounded-2xl bg-white p-6 shadow ${className}`}>{children}</div>
+    </div>
+  </div>
+);
+
 export default function ContactUs() {
-  const [form, setForm] = useState({
+  const [form, setForm] = useState<FormState>({
     name: "",
     email: "",
     subject: "",
-    message: ""
+    message: "",
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
 
-  // Same gradient + hover as About box
-  const TITLE_BOX =
-    "bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white " +
-    "inline-block rounded-2xl px-8 py-5 shadow " +
-    "transition-all duration-300 transform " +
-    "hover:shadow-2xl hover:scale-[1.03] hover:saturate-125 " +
-    "outline-none focus:ring-0 focus-visible:ring-0";
-
-  // Reusable gradient border wrapper (used for cards)
-  const GradientBorder: React.FC<{ children: React.ReactNode; className?: string }> = ({
-    children,
-    className = "",
-  }) => (
-    <div className="relative group">
-      <div className="p-[2px] rounded-2xl bg-gradient-to-r from-[#FFA135] to-[#FF7236] transition-transform duration-300 group-hover:scale-[1.01]">
-        <div className={`rounded-2xl bg-white p-6 shadow ${className}`}>
-          {children}
-        </div>
-      </div>
-    </div>
-  );
-
-  const handleChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
-  ) => setForm({ ...form, [e.target.name]: e.target.value });
+  // field-based change handler
+  const handleFieldChange =
+    (field: keyof FormState) =>
+    (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+      const { value } = e.target;
+      setForm((prev) => ({
+        ...prev,
+        [field]: value,
+      }));
+    };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -58,7 +70,8 @@ export default function ContactUs() {
     } catch (err: any) {
       console.error(err);
       setError(
-        err?.response?.data?.error || "Something went wrong. Please try again later."
+        err?.response?.data?.error ||
+          "Something went wrong. Please try again later."
       );
     } finally {
       setLoading(false);
@@ -90,8 +103,6 @@ export default function ContactUs() {
         <div className="max-w-3xl mx-auto space-y-8">
           {/* Contact Form — with matching gradient border card */}
           <GradientBorder>
-            
-
             {error && (
               <Alert variant="destructive" className="mb-4">
                 <AlertTitle>Error</AlertTitle>
@@ -114,7 +125,7 @@ export default function ContactUs() {
                 type="text"
                 label="Name"
                 value={form.name}
-                onChange={handleChange}
+                onChange={handleFieldChange("name")}
                 disabled={loading}
                 required
               />
@@ -125,7 +136,7 @@ export default function ContactUs() {
                 type="email"
                 label="Email"
                 value={form.email}
-                onChange={handleChange}
+                onChange={handleFieldChange("email")}
                 disabled={loading}
                 required
               />
@@ -136,20 +147,23 @@ export default function ContactUs() {
                 type="text"
                 label="Subject"
                 value={form.subject}
-                onChange={handleChange}
+                onChange={handleFieldChange("subject")}
                 disabled={loading}
                 required
               />
 
               {/* MESSAGE — gradient border on focus (matches inputs) */}
               <div className="space-y-1">
-                <label htmlFor="message" className="block">Message</label>
-                {/* wrapper shows gradient border only when textarea is focused */}
-                <div className="
-                  rounded-md p-[2px] transition-colors
-                  bg-transparent
-                  focus-within:bg-gradient-to-r focus-within:from-[#FFA135] focus-within:to-[#FF7236]
-                ">
+                <label htmlFor="message" className="block">
+                  Message
+                </label>
+                <div
+                  className="
+                    rounded-md p-[2px] transition-colors
+                    bg-transparent
+                    focus-within:bg-gradient-to-r focus-within:from-[#FFA135] focus-within:to-[#FF7236]
+                  "
+                >
                   <textarea
                     id="message"
                     name="message"
@@ -157,7 +171,7 @@ export default function ContactUs() {
                     required
                     placeholder=" "
                     value={form.message}
-                    onChange={handleChange}
+                    onChange={handleFieldChange("message")}
                     disabled={loading}
                     className="
                       block w-full rounded-md bg-white px-3 py-2 text-black
@@ -195,7 +209,7 @@ export default function ContactUs() {
             <p className="mb-2">
               <strong>Email:</strong>{" "}
               <a href="mailto:care@collabglam.com" className="hover:underline">
-                care@collabglam.com
+                support@collabglam.com
               </a>
             </p>
             <p className="mb-2">

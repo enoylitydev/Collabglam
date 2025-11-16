@@ -30,13 +30,11 @@ export default function AdminLoginPage() {
         { email, password }
       );
       // Use role-scoped token storage for admin
-      localStorage.setItem("admin_token", data.token);
-      // Clear any legacy generic token to avoid cross-role mixups
-      localStorage.removeItem("token");
+      localStorage.setItem("token", data.token);
       localStorage.setItem("adminId", data.admin.adminId);
       localStorage.setItem("userType", "admin");
       localStorage.setItem("userEmail", data.admin.email || email);
-      router.replace("/admin");
+      router.replace("/admin/brands");
     } catch (err: any) {
       setError(err?.response?.data?.message || err?.message || "Invalid credentials");
     } finally {

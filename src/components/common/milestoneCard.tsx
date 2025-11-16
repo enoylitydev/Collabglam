@@ -16,7 +16,9 @@ interface MilestoneEntry {
   amount: number;
   milestoneDescription?: string;
   createdAt: string;
+  /** payout status coming from backend: 'pending' | 'initiated' | 'paid' */
   status?: string;
+  /** legacy flag: brand has released funds from their wallet */
   released?: boolean;
 }
 
@@ -62,9 +64,7 @@ const palette = {
   },
 };
 
-
 // ─── Skeleton Loader ───────────────────────────────────────────────────────────
-/* ── Skeleton Loader ──────────────────────────────────────────────── */
 const TimelineSkeleton: React.FC<{ rows?: number; role: "brand" | "influencer" }> = ({
   rows = 3,
   role,
@@ -109,7 +109,7 @@ const MilestoneHistoryCard: React.FC<MilestoneHistoryCardProps> = ({
     let endpoint = "";
     const body: Record<string, any> = {};
 
-    /* route logic mirrors original, but uses props */
+    // route logic mirrors original, but uses props
     if (role === "brand" && brandId) {
       body.brandId = brandId;
       if (campaignId) {
@@ -121,7 +121,7 @@ const MilestoneHistoryCard: React.FC<MilestoneHistoryCardProps> = ({
     } else if (role === "influencer" && influencerId) {
       body.influencerId = influencerId;
       if (campaignId) {
-        endpoint = "/milestone/getMilestome";
+        endpoint = "/milestone/getMilestome"; // influencer + campaign
         body.campaignId = campaignId;
       } else {
         endpoint = "/milestone/byInfluencer";
@@ -142,7 +142,7 @@ const MilestoneHistoryCard: React.FC<MilestoneHistoryCardProps> = ({
     }
   };
 
-  /* release payment */
+  /* release payment (brand → admin) */
   const releaseMilestone = async (m: MilestoneEntry) => {
     try {
       await post("/milestone/release", {
@@ -151,9 +151,10 @@ const MilestoneHistoryCard: React.FC<MilestoneHistoryCardProps> = ({
       });
       Swal.fire({
         icon: "success",
-        title: "Paid",
+        title: "Milestone released",
+        text: "Payment has been initiated and sent to admin for processing.",
         showConfirmButton: false,
-        timer: 1500,
+        timer: 1800,
         timerProgressBar: true,
       });
       fetchMilestones();
@@ -163,7 +164,7 @@ const MilestoneHistoryCard: React.FC<MilestoneHistoryCardProps> = ({
         title: "Error",
         text: err.message,
         showConfirmButton: false,
-        timer: 1500,
+        timer: 1800,
         timerProgressBar: true,
       });
     }
@@ -173,6 +174,77 @@ const MilestoneHistoryCard: React.FC<MilestoneHistoryCardProps> = ({
     fetchMilestones();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [brandId, influencerId, campaignId, role]);
+
+  // ─── Status Renderer (brand + influencer) ───────────────────────────
+  const renderStatus = (m: MilestoneEntry) => {
+    // support either `status` or backend using `payoutStatus`
+    const rawStatus: string | undefined =
+      m.status || (m as any).payoutStatus || undefined;
+
+    const badgeBase =
+      "inline-block px-3 py-0.5 text-xs font-semibold rounded-full";
+
+    // INFLUENCER VIEW
+    if (role === "influencer") {
+      // Admin approved → fully paid
+      if (rawStatus === "paid") {
+        return (
+          <span className={`${badgeBase} bg-emerald-100 text-emerald-700`}>
+            Paid
+          </span>
+        );
+      }
+
+      // Brand released, waiting on admin → initiated
+      if (rawStatus === "initiated" || (m.released && !rawStatus)) {
+        return (
+          <span
+            className={`${badgeBase} ${palette[role].full} text-gray-800`}
+          >
+            Initiated – expected within 24-48 Hrs
+          </span>
+        );
+      }
+
+      // Default: nothing released yet
+      return (
+        <span className={`${badgeBase} bg-gray-100 text-gray-600`}>
+          Not received yet
+        </span>
+      );
+    }
+
+    // BRAND VIEW
+    if (!m.released) {
+      // Brand has not released this milestone yet → show CTA
+      return (
+        <div className="flex items-center gap-2 mt-2">
+          <Button
+            className={`${palette[role].full} text-white cursor-pointer`}
+            onClick={() => releaseMilestone(m)}
+          >
+            Release Fund
+          </Button>
+        </div>
+      );
+    }
+
+    // Brand has released funds
+    if (rawStatus === "paid") {
+      return (
+        <span className={`${badgeBase} bg-emerald-100 text-emerald-700`}>
+          Paid to influencer
+        </span>
+      );
+    }
+
+    // Released but admin has not yet marked as paid
+    return (
+      <span className={`${badgeBase} ${palette[role].full} text-white`}>
+        Released (pending admin payout)
+      </span>
+    );
+  };
 
   return (
     <div
@@ -245,8 +317,9 @@ const MilestoneHistoryCard: React.FC<MilestoneHistoryCardProps> = ({
                 >
                   <div className="flex justify-between items-center">
                     <h4
-                      className={`text-base font-semibold text-gray-900 group-hover:${role === "brand" ? "text-[#FF7236]" : "text-[#FFDB58]"
-                        } transition-colors`}
+                      className={`text-base font-semibold text-gray-900 transition-colors group-hover:${
+                        role === "brand" ? "text-[#FF7236]" : "text-[#FFDB58]"
+                      }`}
                     >
                       {m.milestoneTitle}
                     </h4>
@@ -261,40 +334,10 @@ const MilestoneHistoryCard: React.FC<MilestoneHistoryCardProps> = ({
                     {m.milestoneDescription || "–"}
                   </p>
 
-                  {m.released && role === 'brand' && (
-                    <span
-                      className={`inline-block px-3 py-0.5 text-xs font-semibold rounded-full ${palette[role].full} text-white`}
-                    >
-                      Paid
-                    </span>
-                  )}
-
-                  {m.released && role === 'influencer' && (
-                    <span
-                      className={`inline-block px-3 py-0.5 text-xs font-semibold rounded-full ${palette[role].full} text-gray-800`}
-                    >
-                      Recieved
-                    </span>
-                  )}
-
-                  {!m.released && role === 'influencer' && (
-                    <span
-                      className={`inline-block px-3 py-0.5 text-xs font-semibold rounded-full ${palette[role].full} text-gray-800`}
-                    >
-                      Not Recieved Yet
-                    </span>
-                  )}
-
-                  {!m.released && role === 'brand' && (
-                    <div className="flex items-center gap-2 mt-2">
-                      <Button
-                        className={`${palette[role].full} text-white cursor-pointer`}
-                        onClick={() => releaseMilestone(m)}
-                      >
-                        Release Fund
-                      </Button>
-                    </div>
-                  )}
+                  {/* ✅ Payment status / CTA */}
+                  <div className="mt-2">
+                    {renderStatus(m)}
+                  </div>
                 </div>
               </motion.li>
             ))}
