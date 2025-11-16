@@ -169,17 +169,29 @@ export default function FooterWithNewsletter() {
                   {section.title}
                 </h3>
                 <ul className="space-y-2">
-                  {section.links.map((link, li) => (
-                    <li key={li}>
-                      <a
-                        href={link.href}
-                        onClick={(e) => handleNav(link.href, e)}
-                        className="text-gray-300 hover:text-white transition-colors block text-center md:text-left cursor-pointer"
-                      >
-                        {link.label}
-                      </a>
-                    </li>
-                  ))}
+                  {section.links.map((link, li) => {
+                    const isLegalSection = section.title === "Legal";
+
+                    return (
+                      <li key={li}>
+                        <a
+                          href={link.href}
+                          onClick={(e) => {
+                            if (!isLegalSection) {
+                              // normal SPA navigation for non-legal links
+                              handleNav(link.href, e);
+                            }
+                            // for Legal links, let the browser open new tab
+                          }}
+                          target={isLegalSection ? "_blank" : undefined}
+                          rel={isLegalSection ? "noopener noreferrer" : undefined}
+                          className="text-gray-300 hover:text-white transition-colors block text-center md:text-left cursor-pointer"
+                        >
+                          {link.label}
+                        </a>
+                      </li>
+                    );
+                  })}
                 </ul>
               </div>
             ))}

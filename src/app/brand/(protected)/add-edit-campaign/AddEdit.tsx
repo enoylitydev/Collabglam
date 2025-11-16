@@ -598,7 +598,7 @@ export default function CampaignFormPage() {
                 <div className="space-y-1">
                   <FloatingLabelInput
                     id="productName"
-                    label="Product / Service Name"
+                    label="Campaign Title"
                     type="text"
                     value={productName}
                     onChange={(e) => setProductName(e.target.value)}

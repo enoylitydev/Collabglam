@@ -122,6 +122,15 @@ const statusPill = (isActive: number) =>
     </span>
   );
 
+// truncate / slice long campaign names so repeated text doesn't dominate UI
+const MAX_CAMPAIGN_NAME_LENGTH = 60;
+const formatCampaignName = (name?: string) => {
+  if (!name) return "—";
+  const trimmed = name.trim();
+  if (trimmed.length <= MAX_CAMPAIGN_NAME_LENGTH) return trimmed;
+  return trimmed.slice(0, MAX_CAMPAIGN_NAME_LENGTH) + "…";
+};
+
 /* ---------- Component ---------- */
 export default function ViewBrandPage() {
   const router = useRouter();
@@ -301,14 +310,14 @@ export default function ViewBrandPage() {
       </Card>
 
       {/* Subscription */}
-      <Card className="p-6 bg-white shadow-md border border-gray-100 hover:shadow-lg transition-all">
+      <Card className="p-6 bg_white shadow-md border border-gray-100 hover:shadow-lg transition-all">
         <div className="flex justify-between items-center mb-4">
           <h3 className="text-2xl font-semibold text-gray-900 flex items-center gap-2">
             <HiClipboardList /> Subscription
           </h3>
           <span className="rounded-full bg-amber-100 text-amber-700 px-3 py-1 text-sm font-medium">
-                Plan: {brand.subscription.planName}
-              </span>
+            Plan: {brand.subscription.planName}
+          </span>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 text-gray-700 mb-6">
@@ -320,7 +329,7 @@ export default function ViewBrandPage() {
           <p><strong>Expires:</strong> {formatDate(brand.subscription.expiresAt)}</p>
         </div>
 
-        {/* --- Professional Subscription Table with Borders & Usage Bar --- */}
+        {/* Subscription Features Table */}
         <div className="overflow-hidden rounded-md border border-gray-200">
           <Table className="w-full text-sm">
             <TableHeader>
@@ -353,7 +362,7 @@ export default function ViewBrandPage() {
                     <TableCell className="px-4 py-3">{f.limit}</TableCell>
 
                     <TableCell className="px-4 py-3">
-                      <div className="flex items-center justify-between">
+                      <div className="flex items-center justify_between">
                         <span className="font-medium">{f.used}</span>
                         <span className="text-xs text-gray-500">{pct}%</span>
                       </div>
@@ -442,13 +451,19 @@ export default function ViewBrandPage() {
                     ].map((col) => (
                       <TableHead
                         key={col.label}
-                        className={`whitespace-nowrap ${col.key ? "cursor-pointer select-none" : ""}`}
+                        className={`whitespace-nowrap ${
+                          col.key ? "cursor-pointer select-none" : ""
+                        }`}
                         onClick={() => col.key && toggleSort(col.key)}
                       >
                         <div className="flex items-center justify-center">
                           {col.label}
                           {col.key && sortBy === col.key && (
-                            sortAsc ? <HiChevronUp className="ml-1" /> : <HiChevronDown className="ml-1" />
+                            sortAsc ? (
+                              <HiChevronUp className="ml-1" />
+                            ) : (
+                              <HiChevronDown className="ml-1" />
+                            )
                           )}
                         </div>
                       </TableHead>
@@ -458,9 +473,22 @@ export default function ViewBrandPage() {
 
                 <TableBody>
                   {campaigns.map((c, i) => (
-                    <TableRow key={c.campaignsId} className={i % 2 === 0 ? "bg-white" : "bg-gray-50"}>
-                      <TableCell className="font-medium">{c.productOrServiceName}</TableCell>
-                      <TableCell className="max-w-[22ch] truncate" title={c.goal || ""}>
+                    <TableRow
+                      key={c.campaignsId}
+                      className={i % 2 === 0 ? "bg-white" : "bg-gray-50"}
+                    >
+                      {/* SLICED / TRUNCATED NAME */}
+                      <TableCell
+                        className="font-medium max-w-[30ch] truncate"
+                        title={c.productOrServiceName}
+                      >
+                        {formatCampaignName(c.productOrServiceName)}
+                      </TableCell>
+
+                      <TableCell
+                        className="max-w-[22ch] truncate"
+                        title={c.goal || ""}
+                      >
                         {c.goal || "—"}
                       </TableCell>
                       <TableCell>{formatDate(c.timeline.startDate)}</TableCell>
@@ -469,7 +497,11 @@ export default function ViewBrandPage() {
                       <TableCell>{statusPill(c.isActive)}</TableCell>
                       <TableCell>
                         <Button
-                          onClick={() => router.push(`/admin/campaigns/view?id=${c.campaignsId}`)}
+                          onClick={() =>
+                            router.push(
+                              `/admin/campaigns/view?id=${c.campaignsId}`
+                            )
+                          }
                           className="bg-[#ef2f5b] text-white hover:bg-[#ef2f5b]/85 hover:shadow-sm transition-all"
                           size="sm"
                         >
@@ -486,7 +518,9 @@ export default function ViewBrandPage() {
             {campaignsTotalPages > 1 && (
               <div className="flex justify-end items-center space-x-2 mt-4">
                 <Button
-                  onClick={() => setCampaignsPage((p) => Math.max(p - 1, 1))}
+                  onClick={() =>
+                    setCampaignsPage((p) => Math.max(p - 1, 1))
+                  }
                   disabled={campaignsPage === 1}
                   className="bg-[#ef2f5b] text-white hover:bg-[#ef2f5b]/85"
                   size="sm"
@@ -494,11 +528,18 @@ export default function ViewBrandPage() {
                   <HiChevronLeftIcon />
                 </Button>
                 <span className="text-sm text-gray-700">
-                  Page <span className="font-medium">{campaignsPage}</span> of{" "}
-                  <span className="font-medium">{campaignsTotalPages}</span>
+                  Page{" "}
+                  <span className="font-medium">{campaignsPage}</span> of{" "}
+                  <span className="font-medium">
+                    {campaignsTotalPages}
+                  </span>
                 </span>
                 <Button
-                  onClick={() => setCampaignsPage((p) => Math.min(p + 1, campaignsTotalPages))}
+                  onClick={() =>
+                    setCampaignsPage((p) =>
+                      Math.min(p + 1, campaignsTotalPages)
+                    )
+                  }
                   disabled={campaignsPage === campaignsTotalPages}
                   className="bg-[#ef2f5b] text-white hover:bg-[#ef2f5b]/85"
                   size="sm"
