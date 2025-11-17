@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import Select, { type SingleValue, type StylesConfig } from 'react-select';
-import { CheckCircle2, ImagePlus, Eye, EyeOff, Loader2 } from 'lucide-react';
+import { CheckCircle2, ImagePlus, Eye, EyeOff } from 'lucide-react';
 import { FloatingLabelInput } from '@/components/common/FloatingLabelInput';
 import { Button } from './Button';
 import { ProgressIndicator } from './ProgressIndicator';
@@ -16,6 +16,19 @@ type MetaCategory = { _id: string; id?: number; name: string };
 type MetaBusinessType = { _id?: string; name: string };
 
 type Option = { value: string; label: string };
+
+type BrandLoginResponse = {
+  token: string;
+  brandId: string;
+  subscriptionPlanName?: string;
+  subscription?: {
+    planId?: string;
+    planName?: string;
+    role?: string;
+    status?: string;
+    expiresAt?: string;
+  };
+};
 
 const companySizes = ['1-10', '11-50', '51-200', '200+'];
 
@@ -51,7 +64,6 @@ export function BrandSignup({ onSuccess, onStepChange }: { onSuccess: () => void
 
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [logoPreview, setLogoPreview] = useState<string>('');
-  const [logoUploading, setLogoUploading] = useState(false);
   const [passwordVisible, setPasswordVisible] = useState(false);
   const [confirmPasswordVisible, setConfirmPasswordVisible] = useState(false);
   const [showRequiredHints, setShowRequiredHints] = useState(false);
@@ -73,7 +85,6 @@ export function BrandSignup({ onSuccess, onStepChange }: { onSuccess: () => void
     referralCode: '',
     agreedToTerms: false,
     officialRep: false,
-    logoUrl: ''
   });
 
   // ————————————————— Data fetch
@@ -262,33 +273,6 @@ export function BrandSignup({ onSuccess, onStepChange }: { onSuccess: () => void
     }
   };
 
-  const uploadLogoIfNeeded = async (): Promise<string> => {
-    if (!logoFile) return '';
-    if (!ACCEPT_LOGO_MIME.includes(logoFile.type)) {
-      setError('Logo must be PNG, JPG, WEBP, or SVG.');
-      return '';
-    }
-    if (logoFile.size > MAX_LOGO_MB * 1024 * 1024) {
-      setError(`Logo must be under ${MAX_LOGO_MB}MB.`);
-      return '';
-    }
-
-    try {
-      setLogoUploading(true);
-      const fd = new FormData();
-      fd.append('file', logoFile);
-      fd.append('email', formData.email);
-      const res = await post('/brand/uploadLogo', fd);
-      const url = (res?.url || (res as any)?.data?.url || '') as string;
-      return url;
-    } catch (e: any) {
-      console.warn('Logo upload failed:', e?.message || e);
-      return '';
-    } finally {
-      setLogoUploading(false);
-    }
-  };
-
   const completeSignup = async () => {
     setShowRequiredHints(false);
 
@@ -335,35 +319,50 @@ export function BrandSignup({ onSuccess, onStepChange }: { onSuccess: () => void
       return;
     }
 
+    // Validate logo (if provided)
+    if (logoFile) {
+      if (!ACCEPT_LOGO_MIME.includes(logoFile.type)) {
+        setError('Logo must be PNG, JPG, WEBP, or SVG.');
+        return;
+      }
+      if (logoFile.size > MAX_LOGO_MB * 1024 * 1024) {
+        setError(`Logo must be under ${MAX_LOGO_MB}MB.`);
+        return;
+      }
+    }
+
     setLoading(true);
     setError('');
 
     const instaHandle = extractInstagramHandle(formData.instagramHandle);
 
     try {
-      const uploadedUrl = await uploadLogoIfNeeded();
+      // Build multipart form-data for /brand/register
+      const fd = new FormData();
 
-      await post('/brand/register', {
-        name: formData.name,
-        phone: phoneDigits,
-        email: formData.email,
-        password: formData.password,
-        countryId: formData.countryId,
-        // NOTE: backend field name can vary; keeping original "callingId" but you may switch to callingCodeId if your API expects it
-        callingId: formData.callingCodeId,
-        category: formData.categoryId,
-        // optionals
-        website: formData.website || undefined,
-        instagramHandle: instaHandle || undefined,
-        companySize: formData.companySize || undefined,
-        businessType: formData.businessType || undefined,
-        referralCode: formData.referralCode || undefined,
-        logoUrl: uploadedUrl || formData.logoUrl || undefined,
-        isVerifiedRepresentative: formData.officialRep,
-      });
+      if (logoFile) {
+        fd.append('file', logoFile); // handled by uploadLogoMiddleware.single('file')
+      }
+
+      fd.append('name', formData.name);
+      fd.append('phone', phoneDigits);
+      fd.append('email', formData.email);
+      fd.append('password', formData.password);
+      fd.append('countryId', formData.countryId);
+      fd.append('callingId', formData.callingCodeId);
+      fd.append('categoryId', formData.categoryId);
+
+      if (formData.website) fd.append('website', formData.website);
+      if (instaHandle) fd.append('instagramHandle', instaHandle);
+      if (formData.companySize) fd.append('companySize', formData.companySize);
+      if (formData.businessType) fd.append('businessType', formData.businessType);
+      if (formData.referralCode) fd.append('referralCode', formData.referralCode);
+      fd.append('isVerifiedRepresentative', formData.officialRep ? 'true' : 'false');
+
+      await post('/brand/register', fd);
 
       // Auto-login after successful signup — unwrap response in case your post() returns { data }
-      const login = unwrap<{ token: string; brandId: string }>(
+      const login = unwrap<BrandLoginResponse>(
         await post('/brand/login', { email: formData.email, password: formData.password })
       );
 
@@ -372,6 +371,19 @@ export function BrandSignup({ onSuccess, onStepChange }: { onSuccess: () => void
         if (login?.brandId) localStorage.setItem('brandId', login.brandId);
         localStorage.setItem('userType', 'brand');
         localStorage.setItem('userEmail', formData.email);
+
+        // 🔹 subscription info (same logic as LoginForm)
+        const brandPlanName =
+          login.subscriptionPlanName ??
+          login.subscription?.planName ??
+          'free';
+
+        const brandPlanId = login.subscription?.planId ?? '';
+
+        localStorage.setItem('brandPlanName', brandPlanName);
+        if (brandPlanId) {
+          localStorage.setItem('brandPlanId', brandPlanId);
+        }
       }
 
       router.replace('/brand/dashboard');
@@ -494,16 +506,16 @@ export function BrandSignup({ onSuccess, onStepChange }: { onSuccess: () => void
               type="button"
               onClick={sendOTP}
               disabled={resendIn > 0 || loading}
-              className={`sm:ml-auto text-sm underline font-medium transition-colors ${resendIn > 0 || loading
+              className={`sm:ml-auto text-sm underline font-medium transition-colors ${
+                resendIn > 0 || loading
                   ? 'text-gray-400 cursor-not-allowed'
                   : 'text-gray-700 hover:text-gray-900'
-                }`}
+              }`}
               aria-live="polite"
             >
               {resendIn > 0 ? `Resend in ${resendIn}s` : 'Resend code'}
             </button>
           </div>
-
         </div>
       )}
 
@@ -530,11 +542,6 @@ export function BrandSignup({ onSuccess, onStepChange }: { onSuccess: () => void
                     onChange={(e) => onPickLogo(e.target.files?.[0] || null)}
                   />
                 </label>
-                {logoUploading && (
-                  <span className="text-[10px] text-gray-500 inline-flex items-center gap-1">
-                    <Loader2 className="w-3 h-3 animate-spin" /> Uploading…
-                  </span>
-                )}
               </div>
 
               {/* Form grid */}
@@ -572,7 +579,7 @@ export function BrandSignup({ onSuccess, onStepChange }: { onSuccess: () => void
                       options={countryOptions}
                       value={getOption(countryOptions, formData.countryId)}
                       onChange={(opt: SingleValue<Option>) => setFormData({ ...formData, countryId: opt?.value || '' })}
-                      isDisabled={loading || logoUploading}
+                      isDisabled={loading}
                       isLoading={metaLoading}
                     />
                     {missing.countryId && (
@@ -591,7 +598,7 @@ export function BrandSignup({ onSuccess, onStepChange }: { onSuccess: () => void
                       options={categoryOptions}
                       value={getOption(categoryOptions, formData.categoryId)}
                       onChange={(opt: SingleValue<Option>) => setFormData({ ...formData, categoryId: opt?.value || '' })}
-                      isDisabled={metaLoading || loading || logoUploading}
+                      isDisabled={metaLoading || loading}
                       isLoading={metaLoading}
                     />
                     {missing.categoryId && (
@@ -613,7 +620,7 @@ export function BrandSignup({ onSuccess, onStepChange }: { onSuccess: () => void
                       options={callingCodeOptions}
                       value={getOption(callingCodeOptions, formData.callingCodeId)}
                       onChange={(opt: SingleValue<Option>) => setFormData({ ...formData, callingCodeId: opt?.value || '' })}
-                      isDisabled={loading || logoUploading}
+                      isDisabled={loading}
                       isLoading={metaLoading}
                     />
                     {missing.callingCodeId && (
@@ -673,7 +680,7 @@ export function BrandSignup({ onSuccess, onStepChange }: { onSuccess: () => void
                     options={companySizeOptions}
                     value={getOption(companySizeOptions, formData.companySize)}
                     onChange={(opt: SingleValue<Option>) => setFormData({ ...formData, companySize: opt?.value || '' })}
-                    isDisabled={loading || logoUploading}
+                    isDisabled={loading}
                     isClearable
                   />
 
@@ -687,7 +694,7 @@ export function BrandSignup({ onSuccess, onStepChange }: { onSuccess: () => void
                     options={businessTypeOptions}
                     value={getOption(businessTypeOptions, formData.businessType)}
                     onChange={(opt: SingleValue<Option>) => setFormData({ ...formData, businessType: opt?.value || '' })}
-                    isDisabled={metaLoading || loading || logoUploading}
+                    isDisabled={metaLoading || loading}
                     isLoading={metaLoading}
                     isClearable
                   />
@@ -775,7 +782,7 @@ export function BrandSignup({ onSuccess, onStepChange }: { onSuccess: () => void
                 </div>
 
                 <div className="flex flex-col gap-3">
-                  <Button onClick={completeSignup} loading={loading || logoUploading} variant="brand" disabled={metaLoading} aria-disabled={metaLoading}>
+                  <Button onClick={completeSignup} loading={loading} variant="brand" disabled={metaLoading} aria-disabled={metaLoading}>
                     {metaLoading ? 'Loading options…' : 'Create Brand Account'}
                   </Button>
                   {showPwdMismatchBottom && (

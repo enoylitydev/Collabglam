@@ -122,7 +122,11 @@ type BrandData = {
   };
   subscriptionExpired: boolean;
   walletBalance: number;
+
+  // 🔽 added
   logoUrl?: string;
+  logoFileId?: string;
+  logoFilename?: string;
 };
 
 /* ===================== Utilities ===================== */
@@ -144,6 +148,20 @@ const deepClone = <T,>(obj: T): T =>
 function normalizeBrand(data: any): BrandData {
   const s = data?.subscription ?? {};
   const brand = data?.brand ?? data;
+
+  // 🔥 Build a usable logoUrl from GridFS fields
+  let logoUrl: string | undefined = brand?.logoUrl;
+
+  if (!logoUrl) {
+    if (brand?.logoFilename) {
+      // Use filename route: GET /file/:filename
+      logoUrl = `/file/${encodeURIComponent(brand.logoFilename)}`;
+    } else if (brand?.logoFileId) {
+      // Fallback: use id route: GET /file/id/:id
+      logoUrl = `/file/id/${brand.logoFileId}`;
+    }
+  }
+
   return {
     name: brand?.name ?? "",
     email: brand?.email ?? "",
@@ -155,15 +173,24 @@ function normalizeBrand(data: any): BrandData {
     brandId: brand?.brandId ?? "",
     createdAt: brand?.createdAt ?? "",
     updatedAt: brand?.updatedAt ?? "",
-    logoUrl: brand?.logoUrl ?? "",
+    // ⬇ include these so you still have access if needed
+    logoUrl,
+    logoFileId: brand?.logoFileId ?? "",
+    logoFilename: brand?.logoFilename ?? "",
     subscription: {
       planName: s?.planName ?? brand?.planName ?? "",
       startedAt: s?.startedAt ?? brand?.startedAt ?? "",
       expiresAt: s?.expiresAt ?? brand?.expiresAt ?? "",
-      features: Array.isArray(s?.features) ? s.features : Array.isArray(brand?.features) ? brand.features : [],
+      features: Array.isArray(s?.features)
+        ? s.features
+        : Array.isArray(brand?.features)
+        ? brand.features
+        : [],
     },
     subscriptionExpired: !!brand?.subscriptionExpired,
-    walletBalance: Number.isFinite(+brand?.walletBalance) ? +brand.walletBalance : 0,
+    walletBalance: Number.isFinite(+brand?.walletBalance)
+      ? +brand.walletBalance
+      : 0,
   };
 }
 
@@ -797,7 +824,7 @@ export default function BrandProfilePage() {
           <CardContent className="p-8">
             <div className="flex flex-col sm:flex-row items-center sm:items-start justify-center sm:justify-start gap-4 sm:gap-6 mb-8 text-center sm:text-left">
               {/* Icon */}
-              <div className="flex-shrink-0 w-16 h-16 sm:w-20 sm:h-20 bg-gradient-to-r from-[#FFA135] to-[#FF7236] rounded-2xl flex items-center justify-center shadow-lg mx-auto sm:mx-0 overflow-hidden">
+              <div className="border-1 flex-shrink-0 w-16 h-16 sm:w-20 sm:h-20 bg-gradient-to-r from-[#FFA135] to-[#FF7236] rounded-full flex items-center justify-center mx-auto sm:mx-0 overflow-hidden">
                 {brandLogoUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img

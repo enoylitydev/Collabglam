@@ -40,6 +40,7 @@ import {
 import { useRouter } from "next/navigation";
 import dayjs from "dayjs";
 import ReactSelect from "react-select";
+import { resolveFileUrl } from "@/lib/files";
 
 /* ──────────────────────────────────────────────────────────────────── */
 /* Constants                                                           */
@@ -63,6 +64,7 @@ interface UICampaign {
   ageRange: string;
   locations: string; // "India, Afghanistan"
   timeline: string;
+  imageUrls: string[];
 }
 
 interface Country {
@@ -109,7 +111,13 @@ const mapResponse = (raw: any): UICampaign => ({
   timeline: `${fmtDate(raw.timeline.startDate)} → ${fmtDate(
     raw.timeline.endDate
   )}`,
+  imageUrls: Array.isArray(raw.images)
+    ? raw.images
+      .filter((name: string) => !!name)
+      .map((name: string) => resolveFileUrl(name)) // ⬅️ convert filename → full URL
+    : [],
 });
+
 
 /* ──────────────────────────────────────────────────────────────────── */
 /* Component                                                            */
@@ -550,9 +558,72 @@ function CampaignCard({
   campaign: UICampaign;
   onView: () => void;
 }) {
+  const [currentImageIndex, setCurrentImageIndex] = React.useState(0);
+  const hasImages = campaign.imageUrls && campaign.imageUrls.length > 0;
+
+  // Reset to first image when campaign changes
+  React.useEffect(() => {
+    setCurrentImageIndex(0);
+  }, [campaign.id]);
+
+  const goPrev = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!hasImages) return;
+    setCurrentImageIndex((prev) =>
+      prev === 0 ? campaign.imageUrls.length - 1 : prev - 1
+    );
+  };
+
+  const goNext = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!hasImages) return;
+    setCurrentImageIndex((prev) =>
+      prev === campaign.imageUrls.length - 1 ? 0 : prev + 1
+    );
+  };
+
   return (
     <Card className="flex flex-col h-full rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow bg-white">
       <CardHeader className="pb-3">
+        {/* Image Carousel */}
+        {hasImages && (
+          <div className="mb-3 w-full rounded-xl overflow-hidden bg-gray-100 relative flex items-center justify-center max-h-72">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={campaign.imageUrls[currentImageIndex]}
+              alt={`${campaign.product} campaign image ${currentImageIndex + 1}`}
+              className="w-full h-auto object-contain"
+            />
+
+            {/* Left arrow */}
+            {campaign.imageUrls.length > 1 && (
+              <>
+                <button
+                  type="button"
+                  onClick={goPrev}
+                  className="absolute left-2 top-1/2 -translate-y-1/2 inline-flex items-center justify-center w-8 h-8 rounded-full bg-black/60 text-white hover:bg-black/80 transition"
+                >
+                  <HiChevronLeft className="w-4 h-4" />
+                </button>
+
+                {/* Right arrow */}
+                <button
+                  type="button"
+                  onClick={goNext}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 inline-flex items-center justify-center w-8 h-8 rounded-full bg-black/60 text-white hover:bg-black/80 transition"
+                >
+                  <HiChevronRight className="w-4 h-4" />
+                </button>
+
+                {/* Counter badge */}
+                <div className="absolute bottom-2 right-2 px-2 py-1 rounded-full bg-black/60 text-[11px] text-white">
+                  {currentImageIndex + 1} / {campaign.imageUrls.length}
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
         <div className="flex items-start justify-between gap-3">
           <div>
             <span className="inline-flex items-center rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-gray-600">

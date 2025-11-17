@@ -37,6 +37,19 @@ type ProviderState = {
   preview: ProviderPreview | null;
 };
 
+type InfluencerLoginResponse = {
+  token: string;
+  influencerId: string;
+  categoryId: string;
+  subscriptionPlanName?: string;
+  subscription?: {
+    planId?: string;
+    planName?: string;
+    startedAt?: string;
+    expiresAt?: string;
+  };
+};
+
 type ApiCategory = {
   _id: string;
   id?: number;
@@ -512,17 +525,33 @@ export default function InfluencerSignup({ onSuccess, onStepChange }: { onSucces
   const finishAll = async () => {
     try {
       setLoading(true);
-      const data = await post<{ token: string; influencerId: string; categoryId: string }>(
+      const data = await post<InfluencerLoginResponse>(
         '/influencer/login',
         { email: formData.email, password: formData.password }
       );
+
       if (typeof window !== 'undefined') {
+        // 🔐 base auth info
         localStorage.setItem('token', data.token);
         localStorage.setItem('influencerId', data.influencerId);
         localStorage.setItem('categoryId', data.categoryId);
         localStorage.setItem('userType', 'influencer');
         localStorage.setItem('userEmail', formData.email);
+
+        // 🔹 subscription info (same logic as LoginForm)
+        const influencerPlanName =
+          data.subscriptionPlanName ??
+          data.subscription?.planName ??
+          'free';
+
+        const influencerPlanId = data.subscription?.planId ?? '';
+
+        localStorage.setItem('influencerPlanName', influencerPlanName);
+        if (influencerPlanId) {
+          localStorage.setItem('influencerPlanId', influencerPlanId);
+        }
       }
+
       router.replace('/influencer/dashboard');
     } catch (err: any) {
       console.warn('Auto-login failed after signup:', err?.message || err);
