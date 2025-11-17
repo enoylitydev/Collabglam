@@ -39,7 +39,6 @@ import type { FilterOptionOption, GroupBase } from "react-select";
 // ── types ───────────────────────────────────────────────────
 
 type GenderOption = "Male" | "Female" | "All";
-// const GENDER_OPTIONS: GenderOption[] = ["Male", "Female", "All"]; // (unused after ReactSelect migration)
 
 interface Country {
   _id: string;
@@ -72,7 +71,7 @@ interface SubcategoryOption {
   categoryName: string; // category name
 }
 
-// NEW: generic simple option for ReactSelect
+// generic simple option for ReactSelect
 type SimpleOption = { value: string; label: string };
 
 // ── helpers ─────────────────────────────────────────────────
@@ -92,36 +91,6 @@ const buildCountryOptions = (countries: Country[]): CountryOption[] =>
     label: `${c.flag} ${c.countryName}`,
     country: c,
   }));
-
-const fileToDraftPayload = (file: File): Promise<DraftFilePayload> =>
-  new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () =>
-      resolve({
-        name: file.name,
-        type: file.type,
-        lastModified: file.lastModified,
-        dataUrl: reader.result as string,
-      });
-    reader.onerror = () => reject(reader.error);
-    reader.readAsDataURL(file);
-  });
-
-const draftPayloadToFile = (draft: DraftFilePayload): File => {
-  const parts = draft.dataUrl.split(",");
-  if (parts.length < 2) throw new Error("Invalid data URL");
-  const binary = atob(parts[1]);
-  const len = binary.length;
-  const bytes = new Uint8Array(len);
-  for (let i = 0; i < len; i += 1) {
-    bytes[i] = binary.charCodeAt(i);
-  }
-  const mimeMatch = parts[0]?.match(/:(.*?);/);
-  return new File([bytes], draft.name, {
-    type: mimeMatch?.[1] || draft.type || "application/octet-stream",
-    lastModified: draft.lastModified,
-  });
-};
 
 const filterByCountryName = (
   option: FilterOptionOption<unknown>,
@@ -144,18 +113,34 @@ const serverGenderToUI = (g: 0 | 1 | 2): GenderOption =>
 const uiGenderToServer = (g: GenderOption | ""): 0 | 1 | 2 =>
   g === "Male" ? 1 : g === "Female" ? 0 : 2;
 
-const DRAFT_KEY = "campaignDraft";
+// ReactSelect option lists for Gender, Goals & Campaign Type
+const GENDER_SELECT_OPTIONS: SimpleOption[] = ["Male", "Female", "All"].map(
+  (g) => ({
+    value: g,
+    label: g,
+  })
+);
+const GOAL_OPTIONS: SimpleOption[] = ["Brand Awareness", "Sales", "Engagement"].map(
+  (g) => ({ value: g, label: g })
+);
 
-// NEW: ReactSelect option lists for Gender & Goals
-const GENDER_SELECT_OPTIONS: SimpleOption[] = ["Male", "Female", "All"].map((g) => ({
-  value: g,
-  label: g,
-}));
-const GOAL_OPTIONS: SimpleOption[] = [
+const CAMPAIGN_TYPE_OPTIONS: SimpleOption[] = [
+  "Product Promo",
   "Brand Awareness",
-  "Sales",
-  "Engagement",
-].map((g) => ({ value: g, label: g }));
+  "Review / Unboxing",
+  "Launch",
+  "Giveaway",
+  "Offer Promo",
+  "Event / Visit",
+  "UGC Only",
+  "Testimonial",
+  "Affiliate",
+  "App / Website Traffic",
+  "Reel Promo",
+  "Story Promo",
+  "Post Promo",
+  "Other",
+].map((t) => ({ value: t, label: t }));
 
 export default function CampaignFormPage() {
   const router = useRouter();
@@ -169,7 +154,10 @@ export default function CampaignFormPage() {
   const [description, setDescription] = useState("");
   const [existingImages, setExistingImages] = useState<string[]>([]);
   const [productImages, setProductImages] = useState<File[]>([]);
-  const [ageRange, setAgeRange] = useState<{ min: number | ""; max: number | "" }>({ min: "", max: "" });
+  const [ageRange, setAgeRange] = useState<{ min: number | ""; max: number | "" }>({
+    min: "",
+    max: "",
+  });
   const [selectedGender, setSelectedGender] = useState<GenderOption | "">("");
 
   const [countries, setCountries] = useState<Country[]>([]);
@@ -179,10 +167,17 @@ export default function CampaignFormPage() {
   const [selectedSubcategories, setSelectedSubcategories] = useState<SubcategoryOption[]>([]);
 
   const [selectedGoal, setSelectedGoal] = useState<string>("");
+  const [campaignType, setCampaignType] = useState<string>("");
+  const [customCampaignType, setCustomCampaignType] = useState<string>("");
+
   const [budget, setBudget] = useState<number | "">("");
-  const [timeline, setTimeline] = useState<{ start: string; end: string }>({ start: "", end: "" });
+  const [timeline, setTimeline] = useState<{ start: string; end: string }>({
+    start: "",
+    end: "",
+  });
   const [creativeBriefText, setCreativeBriefText] = useState("");
   const [creativeBriefFiles, setCreativeBriefFiles] = useState<File[]>([]);
+  const [existingBriefFiles, setExistingBriefFiles] = useState<string[]>([]);
   const [useFileUploadForBrief, setUseFileUploadForBrief] = useState(false);
   const [additionalNotes, setAdditionalNotes] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -194,13 +189,24 @@ export default function CampaignFormPage() {
   const dateOrderError =
     !!(timeline.start && timeline.end && new Date(timeline.start) > new Date(timeline.end));
 
+  const finalCampaignTypeForUI =
+    campaignType === "Other" ? customCampaignType.trim() : campaignType;
+  const campaignTypeMissing = !finalCampaignTypeForUI;
+
   const [draftLoaded, setDraftLoaded] = useState(false);
+  const [isSavingDraft, setIsSavingDraft] = useState(false);
+
+  // 🔹 store current draft _id so backend can update that draft only
+  const [draftId, setDraftId] = useState<string | null>(null);
 
   // preview modal
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
 
   // ── memoised options ─────────────────────────────────────
-  const countryOptions = useMemo<CountryOption[]>(() => buildCountryOptions(countries), [countries]);
+  const countryOptions = useMemo<CountryOption[]>(
+    () => buildCountryOptions(countries),
+    [countries]
+  );
 
   // local YYYY-MM-DD for <input type="date">
   const todayStr = useMemo(() => {
@@ -218,7 +224,7 @@ export default function CampaignFormPage() {
         options: (cat.subcategories || []).map((sc) => ({
           value: sc.subcategoryId,
           label: sc.name,
-          categoryId: cat.id, // ✅ numeric Category.id
+          categoryId: cat.id,
           categoryName: cat.name,
         })),
       })),
@@ -260,8 +266,16 @@ export default function CampaignFormPage() {
       cursor: "pointer",
       "&:active": { backgroundColor: "#FF9020" },
     }),
-    multiValue: (base: any) => ({ ...base, backgroundColor: "#FFF7ED", borderRadius: "0.375rem" }),
-    multiValueLabel: (base: any) => ({ ...base, color: "#C2410C", fontWeight: "500" }),
+    multiValue: (base: any) => ({
+      ...base,
+      backgroundColor: "#FFF7ED",
+      borderRadius: "0.375rem",
+    }),
+    multiValueLabel: (base: any) => ({
+      ...base,
+      color: "#C2410C",
+      fontWeight: "500",
+    }),
     multiValueRemove: (base: any) => ({
       ...base,
       color: "#C2410C",
@@ -269,7 +283,7 @@ export default function CampaignFormPage() {
     }),
   };
 
-  // NEW: extend styles to show red error ring when missing required
+  // extend styles to show red error ring when missing required
   const makeSelectStyles = (hasError = false) => ({
     ...selectStyles,
     control: (base: any, state: any) => ({
@@ -278,8 +292,8 @@ export default function CampaignFormPage() {
       boxShadow: hasError
         ? "0 0 0 3px rgba(220, 38, 38, 0.1)"
         : state.isFocused
-        ? "0 0 0 3px rgba(255, 161, 53, 0.1)"
-        : "none",
+          ? "0 0 0 3px rgba(255, 161, 53, 0.1)"
+          : "none",
     }),
   });
 
@@ -288,6 +302,84 @@ export default function CampaignFormPage() {
     () => existingImages.map((v) => fileUrl(v)),
     [existingImages]
   );
+
+  // ── toast helper ─────────────────────────────────────────
+  const toast = (opts: {
+    icon: "success" | "error" | "warning" | "info";
+    title: string;
+    text?: string;
+  }) =>
+    Swal.fire({
+      ...opts,
+      showConfirmButton: false,
+      timer: 1200,
+      timerProgressBar: true,
+      background: "white",
+      customClass: {
+        icon: `
+          bg-gradient-to-r from-[#FFA135] to-[#FF7236]
+          bg-clip-text text-transparent
+        `,
+        popup: "rounded-lg border border-gray-200",
+      },
+    });
+
+  // ── hydrate helper used by edit + draft load ─────────────
+  const hydrateFromCampaign = (data: CampaignEditPayload) => {
+    // 🔹 keep track of draft (or campaign) _id for future saves
+    setDraftId(data._id || null);
+
+    setProductName(data.productOrServiceName || "");
+    setDescription(data.description || "");
+    setAdditionalNotes(data.additionalNotes || "");
+    setCreativeBriefText(data.creativeBriefText || "");
+    setExistingImages(Array.isArray(data.images) ? data.images : []);
+
+    // existing brief PDFs from backend
+    const briefFiles = Array.isArray(data.creativeBrief) ? data.creativeBrief : [];
+    setExistingBriefFiles(briefFiles);
+    if (briefFiles.length > 0) {
+      setUseFileUploadForBrief(true);
+    }
+
+    setAgeRange({
+      min: data.targetAudience?.age?.MinAge ?? "",
+      max: data.targetAudience?.age?.MaxAge ?? "",
+    });
+    setSelectedGender(serverGenderToUI(data.targetAudience?.gender ?? 2));
+
+    // locations
+    const locIds = (data.targetAudience?.locations || []).map((l) => l.countryId);
+    const locOptions = countryOptions.filter((o) => locIds.includes(o.value));
+    setSelectedCountries(locOptions);
+
+    setSelectedGoal(data.goal || "");
+    // campaign type
+    if (data.campaignType) {
+      if (CAMPAIGN_TYPE_OPTIONS.some((o) => o.value === data.campaignType)) {
+        setCampaignType(data.campaignType);
+        setCustomCampaignType("");
+      } else {
+        setCampaignType("Other");
+        setCustomCampaignType(data.campaignType);
+      }
+    }
+
+    setBudget(typeof data.budget === "number" ? data.budget : "");
+
+    const sd = data.timeline?.startDate ? data.timeline.startDate.split("T")[0] : "";
+    const ed = data.timeline?.endDate ? data.timeline.endDate.split("T")[0] : "";
+    setTimeline({ start: sd, end: ed });
+
+    if (
+      Array.isArray(data.categories) &&
+      data.categories.length &&
+      allSubcategoryOptions.length
+    ) {
+      const desired = new Set(data.categories.map((c) => c.subcategoryId));
+      setSelectedSubcategories(allSubcategoryOptions.filter((o) => desired.has(o.value)));
+    }
+  };
 
   // ── fetch reference data ─────────────────────────────────
   useEffect(() => {
@@ -307,105 +399,48 @@ export default function CampaignFormPage() {
 
     get<CampaignEditPayload>(`/campaign/id?id=${campaignId}`)
       .then((data) => {
-        setProductName(data.productOrServiceName || "");
-        setDescription(data.description || "");
-        setAdditionalNotes(data.additionalNotes || "");
-        setCreativeBriefText(data.creativeBriefText || "");
-        // store raw filenames/URLs; we'll display via existingImagesNormalized
-        setExistingImages(Array.isArray(data.images) ? data.images : []);
-        setAgeRange({
-          min: data.targetAudience?.age?.MinAge ?? "",
-          max: data.targetAudience?.age?.MaxAge ?? "",
-        });
-        setSelectedGender(serverGenderToUI(data.targetAudience?.gender ?? 2));
-
-        // locations
-        const locIds = (data.targetAudience?.locations || []).map((l) => l.countryId);
-        const locOptions = countryOptions.filter((o) => locIds.includes(o.value));
-        setSelectedCountries(locOptions);
-
-        setSelectedGoal(data.goal || "");
-        setBudget(typeof data.budget === "number" ? data.budget : "");
-
-        // timeline (guard against missing)
-        const sd = data.timeline?.startDate ? data.timeline.startDate.split("T")[0] : "";
-        const ed = data.timeline?.endDate ? data.timeline.endDate.split("T")[0] : "";
-        setTimeline({ start: sd, end: ed });
-
-        // prefill subcategories if present in payload
-        if (Array.isArray(data.categories) && data.categories.length && allSubcategoryOptions.length) {
-          const desired = new Set(data.categories.map((c) => c.subcategoryId));
-          setSelectedSubcategories(allSubcategoryOptions.filter((o) => desired.has(o.value)));
-        }
+        hydrateFromCampaign(data);
       })
       .catch((err) => console.error("Failed to load campaign for editing", err))
       .finally(() => setIsLoading(false));
   }, [isEditMode, campaignId, countries, countryOptions, allSubcategoryOptions]);
 
-  // ── auto-load draft (only when creating) ─────────────────
+  // ── auto-load draft (only when creating, from backend) ───
   useEffect(() => {
     if (isEditMode || draftLoaded) return;
     if (!countries.length || !categories.length) return;
 
-    try {
-      const raw = localStorage.getItem(DRAFT_KEY);
-      if (!raw) return;
-      const draft = JSON.parse(raw);
+    const brandId =
+      typeof window !== "undefined" ? localStorage.getItem("brandId") || "" : "";
 
-      setProductName(draft.productName || "");
-      setDescription(draft.description || "");
-      setExistingImages(Array.isArray(draft.existingImages) ? draft.existingImages : []);
-      setAgeRange(draft.ageRange || { min: "", max: "" });
-      setSelectedGender(draft.selectedGender || "");
+    if (!brandId) return;
 
-      if (Array.isArray(draft.selectedCountries)) {
-        const wanted = new Set(draft.selectedCountries.map((x: CountryOption) => x.value));
-        setSelectedCountries(countryOptions.filter((o) => wanted.has(o.value)));
-      }
+    get<CampaignEditPayload>(`/campaign/draft?brandId=${brandId}`)
+      .then((draft) => {
+        // If backend returns no draft or not a draft, do nothing & NO Swal
+        if (!draft || draft.isDraft !== 1) return;
 
-      if (Array.isArray(draft.selectedSubcategories)) {
-        const wanted = new Set(draft.selectedSubcategories.map((x: SubcategoryOption) => x.value));
-        setSelectedSubcategories(allSubcategoryOptions.filter((o) => wanted.has(o.value)));
-      }
+        hydrateFromCampaign(draft);
+        setDraftLoaded(true);
 
-      setSelectedGoal(draft.selectedGoal || "");
-      setBudget(draft.budget ?? "");
-      setTimeline(draft.timeline || { start: "", end: "" });
-      setCreativeBriefText(draft.creativeBriefText || "");
-      setUseFileUploadForBrief(Boolean(draft.useFileUploadForBrief));
-      setAdditionalNotes(draft.additionalNotes || "");
-      if (Array.isArray(draft.productImages)) {
-        try {
-          const revived = draft.productImages.map((img: DraftFilePayload) => draftPayloadToFile(img));
-          setProductImages(revived);
-        } catch (err) {
-          console.error("Failed to restore draft images", err);
-        }
-      }
-
-      setDraftLoaded(true);
-      toast({ icon: "info", title: "Draft Loaded", text: "We restored your saved draft." });
-    } catch {
-      // ignore bad JSON
-    }
-  }, [isEditMode, draftLoaded, countries.length, categories.length, countryOptions, allSubcategoryOptions]);
-
-  // ── toast helper ─────────────────────────────────────────
-  const toast = (opts: { icon: "success" | "error" | "warning" | "info"; title: string; text?: string }) =>
-    Swal.fire({
-      ...opts,
-      showConfirmButton: false,
-      timer: 1200,
-      timerProgressBar: true,
-      background: "white",
-      customClass: {
-        icon: `
-          bg-gradient-to-r from-[#FFA135] to-[#FF7236]
-          bg-clip-text text-transparent
-        `,
-        popup: "rounded-lg border border-gray-200",
-      },
-    });
+        toast({
+          icon: "info",
+          title: "Draft Loaded",
+          text: "We restored your last saved campaign draft.",
+        });
+      })
+      .catch((err) => {
+        // If 404 (no draft), just ignore; do not show Swal
+        console.error("No draft found or failed to load draft", err);
+      });
+  }, [
+    isEditMode,
+    draftLoaded,
+    countries.length,
+    categories.length,
+    countryOptions,
+    allSubcategoryOptions,
+  ]);
 
   // ── handlers & reset ─────────────────────────────────────
   const handleProductImages = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -430,12 +465,17 @@ export default function CampaignFormPage() {
     setSelectedCountries([]);
     setSelectedSubcategories([]);
     setSelectedGoal("");
+    setCampaignType("");
+    setCustomCampaignType("");
     setBudget("");
     setTimeline({ start: "", end: "" });
     setCreativeBriefText("");
     setCreativeBriefFiles([]);
+    setExistingBriefFiles([]);
     setUseFileUploadForBrief(false);
     setAdditionalNotes("");
+    setDraftId(null);
+    setDraftLoaded(false);
   };
 
   // small helpers for preview
@@ -443,40 +483,153 @@ export default function CampaignFormPage() {
     n === "" ? "—" : `$${Number(n).toLocaleString()}`;
   const fileSizeKB = (b: number) => `${(b / 1024).toFixed(1)} KB`;
 
-  // ── Save Draft & Preview ─────────────────────────────────
+  // ── save draft (backend only, using _id logic) ───────────
   const handleSaveDraft = async () => {
+    if (isEditMode) {
+      toast({
+        icon: "info",
+        title: "Drafts are for new campaigns",
+        text: "This campaign already exists. Use Update to save changes.",
+      });
+      return;
+    }
+
+    const brandId =
+      typeof window !== "undefined" ? localStorage.getItem("brandId") || "" : "";
+
+    if (!brandId) {
+      toast({
+        icon: "error",
+        title: "Brand not found",
+        text: "Please log in again before saving a draft.",
+      });
+      return;
+    }
+
+    // Backend requires productOrServiceName + goal for drafts
+    if (!productName.trim() || !selectedGoal) {
+      toast({
+        icon: "warning",
+        title: "Add title & goal",
+        text: "Campaign title and goal are required before saving a draft.",
+      });
+      return;
+    }
+
+    setIsSavingDraft(true);
     try {
-      const serializedProductImages = await Promise.all(productImages.map((file) => fileToDraftPayload(file)));
-      const draft = {
-        productName,
-        description,
-        existingImages,
-        ageRange,
-        selectedGender,
-        selectedCountries,
-        selectedSubcategories,
-        selectedGoal,
-        budget,
-        timeline,
-        creativeBriefText,
-        useFileUploadForBrief,
-        additionalNotes,
-        productImages: serializedProductImages,
+      const formData = new FormData();
+
+      // 🔹 send _id if we already have a draft, so backend updates it
+      if (draftId) {
+        formData.append("_id", draftId);
+      }
+
+      formData.append("brandId", brandId);
+      formData.append("productOrServiceName", productName.trim());
+      formData.append("goal", selectedGoal);
+
+      if (description.trim()) {
+        formData.append("description", description.trim());
+      }
+
+      // targetAudience (optional fields allowed)
+      const ta: any = {
+        age: {},
+        gender: uiGenderToServer((selectedGender as GenderOption) || "All"),
+        locations: [] as string[],
       };
-      localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
-      toast({ icon: "success", title: "Draft Saved", text: "You can continue later." });
-    } catch (err) {
+
+      if (ageRange.min !== "") ta.age.MinAge = ageRange.min;
+      if (ageRange.max !== "") ta.age.MaxAge = ageRange.max;
+      if (selectedCountries.length) {
+        ta.locations = selectedCountries.map((c) => c.value);
+      }
+      formData.append("targetAudience", JSON.stringify(ta));
+
+      if (selectedSubcategories.length) {
+        formData.append(
+          "categories",
+          JSON.stringify(
+            selectedSubcategories.map((s) => ({
+              categoryId: s.categoryId,
+              subcategoryId: s.value,
+            }))
+          )
+        );
+      }
+
+      const finalCampaignType =
+        campaignType === "Other" ? customCampaignType.trim() : campaignType;
+      if (finalCampaignType) {
+        formData.append("campaignType", finalCampaignType);
+      }
+
+      if (budget !== "") {
+        formData.append("budget", String(budget));
+      }
+
+      if (timeline.start || timeline.end) {
+        formData.append(
+          "timeline",
+          JSON.stringify({
+            startDate: timeline.start || undefined,
+            endDate: timeline.end || undefined,
+          })
+        );
+      }
+
+      if (additionalNotes.trim()) {
+        formData.append("additionalNotes", additionalNotes.trim());
+      }
+
+      // Images (optional)
+      productImages.forEach((f) => formData.append("image", f));
+
+      // Creative brief (optional for drafts)
+      if (useFileUploadForBrief) {
+        creativeBriefFiles.forEach((f) => formData.append("creativeBrief", f));
+      } else if (creativeBriefText.trim()) {
+        formData.append("creativeBriefText", creativeBriefText.trim());
+      }
+
+      // Backend draft API (saveDraftCampaign)
+      const saved = await post<any>("/campaign/save-draft", formData);
+
+      // 🔹 keep the draft _id from backend so next save updates same draft
+      const newId =
+        saved?.campaign?._id || saved?._id || draftId || null;
+      if (newId) {
+        setDraftId(newId);
+      }
+      setDraftLoaded(true);
+
+      toast({
+        icon: "success",
+        title: "Draft Saved",
+        text: "Your campaign draft is stored safely.",
+      });
+    } catch (err: any) {
       console.error("Failed to save campaign draft", err);
-      toast({ icon: "error", title: "Could not save draft" });
+      toast({
+        icon: "error",
+        title: "Could not save draft",
+        text: err?.response?.data?.message || "Please try again.",
+      });
+    } finally {
+      setIsSavingDraft(false);
     }
   };
 
   const handlePreview = () => setIsPreviewOpen(true);
 
-  // ── submit ───────────────────────────────────────────────
+  // ── submit (create / update live campaign) ────────────────
   const handleSubmit = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     setShowRequiredHints(false);
+
+    const finalCampaignType =
+      campaignType === "Other" ? customCampaignType.trim() : campaignType;
 
     if (
       !productName.trim() ||
@@ -487,6 +640,7 @@ export default function CampaignFormPage() {
       selectedCountries.length === 0 ||
       selectedSubcategories.length === 0 ||
       !selectedGoal ||
+      !finalCampaignType ||
       budget === "" ||
       !timeline.start ||
       !timeline.end ||
@@ -498,16 +652,30 @@ export default function CampaignFormPage() {
     }
     if (Number(ageRange.min) >= Number(ageRange.max)) {
       setIsPreviewOpen(false);
-      return toast({ icon: "error", title: "Invalid Age Range", text: "Min Age must be less than Max Age." });
+      return toast({
+        icon: "error",
+        title: "Invalid Age Range",
+        text: "Min Age must be less than Max Age.",
+      });
     }
     if (timeline.start && timeline.end && new Date(timeline.start) > new Date(timeline.end)) {
       setIsPreviewOpen(false);
-      return toast({ icon: "error", title: "Invalid Dates", text: "Start Date must be on or before End Date." });
+      return toast({
+        icon: "error",
+        title: "Invalid Dates",
+        text: "Start Date must be on or before End Date.",
+      });
     }
 
     setIsSubmitting(true);
     try {
       const formData = new FormData();
+
+      // 🔹 if this form is based on a loaded draft, send its _id
+      if (!isEditMode && draftId) {
+        formData.append("_id", draftId);
+      }
+
       formData.append("productOrServiceName", productName.trim());
       formData.append("description", description.trim());
       formData.append(
@@ -522,7 +690,7 @@ export default function CampaignFormPage() {
         "categories",
         JSON.stringify(
           selectedSubcategories.map((s) => ({
-            categoryId: s.categoryId, // number ✅
+            categoryId: s.categoryId,
             subcategoryId: s.value,
           }))
         )
@@ -530,8 +698,12 @@ export default function CampaignFormPage() {
       formData.append("additionalNotes", additionalNotes.trim());
       formData.append("brandId", localStorage.getItem("brandId") || "");
       formData.append("goal", selectedGoal);
+      formData.append("campaignType", finalCampaignType || "");
       formData.append("budget", String(budget));
-      formData.append("timeline", JSON.stringify({ startDate: timeline.start, endDate: timeline.end }));
+      formData.append(
+        "timeline",
+        JSON.stringify({ startDate: timeline.start, endDate: timeline.end })
+      );
 
       productImages.forEach((f) => formData.append("image", f));
       if (useFileUploadForBrief) {
@@ -546,7 +718,6 @@ export default function CampaignFormPage() {
       } else {
         await post("/campaign/create", formData);
         toast({ icon: "success", title: "Campaign Created" });
-        try { localStorage.removeItem(DRAFT_KEY); } catch {}
       }
 
       setIsPreviewOpen(false);
@@ -554,7 +725,11 @@ export default function CampaignFormPage() {
       resetForm();
     } catch (err: any) {
       setIsPreviewOpen(false);
-      toast({ icon: "error", title: "Error", text: err?.response?.data?.message || "Please try again." });
+      toast({
+        icon: "error",
+        title: "Error",
+        text: err?.response?.data?.message || "Please try again.",
+      });
     } finally {
       setIsSubmitting(false);
     }
@@ -571,6 +746,7 @@ export default function CampaignFormPage() {
     );
   }
 
+
   // ── JSX ───────────────────────────────────────────────────
   return (
     <>
@@ -581,7 +757,9 @@ export default function CampaignFormPage() {
               {isEditMode ? "Edit Campaign" : "Create New Campaign"}
             </h1>
             <p className="text-gray-600 text-lg">
-              {isEditMode ? "Update your campaign details below" : "Fill in the details to launch your campaign"}
+              {isEditMode
+                ? "Update your campaign details below"
+                : "Fill in the details to launch your campaign"}
             </p>
           </div>
 
@@ -610,7 +788,10 @@ export default function CampaignFormPage() {
                 </div>
 
                 <div className="space-y-1">
-                  <Label htmlFor="description" className="text-sm font-medium text-gray-700 mb-2 block">
+                  <Label
+                    htmlFor="description"
+                    className="text-sm font-medium text-gray-700 mb-2 block"
+                  >
                     Description
                   </Label>
                   <Textarea
@@ -628,7 +809,10 @@ export default function CampaignFormPage() {
                 </div>
 
                 <div>
-                  <Label htmlFor="productImages" className="text-sm font-medium text-gray-700 mb-3 block">
+                  <Label
+                    htmlFor="productImages"
+                    className="text-sm font-medium text-gray-700 mb-3 block"
+                  >
                     Product Images
                   </Label>
 
@@ -636,11 +820,22 @@ export default function CampaignFormPage() {
                     <div className="text-center">
                       <HiOutlineUpload className="mx-auto h-12 w-12 text-gray-400 mb-3" />
                       <label htmlFor="productImages" className="cursor-pointer">
-                        <span className="text-orange-600 font-medium hover:text-orange-700">Upload images</span>
+                        <span className="text-orange-600 font-medium hover:text-orange-700">
+                          Upload images
+                        </span>
                         <span className="text-gray-600"> or drag and drop</span>
                       </label>
-                      <p className="text-xs text-gray-500 mt-1">PNG, JPG, GIF up to 10MB</p>
-                      <Input id="productImages" type="file" accept="image/*" multiple onChange={handleProductImages} className="hidden" />
+                      <p className="text-xs text-gray-500 mt-1">
+                        PNG, JPG, GIF up to 10MB
+                      </p>
+                      <Input
+                        id="productImages"
+                        type="file"
+                        accept="image/*"
+                        multiple
+                        onChange={handleProductImages}
+                        className="hidden"
+                      />
                     </div>
                   </div>
 
@@ -648,20 +843,40 @@ export default function CampaignFormPage() {
                     <div className="mt-4 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
                       {existingImagesNormalized.map((url, idx) => (
                         <div key={`existing-${idx}`} className="relative group">
-                          <img src={url} alt={`Existing ${idx + 1}`} className="h-32 w-full object-cover rounded-lg border-2 border-gray-200 shadow-sm" />
-                          <button type="button" onClick={() => removeExistingImage(idx)} className="absolute top-2 right-2 bg-red-500 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200 hover:bg-red-600">
+                          <img
+                            src={url}
+                            alt={`Existing ${idx + 1}`}
+                            className="h-32 w-full object-cover rounded-lg border-2 border-gray-200 shadow-sm"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => removeExistingImage(idx)}
+                            className="absolute top-2 right-2 bg-red-500 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200 hover:bg-red-600"
+                          >
                             <HiOutlineX className="h-4 w-4" />
                           </button>
-                          <div className="absolute bottom-2 left-2 bg-blue-500 text-white text-xs px-2 py-1 rounded">Existing</div>
+                          <div className="absolute bottom-2 left-2 bg-blue-500 text-white text-xs px-2 py-1 rounded">
+                            Existing
+                          </div>
                         </div>
                       ))}
                       {productImages.map((file, idx) => (
                         <div key={`new-${idx}`} className="relative group">
-                          <img src={URL.createObjectURL(file)} alt={file.name} className="h-32 w-full object-cover rounded-lg border-2 border-orange-200 shadow-sm" />
-                          <button type="button" onClick={() => removeProductImage(idx)} className="absolute top-2 right-2 bg-red-500 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200 hover:bg-red-600">
+                          <img
+                            src={URL.createObjectURL(file)}
+                            alt={file.name}
+                            className="h-32 w-full object-cover rounded-lg border-2 border-orange-200 shadow-sm"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => removeProductImage(idx)}
+                            className="absolute top-2 right-2 bg-red-500 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200 hover:bg-red-600"
+                          >
                             <HiOutlineX className="h-4 w-4" />
                           </button>
-                          <div className="absolute bottom-2 left-2 bg-green-500 text-white text-xs px-2 py-1 rounded">New</div>
+                          <div className="absolute bottom-2 left-2 bg-green-500 text-white text-xs px-2 py-1 rounded">
+                            New
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -686,7 +901,12 @@ export default function CampaignFormPage() {
                       label="Minimum Age"
                       type="number"
                       value={ageRange.min}
-                      onChange={(e) => setAgeRange({ ...ageRange, min: e.target.value === "" ? "" : +e.target.value })}
+                      onChange={(e) =>
+                        setAgeRange({
+                          ...ageRange,
+                          min: e.target.value === "" ? "" : +e.target.value,
+                        })
+                      }
                       required
                     />
                     {showRequiredHints && ageRange.min === "" && (
@@ -699,25 +919,42 @@ export default function CampaignFormPage() {
                       label="Maximum Age"
                       type="number"
                       value={ageRange.max}
-                      onChange={(e) => setAgeRange({ ...ageRange, max: e.target.value === "" ? "" : +e.target.value })}
+                      onChange={(e) =>
+                        setAgeRange({
+                          ...ageRange,
+                          max: e.target.value === "" ? "" : +e.target.value,
+                        })
+                      }
                       required
                     />
                     {showRequiredHints && ageRange.max === "" && (
                       <p className="text-xs text-red-600">This field is required</p>
                     )}
                     {ageOrderError && (
-                      <p className="text-xs text-red-600">Min Age must be less than Max Age.</p>
+                      <p className="text-xs text-red-600">
+                        Min Age must be less than Max Age.
+                      </p>
                     )}
                   </div>
                 </div>
 
                 <div className="space-y-1">
-                  <Label className="text-sm font-medium text-gray-700 mb-2 block">Gender</Label>
+                  <Label className="text-sm font-medium text-gray-700 mb-2 block">
+                    Gender
+                  </Label>
                   <ReactSelect
                     options={GENDER_SELECT_OPTIONS}
                     styles={makeSelectStyles(showRequiredHints && !selectedGender) as any}
-                    value={selectedGender ? GENDER_SELECT_OPTIONS.find((o) => o.value === selectedGender) : null}
-                    onChange={(opt) => setSelectedGender(((opt as SimpleOption | null)?.value as GenderOption) || "")}
+                    value={
+                      selectedGender
+                        ? GENDER_SELECT_OPTIONS.find((o) => o.value === selectedGender)
+                        : null
+                    }
+                    onChange={(opt) =>
+                      setSelectedGender(
+                        ((opt as SimpleOption | null)?.value as GenderOption) || ""
+                      )
+                    }
                     placeholder="Select gender..."
                     isClearable
                     closeMenuOnSelect
@@ -729,7 +966,9 @@ export default function CampaignFormPage() {
                 </div>
 
                 <div className="space-y-1">
-                  <Label className="text-sm font-medium text-gray-700 mb-2 block">Target Locations</Label>
+                  <Label className="text-sm font-medium text-gray-700 mb-2 block">
+                    Target Locations
+                  </Label>
                   <ReactSelect
                     isMulti
                     closeMenuOnSelect={false}
@@ -747,7 +986,9 @@ export default function CampaignFormPage() {
                 </div>
 
                 <div className="space-y-1">
-                  <Label className="text-sm font-medium text-gray-700 mb-2 block">Categories & Subcategories</Label>
+                  <Label className="text-sm font-medium text-gray-700 mb-2 block">
+                    Categories & Subcategories
+                  </Label>
                   <ReactSelect
                     isMulti
                     closeMenuOnSelect={false}
@@ -775,14 +1016,61 @@ export default function CampaignFormPage() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="pt-6 space-y-6 bg-white">
+                {/* Campaign Type */}
+                <div className="space-y-1">
+                  <Label className="text-sm font-medium text-gray-700 mb-2 block">
+                    Campaign Type
+                  </Label>
+                  <ReactSelect
+                    options={CAMPAIGN_TYPE_OPTIONS}
+                    styles={makeSelectStyles(showRequiredHints && campaignTypeMissing) as any}
+                    value={
+                      campaignType
+                        ? CAMPAIGN_TYPE_OPTIONS.find((o) => o.value === campaignType)
+                        : null
+                    }
+                    onChange={(opt) => {
+                      const val = (opt as SimpleOption | null)?.value || "";
+                      setCampaignType(val);
+                      if (val !== "Other") setCustomCampaignType("");
+                    }}
+                    placeholder="Select campaign type..."
+                    isClearable
+                    closeMenuOnSelect
+                    blurInputOnSelect={false}
+                  />
+                  {campaignType === "Other" && (
+                    <div className="mt-3">
+                      <Input
+                        type="text"
+                        placeholder="Enter campaign type"
+                        value={customCampaignType}
+                        onChange={(e) => setCustomCampaignType(e.target.value)}
+                        className="h-11"
+                      />
+                    </div>
+                  )}
+                  {showRequiredHints && campaignTypeMissing && (
+                    <p className="text-xs text-red-600">This field is required</p>
+                  )}
+                </div>
+
                 <div className="grid sm:grid-cols-2 gap-6">
                   <div className="space-y-1">
-                    <Label className="text-sm font-medium text-gray-700 mb-2 block">Campaign Goal</Label>
+                    <Label className="text-sm font-medium text-gray-700 mb-2 block">
+                      Campaign Goal
+                    </Label>
                     <ReactSelect
                       options={GOAL_OPTIONS}
                       styles={makeSelectStyles(showRequiredHints && !selectedGoal) as any}
-                      value={selectedGoal ? GOAL_OPTIONS.find((o) => o.value === selectedGoal) : null}
-                      onChange={(opt) => setSelectedGoal(((opt as SimpleOption | null)?.value) || "")}
+                      value={
+                        selectedGoal
+                          ? GOAL_OPTIONS.find((o) => o.value === selectedGoal)
+                          : null
+                      }
+                      onChange={(opt) =>
+                        setSelectedGoal(((opt as SimpleOption | null)?.value) || "")
+                      }
                       placeholder="Select a goal..."
                       isClearable
                       closeMenuOnSelect
@@ -794,7 +1082,9 @@ export default function CampaignFormPage() {
                   </div>
 
                   <div className="space-y-1">
-                    <Label className="text-sm font-medium text-gray-700 mb-2 block">Budget (USD)</Label>
+                    <Label className="text-sm font-medium text-gray-700 mb-2 block">
+                      Budget (USD)
+                    </Label>
                     <div className="relative">
                       <HiOutlineCurrencyDollar className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 h-5 w-5" />
                       <input
@@ -802,7 +1092,9 @@ export default function CampaignFormPage() {
                         min={0}
                         placeholder="e.g. 5000"
                         value={budget}
-                        onChange={(e) => setBudget(e.target.value === "" ? "" : +e.target.value)}
+                        onChange={(e) =>
+                          setBudget(e.target.value === "" ? "" : +e.target.value)
+                        }
                         className="w-full h-12 rounded-lg border border-gray-300 pl-12 pr-4 text-gray-900 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-colors duration-200"
                         required
                       />
@@ -815,13 +1107,17 @@ export default function CampaignFormPage() {
 
                 <div className="grid sm:grid-cols-2 gap-6">
                   <div className="space-y-1">
-                    <Label className="text-sm font-medium text-gray-700 mb-2 block">Start Date</Label>
+                    <Label className="text-sm font-medium text-gray-700 mb-2 block">
+                      Start Date
+                    </Label>
                     <div className="relative">
                       <HiOutlineCalendar className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 h-5 w-5" />
                       <input
                         type="date"
                         value={timeline.start}
-                        onChange={(e) => setTimeline({ ...timeline, start: e.target.value })}
+                        onChange={(e) =>
+                          setTimeline({ ...timeline, start: e.target.value })
+                        }
                         min={todayStr}
                         max={timeline.end || undefined}
                         className="w-full h-12 rounded-lg border border-gray-300 pl-12 pr-4 text-gray-900 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-colors duration-200"
@@ -834,20 +1130,26 @@ export default function CampaignFormPage() {
                   </div>
 
                   <div className="space-y-1">
-                    <Label className="text-sm font-medium text-gray-700 mb-2 block">End Date</Label>
+                    <Label className="text-sm font-medium text-gray-700 mb-2 block">
+                      End Date
+                    </Label>
                     <div className="relative">
                       <HiOutlineCalendar className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 h-5 w-5" />
                       <input
                         type="date"
                         value={timeline.end}
-                        onChange={(e) => setTimeline({ ...timeline, end: e.target.value })}
+                        onChange={(e) =>
+                          setTimeline({ ...timeline, end: e.target.value })
+                        }
                         min={timeline.start || undefined}
                         className="w-full h-12 rounded-lg border border-gray-300 pl-12 pr-4 text-gray-900 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-colors duration-200"
                         required
                       />
                     </div>
                     {dateOrderError && (
-                      <p className="text-xs text-red-600">End Date must be on or after Start Date.</p>
+                      <p className="text-xs text-red-600">
+                        End Date must be on or after Start Date.
+                      </p>
                     )}
                     {showRequiredHints && !timeline.end && (
                       <p className="text-xs text-red-600">This field is required</p>
@@ -872,7 +1174,11 @@ export default function CampaignFormPage() {
                     size="lg"
                     variant={useFileUploadForBrief ? "outline" : "default"}
                     onClick={() => setUseFileUploadForBrief(false)}
-                    className={!useFileUploadForBrief ? "bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white hover:opacity-90" : ""}
+                    className={
+                      !useFileUploadForBrief
+                        ? "bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white hover:opacity-90"
+                        : ""
+                    }
                   >
                     <HiOutlinePlus className="mr-2 h-5 w-5" /> Write Brief
                   </Button>
@@ -881,7 +1187,11 @@ export default function CampaignFormPage() {
                     size="lg"
                     variant={useFileUploadForBrief ? "default" : "outline"}
                     onClick={() => setUseFileUploadForBrief(true)}
-                    className={useFileUploadForBrief ? "bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white hover:opacity-90" : ""}
+                    className={
+                      useFileUploadForBrief
+                        ? "bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white hover:opacity-90"
+                        : ""
+                    }
                   >
                     <HiOutlinePhotograph className="mr-2 h-5 w-5" /> Upload Files
                   </Button>
@@ -889,29 +1199,75 @@ export default function CampaignFormPage() {
 
                 {useFileUploadForBrief ? (
                   <div>
-                    <Label htmlFor="creativeBriefFiles" className="text-sm font-medium text-gray-700 mb-3 block">
+                    <Label
+                      htmlFor="creativeBriefFiles"
+                      className="text-sm font-medium text-gray-700 mb-3 block"
+                    >
                       Upload Creative Brief Documents
                     </Label>
                     <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 hover:border-orange-400 transition-colors duration-200 bg-gray-50/50">
                       <div className="text-center">
                         <HiOutlineUpload className="mx-auto h-12 w-12 text-gray-400 mb-3" />
                         <label htmlFor="creativeBriefFiles" className="cursor-pointer">
-                          <span className="text-orange-600 font-medium hover:text-orange-700">Upload documents</span>
+                          <span className="text-orange-600 font-medium hover:text-orange-700">
+                            Upload documents
+                          </span>
                           <span className="text-gray-600"> or drag and drop</span>
                         </label>
-                        <p className="text-xs text-gray-500 mt-1">PDF, DOC, DOCX up to 10MB</p>
-                        <Input id="creativeBriefFiles" type="file" accept=".pdf,.doc,.docx" multiple onChange={handleCreativeBriefFiles} className="hidden" />
+                        <p className="text-xs text-gray-500 mt-1">
+                          PDF, DOC, DOCX up to 10MB
+                        </p>
+                        <Input
+                          id="creativeBriefFiles"
+                          type="file"
+                          accept=".pdf,.doc,.docx"
+                          multiple
+                          onChange={handleCreativeBriefFiles}
+                          className="hidden"
+                        />
                       </div>
                     </div>
+
+                    {/* Existing PDFs from backend */}
+                    {existingBriefFiles.length > 0 && (
+                      <div className="mt-4 space-y-2">
+                        {existingBriefFiles.map((filename, idx) => (
+                          <a
+                            key={`existing-brief-${idx}`}
+                            href={fileUrl(filename)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center justify-between p-3 bg-orange-50 border border-orange-200 rounded-lg hover:bg-orange-100"
+                          >
+                            <div className="flex items-center gap-2">
+                              <HiOutlineCheckCircle className="h-5 w-5 text-orange-600" />
+                              <span className="text-sm font-medium text-gray-700">
+                                {filename}
+                              </span>
+                            </div>
+                            <span className="text-xs text-gray-500">Existing</span>
+                          </a>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Newly selected files */}
                     {creativeBriefFiles.length > 0 && (
                       <div className="mt-4 space-y-2">
                         {creativeBriefFiles.map((file, idx) => (
-                          <div key={idx} className="flex items-center justify-between p-3 bg-orange-50 border border-orange-200 rounded-lg">
+                          <div
+                            key={idx}
+                            className="flex items-center justify-between p-3 bg-orange-50 border border-orange-200 rounded-lg"
+                          >
                             <div className="flex items-center gap-2">
                               <HiOutlineCheckCircle className="h-5 w-5 text-orange-600" />
-                              <span className="text-sm font-medium text-gray-700">{file.name}</span>
+                              <span className="text-sm font-medium text-gray-700">
+                                {file.name}
+                              </span>
                             </div>
-                            <span className="text-xs text-gray-500">{fileSizeKB(file.size)}</span>
+                            <span className="text-xs text-gray-500">
+                              {fileSizeKB(file.size)}
+                            </span>
                           </div>
                         ))}
                       </div>
@@ -919,7 +1275,10 @@ export default function CampaignFormPage() {
                   </div>
                 ) : (
                   <div className="space-y-1">
-                    <Label htmlFor="briefText" className="text-sm font-medium text-gray-700 mb-2 block">
+                    <Label
+                      htmlFor="briefText"
+                      className="text-sm font-medium text-gray-700 mb-2 block"
+                    >
                       Creative Brief
                     </Label>
                     <Textarea
@@ -931,14 +1290,19 @@ export default function CampaignFormPage() {
                       className="resize-none focus:ring-2 focus:ring-orange-500/20"
                       required
                     />
-                    {showRequiredHints && !useFileUploadForBrief && !creativeBriefText.trim() && (
-                      <p className="text-xs text-red-600">This field is required</p>
-                    )}
+                    {showRequiredHints &&
+                      !useFileUploadForBrief &&
+                      !creativeBriefText.trim() && (
+                        <p className="text-xs text-red-600">This field is required</p>
+                      )}
                   </div>
                 )}
 
                 <div>
-                  <Label htmlFor="additionalNotes" className="text-sm font-medium text-gray-700 mb-2 block">
+                  <Label
+                    htmlFor="additionalNotes"
+                    className="text-sm font-medium text-gray-700 mb-2 block"
+                  >
                     Additional Notes
                   </Label>
                   <Textarea
@@ -963,16 +1327,40 @@ export default function CampaignFormPage() {
           style={{ paddingBottom: "max(env(safe-area-inset-bottom), 16px)" }}
         >
           <div className="flex flex-wrap gap-2 sm:gap-3">
-            <Button variant="outline" onClick={() => router.back()} disabled={isSubmitting} size="lg">
+            <Button
+              variant="outline"
+              onClick={() => router.back()}
+              disabled={isSubmitting}
+              size="lg"
+            >
               Back
             </Button>
-            <Button variant="outline" onClick={resetForm} disabled={isSubmitting} size="lg">
+            <Button
+              variant="outline"
+              onClick={resetForm}
+              disabled={isSubmitting}
+              size="lg"
+            >
               Reset
             </Button>
-            <Button variant="outline" onClick={handleSaveDraft} disabled={isSubmitting} size="lg">
-              Save Draft
-            </Button>
-            <Button variant="outline" onClick={handlePreview} disabled={isSubmitting} size="lg">
+
+            {!isEditMode && (
+              <Button
+                variant="outline"
+                onClick={handleSaveDraft}
+                disabled={isSubmitting || isSavingDraft}
+                size="lg"
+              >
+                {isSavingDraft ? "Saving..." : "Save Draft"}
+              </Button>
+            )}
+
+            <Button
+              variant="outline"
+              onClick={handlePreview}
+              disabled={isSubmitting}
+              size="lg"
+            >
               Preview
             </Button>
           </div>
@@ -986,7 +1374,10 @@ export default function CampaignFormPage() {
               text-white font-semibold text-base
               px-8 py-3 rounded-lg shadow-lg
               transition-all duration-200
-              ${isSubmitting ? "opacity-50 cursor-not-allowed" : "hover:scale-105 hover:shadow-xl active:scale-95"}
+              ${isSubmitting
+                ? "opacity-50 cursor-not-allowed"
+                : "hover:scale-105 hover:shadow-xl active:scale-95"
+              }
             `}
           >
             {isSubmitting ? (
@@ -1015,7 +1406,9 @@ export default function CampaignFormPage() {
           <div className="space-y-5 ">
             {/* Product / Service */}
             <section>
-              <h3 className="text-sm font-semibold text-gray-700 mb-2">Product / Service</h3>
+              <h3 className="text-sm font-semibold text-gray-700 mb-2">
+                Product / Service
+              </h3>
               <div className="grid gap-3">
                 <div>
                   <div className="text-xs text-gray-500">Name</div>
@@ -1023,17 +1416,29 @@ export default function CampaignFormPage() {
                 </div>
                 <div>
                   <div className="text-xs text-gray-500">Description</div>
-                  <div className="text-gray-900 whitespace-pre-wrap">{description || "—"}</div>
+                  <div className="text-gray-900 whitespace-pre-wrap">
+                    {description || "—"}
+                  </div>
                 </div>
                 {(existingImages.length > 0 || productImages.length > 0) && (
                   <div>
                     <div className="text-xs text-gray-500 mb-2">Images</div>
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                       {existingImagesNormalized.map((url, i) => (
-                        <img key={`ex-${i}`} src={url} alt={`existing-${i}`} className="h-24 w-full object-cover rounded border" />
+                        <img
+                          key={`ex-${i}`}
+                          src={url}
+                          alt={`existing-${i}`}
+                          className="h-24 w-full object-cover rounded border"
+                        />
                       ))}
                       {productImages.map((file, i) => (
-                        <img key={`new-${i}`} src={URL.createObjectURL(file)} alt={file.name} className="h-24 w-full object-cover rounded border" />
+                        <img
+                          key={`new-${i}`}
+                          src={URL.createObjectURL(file)}
+                          alt={file.name}
+                          className="h-24 w-full object-cover rounded border"
+                        />
                       ))}
                     </div>
                   </div>
@@ -1045,7 +1450,9 @@ export default function CampaignFormPage() {
 
             {/* Target Audience */}
             <section>
-              <h3 className="text-sm font-semibold text-gray-700 mb-2">Target Audience</h3>
+              <h3 className="text-sm font-semibold text-gray-700 mb-2">
+                Target Audience
+              </h3>
               <div className="grid sm:grid-cols-2 gap-3">
                 <div>
                   <div className="text-xs text-gray-500">Age</div>
@@ -1060,13 +1467,19 @@ export default function CampaignFormPage() {
                 <div className="sm:col-span-2">
                   <div className="text-xs text-gray-500 mb-1">Locations</div>
                   <div className="flex flex-wrap gap-2">
-                    {selectedCountries.length
-                      ? selectedCountries.map((c) => (
-                        <Badge key={c.value} variant="outline" className="bg-orange-50 text-orange-700">
+                    {selectedCountries.length ? (
+                      selectedCountries.map((c) => (
+                        <Badge
+                          key={c.value}
+                          variant="outline"
+                          className="bg-orange-50 text-orange-700"
+                        >
                           {c.country.flag} {c.country.countryName}
                         </Badge>
                       ))
-                      : <span className="text-gray-500">—</span>}
+                    ) : (
+                      <span className="text-gray-500">—</span>
+                    )}
                   </div>
                 </div>
               </div>
@@ -1074,15 +1487,23 @@ export default function CampaignFormPage() {
 
             {/* Categories */}
             <section>
-              <h3 className="text-sm font-semibold text-gray-700 mb-2">Categories</h3>
+              <h3 className="text-sm font-semibold text-gray-700 mb-2">
+                Categories
+              </h3>
               {groupedSubcats.length ? (
                 <div className="space-y-2">
                   {groupedSubcats.map(([catName, subs]) => (
                     <div key={catName}>
-                      <div className="text-xs text-gray-500 mb-1">{catName}</div>
+                      <div className="text-xs text-gray-500 mb-1">
+                        {catName}
+                      </div>
                       <div className="flex flex-wrap gap-2">
                         {subs.map((s, i) => (
-                          <Badge key={`${catName}-${i}`} variant="outline" className="bg-orange-50 text-orange-700">
+                          <Badge
+                            key={`${catName}-${i}`}
+                            variant="outline"
+                            className="bg-orange-50 text-orange-700"
+                          >
                             {s}
                           </Badge>
                         ))}
@@ -1099,8 +1520,16 @@ export default function CampaignFormPage() {
 
             {/* Campaign Details */}
             <section>
-              <h3 className="text-sm font-semibold text-gray-700 mb-2">Campaign Details</h3>
+              <h3 className="text-sm font-semibold text-gray-700 mb-2">
+                Campaign Details
+              </h3>
               <div className="grid sm:grid-cols-2 gap-3">
+                <div>
+                  <div className="text-xs text-gray-500">Type</div>
+                  <div className="text-gray-900">
+                    {finalCampaignTypeForUI || "—"}
+                  </div>
+                </div>
                 <div>
                   <div className="text-xs text-gray-500">Goal</div>
                   <div className="text-gray-900">{selectedGoal || "—"}</div>
@@ -1124,16 +1553,32 @@ export default function CampaignFormPage() {
 
             {/* Brief & Notes */}
             <section>
-              <h3 className="text-sm font-semibold text-gray-700 mb-2">Creative Brief & Notes</h3>
+              <h3 className="text-sm font-semibold text-gray-700 mb-2">
+                Creative Brief & Notes
+              </h3>
               {useFileUploadForBrief ? (
                 <div>
                   <div className="text-xs text-gray-500 mb-1">Files</div>
-                  {creativeBriefFiles.length ? (
+                  {existingBriefFiles.length || creativeBriefFiles.length ? (
                     <div className="space-y-1">
+                      {existingBriefFiles.map((filename, i) => (
+                        <div
+                          key={`prev-file-${i}`}
+                          className="text-gray-800 text-sm flex items-center justify-between rounded border px-3 py-2 bg-orange-50"
+                        >
+                          <span className="truncate">{filename}</span>
+                          <span className="text-gray-500 text-xs">Existing</span>
+                        </div>
+                      ))}
                       {creativeBriefFiles.map((f, i) => (
-                        <div key={i} className="text-gray-800 text-sm flex items-center justify-between rounded border px-3 py-2 bg-orange-50">
+                        <div
+                          key={`new-file-${i}`}
+                          className="text-gray-800 text-sm flex items-center justify-between rounded border px-3 py-2 bg-orange-50"
+                        >
                           <span className="truncate">{f.name}</span>
-                          <span className="text-gray-500 text-xs">{fileSizeKB(f.size)}</span>
+                          <span className="text-gray-500 text-xs">
+                            {fileSizeKB(f.size)}
+                          </span>
                         </div>
                       ))}
                     </div>
@@ -1144,7 +1589,9 @@ export default function CampaignFormPage() {
               ) : (
                 <div>
                   <div className="text-xs text-gray-500 mb-1">Brief Text</div>
-                  <div className="text-gray-900 whitespace-pre-wrap">{creativeBriefText || "—"}</div>
+                  <div className="text-gray-900 whitespace-pre-wrap">
+                    {creativeBriefText || "—"}
+                  </div>
                 </div>
               )}
               <div className="mt-3">
@@ -1165,7 +1612,11 @@ export default function CampaignFormPage() {
               disabled={isSubmitting}
               className="bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white"
             >
-              {isSubmitting ? "Submitting..." : isEditMode ? "Confirm Update" : "Create Campaign"}
+              {isSubmitting
+                ? "Submitting..."
+                : isEditMode
+                  ? "Confirm Update"
+                  : "Create Campaign"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1174,11 +1625,14 @@ export default function CampaignFormPage() {
   );
 }
 
-// ── payload interfaces moved to bottom to keep file compact ──
 interface CampaignEditPayload {
+  _id?: string;
+  isDraft?: number;
+
   productOrServiceName: string;
   description: string;
-  images: string[]; // GridFS filenames or full URLs
+  images: string[];
+  creativeBrief?: string[];
   targetAudience: {
     age: { MinAge: number; MaxAge: number };
     gender: 0 | 1 | 2;
@@ -1195,11 +1649,5 @@ interface CampaignEditPayload {
   timeline: { startDate?: string; endDate?: string };
   creativeBriefText: string;
   additionalNotes: string;
-}
-
-interface DraftFilePayload {
-  name: string;
-  type: string;
-  lastModified: number;
-  dataUrl: string;
+  campaignType?: string;
 }

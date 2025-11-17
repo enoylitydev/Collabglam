@@ -9,7 +9,7 @@ import {
   HiChevronRight,
   HiOutlineUserGroup,
   HiOutlinePencil,
-  HiOutlineUserAdd
+  HiOutlineUserAdd,
 } from "react-icons/hi";
 import { get } from "@/lib/api";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -22,11 +22,11 @@ interface Campaign {
   isActive: number;
   budget: number;
   applicantCount: number;
+  campaignType?: string;
 }
 
-// Backend response shape (adapt if your API differs)
 interface CampaignsResponse {
-  data: any[]; // raw items
+  data: any[];
   pagination: {
     total: number;
     page: number;
@@ -41,7 +41,7 @@ export default function BrandActiveCampaignsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
-  const [limit] = useState(10); // you can expose a setter if you want a dropdown
+  const [limit] = useState(10);
   const [totalPages, setTotalPages] = useState(1);
 
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
@@ -56,7 +56,6 @@ export default function BrandActiveCampaignsPage() {
           typeof window !== "undefined" ? localStorage.getItem("brandId") : null;
         if (!brandId) throw new Error("No brandId found in localStorage.");
 
-        // Send search, page, limit to backend
         const res = await get<CampaignsResponse>("/campaign/active", {
           brandId,
           search: term.trim() || undefined,
@@ -65,7 +64,6 @@ export default function BrandActiveCampaignsPage() {
         });
 
         const raw = Array.isArray(res?.data) ? res.data : [];
-        // If backend still returns all and you must filter isActive === 1, keep it:
         const active = raw.filter((c: any) => c.isActive === 1);
 
         const normalized: Campaign[] = active.map((c: any) => ({
@@ -76,6 +74,7 @@ export default function BrandActiveCampaignsPage() {
           isActive: c.isActive,
           budget: c.budget,
           applicantCount: c.applicantCount || 0,
+          campaignType: c.campaignType || "",
         }));
 
         setCampaigns(normalized);
@@ -89,12 +88,10 @@ export default function BrandActiveCampaignsPage() {
     [limit]
   );
 
-  // initial + page changes
   useEffect(() => {
     fetchCampaigns(currentPage, search);
   }, [fetchCampaigns, currentPage]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // debounce search
   useEffect(() => {
     const t = setTimeout(() => {
       setCurrentPage(1);
@@ -198,6 +195,10 @@ function SkeletonTable() {
 const TABLE_GRADIENT_FROM = "#FFA135";
 const TABLE_GRADIENT_TO = "#FF7236";
 
+// 🔹 helper for slicing text
+const sliceText = (text: string, max = 40) =>
+  text.length > max ? `${text.slice(0, max - 3)}...` : text;
+
 function TableView({
   data,
   formatDate,
@@ -221,21 +222,31 @@ function TableView({
             }}
           >
             <tr>
-              {["Campaign", "Budget", "Status", "Timeline", "Influencers Applied", "Actions"].map(
-                (h, i) => (
-                  <th key={i} className="px-6 py-3 text-center font-medium whitespace-nowrap">
-                    {h}
-                  </th>
-                )
-              )}
+              {[
+                "Campaign",
+                "Type",
+                "Budget",
+                "Status",
+                "Timeline",
+                "Influencers Applied",
+                "Actions",
+              ].map((h, i) => (
+                <th
+                  key={i}
+                  className="px-6 py-3 text-center font-medium whitespace-nowrap"
+                >
+                  {h}
+                </th>
+              ))}
             </tr>
           </thead>
           <tbody>
             {data.map((c, idx) => (
               <React.Fragment key={c.id}>
                 <tr
-                  className={`${idx % 2 === 0 ? "bg-white" : "bg-gray-50"
-                    } group transition-colors hover:bg-transparent`}
+                  className={`${
+                    idx % 2 === 0 ? "bg-white" : "bg-gray-50"
+                  } group transition-colors hover:bg-transparent`}
                   style={{ backgroundImage: "var(--row-hover-gradient)" }}
                   onMouseEnter={(e) => {
                     e.currentTarget.style.backgroundImage = `linear-gradient(to right, ${TABLE_GRADIENT_FROM}11, ${TABLE_GRADIENT_TO}11)`;
@@ -244,26 +255,52 @@ function TableView({
                     e.currentTarget.style.backgroundImage = "";
                   }}
                 >
+                  {/* Campaign Name (sliced) */}
                   <td className="px-6 py-4 align-top">
-                    <div className="font-medium text-gray-900 text-center">{c.productOrServiceName}</div>
+                    <div className="font-medium text-gray-900 text-center">
+                      <span title={c.productOrServiceName}>
+                        {sliceText(c.productOrServiceName, 40)}
+                      </span>
+                    </div>
                   </td>
+
+                  {/* Campaign Type */}
+                  <td className="px-6 py-4 whitespace-nowrap align-top text-center">
+                    {c.campaignType && c.campaignType.trim() !== ""
+                      ? sliceText(c.campaignType, 30)
+                      : "—"}
+                  </td>
+
+                  {/* Budget */}
                   <td className="px-6 py-4 whitespace-nowrap align-top text-center">
                     {formatCurrency(c.budget)}
                   </td>
+
+                  {/* Status */}
                   <td className="px-6 py-4 whitespace-nowrap align-top text-center">
                     <span
-                      className={`inline-flex items-center justify-center px-2 py-1 text-xs font-semibold rounded-full ${c.isActive === 1
-                        ? "bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white"
-                        : "bg-red-100 text-red-800"
-                        }`}
+                      className={`inline-flex items-center justify-center px-2 py-1 text-xs font-semibold rounded-full ${
+                        c.isActive === 1
+                          ? "bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white"
+                          : "bg-red-100 text-red-800"
+                      }`}
                     >
                       {c.isActive === 1 ? "Active" : "Inactive"}
                     </span>
                   </td>
+
+                  {/* Timeline */}
                   <td className="px-6 py-4 whitespace-nowrap align-top text-center">
-                    {formatDate(c.timeline.startDate)} – {formatDate(c.timeline.endDate)}
+                    {formatDate(c.timeline.startDate)} –{" "}
+                    {formatDate(c.timeline.endDate)}
                   </td>
-                  <td className="px-6 py-4 text-center align-top">{c.applicantCount ?? "0"}</td>
+
+                  {/* Influencers Applied */}
+                  <td className="px-6 py-4 text-center align-top">
+                    {c.applicantCount ?? "0"}
+                  </td>
+
+                  {/* Actions */}
                   <td className="px-6 py-4 whitespace-nowrap align-top text-center">
                     <div className="flex items-center space-x-2 justify-center">
                       {/* View Campaign */}

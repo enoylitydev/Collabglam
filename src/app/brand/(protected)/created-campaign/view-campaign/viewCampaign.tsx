@@ -13,7 +13,6 @@ import {
   HiOutlineEye,
 } from "react-icons/hi";
 import { get } from "@/lib/api";
-import { resolveFileList } from "@/lib/files";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardContent, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -45,6 +44,7 @@ interface CampaignData {
     subcategoryName: string;
   }[];
   goal: string;
+  campaignType?: string; // ✅ NEW
   budget: number;
   timeline: { startDate?: string; endDate?: string };
   creativeBriefText?: string;
@@ -120,7 +120,6 @@ export default function ViewCampaignPage() {
 
   const closePreview = useCallback(() => setPreviewOpen(false), []);
 
-  // Prev/Next depend on current length
   const prevImage = useCallback(() => {
     if (campaignImages.length < 2) return;
     setPreviewIndex((i) => (i - 1 + campaignImages.length) % campaignImages.length);
@@ -155,7 +154,7 @@ export default function ViewCampaignPage() {
       if (Math.abs(dx) > 40) dx > 0 ? prevImage() : nextImage();
     };
     document.addEventListener("touchstart", onTouchStart, { passive: true });
-    document.addEventListener("touchend", onTouchEnd, { passive: true });
+    document.addEventListener("touchend", onTouchEnd);
     return () => {
       document.removeEventListener("touchstart", onTouchStart);
       document.removeEventListener("touchend", onTouchEnd);
@@ -187,17 +186,13 @@ export default function ViewCampaignPage() {
     try {
       const res = await fetch(href, { credentials: "include" });
       const blob = await res.blob();
-      // Force MIME for safer rendering
       const typed = blob.type === "application/pdf" ? blob : new Blob([blob], { type: "application/pdf" });
-      const url = URL.createObjectURL(typed);
-      // Revoke any previous preview URL to avoid leaks
       setPdfPreview((prev) => {
         if (prev?.url) URL.revokeObjectURL(prev.url);
-        return { name, url };
+        return { name, url: URL.createObjectURL(typed) };
       });
     } catch (e) {
       console.error("Failed to preview PDF inline", e);
-      // Fallback: open in new tab
       window.open(href, "_blank", "noopener,noreferrer");
     }
   }, []);
@@ -386,6 +381,15 @@ export default function ViewCampaignPage() {
               <p className="text-sm font-medium text-gray-600">Goal</p>
               <p className="mt-1 text-gray-800">{c.goal}</p>
             </div>
+
+            {/* ✅ Campaign Type */}
+            <div>
+              <p className="text-sm font-medium text-gray-600">Campaign Type</p>
+              <p className="mt-1 text-gray-800">
+                {c.campaignType && c.campaignType.trim() !== "" ? c.campaignType : "—"}
+              </p>
+            </div>
+
             <div>
               <p className="text-sm font-medium text-gray-600">Budget</p>
               <p className="mt-1 text-gray-800">${Number(c.budget || 0).toLocaleString()}</p>
@@ -442,7 +446,9 @@ export default function ViewCampaignPage() {
                     >
                       <div className="flex items-center gap-2 min-w-0">
                         <HiOutlineDocument className="h-5 w-5 text-orange-600" />
-                        <span className="truncate text-sm font-medium text-orange-700">{name || "document"}</span>
+                        <span className="truncate text-sm font-medium text-orange-700">
+                          {name || "document"}
+                        </span>
                       </div>
                       <div className="flex items-center gap-2">
                         {pdf && (

@@ -56,6 +56,7 @@ interface CampaignData {
   };
   categories?: CategoryItem[];
   goal: string;
+  campaignType?: string; // ✅ NEW
   budget: number;
   timeline: { startDate?: string; endDate?: string };
   creativeBriefText?: string;
@@ -307,8 +308,8 @@ export default function ViewCampaignPage() {
                 {c.targetAudience?.gender === 0
                   ? "Female"
                   : c.targetAudience?.gender === 1
-                    ? "Male"
-                    : "All"}
+                  ? "Male"
+                  : "All"}
               </p>
             </div>
             <div className="md:col-span-3">
@@ -366,6 +367,13 @@ export default function ViewCampaignPage() {
               <p className="text-sm font-medium text-gray-600">Goal</p>
               <p className="mt-1 text-gray-800">{c.goal}</p>
             </div>
+
+            {/* ✅ Campaign Type */}
+            <div>
+              <p className="text-sm font-medium text-gray-600">Campaign Type</p>
+              <p className="mt-1 text-gray-800">{c.campaignType || "—"}</p>
+            </div>
+
             <div>
               <p className="text-sm font-medium text-gray-600">Budget</p>
               <p className="mt-1 text-gray-800">${Number(c.budget || 0).toLocaleString()}</p>
@@ -559,8 +567,9 @@ export default function ViewCampaignPage() {
                 <button
                   key={src + idx}
                   onClick={() => setPreviewIndex(idx)}
-                  className={`h-16 w-16 flex-shrink-0 overflow-hidden rounded-md border ${idx === previewIndex ? "ring-2 ring-orange-500 border-transparent" : "border-gray-200"
-                    }`}
+                  className={`h-16 w-16 flex-shrink-0 overflow-hidden rounded-md border ${
+                    idx === previewIndex ? "ring-2 ring-orange-500 border-transparent" : "border-gray-200"
+                  }`}
                   aria-label={`Open image ${idx + 1}`}
                 >
                   <img src={src} alt={`thumb-${idx + 1}`} className="h-full w-full object-cover" />

@@ -21,10 +21,9 @@ interface ApiMeta {
   total: number;
   page: number;
   limit: number;
-  totalPages?: number; // add
-  pages?: number;      // add
+  totalPages?: number;
+  pages?: number;
 }
-
 
 interface RawCampaign {
   _id: string;
@@ -35,6 +34,7 @@ interface RawCampaign {
   isActive: number;
   budget: number;
   applicantCount?: number;
+  campaignType?: string; // ✅ NEW
 }
 
 interface Campaign {
@@ -45,6 +45,7 @@ interface Campaign {
   isActive: number;
   budget: number;
   applicantCount: number;
+  campaignType?: string; // ✅ NEW
 }
 
 interface CampaignsApiResponse {
@@ -91,7 +92,6 @@ export default function BrandActiveCampaignsPage() {
           typeof window !== "undefined" ? localStorage.getItem("brandId") : null;
         if (!brandId) throw new Error("No brandId found in localStorage.");
 
-        // Send search, page, limit to backend (as you requested)
         const res = await post<CampaignsApiResponse>("/campaign/accepted", {
           brandId,
           search: term.trim() || undefined,
@@ -102,10 +102,9 @@ export default function BrandActiveCampaignsPage() {
         const list: RawCampaign[] = Array.isArray(res?.campaigns)
           ? res!.campaigns!
           : Array.isArray(res?.data)
-            ? res!.data!
-            : [];
+          ? res!.data!
+          : [];
 
-        // If backend already returns only active, you can drop this filter
         const active = list.filter((c) => c.isActive === 1);
 
         const normalised: Campaign[] = active.map((c) => ({
@@ -119,6 +118,7 @@ export default function BrandActiveCampaignsPage() {
           isActive: c.isActive,
           budget: c.budget,
           applicantCount: c.applicantCount ?? 0,
+          campaignType: c.campaignType, // ✅ map campaignType
         }));
 
         setCampaigns(normalised);
@@ -243,6 +243,14 @@ interface TableViewProps {
 }
 
 function TableView({ data, formatDate, formatCurrency }: TableViewProps) {
+  // ✅ helper to slice text (like we did before)
+  const truncate = (value?: string, len = 25) => {
+    if (!value) return "—";
+    const v = value.trim();
+    if (v.length <= len) return v;
+    return v.slice(0, len) + "…";
+  };
+
   return (
     <div className="p-[1.5px] rounded-lg bg-gradient-to-r shadow">
       <div className="overflow-x-auto bg-white rounded-[0.5rem]">
@@ -254,20 +262,28 @@ function TableView({ data, formatDate, formatCurrency }: TableViewProps) {
             }}
           >
             <tr>
-              {["Campaign", "Budget", "Status", "Timeline", "Influencers Working", "Actions"].map(
-                (h) => (
-                  <th key={h} className="px-6 py-3 text-center font-medium whitespace-nowrap">
-                    {h}
-                  </th>
-                )
-              )}
+              {[
+                "Campaign",
+                "Campaign Type", // ✅ new column
+                "Budget",
+                "Status",
+                "Timeline",
+                "Influencers Working",
+                "Actions",
+              ].map((h) => (
+                <th key={h} className="px-6 py-3 text-center font-medium whitespace-nowrap">
+                  {h}
+                </th>
+              ))}
             </tr>
           </thead>
           <tbody>
             {data.map((c, idx) => (
               <tr
                 key={c.id}
-                className={`${idx % 2 === 0 ? "bg-white" : "bg-gray-50"} transition-colors hover:bg-transparent`}
+                className={`${
+                  idx % 2 === 0 ? "bg-white" : "bg-gray-50"
+                } transition-colors hover:bg-transparent`}
                 style={{ backgroundImage: "var(--row-hover-gradient)" }}
                 onMouseEnter={(e) => {
                   e.currentTarget.style.backgroundImage = `linear-gradient(to right, ${TABLE_GRADIENT_FROM}11, ${TABLE_GRADIENT_TO}11)`;
@@ -276,24 +292,58 @@ function TableView({ data, formatDate, formatCurrency }: TableViewProps) {
                   e.currentTarget.style.backgroundImage = "";
                 }}
               >
+                {/* Campaign Name */}
                 <td className="px-6 py-4 align-top">
-                  <div className="font-medium text-gray-900 text-center">{c.productOrServiceName}</div>
+                  <div className="font-medium text-gray-900 text-center">
+                    {truncate(c.productOrServiceName, 30)}
+                  </div>
                 </td>
-                <td className="px-6 py-4 text-center whitespace-nowrap align-top">{formatCurrency(c.budget)}</td>
+
+                {/* ✅ Campaign Type (sliced with tooltip) */}
+                <td className="px-6 py-4 align-top text-center">
+                  {c.campaignType ? (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <span className="cursor-default text-gray-900">
+                          {truncate(c.campaignType, 25)}
+                        </span>
+                      </TooltipTrigger>
+                      <TooltipContent>{c.campaignType}</TooltipContent>
+                    </Tooltip>
+                  ) : (
+                    <span className="text-gray-400">—</span>
+                  )}
+                </td>
+
+                {/* Budget */}
+                <td className="px-6 py-4 text-center whitespace-nowrap align-top">
+                  {formatCurrency(c.budget)}
+                </td>
+
+                {/* Status */}
                 <td className="px-6 py-4 whitespace-nowrap align-top text-center">
                   <span
-                    className={`inline-flex items-center justify-center px-2 py-1 text-xs font-semibold rounded-full ${c.isActive === 1
-                      ? "bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white"
-                      : "bg-red-100 text-red-800"
-                      }`}
+                    className={`inline-flex items-center justify-center px-2 py-1 text-xs font-semibold rounded-full ${
+                      c.isActive === 1
+                        ? "bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white"
+                        : "bg-red-100 text-red-800"
+                    }`}
                   >
                     {c.isActive === 1 ? "Active" : "Inactive"}
                   </span>
                 </td>
+
+                {/* Timeline */}
                 <td className="px-6 py-4 whitespace-nowrap text-center align-top">
                   {formatDate(c.timeline.startDate)} – {formatDate(c.timeline.endDate)}
                 </td>
-                <td className="px-6 py-4 text-center align-top">{c.applicantCount ?? "0"}</td>
+
+                {/* Influencers Working */}
+                <td className="px-6 py-4 text-center align-top">
+                  {c.applicantCount ?? "0"}
+                </td>
+
+                {/* Actions */}
                 <td className="px-6 py-4 whitespace-nowrap items-center align-top">
                   <div className="flex items-center justify-center space-x-2">
                     <Tooltip>
