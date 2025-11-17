@@ -438,8 +438,10 @@ export default function InfluencerSubscriptionPage() {
             return (
               <div
                 key={plan.planId}
-                className={`relative bg-white rounded-3xl border shadow-sm hover:shadow-lg transition-all flex flex-col h-full ${highlighted ? "border-orange-300" : "border-gray-200"
-                  } ${isActive ? "ring-2 ring-orange-400" : ""}`}
+                className={`relative bg-white rounded-3xl border shadow-sm hover:shadow-lg transition-all flex flex-col h-full
+  ${highlighted ? "border-yellow-300" : "border-yellow-200"}
+  ${isActive ? "ring-2 ring-yellow-400" : ""}`
+                }
               >
                 {/* Badge */}
                 {highlighted && (
@@ -483,12 +485,12 @@ export default function InfluencerSubscriptionPage() {
                   <button
                     onClick={() => handleSelect(plan)}
                     disabled={isActive || isProcessing}
-                    className={`w-full py-4 text-base font-semibold rounded-md flex items-center justify-center gap-2 transition-all
+                    className={`w-full py-4 text-base font-semibold rounded-md flex items-center justify-center gap-2 transition-all cursor-pointer
                       ${isActive
                         ? "bg-gray-100 text-gray-500 cursor-not-allowed border border-gray-200"
                         : isProcessing
-                          ? "bg-orange-100 text-orange-700 cursor-not-allowed border border-orange-200"
-                          : "bg-gradient-to-r from-[#FFA135] to-[#FF7236] hover:from-[#FF7236] hover:to-[#FFA135] text-white shadow-lg hover:shadow-xl"}`}
+                          ? "bg-yellow-100 text-yellow-700 cursor-not-allowed border border-yellow-200"
+                          : "bg-gradient-to-r from-[#FFBF00] to-[#FFBF00] hover:from-[#FFBF00] hover:to-[#FFDB58] text-white shadow-lg hover:shadow-xl"}`}
                   >
                     {isActive ? (
                       <><CheckCircle className="w-5 h-5" /><span>Current Plan</span></>

@@ -137,13 +137,13 @@ function Login() {
 
               <p className="text-center text-sm text-gray-500 mt-6">
                 By continuing, you agree to our{' '}
-                <a href="#" className={`font-semibold ${
+                <a href="/policy/terms-of-service" target='_blank' className={`font-semibold ${
                   role === 'brand' ? 'text-orange-600 hover:text-orange-700' : 'text-yellow-600 hover:text-yellow-700'
                 }`}>
                   Terms of Service
                 </a>
                 {' '}and{' '}
-                <a href="#" className={`font-semibold ${
+                <a href="/policy/privacy" target='_blank' className={`font-semibold ${
                   role === 'brand' ? 'text-orange-600 hover:text-orange-700' : 'text-yellow-600 hover:text-yellow-700'
                 }`}>
                   Privacy Policy

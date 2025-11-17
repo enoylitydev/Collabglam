@@ -1,9 +1,9 @@
 /* eslint-disable @next/next/no-img-element */
 "use client";
 
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useState, useMemo, useCallback } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import { post } from "@/lib/api";
+import { get, post } from "@/lib/api";
 import Swal from "sweetalert2";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -31,7 +31,13 @@ const TABLE_GRADIENT_FROM = "#FFA135";
 const TABLE_GRADIENT_TO = "#FF7236";
 
 const toast = (opts: { icon: "success" | "error"; title: string; text?: string }) =>
-  Swal.fire({ showConfirmButton: false, timer: 1200, timerProgressBar: true, background: "white", ...opts });
+  Swal.fire({
+    showConfirmButton: false,
+    timer: 1200,
+    timerProgressBar: true,
+    background: "white",
+    ...opts,
+  });
 
 /* ------------------------ Raw API types (minimal) ------------------------ */
 type Provider = "instagram" | "youtube" | "tiktok" | string;
@@ -100,8 +106,7 @@ const buildSocialUrl = (provider: Provider | undefined, username: string): strin
 const dedupe = <T,>(arr: T[]) => Array.from(new Set(arr));
 
 const toRow = (doc: RawInfluencer): InfluencerRow => {
-  const username =
-    (doc.socialHandle && doc.socialHandle.trim()) || null;
+  const username = (doc.socialHandle && doc.socialHandle.trim()) || null;
 
   const socialUrl =
     username && doc.primaryPlatform
@@ -109,9 +114,9 @@ const toRow = (doc: RawInfluencer): InfluencerRow => {
       : null;
 
   const categoryNames = dedupe<string>(
-    [
-      doc.onboarding?.categoryName
-    ].filter((x): x is string => typeof x === "string" && !!x.trim())
+    [doc.onboarding?.categoryName].filter(
+      (x): x is string => typeof x === "string" && !!x.trim()
+    )
   );
 
   const followers =
@@ -127,10 +132,10 @@ const toRow = (doc: RawInfluencer): InfluencerRow => {
       doc.primaryPlatform === "instagram"
         ? "Instagram"
         : doc.primaryPlatform === "youtube"
-        ? "YouTube"
-        : doc.primaryPlatform === "tiktok"
-        ? "TikTok"
-        : doc.primaryPlatform || undefined,
+          ? "YouTube"
+          : doc.primaryPlatform === "tiktok"
+            ? "TikTok"
+            : doc.primaryPlatform || undefined,
     categoryNames,
     followers,
     updatedAt: doc.updatedAt ?? null,
@@ -147,7 +152,12 @@ export default function ActiveInfluencersPage() {
   const router = useRouter();
 
   const [rowsData, setRowsData] = useState<InfluencerRow[]>([]);
-  const [meta, setMeta] = useState<Meta>({ total: 0, page: 1, limit: PAGE_SIZE, totalPages: 1 });
+  const [meta, setMeta] = useState<Meta>({
+    total: 0,
+    page: 1,
+    limit: PAGE_SIZE,
+    totalPages: 1,
+  });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -159,10 +169,26 @@ export default function ActiveInfluencersPage() {
 
   const [showMilestoneModal, setShowMilestoneModal] = useState(false);
   const [selectedInf, setSelectedInf] = useState<InfluencerRow | null>(null);
-  const [milestoneForm, setMilestoneForm] = useState({ title: "", amount: "", description: "" });
+  const [milestoneForm, setMilestoneForm] = useState({
+    title: "",
+    amount: "",
+    description: "",
+  });
   const [isSavingMilestone, setIsSavingMilestone] = useState(false);
 
-  const toggleExpand = (id: string) => setExpandedRow((cur) => (cur === id ? null : id));
+  // 🔥 NEW: campaign budget + allocated milestones (for this brand)
+  const [campaignBudget, setCampaignBudget] = useState<number | null>(null);
+  const [campaignMilestoneTotal, setCampaignMilestoneTotal] = useState<number>(0);
+  const [isBudgetLocked, setIsBudgetLocked] = useState<boolean>(false);
+
+  const remainingBudget = useMemo(() => {
+    if (campaignBudget == null) return null;
+    return Math.max(0, campaignBudget - campaignMilestoneTotal);
+  }, [campaignBudget, campaignMilestoneTotal]);
+
+  const toggleExpand = (id: string) =>
+    setExpandedRow((cur) => (cur === id ? null : id));
+
   const toggleSort = (field: SortKey) => {
     setPage(1);
     if (sortField === field) setSortOrder((o) => (o === 1 ? 0 : 1));
@@ -171,6 +197,7 @@ export default function ActiveInfluencersPage() {
       setSortOrder(1);
     }
   };
+
   const SortIndicator = ({ field }: { field: SortKey }) =>
     sortField === field ? (
       sortOrder === 1 ? (
@@ -180,6 +207,52 @@ export default function ActiveInfluencersPage() {
       )
     ) : null;
 
+  // 🔥 NEW: fetch budget + milestone total for this campaign/brand
+  const refreshBudgetAndTotals = useCallback(async () => {
+    if (!campaignId) return;
+
+    try {
+      const brandId =
+        typeof window !== "undefined" ? localStorage.getItem("brandId") : null;
+
+      // Get campaign details (for budget) + all milestones for this campaign
+      const [campaignResp, milestoneResp] = await Promise.all([
+        get<any>(`/campaign/id?id=${campaignId}`),
+        post<{ milestones: { amount: number; brandId: string }[] }>(
+          "milestone/byCampaign",
+          { campaignId }
+        ),
+      ]);
+
+      const rawBudget = Number(campaignResp?.budget);
+      const budget = !Number.isNaN(rawBudget) ? rawBudget : null;
+      setCampaignBudget(budget);
+
+      const list = Array.isArray(milestoneResp.milestones)
+        ? milestoneResp.milestones
+        : [];
+
+      let sum = 0;
+      list.forEach((m) => {
+        if (!brandId || m.brandId === brandId) {
+          sum += Number(m.amount) || 0;
+        }
+      });
+
+      setCampaignMilestoneTotal(sum);
+
+      if (budget != null && sum >= budget) {
+        setIsBudgetLocked(true);
+      } else {
+        setIsBudgetLocked(false);
+      }
+    } catch (e) {
+      console.error("Failed to refresh campaign budget / milestones", e);
+      // Don't hard-fail UI, just log.
+    }
+  }, [campaignId]);
+
+  // Fetch influencers accepted for this campaign (ONE SHOT per filter/sort)
   useEffect(() => {
     if (!campaignId) {
       setError("No campaign selected.");
@@ -190,22 +263,32 @@ export default function ActiveInfluencersPage() {
       setLoading(true);
       setError(null);
       try {
-        const resp = await post<{ meta: Meta; influencers: RawInfluencer[] }>(
+        const resp = await post<{ influencers: RawInfluencer[] }>(
           "campaign/accepted-inf",
           {
             campaignId,
-            page,
-            limit: PAGE_SIZE,
+            // backend can still use these to sort, but we do pagination via slicing
             search: searchTerm.trim(),
-            // backend still accepts these; it will ignore unknown sort fields safely
             sortBy: sortField,
             order: sortOrder === 1 ? "desc" : "asc",
           }
         );
 
         const list = Array.isArray(resp.influencers) ? resp.influencers : [];
-        setRowsData(list.map(toRow));
-        setMeta(resp.meta);
+        const normalized = list.map(toRow);
+
+        setRowsData(normalized);
+
+        const total = normalized.length;
+        const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+
+        setMeta({
+          total,
+          page: 1,
+          limit: PAGE_SIZE,
+          totalPages,
+        });
+        setPage(1);
       } catch (e) {
         console.error(e);
         setError("Failed to load applicants.");
@@ -213,7 +296,12 @@ export default function ActiveInfluencersPage() {
         setLoading(false);
       }
     })();
-  }, [campaignId, page, searchTerm, sortField, sortOrder]);
+  }, [campaignId, searchTerm, sortField, sortOrder]);
+
+  // Fetch budget + milestone totals on mount / campaign change
+  useEffect(() => {
+    refreshBudgetAndTotals();
+  }, [refreshBudgetAndTotals]);
 
   const handleAddMilestone = (inf: InfluencerRow) => {
     setSelectedInf(inf);
@@ -222,28 +310,115 @@ export default function ActiveInfluencersPage() {
   };
 
   const handleSaveMilestone = async () => {
-    if (!selectedInf?.influencerId) return;
+    if (!selectedInf?.influencerId || !campaignId) return;
+
+    const amountNum = Number(milestoneForm.amount);
+
+    if (!milestoneForm.title.trim()) {
+      toast({
+        icon: "error",
+        title: "Enter a milestone title",
+      });
+      return;
+    }
+
+    if (Number.isNaN(amountNum) || amountNum <= 0) {
+      toast({
+        icon: "error",
+        title: "Invalid amount",
+        text: "Please enter a valid positive amount.",
+      });
+      return;
+    }
+
+    // 🔥 Client-side check vs remaining budget (if we know it)
+    if (campaignBudget != null) {
+      if (remainingBudget !== null && remainingBudget <= 0) {
+        setIsBudgetLocked(true);
+        toast({
+          icon: "error",
+          title: "Campaign budget fully allocated",
+          text:
+            "You have already added milestones equal to the campaign budget. You cannot create new milestones.",
+        });
+        return;
+      }
+
+      if (remainingBudget !== null && amountNum > remainingBudget) {
+        toast({
+          icon: "error",
+          title: "Amount exceeds remaining budget",
+          text: `Remaining campaign budget for milestones is ${remainingBudget.toLocaleString()}. Please enter a smaller amount.`,
+        });
+        return;
+      }
+    }
+
     try {
       setIsSavingMilestone(true);
       await post("milestone/create", {
         influencerId: selectedInf.influencerId,
         campaignId,
         milestoneTitle: milestoneForm.title,
-        amount: Number(milestoneForm.amount),
+        amount: amountNum,
         milestoneDescription: milestoneForm.description,
-        brandId: localStorage.getItem("brandId"),
+        brandId:
+          typeof window !== "undefined"
+            ? localStorage.getItem("brandId")
+            : undefined,
       });
-      Swal.fire("Added!", "Milestone has been added.", "success");
+
+      Swal.fire({
+        icon: "success",
+        title: "Milestone added",
+        text: "Milestone has been created successfully for this campaign.",
+        showConfirmButton: false,
+        timer: 1500,
+        timerProgressBar: true,
+      });
+
       setShowMilestoneModal(false);
       setMilestoneForm({ title: "", amount: "", description: "" });
       setPage(1);
+      await refreshBudgetAndTotals();
     } catch (err: any) {
       console.error(err);
-      toast({
-        icon: "error",
-        title: "Error",
-        text: err?.response?.data?.message || err.message || "Something went wrong",
-      });
+      const apiMessage =
+        err?.response?.data?.message ||
+        err.message ||
+        "Something went wrong";
+
+      // 🔥 Handle special messages from backend
+      if (
+        apiMessage.includes(
+          "You have added milestone equal to campaign now not able to add now milestone"
+        )
+      ) {
+        setIsBudgetLocked(true);
+        toast({
+          icon: "error",
+          title: "Campaign budget fully allocated",
+          text: apiMessage,
+        });
+        await refreshBudgetAndTotals();
+      } else if (
+        apiMessage.includes(
+          "Total milestone amount cannot exceed campaign budget"
+        )
+      ) {
+        toast({
+          icon: "error",
+          title: "Milestone exceeds campaign budget",
+          text: apiMessage,
+        });
+        await refreshBudgetAndTotals();
+      } else {
+        toast({
+          icon: "error",
+          title: "Error",
+          text: apiMessage,
+        });
+      }
     } finally {
       setIsSavingMilestone(false);
     }
@@ -254,16 +429,26 @@ export default function ActiveInfluencersPage() {
     router.push(`/brand/influencers?id=${inf.influencerId}`);
   };
 
+  // 🔥 SLICING for pagination
+  const paginatedRows = useMemo(() => {
+    const start = (page - 1) * PAGE_SIZE;
+    const end = start + PAGE_SIZE;
+    return rowsData.slice(start, end);
+  }, [rowsData, page]);
+
   const tableRows = useMemo(() => {
-    return rowsData.flatMap((inf, idx) => {
+    return paginatedRows.flatMap((inf, idx) => {
       const hoverGradient = `linear-gradient(to right, ${TABLE_GRADIENT_FROM}11, ${TABLE_GRADIENT_TO}11)`;
       const rowKey = inf._id || `${inf.username || inf.name}-${idx}`;
 
       const baseRow = (
         <TableRow
           key={rowKey}
-          className={`${idx % 2 === 0 ? "bg-white" : "bg-gray-50"} transition-colors`}
-          onMouseEnter={(e) => (e.currentTarget.style.backgroundImage = hoverGradient)}
+          className={`${idx % 2 === 0 ? "bg-white" : "bg-gray-50"
+            } transition-colors`}
+          onMouseEnter={(e) =>
+            (e.currentTarget.style.backgroundImage = hoverGradient)
+          }
           onMouseLeave={(e) => (e.currentTarget.style.backgroundImage = "")}
         >
           {/* Name */}
@@ -285,7 +470,9 @@ export default function ActiveInfluencersPage() {
               "—"
             )}
             {inf.platformName && (
-              <span className="ml-1 text-xs text-gray-500">({inf.platformName})</span>
+              <span className="ml-1 text-xs text-gray-500">
+                ({inf.platformName})
+              </span>
             )}
           </TableCell>
 
@@ -358,8 +545,14 @@ export default function ActiveInfluencersPage() {
               variant="outline"
               className="bg-green-500 text-white hover:bg-green-600 cursor-pointer disabled:opacity-50"
               onClick={() => handleAddMilestone(inf)}
-              disabled={!inf.influencerId}
-              title={inf.influencerId ? "Add milestone" : "Missing influencerId"}
+              disabled={!inf.influencerId || isBudgetLocked}
+              title={
+                !inf.influencerId
+                  ? "Missing influencerId"
+                  : isBudgetLocked
+                    ? "Campaign budget already fully allocated in milestones"
+                    : "Add milestone"
+              }
             >
               Add Milestone
             </Button>
@@ -370,7 +563,9 @@ export default function ActiveInfluencersPage() {
               className="ml-1 cursor-pointer"
               onClick={() => toggleExpand(rowKey)}
               disabled={!inf.influencerId}
-              title={inf.influencerId ? "Toggle history" : "Missing influencerId"}
+              title={
+                inf.influencerId ? "Toggle history" : "Missing influencerId"
+              }
             >
               {expandedRow === rowKey ? (
                 <HiOutlineChevronUp className="w-4 h-4" />
@@ -383,13 +578,17 @@ export default function ActiveInfluencersPage() {
       );
 
       const detailsRow =
-        expandedRow === rowKey && rowsData[idx].influencerId ? (
+        expandedRow === rowKey && inf.influencerId ? (
           <TableRow key={`${rowKey}-details`}>
             <TableCell colSpan={7} className="p-0">
               <MilestoneHistoryCard
                 role="brand"
-                brandId={localStorage.getItem("brandId")}
-                influencerId={rowsData[idx].influencerId!}
+                brandId={
+                  typeof window !== "undefined"
+                    ? localStorage.getItem("brandId")
+                    : undefined
+                }
+                influencerId={inf.influencerId}
                 campaignId={campaignId as string}
               />
             </TableCell>
@@ -398,19 +597,65 @@ export default function ActiveInfluencersPage() {
 
       return [baseRow, detailsRow].filter(Boolean);
     });
-  }, [rowsData, expandedRow, campaignId, router]);
+  }, [paginatedRows, expandedRow, campaignId, router, isBudgetLocked]);
+
+  const totalPages = meta.totalPages;
+  const totalAccepted = meta.total;
 
   return (
     <div className="min-h-screen p-4 md:p-8 space-y-8">
       {/* Header */}
-      <header className="flex items-center justify-between p-4 rounded-md">
-        <h1 className="text-3xl font-bold text-gray-800">
-          Campaign: {campaignName || "Unknown Campaign"}
-        </h1>
+      <header className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between p-4 rounded-md">
+        <div className="space-y-1">
+          <h1
+            className="text-3xl font-bold text-gray-800"
+            title={campaignName || "Unknown Campaign"}
+          >
+            Campaign:{" "}
+            {(campaignName || "Unknown Campaign").length > 20
+              ? `${(campaignName || "Unknown Campaign").slice(0, 20)}...`
+              : campaignName || "Unknown Campaign"}
+          </h1>
+
+          {campaignBudget != null && (
+            <p className="text-xs text-gray-600">
+              Budget:{" "}
+              <strong>
+                {campaignBudget.toLocaleString(undefined, {
+                  style: "currency",
+                  currency: "USD",
+                })}
+              </strong>{" "}
+              · Allocated in milestones:{" "}
+              <strong>
+                {campaignMilestoneTotal.toLocaleString(undefined, {
+                  style: "currency",
+                  currency: "USD",
+                })}
+              </strong>{" "}
+              · Remaining:{" "}
+              <strong>
+                {remainingBudget != null
+                  ? remainingBudget.toLocaleString(undefined, {
+                    style: "currency",
+                    currency: "USD",
+                  })
+                  : "—"}
+              </strong>
+            </p>
+          )}
+
+          {isBudgetLocked && (
+            <p className="text-xs font-semibold text-red-600">
+              Milestone total has reached the campaign budget. You cannot create
+              more milestones.
+            </p>
+          )}
+        </div>
         <Button
           size="sm"
           variant="outline"
-          className="bg-white text-gray-800 hover:bg-gray-100 cursor-pointer"
+          className="bg-white text-gray-800 hover:bg-gray-100 cursor-pointer self-start"
           onClick={() => router.back()}
         >
           Back
@@ -420,7 +665,10 @@ export default function ActiveInfluencersPage() {
       {/* Search */}
       <div className="mb-6 max-w-md">
         <div className="relative">
-          <HiSearch className="absolute inset-y-0 left-3 my-auto text-gray-400" size={20} />
+          <HiSearch
+            className="absolute inset-y-0 left-3 my-auto text-gray-400"
+            size={20}
+          />
           <input
             type="text"
             placeholder="Search influencers..."
@@ -453,7 +701,7 @@ export default function ActiveInfluencersPage() {
                   onClick={() => toggleSort("name")}
                   className="cursor-pointer select-none font-semibold"
                 >
-                  {meta.total} Accepted <SortIndicator field="name" />
+                  {totalAccepted} Accepted <SortIndicator field="name" />
                 </TableHead>
                 <TableHead
                   onClick={() => toggleSort("username")}
@@ -483,7 +731,10 @@ export default function ActiveInfluencersPage() {
                 tableRows
               ) : (
                 <TableRow>
-                  <TableCell colSpan={7} className="py-6 text-center text-muted-foreground">
+                  <TableCell
+                    colSpan={7}
+                    className="py-6 text-center text-muted-foreground"
+                  >
                     No influencers match criteria.
                   </TableCell>
                 </TableRow>
@@ -494,7 +745,7 @@ export default function ActiveInfluencersPage() {
       )}
 
       {/* Pagination */}
-      {meta.totalPages > 1 && (
+      {totalPages > 1 && (
         <div className="flex justify-center md:justify-end items-center gap-2">
           <Button
             variant="outline"
@@ -505,20 +756,20 @@ export default function ActiveInfluencersPage() {
             <HiChevronLeft />
           </Button>
           <span className="text-sm">
-            Page <strong>{page}</strong> of {meta.totalPages}
+            Page <strong>{page}</strong> of {totalPages}
           </span>
           <Button
             variant="outline"
             size="icon"
-            disabled={page === meta.totalPages}
-            onClick={() => setPage((p) => Math.min(p + 1, meta.totalPages))}
+            disabled={page === totalPages}
+            onClick={() => setPage((p) => Math.min(p + 1, totalPages))}
           >
             <HiChevronRight />
           </Button>
         </div>
       )}
 
-      {/* Milestone Modal - Updated UI */}
+      {/* Milestone Modal */}
       {showMilestoneModal && selectedInf && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm px-4">
           <div className="w-full max-w-xl overflow-hidden rounded-2xl bg-white shadow-2xl">
@@ -546,8 +797,12 @@ export default function ActiveInfluencersPage() {
                     </span>
                   )}
                   {campaignName && (
-                    <span className="truncate max-w-[170px]" title={campaignName}>
-                      Campaign: <span className="font-medium">{campaignName}</span>
+                    <span
+                      className="truncate max-w-[170px]"
+                      title={campaignName}
+                    >
+                      Campaign:{" "}
+                      <span className="font-medium">{campaignName}</span>
                     </span>
                   )}
                 </div>
@@ -564,6 +819,41 @@ export default function ActiveInfluencersPage() {
 
             {/* Body */}
             <div className="px-6 py-5 space-y-5">
+              {campaignBudget != null && (
+                <p className="text-xs text-gray-600">
+                  Budget:{" "}
+                  <strong>
+                    {campaignBudget.toLocaleString(undefined, {
+                      style: "currency",
+                      currency: "USD",
+                    })}
+                  </strong>{" "}
+                  · Allocated:{" "}
+                  <strong>
+                    {campaignMilestoneTotal.toLocaleString(undefined, {
+                      style: "currency",
+                      currency: "USD",
+                    })}
+                  </strong>{" "}
+                  · Remaining:{" "}
+                  <strong>
+                    {remainingBudget != null
+                      ? remainingBudget.toLocaleString(undefined, {
+                        style: "currency",
+                        currency: "USD",
+                      })
+                      : "—"}
+                  </strong>
+                </p>
+              )}
+
+              {isBudgetLocked && (
+                <p className="text-xs font-semibold text-red-600">
+                  Milestone total has reached the campaign budget. You cannot
+                  create more milestones.
+                </p>
+              )}
+
               <div className="grid gap-4 md:grid-cols-2">
                 <FloatingLabelInput
                   id="milestoneTitle"
@@ -588,7 +878,10 @@ export default function ActiveInfluencersPage() {
                 label="Milestone Description"
                 value={milestoneForm.description}
                 onChange={(e) =>
-                  setMilestoneForm((f) => ({ ...f, description: e.target.value }))
+                  setMilestoneForm((f) => ({
+                    ...f,
+                    description: e.target.value,
+                  }))
                 }
               />
             </div>
@@ -605,10 +898,18 @@ export default function ActiveInfluencersPage() {
                 </Button>
                 <Button
                   onClick={handleSaveMilestone}
-                  disabled={!selectedInf?.influencerId || isSavingMilestone}
+                  disabled={
+                    !selectedInf?.influencerId ||
+                    isSavingMilestone ||
+                    isBudgetLocked
+                  }
                   className="bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white hover:from-[#FF8A1F] hover:to-[#FF5A2E] focus:outline-none focus:ring-2 focus:ring-[#FFA135]/40 cursor-pointer disabled:opacity-60"
                 >
-                  {isSavingMilestone ? "Saving..." : "Add Milestone"}
+                  {isBudgetLocked
+                    ? "Budget Reached"
+                    : isSavingMilestone
+                      ? "Saving..."
+                      : "Add Milestone"}
                 </Button>
               </div>
             </div>
@@ -628,6 +929,6 @@ const LoadingSkeleton = ({ rows }: { rows: number }) => (
   </div>
 );
 
-const ErrorMessage: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-  <p className="p-6 text-center text-destructive">{children}</p>
-);
+const ErrorMessage: React.FC<{ children: React.ReactNode }> = ({
+  children,
+}) => <p className="p-6 text-center text-destructive">{children}</p>;

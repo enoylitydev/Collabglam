@@ -320,6 +320,35 @@ export default function BrandTopbar({
       setNotifLoading(false);
     }
   }
+  async function reloadCredits() {
+  if (!brandId) return;
+
+  try {
+    const legacy = await get<LegacyBrandResp>(
+      `/brand?id=${encodeURIComponent(brandId)}`
+    );
+
+    const features = legacy?.subscription?.features;
+
+    const searchFeat = extractFeature(features, "searches_per_month");
+    const profileFeat = extractFeature(features, "profile_views_per_month");
+
+    setSearchLimit(searchFeat.limit);
+    setSearchUsed(searchFeat.used);
+
+    setProfileLimit(profileFeat.limit);
+    setProfileUsed(profileFeat.used);
+
+    const plan = legacy?.subscription?.planName;
+    if (plan) setSubscriptionName(plan.toLowerCase());
+
+    const exp = legacy?.subscription?.expiresAt;
+    if (exp) setSubscriptionExpiresAt(exp);
+
+  } catch (err) {
+    console.error("Failed to reload credits", err);
+  }
+}
 
   // Notifications: fetch on load + when brandId changes
   useEffect(() => {
@@ -333,6 +362,11 @@ export default function BrandTopbar({
     if (notifOpen) reloadNotifications();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [notifOpen]);
+
+  useEffect(() => {
+  if (creditsOpen) reloadCredits();
+  }, [creditsOpen]);
+
 
   async function onNotifClick(n: NotificationItem) {
     try {

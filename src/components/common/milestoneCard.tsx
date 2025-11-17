@@ -16,7 +16,7 @@ interface MilestoneEntry {
   amount: number;
   milestoneDescription?: string;
   createdAt: string;
-  /** payout status coming from backend: 'pending' | 'initiated' | 'paid' */
+  /** payout status coming from backend: 'initiated' | 'paid' */
   status?: string;
   /** legacy flag: brand has released funds from their wallet */
   released?: boolean;
@@ -177,7 +177,6 @@ const MilestoneHistoryCard: React.FC<MilestoneHistoryCardProps> = ({
 
   // ─── Status Renderer (brand + influencer) ───────────────────────────
   const renderStatus = (m: MilestoneEntry) => {
-    // support either `status` or backend using `payoutStatus`
     const rawStatus: string | undefined =
       m.status || (m as any).payoutStatus || undefined;
 
@@ -189,7 +188,9 @@ const MilestoneHistoryCard: React.FC<MilestoneHistoryCardProps> = ({
       // Admin approved → fully paid
       if (rawStatus === "paid") {
         return (
-          <span className={`${badgeBase} bg-emerald-100 text-emerald-700`}>
+          <span
+            className={`${badgeBase} ${palette[role].full} text-white`}
+          >
             Paid
           </span>
         );
@@ -199,7 +200,7 @@ const MilestoneHistoryCard: React.FC<MilestoneHistoryCardProps> = ({
       if (rawStatus === "initiated" || (m.released && !rawStatus)) {
         return (
           <span
-            className={`${badgeBase} ${palette[role].full} text-gray-800`}
+            className={`${badgeBase} ${palette[role].full} text-white`}
           >
             Initiated – expected within 24-48 Hrs
           </span>
@@ -208,7 +209,9 @@ const MilestoneHistoryCard: React.FC<MilestoneHistoryCardProps> = ({
 
       // Default: nothing released yet
       return (
-        <span className={`${badgeBase} bg-gray-100 text-gray-600`}>
+        <span
+          className={`${badgeBase} ${palette[role].soft} ${palette[role].text}`}
+        >
           Not received yet
         </span>
       );
@@ -229,19 +232,23 @@ const MilestoneHistoryCard: React.FC<MilestoneHistoryCardProps> = ({
       );
     }
 
-    // Brand has released funds
+    // Brand has released funds and admin has marked as paid
     if (rawStatus === "paid") {
       return (
-        <span className={`${badgeBase} bg-emerald-100 text-emerald-700`}>
-          Paid to influencer
+        <span
+          className={`${badgeBase} ${palette[role].full} text-white`}
+        >
+          Paid 
         </span>
       );
     }
 
     // Released but admin has not yet marked as paid
     return (
-      <span className={`${badgeBase} ${palette[role].full} text-white`}>
-        Released (pending admin payout)
+      <span
+        className={`${badgeBase} ${palette[role].soft} ${palette[role].text}`}
+      >
+        Released
       </span>
     );
   };
@@ -334,7 +341,7 @@ const MilestoneHistoryCard: React.FC<MilestoneHistoryCardProps> = ({
                     {m.milestoneDescription || "–"}
                   </p>
 
-                  {/* ✅ Payment status / CTA */}
+                  {/* status / CTA */}
                   <div className="mt-2">
                     {renderStatus(m)}
                   </div>
