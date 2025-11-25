@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useMemo, useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import {
   ArrowLeft,
   AlertCircle,
@@ -9,6 +9,7 @@ import {
   Send,
   MessageSquare,
 } from 'lucide-react';
+import Swal from 'sweetalert2';
 import { ProfileHeader } from './detail-panel/ProfileHeader';
 import { StatsChart } from './detail-panel/StatsChart';
 import { ContentBreakdown } from './detail-panel/ContentBreakdown';
@@ -33,10 +34,8 @@ interface DetailPanelProps {
   brandId: string;
   /** passed from parent; the creator's handle */
   handle: string | null;
-
   /** last time the Modash report was fetched (ISO string) */
   lastFetchedAt?: string | null;
-
   /** parent-supplied refresher: forces /modash/report refresh + DB update */
   onRefreshReport?: () => Promise<void> | void;
 }
@@ -44,29 +43,68 @@ interface DetailPanelProps {
 /** /email/status response shape */
 type EmailStatusResponse =
   | {
-      status: 0 | 1;
-      email?: string;
-      handle?: string;
-      platform?: Platform;
-    }
+    status: 0 | 1;
+    email?: string;
+    handle?: string;
+    platform?: Platform;
+  }
   | { status: 'error'; message?: string };
 
 /** /emails/invitation response shape */
 type InvitationResponse =
   | {
-      message: string;
-      isExistingInfluencer: true;
-      influencerId: string;
-      influencerName: string;
-      brandName: string;
-      roomId?: string;
-    }
+    message: string;
+    isExistingInfluencer: true;
+    influencerId: string;
+    influencerName: string;
+    brandName: string;
+    roomId?: string;
+  }
   | {
-      message: string;
-      isExistingInfluencer: false;
-      brandName: string;
-      signupUrl: string;
-    };
+    message: string;
+    isExistingInfluencer: false;
+    brandName: string;
+    signupUrl: string;
+  };
+
+/** /admin/checkstatus response shape */
+type AdminCheckStatusResponse = {
+  status: 0 | 1;
+  handle?: string;
+  email?: string | null;
+  platform?: Platform | string;
+  message?: string;
+};
+
+/** /invitation/create response shape */
+type InvitationCreateResp = {
+  status: 'saved' | 'exists';
+  data?: {
+    invitationId: string;
+    handle: string;
+    platform: 'youtube' | 'instagram' | 'tiktok';
+    brandId: string;
+    campaignId?: string | null;
+    status: 'invited' | 'available';
+    createdAt: string;
+    updatedAt: string;
+  };
+  message?: string;
+};
+
+/** /missing/create response shape */
+type CreateMissingResp = {
+  status: 'saved' | 'exists';
+  data: {
+    missingId: string;
+    handle: string;
+    platform: 'youtube' | 'instagram' | 'tiktok';
+    brandId: string;
+    note: string | null;
+    createdAt: string;
+  };
+  message?: string;
+};
 
 export const DetailPanel = React.memo<DetailPanelProps>(
   ({
@@ -85,7 +123,8 @@ export const DetailPanel = React.memo<DetailPanelProps>(
     onRefreshReport,
   }) => {
     const router = useRouter();
-
+    const searchParams = useSearchParams();
+    const campaignId = searchParams?.get('campaignId') || '';
     // used for both "Message Now" + "Send Invitation" actions
     const [sendingInvite, setSendingInvite] = useState(false);
 
@@ -96,6 +135,10 @@ export const DetailPanel = React.memo<DetailPanelProps>(
     const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(
       lastFetchedAt || null
     );
+
+    // NEW: combined email presence from /email/status + /admin/checkstatus
+    const [hasAnyEmail, setHasAnyEmail] = useState<boolean | null>(null);
+    const [checkingEmail, setCheckingEmail] = useState(false);
 
     // keep in sync with parent when prop changes
     useEffect(() => {
@@ -111,13 +154,147 @@ export const DetailPanel = React.memo<DetailPanelProps>(
       return hist?.slice(-12);
     }, [data]);
 
+    /* ------------------------------------------------------------------ */
+    /*                    Helpers for email resolution                    */
+    /* ------------------------------------------------------------------ */
+
+    // type guard for /email/status success branch
+    const isEmailStatusSuccess = (
+      resp: EmailStatusResponse
+    ): resp is {
+      status: 0 | 1;
+      email?: string;
+      handle?: string;
+      platform?: Platform;
+    } => {
+      return typeof (resp as any)?.status === 'number';
+    };
+
+    /**
+     * resolveCreatorEmail
+     * - Calls BOTH /email/status (post2) and /admin/checkstatus (post) in parallel
+     * - Returns the best email we can find + info where it came from
+     */
+    const resolveCreatorEmail = async (
+      safeHandle: string,
+      normalizedPlatform: Platform
+    ): Promise<{ email: string | null; source: 'status' | 'admin' | 'both' | 'none' }> => {
+      const [statusResult, adminResult] = await Promise.allSettled([
+        post2<EmailStatusResponse>('/email/status', {
+          handle: safeHandle,
+          platform: normalizedPlatform,
+        }),
+        post<AdminCheckStatusResponse>('/admin/checkstatus', {
+          handle: safeHandle,
+          platform: normalizedPlatform,
+        }),
+      ]);
+
+      let emailFromStatus: string | null = null;
+      let emailFromAdmin: string | null = null;
+
+      // /email/status result
+      if (statusResult.status === 'fulfilled') {
+        const statusResp = statusResult.value;
+        if (isEmailStatusSuccess(statusResp) && statusResp.status === 1 && statusResp.email) {
+          emailFromStatus = statusResp.email;
+        }
+      } else {
+        console.error('Error calling /email/status:', statusResult.reason);
+      }
+
+      // /admin/checkstatus result
+      if (adminResult.status === 'fulfilled') {
+        const adminResp = adminResult.value;
+        if (typeof adminResp.status === 'number' && adminResp.status === 1 && adminResp.email) {
+          emailFromAdmin = adminResp.email;
+        }
+      } else {
+        console.error('Error calling /admin/checkstatus:', adminResult.reason);
+      }
+
+      if (emailFromStatus && emailFromAdmin && emailFromStatus === emailFromAdmin) {
+        return { email: emailFromStatus, source: 'both' };
+      }
+
+      if (emailFromStatus) {
+        return { email: emailFromStatus, source: 'status' };
+      }
+
+      if (emailFromAdmin) {
+        return { email: emailFromAdmin, source: 'admin' };
+      }
+
+      return { email: null, source: 'none' };
+    };
+
+    /* ------------------------------------------------------------------ */
+    /*           Pre-check: is this handle present in ANY email DB?       */
+    /* ------------------------------------------------------------------ */
+    useEffect(() => {
+      // don't run when panel closed
+      if (!open) {
+        setHasAnyEmail(null);
+        return;
+      }
+
+      const normalizedPlatform = (platform ?? '').toLowerCase() as Platform;
+      if (
+        !normalizedPlatform ||
+        !['youtube', 'instagram', 'tiktok'].includes(normalizedPlatform)
+      ) {
+        setHasAnyEmail(null);
+        return;
+      }
+
+      const rawHandle = handle ? String(handle).trim() : '';
+      const safeHandle = rawHandle
+        ? '@' + rawHandle.replace(/^@/, '').trim().toLowerCase()
+        : '';
+
+      if (!safeHandle || !/^[A-Za-z0-9._-]+$/.test(safeHandle.replace(/^@/, ''))) {
+        setHasAnyEmail(null);
+        return;
+      }
+
+      let cancelled = false;
+      setCheckingEmail(true);
+
+      (async () => {
+        try {
+          const { email } = await resolveCreatorEmail(safeHandle, normalizedPlatform);
+          if (!cancelled) {
+            setHasAnyEmail(!!email); // true if ANY status api returns email
+          }
+        } catch (err) {
+          console.error('Failed to pre-check email status', err);
+          if (!cancelled) {
+            setHasAnyEmail(null);
+          }
+        } finally {
+          if (!cancelled) {
+            setCheckingEmail(false);
+          }
+        }
+      })();
+
+      return () => {
+        cancelled = true;
+      };
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [open, handle, platform]); // we intentionally don't include resolveCreatorEmail to avoid re-creating loop
+
     if (!open) return null;
 
     const hasUserId = Boolean(data?.profile?.userId);
     const canAct = hasUserId && !loading && !sendingInvite && !refreshing;
 
+    // ✅ use merged knowledge: if ANY status api says email present, treat as "has email"
+    const effectiveHasEmail =
+      hasAnyEmail !== null ? hasAnyEmail : emailExists === true;
+
     const ctaTitle = hasUserId
-      ? emailExists
+      ? effectiveHasEmail
         ? 'Message this creator'
         : 'Send invitation to collect email'
       : 'Profile not ready';
@@ -136,7 +313,6 @@ export const DetailPanel = React.memo<DetailPanelProps>(
       (handle && (handle.startsWith('@') ? handle : `@${handle}`)) ||
       '';
 
-    const hasEmail = emailExists === true;
     /* ------------------------------------------------------------------ */
     /*                          Refresh Modash data                       */
     /* ------------------------------------------------------------------ */
@@ -147,24 +323,31 @@ export const DetailPanel = React.memo<DetailPanelProps>(
       try {
         setRefreshing(true);
         await onRefreshReport();
-        // parent refreshes + updates lastFetchedAt
       } catch (err: any) {
         console.error(err);
-        alert(err?.message || 'Failed to refresh data');
+        await Swal.fire(
+          'Refresh failed',
+          err?.message || 'Failed to refresh data',
+          'error'
+        );
       } finally {
         setRefreshing(false);
       }
     };
 
     /* ------------------------------------------------------------------ */
-    /*                     Message Now (emailExists === true)             */
+    /*                     Message Now (has email)                        */
     /* ------------------------------------------------------------------ */
     const handleMessageNow = async (e: React.MouseEvent) => {
       e.preventDefault();
       if (!canAct) return;
 
       if (!brandId) {
-        alert('Missing brandId. Please provide brandId to DetailPanel.');
+        await Swal.fire(
+          'Missing brand',
+          'Missing brandId. Please provide brandId to DetailPanel.',
+          'warning'
+        );
         return;
       }
 
@@ -173,7 +356,11 @@ export const DetailPanel = React.memo<DetailPanelProps>(
         !normalizedPlatform ||
         !['youtube', 'instagram', 'tiktok'].includes(normalizedPlatform)
       ) {
-        alert('Unsupported or missing platform.');
+        await Swal.fire(
+          'Unsupported platform',
+          'Unsupported or missing platform.',
+          'warning'
+        );
         return;
       }
 
@@ -183,55 +370,52 @@ export const DetailPanel = React.memo<DetailPanelProps>(
         : '';
 
       if (!safeHandle || !/^[A-Za-z0-9._-]+$/.test(safeHandle.replace(/^@/, ''))) {
-        alert('Invalid or missing handle to lookup contact email.');
+        await Swal.fire(
+          'Invalid handle',
+          'Invalid or missing handle to lookup contact email.',
+          'warning'
+        );
         return;
       }
 
       try {
         setSendingInvite(true);
 
-        // 1️⃣ Get email from /email/status
-        const statusResp = await post2<EmailStatusResponse>('/email/status', {
-          handle: safeHandle,
-          platform: normalizedPlatform,
-        });
+        // Resolve email using BOTH sources in parallel (again, at click time)
+        const { email: creatorEmail, source } = await resolveCreatorEmail(
+          safeHandle,
+          normalizedPlatform
+        );
 
-        // Narrow the union type so TypeScript knows this branch has numeric status and optional email.
-        const isEmailStatusSuccess = (
-          resp: EmailStatusResponse
-        ): resp is {
-          status: 0 | 1;
-          email?: string;
-          handle?: string;
-          platform?: Platform;
-        } => {
-          return typeof (resp as any)?.status === 'number';
-        };
-
-        if (!isEmailStatusSuccess(statusResp)) {
-          const msg =
-            (statusResp as any)?.message || 'Failed to resolve email status';
-          throw new Error(msg);
-        }
-
-        if (statusResp.status === 0 || !statusResp.email) {
-          alert(
-            'No email found for this creator. Try sending a generic invitation instead.'
+        if (!creatorEmail) {
+          await Swal.fire(
+            'No email found',
+            'No email found in both primary contacts and admin-added list. Try sending an invitation or adding email manually.',
+            'warning'
           );
           setSendingInvite(false);
           return;
         }
 
-        const creatorEmail = statusResp.email;
+        if (source === 'admin') {
+          await Swal.fire(
+            'Using admin email',
+            `Using admin-added email ${creatorEmail} for this creator.`,
+            'info'
+          );
+        } else if (source === 'both') {
+          await Swal.fire(
+            'Email confirmed',
+            `Email ${creatorEmail} is present in both systems.`,
+            'success'
+          );
+        }
 
-        // 2️⃣ Call /emails/invitation
-        const inviteResp = await post<InvitationResponse>(
-          '/emails/invitation',
-          {
-            email: creatorEmail,
-            brandId,
-          }
-        );
+        // Call /emails/invitation with the resolved email
+        const inviteResp = await post<InvitationResponse>('/emails/invitation', {
+          email: creatorEmail,
+          brandId,
+        });
 
         if (inviteResp.isExistingInfluencer) {
           // Influencer is signed up → go to messages
@@ -242,7 +426,11 @@ export const DetailPanel = React.memo<DetailPanelProps>(
           }
         } else {
           // Not in DB → email invitation sent
-          alert(`Invitation email sent to ${creatorEmail}`);
+          await Swal.fire(
+            'Invitation sent',
+            `Invitation email sent to ${creatorEmail}`,
+            'success'
+          );
         }
       } catch (err: any) {
         const msg =
@@ -250,14 +438,15 @@ export const DetailPanel = React.memo<DetailPanelProps>(
           err?.message ||
           'Failed to start conversation';
         console.error(err);
-        alert(msg);
+        await Swal.fire('Error', msg, 'error');
       } finally {
         setSendingInvite(false);
       }
     };
 
     /* ------------------------------------------------------------------ */
-    /*                Send Invitation (no email in Modash)                */
+    /*                Send Invitation (no email anywhere)                 */
+    /*      → NOW also writes to /invitation/create (status=invited)      */
     /* ------------------------------------------------------------------ */
     const handleSendInvitation = async (e: React.MouseEvent) => {
       e.preventDefault();
@@ -271,7 +460,11 @@ export const DetailPanel = React.memo<DetailPanelProps>(
         : '';
 
       if (!brandId) {
-        alert('Missing brandId. Please provide brandId to DetailPanel.');
+        await Swal.fire(
+          'Missing brand',
+          'Missing brandId. Please provide brandId to DetailPanel.',
+          'warning'
+        );
         return;
       }
       const normalizedPlatform = (platform ?? '').toLowerCase() as Platform;
@@ -279,46 +472,107 @@ export const DetailPanel = React.memo<DetailPanelProps>(
         !normalizedPlatform ||
         !['youtube', 'instagram', 'tiktok'].includes(normalizedPlatform)
       ) {
-        alert('Unsupported or missing platform.');
+        await Swal.fire(
+          'Unsupported platform',
+          'Unsupported or missing platform.',
+          'warning'
+        );
         return;
       }
       if (!safeHandle || !/^[A-Za-z0-9._-]+$/.test(safeHandle.replace(/^@/, ''))) {
-        alert('Invalid or missing handle to send invitation.');
+        await Swal.fire(
+          'Invalid handle',
+          'Invalid or missing handle to send invitation.',
+          'warning'
+        );
         return;
       }
 
       try {
         setSendingInvite(true);
 
-        type CreateMissingResp = {
-          status: 'saved' | 'exists';
-          data: {
-            missingId: string;
-            handle: string;
-            platform: 'youtube' | 'instagram' | 'tiktok';
-            brandId: string;
-            note: string | null;
-            createdAt: string;
-          };
-          message?: string;
-        };
-
-        const resp = await post2<CreateMissingResp>('/missing/create', {
+        const invitationPayload: {
+          handle: string;
+          platform: Platform;
+          brandId: string;
+          status: 'invited' | 'available';
+          campaignId?: string;
+        } = {
           handle: safeHandle,
           platform: normalizedPlatform,
           brandId,
-        });
+          status: 'invited',
+        };
 
-        if (resp?.status === 'exists') alert('Already recorded.');
-        else if (resp?.status === 'saved') alert('Invitation recorded.');
-        else alert('Saved.');
+        if (campaignId) {
+          invitationPayload.campaignId = campaignId; // ⬅️ only send if present
+        }
+
+        const [missingResult, invitationResult] = await Promise.allSettled([
+          post2<CreateMissingResp>('/missing/create', {
+            handle: safeHandle,
+            platform: normalizedPlatform,
+            brandId,
+          }),
+          post<InvitationCreateResp>('/newinvitations/create', invitationPayload),
+        ]);
+
+        let missingMessage: string | null = null;
+        let invitationMessage: string | null = null;
+        let hasError = false;
+
+        // Handle /missing/create outcome
+        if (missingResult.status === 'fulfilled') {
+          const resp = missingResult.value;
+          if (resp?.status === 'exists') {
+            missingMessage =
+              resp.message || 'Missing request already present for this handle.';
+          } else if (resp?.status === 'saved') {
+            missingMessage =
+              resp.message || 'Missing request recorded for this creator.';
+          } else {
+            missingMessage = 'Missing/create call completed.';
+          }
+        } else {
+          hasError = true;
+          const err = missingResult.reason as any;
+          missingMessage = `Missing/create failed: ${err?.response?.data?.message || err?.message || 'Unknown error'
+            }`;
+        }
+
+        // Handle /invitation/create outcome
+        if (invitationResult.status === 'fulfilled') {
+          const resp = invitationResult.value;
+          if (resp?.status === 'exists') {
+            invitationMessage =
+              resp.message ||
+              'Invitation already exists for this brand + handle + platform.';
+          } else if (resp?.status === 'saved') {
+            invitationMessage =
+              resp.message || 'Invitation created for this creator.';
+          } else {
+            invitationMessage = 'Invitation/create call completed.';
+          }
+        } else {
+          hasError = true;
+          const err = invitationResult.reason as any;
+          invitationMessage = `Invitation/create failed: ${err?.response?.data?.message || err?.message || 'Unknown error'
+            }`;
+        }
+
+        const title = hasError ? 'Saved with issues' : 'Invitation recorded';
+        const text = [missingMessage, invitationMessage]
+          .filter(Boolean)
+          .join('\n');
+
+        await Swal.fire(title, text, hasError ? 'warning' : 'success');
       } catch (err: any) {
         const msg =
           err?.response?.data?.message ||
           err?.message ||
           'Failed to send invitation';
         console.error(err);
-        alert(msg);
+        await Swal.fire('Error', msg, 'error');
       } finally {
         setSendingInvite(false);
       }
@@ -362,7 +616,6 @@ export const DetailPanel = React.memo<DetailPanelProps>(
 
             {/* Right: controls */}
             <div className="ml-auto flex flex-col items-end gap-1 sm:flex-row sm:items-center">
-
               {/* last updated + refresh + CTA */}
               <div className="flex flex-col items-end gap-1 sm:items-end sm:ml-3">
                 <div className="flex items-center gap-2">
@@ -383,9 +636,8 @@ export const DetailPanel = React.memo<DetailPanelProps>(
                       className="inline-flex items-center gap-1 rounded-xl border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-60"
                     >
                       <BarChart3
-                        className={`h-3 w-3 ${
-                          refreshing ? 'animate-spin' : ''
-                        }`}
+                        className={`h-3 w-3 ${refreshing ? 'animate-spin' : ''
+                          }`}
                       />
                       {refreshing ? 'Refreshing…' : 'Refresh data'}
                     </button>
@@ -394,16 +646,15 @@ export const DetailPanel = React.memo<DetailPanelProps>(
 
                 {/* CTA row */}
                 <div className="flex items-center gap-2">
-                  {emailExists ? (
+                  {effectiveHasEmail ? (
                     <button
                       onClick={handleMessageNow}
                       disabled={!canAct}
                       title={ctaTitle}
                       className={`inline-flex items-center gap-2 rounded-xl px-3 py-1.5 text-sm font-medium text-white transition-opacity shadow-sm
-                        ${
-                          canAct
-                            ? 'bg-gradient-to-r from-[#FFA135] to-[#FF7236] hover:opacity-90'
-                            : 'bg-gray-300 cursor-not-allowed opacity-70'
+                        ${canAct
+                          ? 'bg-gradient-to-r from-[#FFA135] to-[#FF7236] hover:opacity-90'
+                          : 'bg-gray-300 cursor-not-allowed opacity-70'
                         }`}
                     >
                       {sendingInvite ? (
@@ -424,10 +675,9 @@ export const DetailPanel = React.memo<DetailPanelProps>(
                       disabled={!canAct}
                       title={ctaTitle}
                       className={`inline-flex items-center gap-2 rounded-xl px-3 py-1.5 text-sm font-medium text-white transition-opacity shadow-sm
-                        ${
-                          canAct
-                            ? 'bg-gradient-to-r from-[#FFA135] to-[#FF7236] hover:opacity-90'
-                            : 'bg-gray-300 cursor-not-allowed opacity-70'
+                        ${canAct
+                          ? 'bg-gradient-to-r from-[#FFA135] to-[#FF7236] hover:opacity-90'
+                          : 'bg-gray-300 cursor-not-allowed opacity-70'
                         }`}
                     >
                       {sendingInvite ? (

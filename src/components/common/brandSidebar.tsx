@@ -14,6 +14,7 @@ import {
   HiX,
   HiCreditCard,
   HiPlay,
+  HiMail,
 } from 'react-icons/hi';
 import { SendIcon } from 'lucide-react';
 import { useBrandSidebar } from './brand-sidebar-context';
@@ -24,7 +25,7 @@ interface MenuItem {
   icon: React.ComponentType<{ size?: string | number; className?: string }>;
 }
 
-// Base list (don’t change this; we’ll filter it below)
+// 🔹 BASE list with new "Invited Influencers" item
 const BASE_MENU_ITEMS: MenuItem[] = [
   { name: 'Dashboard', href: '/brand/dashboard', icon: HiHome },
   { name: 'Create New Campaign', href: '/brand/add-edit-campaign', icon: HiPlusCircle },
@@ -32,8 +33,13 @@ const BASE_MENU_ITEMS: MenuItem[] = [
   { name: 'Active Campaign', href: '/brand/active-campaign', icon: HiCheckCircle },
   { name: 'Previous Campaigns', href: '/brand/prev-campaign', icon: HiClipboardList },
   { name: 'Browse Influencers', href: '/brand/browse-influencer', icon: HiUsers },
+
+  // ⭐ NEW: Invited Influencers
+  { name: 'Invited Influencers', href: '/brand/invited', icon: HiUsers },
+
   { name: 'Disputes', href: '/brand/disputes', icon: HiClipboardList },
   { name: 'Messages', href: '/brand/messages', icon: SendIcon },
+  { name: 'Email', href: '/brand/email', icon: HiMail },
   { name: 'My Subscriptions', href: '/brand/subscriptions', icon: HiCreditCard },
 ];
 
@@ -47,7 +53,6 @@ export default function BrandSidebar({ isOpen, onClose }: BrandSidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
 
-  // NEW: read plan from localStorage
   const [planName, setPlanName] = React.useState<string | null>(null);
   React.useEffect(() => {
     try {
@@ -60,11 +65,12 @@ export default function BrandSidebar({ isOpen, onClose }: BrandSidebarProps) {
     }
   }, []);
 
-  // NEW: filter menu for free plans
   const menuItems = React.useMemo(() => {
     if (!planName) return BASE_MENU_ITEMS;
     const isFree = planName === 'free' || planName === 'brand_free';
     if (!isFree) return BASE_MENU_ITEMS;
+
+    // still only hide Disputes for free plan
     return BASE_MENU_ITEMS.filter((item) => item.href !== '/brand/disputes');
   }, [planName]);
 
@@ -105,7 +111,7 @@ export default function BrandSidebar({ isOpen, onClose }: BrandSidebarProps) {
         flex flex-col h-full bg-white text-gray-800 shadow-lg
         transition-[width] duration-300 ease-in-out
       "
-      style={{ width: 'var(--brand-sidebar-w)' }} // 64px or 336px from provider
+      style={{ width: 'var(--brand-sidebar-w)' }}
     >
       {/* Header */}
       <div className="flex items-center justify-between h-16 px-4 border-b border-gray-200">
@@ -149,10 +155,8 @@ export default function BrandSidebar({ isOpen, onClose }: BrandSidebarProps) {
       {/* Mobile overlay */}
       {isOpen && (
         <div className="fixed inset-0 z-40 flex">
-          {/* Backdrop */}
           <div className="fixed inset-0 bg-black bg-opacity-40 backdrop-blur-sm" onClick={onClose} />
 
-          {/* Sidebar panel */}
           <div className="relative flex flex-col h-full bg-white text-gray-800 w-64">
             <div className="flex items-center justify-between h-16 px-4 border-b border-gray-200">
               <Link href="/brand/dashboard" className="flex items-center space-x-2">

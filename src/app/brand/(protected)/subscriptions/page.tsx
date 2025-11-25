@@ -89,7 +89,7 @@ const LABELS: Record<string, string> = {
   // Brand (new keys)
   searches_per_month: "Searches / month",
   profile_views_per_month: "Profile views / month",
-  invites_per_month: "Invites / month",
+  invites_per_month: "Influencer Invites",
   active_campaigns_limit: "Active campaigns",
   message_templates_basic_limit: "Basic message templates",
   custom_messaging: "Custom messaging",

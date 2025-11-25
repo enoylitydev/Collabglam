@@ -12,8 +12,8 @@ import { useSearchParams } from "next/navigation";
 /* -------------------------- Theme helpers -------------------------- */
 const activeClass = (isActive: boolean) =>
   isActive
-    ? "bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-900 font-semibold shadow-lg"
-    : "text-gray-700 hover:bg-gradient-to-r hover:from-[#FFBF00]/10 hover:to-[#FFDB58]/10 hover:text-gray-900";
+    ? "bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white font-semibold shadow-lg"
+    : "text-gray-800 hover:bg-gradient-to-r hover:from-[#FFA135] hover:to-[#FF7236] hover:text-white";
 
 /* ------------------------------ Types ------------------------------ */
 type AudienceItem = { name?: string; code?: string; weight?: number };
@@ -142,7 +142,7 @@ export default function MediaKitPage() {
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-gray-50 flex items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-[#FFBF00] mx-auto"></div>
+          <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-[#FFA135] mx-auto"></div>
           <p className="mt-4 text-lg text-gray-600">Loading your MediaKit...</p>
         </div>
       </div>
@@ -166,7 +166,7 @@ export default function MediaKitPage() {
                 setError("No influencer ID found in URL.");
               }
             }}
-            className="w-full px-4 py-3 rounded-xl bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-900 font-semibold"
+            className="w-full px-4 py-3 rounded-xl bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white font-semibold"
           >
             Retry with URL ID
           </button>
@@ -181,18 +181,18 @@ export default function MediaKitPage() {
     <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-gray-50">
       {/* Hero Section */}
       <div className="relative bg-white border-b shadow-sm">
-        <div className="absolute inset-0 bg-gradient-to-r from-[#FFBF00]/5 to-[#FFDB58]/5" />
-        <div className="absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r from-[#FFBF00] to-[#FFDB58]" />
+        <div className="absolute inset-0 bg-gradient-to-r from-[#FFA135]/5 to-[#FF7236]/5" />
+        <div className="absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r from-[#FFA135] to-[#FF7236]" />
         <div className="relative max-w-7xl mx-auto px-6 py-12">
           <div className="flex flex-col lg:flex-row items-center gap-8">
             {primary?.picture && (
               <div className="relative group">
-                <div className="absolute -inset-1 bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] rounded-3xl blur opacity-25 group-hover:opacity-40 transition" />
+                <div className="absolute -inset-1 bg-gradient-to-r from-[#FFA135] to-[#FF7236] rounded-3xl blur opacity-25 group-hover:opacity-40 transition" />
                 <div className="relative w-32 h-32 rounded-3xl overflow-hidden bg-white shadow-xl ring-4 ring-white">
                   <img src={primary.picture} alt={mediaKit?.name ?? "Influencer"} className="w-full h-full object-cover" />
                 </div>
                 {primary?.isVerified && (
-                  <div className="absolute -bottom-2 -right-2 w-10 h-10 bg-gradient-to-br from-[#FFBF00] to-[#FFDB58] rounded-full flex items-center justify-center shadow-lg ring-4 ring-white">
+                  <div className="absolute -bottom-2 -right-2 w-10 h-10 bg-gradient-to-br from-[#FFA135] to-[#FF7236] rounded-full flex items-center justify-center shadow-lg ring-4 ring-white">
                     <CheckCircle2 className="w-6 h-6 text-white" />
                   </div>
                 )}
@@ -206,7 +206,7 @@ export default function MediaKitPage() {
                 </h1>
                 {primary?.username && (
                   <p className="text-xl text-gray-600 flex items-center gap-2 justify-center lg:justify-start">
-                    <span className="text-[#FFBF00]">@</span>{primary.username}
+                    <span className="text-[#FFA135]">@</span>{primary.username}
                   </p>
                 )}
                 {primary?.bio && (
@@ -216,15 +216,15 @@ export default function MediaKitPage() {
 
               <div className="flex flex-wrap gap-3 justify-center lg:justify-start">
                 {selectedPlatform && (
-                  <div className="inline-flex items-center gap-2 px-4 py-2 bg-white rounded-full border-2 border-[#FFBF00]/30 shadow-sm">
+                  <div className="inline-flex items-center gap-2 px-4 py-2 bg-white rounded-full border-2 border-[#FFA135]/30 shadow-sm">
                     {getPlatformIcon(selectedPlatform)}
                     <span className="font-semibold capitalize text-gray-900">{selectedPlatform}</span>
                   </div>
                 )}
                 {primary?.accountType && (
-                  <div className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] rounded-full shadow-sm">
-                    <Award className="w-4 h-4 text-gray-900" />
-                    <span className="font-semibold text-gray-900">{primary.accountType}</span>
+                  <div className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-[#FFA135] to-[#FF7236] rounded-full shadow-sm">
+                    <Award className="w-4 h-4 text-white" />
+                    <span className="font-semibold text-white">{primary.accountType}</span>
                   </div>
                 )}
               </div>
@@ -237,7 +237,7 @@ export default function MediaKitPage() {
                 <select
                   value={selectedPlatform ?? ""}
                   onChange={(e) => setSelectedPlatform(e.target.value)}
-                  className="px-4 py-3 rounded-xl border text-sm font-medium transition-all duration-200 bg-white hover:bg-gradient-to-r hover:from-[#FFBF00]/10 hover:to-[#FFDB58]/10"
+                  className="px-4 py-3 rounded-xl border text-sm font-medium transition-all duration-200 bg-white hover:bg-gradient-to-r hover:from-[#FFA135]/10 hover:to-[#FF7236]/10"
                 >
                   {(mediaKit?.socialProfiles ?? []).map((p, i) => (
                     <option key={`${p.provider}-${i}`} value={p.provider}>
@@ -313,12 +313,12 @@ export default function MediaKitPage() {
             {mediaKit?.languages && mediaKit.languages.length > 0 && (
               <div className="bg-white rounded-2xl shadow-sm border p-6">
                 <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
-                  <Globe className="w-5 h-5 text-[#FFBF00]" />
+                  <Globe className="w-5 h-5 text-[#FFA135]" />
                   Languages Spoken
                 </h3>
                 <div className="flex flex-wrap gap-3">
                   {mediaKit.languages.map((l, i) => (
-                    <span key={i} className="px-4 py-2 bg-gradient-to-r from-[#FFBF00]/10 to-[#FFDB58]/10 rounded-full text-sm font-medium text-gray-900 border border-[#FFBF00]/20">
+                    <span key={i} className="px-4 py-2 bg-gradient-to-r from-[#FFA135]/10 to-[#FF7236]/10 rounded-full text-sm font-medium text-gray-900 border border-[#FFA135]/20">
                       {l.name}
                     </span>
                   ))}
@@ -334,9 +334,9 @@ export default function MediaKitPage() {
             {/* Recent Posts */}
             {primary?.recentPosts && primary.recentPosts.length > 0 && (
               <div className="bg-white rounded-2xl shadow-sm border overflow-hidden">
-                <div className="p-6 border-b bg-gradient-to-r from-[#FFBF00]/5 to-[#FFDB58]/5">
+                <div className="p-6 border-b bg-gradient-to-r from-[#FFA135]/5 to-[#FF7236]/5">
                   <h3 className="text-xl font-bold text-gray-900 flex items-center gap-2">
-                    <TrendingUp className="w-6 h-6 text-[#FFBF00]" />
+                    <TrendingUp className="w-6 h-6 text-[#FFA135]" />
                     Recent Content
                   </h3>
                   <p className="text-gray-600 mt-1">Latest posts from @{primary.username}</p>
@@ -387,9 +387,9 @@ export default function MediaKitPage() {
         {activeTab === "collaboration" && mediaKit?.onboarding && (
           <div className="space-y-6">
             <div className="bg-white rounded-2xl shadow-sm border overflow-hidden">
-              <div className="p-6 border-b bg-gradient-to-r from-[#FFBF00]/5 to-[#FFDB58]/5">
+              <div className="p-6 border-b bg-gradient-to-r from-[#FFA135]/5 to-[#FF7236]/5">
                 <h3 className="text-xl font-bold text-gray-900 flex items-center gap-2">
-                  <Target className="w-6 h-6 text-[#FFBF00]" />
+                  <Target className="w-6 h-6 text-[#FFA135]" />
                   Collaboration Preferences
                 </h3>
                 <p className="text-gray-600 mt-1">How I like to work with brands</p>
@@ -423,9 +423,9 @@ export default function MediaKitPage() {
           <div className="space-y-6">
             {mediaKit?.onboarding?.budgets && mediaKit.onboarding.budgets.length > 0 && (
               <div className="bg-white rounded-2xl shadow-sm border overflow-hidden">
-                <div className="p-6 border-b bg-gradient-to-r from-[#FFBF00]/5 to-[#FFDB58]/5">
+                <div className="p-6 border-b bg-gradient-to-r from-[#FFA135]/5 to-[#FF7236]/5">
                   <h3 className="text-xl font-bold text-gray-900 flex items-center gap-2">
-                    <DollarSign className="w-6 h-6 text-[#FFBF00]" />
+                    <DollarSign className="w-6 h-6 text-[#FFA135]" />
                     Rate Card
                   </h3>
                   <p className="text-gray-600 mt-1">Typical brand budget ranges</p>
@@ -454,7 +454,7 @@ export default function MediaKitPage() {
             {mediaKit?.additionalNotes && (
               <div className="bg-white rounded-2xl shadow-sm border p-6">
                 <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
-                  <FileText className="w-5 h-5 text-[#FFBF00]" />
+                  <FileText className="w-5 h-5 text-[#FFA135]" />
                   Additional Notes
                 </h3>
                 <p className="text-gray-700 leading-relaxed whitespace-pre-wrap">{mediaKit.additionalNotes}</p>
@@ -480,9 +480,9 @@ export default function MediaKitPage() {
         {activeTab === "contact" && (
           <div className="space-y-6">
             <div className="bg-white rounded-2xl shadow-sm border overflow-hidden">
-              <div className="p-6 border-b bg-gradient-to-r from-[#FFBF00]/5 to-[#FFDB58]/5">
+              <div className="p-6 border-b bg-gradient-to-r from-[#FFA135]/5 to-[#FF7236]/5">
                 <h3 className="text-xl font-bold text-gray-900 flex items-center gap-2">
-                  <Mail className="w-6 h-6 text-[#FFBF00]" />
+                  <Mail className="w-6 h-6 text-[#FFA135]" />
                   Get in Touch
                 </h3>
                 <p className="text-gray-600 mt-1">Let's collaborate on something amazing</p>
@@ -535,8 +535,8 @@ export default function MediaKitPage() {
 function StatCard({ icon, label, value, trend }: { icon: React.ReactNode; label: string; value?: string; trend?: string }) {
   return (
     <div className="group">
-      <div className="flex items-start gap-3 p-4 rounded-xl hover:bg-gradient-to-r hover:from-[#FFBF00]/5 hover:to-[#FFDB58]/5 transition-colors">
-        <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-[#FFBF00] to-[#FFDB58] flex items-center justify-center text-white flex-shrink-0">
+      <div className="flex items-start gap-3 p-4 rounded-xl hover:bg-gradient-to-r hover:from-[#FFA135]/5 hover:to-[#FF7236]/5 transition-colors">
+        <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-[#FFA135] to-[#FF7236] flex items-center justify-center text-white flex-shrink-0">
           {icon}
         </div>
         <div className="flex-1 min-w-0">
@@ -552,9 +552,9 @@ function StatCard({ icon, label, value, trend }: { icon: React.ReactNode; label:
 function InfoCard({ icon, title, items }: { icon: React.ReactNode; title: string; items: { label: string; value?: string }[] }) {
   return (
     <div className="bg-white rounded-2xl shadow-sm border overflow-hidden">
-      <div className="p-6 border-b bg-gradient-to-r from-[#FFBF00]/5 to-[#FFDB58]/5">
+      <div className="p-6 border-b bg-gradient-to-r from-[#FFA135]/5 to-[#FF7236]/5">
         <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
-          <span className="text-[#FFBF00]">{icon}</span>
+          <span className="text-[#FFA135]">{icon}</span>
           {title}
         </h3>
       </div>
@@ -616,7 +616,7 @@ function AudienceCard({ title, data }: { title: string; data: AudienceItem[] }) 
   );
   return (
     <div className="bg-white rounded-2xl shadow-sm border overflow-hidden">
-      <div className="p-6 border-b bg-gradient-to-r from-[#FFBF00]/5 to-[#FFDB58]/5">
+      <div className="p-6 border-b bg-gradient-to-r from-[#FFA135]/5 to-[#FF7236]/5">
         <h3 className="text-lg font-bold text-gray-900">{title}</h3>
       </div>
       <div className="p-6 space-y-4">
@@ -624,11 +624,11 @@ function AudienceCard({ title, data }: { title: string; data: AudienceItem[] }) 
           <div key={idx} className="space-y-2">
             <div className="flex items-center justify-between text-sm">
               <span className="font-medium text-gray-900">{item.name ?? item.code}</span>
-              <span className="font-bold text-[#FFBF00]">{item.weight != null ? `${(item.weight * 100).toFixed(1)}%` : "-"}</span>
+              <span className="font-bold text-[#FFA135]">{item.weight != null ? `${(item.weight * 100).toFixed(1)}%` : "-"}</span>
             </div>
             <div className="w-full bg-gray-100 rounded-full h-2.5 overflow-hidden">
               <div
-                className="h-full bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] rounded-full transition-all duration-500"
+                className="h-full bg-gradient-to-r from-[#FFA135] to-[#FF7236] rounded-full transition-all duration-500"
                 style={{ width: `${(item.weight ?? 0) * 100}%` }}
               />
             </div>
@@ -645,16 +645,16 @@ function ContactItem({ icon, label, value, href, external }: { icon: React.React
       href={href}
       target={external ? "_blank" : undefined}
       rel={external ? "noopener noreferrer" : undefined}
-      className="flex items-center gap-4 p-4 rounded-xl border hover:border-[#FFBF00]/50 hover:bg-gradient-to-r hover:from-[#FFBF00]/5 hover:to-[#FFDB58]/5 transition-all group"
+      className="flex items-center gap-4 p-4 rounded-xl border hover:border-[#FFA135]/50 hover:bg-gradient-to-r hover:from-[#FFA135]/5 hover:to-[#FF7236]/5 transition-all group"
     >
-      <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#FFBF00] to-[#FFDB58] flex items-center justify-center text-white flex-shrink-0">
+      <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#FFA135] to-[#FF7236] flex items-center justify-center text-white flex-shrink-0">
         {icon}
       </div>
       <div className="flex-1 min-w-0">
         <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">{label}</p>
-        <p className="text-sm font-semibold text-gray-900 mt-0.5 truncate group-hover:text-[#FFBF00] transition-colors">{value}</p>
+        <p className="text-sm font-semibold text-gray-900 mt-0.5 truncate group-hover:text-[#FFA135] transition-colors">{value}</p>
       </div>
-      {external && <ExternalLink className="w-4 h-4 text-gray-400 group-hover:text-[#FFBF00] transition-colors" />}
+      {external && <ExternalLink className="w-4 h-4 text-gray-400 group-hover:text-[#FFA135] transition-colors" />}
     </a>
   );
 }
@@ -672,8 +672,8 @@ function ChipSection({ title, chips, tone = "soft" }: { title: string; chips: st
   if (!chips?.length) return null;
   const base =
     tone === "soft"
-      ? "px-4 py-2 bg-gradient-to-r from-[#FFBF00]/10 to-[#FFDB58]/10 rounded-full text-sm font-medium text-gray-900 border border-[#FFBF00]/20"
-      : "px-4 py-2 bg-white rounded-full text-sm font-medium text-gray-900 border-2 border-[#FFBF00]/30";
+      ? "px-4 py-2 bg-gradient-to-r from-[#FFA135]/10 to-[#FF7236]/10 rounded-full text-sm font-medium text-gray-900 border border-[#FFA135]/20"
+      : "px-4 py-2 bg-white rounded-full text-sm font-medium text-gray-900 border-2 border-[#FFA135]/30";
   return (
     <div>
       <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">{title}</h4>
