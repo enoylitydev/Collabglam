@@ -13,6 +13,7 @@ import {
   HiMenu,
   HiX,
   HiArchive,
+  HiOutlineMail,
 } from "react-icons/hi";
 import { HiBanknotes, HiDocument } from "react-icons/hi2";
 
@@ -30,6 +31,7 @@ const menuItems: MenuItem[] = [
   { name: "Rejected Campaigns", href: "/influencer/rejected-campaign", icon: HiArchive },
   { name: "Disputes", href: "/influencer/disputes", icon: HiClipboardList },
   { name: "Messages", href: "/influencer/messages", icon: HiChatAlt2 },
+  // { name: "E-Mails", href: "/influencer/email", icon: HiOutlineMail },
   { name: "Payment Details", href: "/influencer/payment-detail", icon: HiBanknotes },
   { name: "Subscriptions", href: "/influencer/subscriptions", icon: HiCreditCard },
 ];

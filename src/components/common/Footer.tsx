@@ -116,7 +116,7 @@ export default function FooterWithNewsletter() {
           <div className="mb-12 lg:mb-0 lg:flex-shrink-0 flex flex-col items-center text-center lg:items-start lg:text-left">
             <Link href="/" className="flex items-center mb-6">
               <img
-                src="./logo.png"
+                src="/logo.png"
                 alt="Collabglam Logo"
                 width={50}
                 height={50}

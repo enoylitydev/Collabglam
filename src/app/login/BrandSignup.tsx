@@ -17,9 +17,11 @@ type MetaBusinessType = { _id?: string; name: string };
 
 type Option = { value: string; label: string };
 
+// ⬇️ ADD brandAliasEmail here
 type BrandLoginResponse = {
   token: string;
   brandId: string;
+  brandAliasEmail?: string;
   subscriptionPlanName?: string;
   subscription?: {
     planId?: string;
@@ -34,6 +36,7 @@ const companySizes = ['1-10', '11-50', '51-200', '200+'];
 
 const MAX_LOGO_MB = 3;
 const ACCEPT_LOGO_MIME = ['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml'];
+const BRAND_ALIAS_DOMAIN = 'collabglam.cloud';
 
 /** Normalize helpers to survive different API shapes */
 function unwrap<T = any>(x: any): T {
@@ -49,9 +52,24 @@ function toArray<T = any>(v: any): T[] {
   return [];
 }
 
+/** Build brand alias email local part from brand name */
+function buildBrandAliasLocalPart(name: string): string {
+  const raw = name.trim().toLowerCase();
+  if (!raw) return '';
+
+  // remove apostrophes etc.
+  const withoutQuotes = raw.replace(/['"`’]/g, '');
+  // replace non-alphanumeric with nothing (compact)
+  const compact = withoutQuotes.replace(/[^a-z0-9]+/g, '');
+  // trim leading/trailing dots just in case
+  const cleaned = compact.replace(/^\.+|\.+$/g, '');
+
+  return cleaned;
+}
+
 export function BrandSignup({ onSuccess, onStepChange }: { onSuccess: () => void; onStepChange?: (currentStep: number) => void }) {
   const router = useRouter();
-  // NOTE: keep default to 'email' if you want to skip email/otp while testing
+  // NOTE: default to 'details' currently (for testing). Change to 'email' for full flow.
   const [step, setStep] = useState<Step>('email');
   const [countries, setCountries] = useState<Country[]>([]);
   const [categories, setCategories] = useState<MetaCategory[]>([]);
@@ -65,7 +83,6 @@ export function BrandSignup({ onSuccess, onStepChange }: { onSuccess: () => void
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [logoPreview, setLogoPreview] = useState<string>('');
   const [passwordVisible, setPasswordVisible] = useState(false);
-  const [confirmPasswordVisible, setConfirmPasswordVisible] = useState(false);
   const [showRequiredHints, setShowRequiredHints] = useState(false);
 
   const [formData, setFormData] = useState({
@@ -73,7 +90,6 @@ export function BrandSignup({ onSuccess, onStepChange }: { onSuccess: () => void
     otp: '',
     name: '',
     password: '',
-    confirmPassword: '',
     phone: '',
     countryId: '',
     callingCodeId: '',
@@ -83,7 +99,6 @@ export function BrandSignup({ onSuccess, onStepChange }: { onSuccess: () => void
     companySize: '',
     businessType: '', // BusinessType NAME (string)
     referralCode: '',
-    agreedToTerms: false,
     officialRep: false,
   });
 
@@ -194,6 +209,12 @@ export function BrandSignup({ onSuccess, onStepChange }: { onSuccess: () => void
 
   const pwd = passwordScore(formData.password);
 
+  // Brand alias email (uneditable): brand-name@collabglam.cloud
+  const brandAliasEmail = useMemo(() => {
+    const localPart = buildBrandAliasLocalPart(formData.name);
+    return localPart ? `${localPart}@${BRAND_ALIAS_DOMAIN}` : '';
+  }, [formData.name]);
+
   // ————————————————— Select options (react-select)
   const callingCodeOptions: Option[] = useMemo(
     () => (countries || []).map((c) => ({ value: c._id, label: `${c.flag ?? ''} ${c.callingCode}` })),
@@ -276,10 +297,8 @@ export function BrandSignup({ onSuccess, onStepChange }: { onSuccess: () => void
   const completeSignup = async () => {
     setShowRequiredHints(false);
 
-    // Required checks — add phone & calling code which previously had no inputs in UI
     if (!formData.name || !formData.password || !formData.phone || !formData.countryId || !formData.callingCodeId || !formData.categoryId) {
       setShowRequiredHints(true);
-      // scroll to first missing field
       const firstMissingId = [
         ['brand-name', !formData.name],
         ['calling-code', !formData.callingCodeId],
@@ -292,14 +311,9 @@ export function BrandSignup({ onSuccess, onStepChange }: { onSuccess: () => void
       return;
     }
 
-    // Enforce 10-digit mobile without country code
     const phoneDigits = (formData.phone || '').replace(/\D/g, '');
     if (phoneDigits.length !== 10) {
       setError('Please enter a valid 10-digit mobile number (exclude country code).');
-      return;
-    }
-    if (formData.password !== formData.confirmPassword) {
-      setError('Passwords do not match.');
       return;
     }
     if (pwd.score < 2) {
@@ -310,16 +324,11 @@ export function BrandSignup({ onSuccess, onStepChange }: { onSuccess: () => void
       setError('Please confirm you are an official representative of this brand.');
       return;
     }
-    if (!formData.agreedToTerms) {
-      setError('Please agree to the Terms of Service and Privacy Policy.');
-      return;
-    }
     if (!isValidUrl(formData.website)) {
       setError('Please enter a valid website URL, e.g., https://example.com');
       return;
     }
 
-    // Validate logo (if provided)
     if (logoFile) {
       if (!ACCEPT_LOGO_MIME.includes(logoFile.type)) {
         setError('Logo must be PNG, JPG, WEBP, or SVG.');
@@ -337,11 +346,10 @@ export function BrandSignup({ onSuccess, onStepChange }: { onSuccess: () => void
     const instaHandle = extractInstagramHandle(formData.instagramHandle);
 
     try {
-      // Build multipart form-data for /brand/register
       const fd = new FormData();
 
       if (logoFile) {
-        fd.append('file', logoFile); // handled by uploadLogoMiddleware.single('file')
+        fd.append('file', logoFile);
       }
 
       fd.append('name', formData.name);
@@ -352,6 +360,7 @@ export function BrandSignup({ onSuccess, onStepChange }: { onSuccess: () => void
       fd.append('callingId', formData.callingCodeId);
       fd.append('categoryId', formData.categoryId);
 
+      if (brandAliasEmail) fd.append('brandAliasEmail', brandAliasEmail);
       if (formData.website) fd.append('website', formData.website);
       if (instaHandle) fd.append('instagramHandle', instaHandle);
       if (formData.companySize) fd.append('companySize', formData.companySize);
@@ -361,7 +370,6 @@ export function BrandSignup({ onSuccess, onStepChange }: { onSuccess: () => void
 
       await post('/brand/register', fd);
 
-      // Auto-login after successful signup — unwrap response in case your post() returns { data }
       const login = unwrap<BrandLoginResponse>(
         await post('/brand/login', { email: formData.email, password: formData.password })
       );
@@ -372,7 +380,12 @@ export function BrandSignup({ onSuccess, onStepChange }: { onSuccess: () => void
         localStorage.setItem('userType', 'brand');
         localStorage.setItem('userEmail', formData.email);
 
-        // 🔹 subscription info (same logic as LoginForm)
+        // ⬇️ NEW: store brandAliasEmail (prefer backend, fallback to frontend computed)
+        const alias = login?.brandAliasEmail ?? brandAliasEmail;
+        if (alias) {
+          localStorage.setItem('brandAliasEmail', alias);
+        }
+
         const brandPlanName =
           login.subscriptionPlanName ??
           login.subscription?.planName ??
@@ -424,12 +437,10 @@ export function BrandSignup({ onSuccess, onStepChange }: { onSuccess: () => void
     callingCodeId: showRequiredHints && !formData.callingCodeId,
   } as const;
 
-  // Never render this deprecated generic message, and suppress password mismatch (shown at bottom)
   const filteredError =
-    error === 'Please fill in all required fields.' || error === 'Passwords do not match.'
+    error === 'Please fill in all required fields.'
       ? ''
       : error;
-  const showPwdMismatchBottom = error === 'Passwords do not match.';
 
   // ————————————————— Render
   return (
@@ -456,7 +467,7 @@ export function BrandSignup({ onSuccess, onStepChange }: { onSuccess: () => void
       {step === 'email' && (
         <div className="space-y-5 animate-fadeIn">
           <div className="grid gap-3">
-            <div className="grid grid-cols-1 md:grid-cols-[1fr,360px] items-end gap-4 mx-4 md:mx-[0%]">
+            <div className="grid grid-cols-1 items-end gap-4 mx-4 md:mx-[0%]">
               <FloatingLabelInput
                 id="brand-email"
                 label="Work Email"
@@ -522,7 +533,6 @@ export function BrandSignup({ onSuccess, onStepChange }: { onSuccess: () => void
       {/* ————————————————— Step 3: Details ————————————————— */}
       {step === 'details' && (
         <div className="space-y-5 animate-fadeIn">
-          {/* Symmetrical two-column card */}
           <div className="p-4 md:p-6 lg:p-8 border-2 border-gray-100 rounded-2xl bg-white">
             <div className="grid gap-6 lg:gap-8 lg:grid-cols-[112px,1fr] items-start">
               {/* Logo uploader */}
@@ -546,7 +556,7 @@ export function BrandSignup({ onSuccess, onStepChange }: { onSuccess: () => void
 
               {/* Form grid */}
               <div className="grid gap-6">
-                {/* Top row: brand + email */}
+                {/* Row 1: Brand Name + Email */}
                 <div className="grid md:grid-cols-2 gap-4">
                   <div className="space-y-1">
                     <FloatingLabelInput
@@ -563,10 +573,37 @@ export function BrandSignup({ onSuccess, onStepChange }: { onSuccess: () => void
                     )}
                   </div>
 
-                  <FloatingLabelInput id="brand-email-display" label="Email" type="email" value={formData.email} disabled />
+                  <FloatingLabelInput
+                    id="brand-email-display"
+                    label="Email"
+                    type="email"
+                    value={formData.email}
+                    disabled
+                  />
                 </div>
 
-                {/* Location + Category */}
+                {/* Row 2: Brand Alias Email + Website */}
+                <div className="grid md:grid-cols-2 gap-4">
+                  <FloatingLabelInput
+                    id="brand-alias-email"
+                    label="Brand Alias Email"
+                    type="email"
+                    value={brandAliasEmail}
+                    disabled
+                  />
+
+                  <FloatingLabelInput
+                    id="brand-website"
+                    label="Website (Optional)"
+                    type="url"
+                    placeholder="https://example.com"
+                    autoComplete="url"
+                    value={formData.website}
+                    onChange={(e) => setFormData({ ...formData, website: e.target.value })}
+                  />
+                </div>
+
+                {/* Row 3: Location + Category */}
                 <div className="grid md:grid-cols-2 gap-4">
                   <div className="space-y-1">
                     <Select
@@ -607,8 +644,8 @@ export function BrandSignup({ onSuccess, onStepChange }: { onSuccess: () => void
                   </div>
                 </div>
 
-                {/* Phone (Calling code + number) */}
-                <div className="grid md:grid-cols-[180px,1fr] gap-4">
+                {/* Row 4: Phone (Calling code + number) */}
+                <div className="grid md:grid-cols-2 gap-4">
                   <div className="space-y-1">
                     <Select
                       instanceId="calling-code"
@@ -646,18 +683,8 @@ export function BrandSignup({ onSuccess, onStepChange }: { onSuccess: () => void
                   </div>
                 </div>
 
-                {/* Web + Instagram */}
+                {/* Row 5: Instagram + Company size */}
                 <div className="grid md:grid-cols-2 gap-4">
-                  <FloatingLabelInput
-                    id="brand-website"
-                    label="Website (Optional)"
-                    type="url"
-                    placeholder="https://example.com"
-                    autoComplete="url"
-                    value={formData.website}
-                    onChange={(e) => setFormData({ ...formData, website: e.target.value })}
-                  />
-
                   <FloatingLabelInput
                     id="brand-instagram"
                     label="Instagram Handle (Optional)"
@@ -666,10 +693,7 @@ export function BrandSignup({ onSuccess, onStepChange }: { onSuccess: () => void
                     value={formData.instagramHandle}
                     onChange={(e) => setFormData({ ...formData, instagramHandle: e.target.value })}
                   />
-                </div>
 
-                {/* Company size + Business type */}
-                <div className="grid md:grid-cols-2 gap-4">
                   <Select
                     instanceId="company-size"
                     inputId="company-size"
@@ -683,7 +707,10 @@ export function BrandSignup({ onSuccess, onStepChange }: { onSuccess: () => void
                     isDisabled={loading}
                     isClearable
                   />
+                </div>
 
+                {/* Row 6: Business type + Password */}
+                <div className="grid md:grid-cols-2 gap-4">
                   <Select
                     instanceId="business-type"
                     inputId="business-type"
@@ -698,55 +725,38 @@ export function BrandSignup({ onSuccess, onStepChange }: { onSuccess: () => void
                     isLoading={metaLoading}
                     isClearable
                   />
-                </div>
 
-                {/* Passwords with strength */}
-                <div className="grid md:grid-cols-2 gap-4">
-                  <div className="relative">
-                    <FloatingLabelInput
-                      id="brand-password"
-                      label="Password"
-                      type={passwordVisible ? 'text' : 'password'}
-                      autoComplete="new-password"
-                      value={formData.password}
-                      onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                      style={{ paddingRight: 40 }}
-                      required
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setPasswordVisible((v) => !v)}
-                      className="absolute inset-y-0 right-3 my-auto text-gray-500 hover:text-gray-700"
-                      aria-label={passwordVisible ? 'Hide password' : 'Show password'}
-                    >
-                      {passwordVisible ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                    </button>
-                  </div>
-
-                  <div className="relative">
-                    <FloatingLabelInput
-                      id="brand-confirm-password"
-                      label="Confirm Password"
-                      type={confirmPasswordVisible ? 'text' : 'password'}
-                      autoComplete="new-password"
-                      value={formData.confirmPassword}
-                      onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
-                      style={{ paddingRight: 40 }}
-                      required
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setConfirmPasswordVisible((v) => !v)}
-                      className="absolute inset-y-0 right-3 my-auto text-gray-500 hover:text-gray-700"
-                      aria-label={confirmPasswordVisible ? 'Hide password' : 'Show password'}
-                    >
-                      {confirmPasswordVisible ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                    </button>
+                  <div className="grid gap-2">
+                    <div className="relative">
+                      <FloatingLabelInput
+                        id="brand-password"
+                        label="Password"
+                        type={passwordVisible ? 'text' : 'password'}
+                        autoComplete="new-password"
+                        value={formData.password}
+                        onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                        style={{ paddingRight: 40 }}
+                        required
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setPasswordVisible((v) => !v)}
+                        className="absolute inset-y-0 right-3 my-auto text-gray-500 hover:text-gray-700"
+                        aria-label={passwordVisible ? 'Hide password' : 'Show password'}
+                      >
+                        {passwordVisible ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                      </button>
+                    </div>
+                    {formData.password && (
+                      <p className="text-xs text-gray-500">
+                        Password strength: <span className="font-medium">{pwd.label}</span>
+                      </p>
+                    )}
                   </div>
                 </div>
 
-                {/* Verification + Terms (symmetrical on md+) */}
-                <div className="grid md:grid-rows-2 gap-2">
+                {/* Verification */}
+                <div className="grid gap-2">
                   <label className="flex items-start gap-3 cursor-pointer group">
                     <input
                       type="checkbox"
@@ -759,37 +769,12 @@ export function BrandSignup({ onSuccess, onStepChange }: { onSuccess: () => void
                       I confirm that I'm an official representative of this brand. By continuing, I agree to receive transactional emails.
                     </span>
                   </label>
-
-                  <label className="flex items-start gap-3 cursor-pointer group">
-                    <input
-                      type="checkbox"
-                      checked={formData.agreedToTerms}
-                      onChange={(e) => setFormData({ ...formData, agreedToTerms: e.target.checked })}
-                      className="mt-1 w-5 h-5 rounded border-gray-300 text-orange-600 focus:ring-orange-500"
-                      required
-                    />
-                    <span className="text-sm text-gray-700 group-hover:text-gray-900">
-                      I agree to the{' '}
-                      <a href="#" className="font-semibold text-orange-600 hover:text-orange-700">
-                        Terms of Service
-                      </a>{' '}
-                      and{' '}
-                      <a href="#" className="font-semibold text-orange-600 hover:text-orange-700">
-                        Privacy Policy
-                      </a>.
-                    </span>
-                  </label>
                 </div>
 
                 <div className="flex flex-col gap-3">
                   <Button onClick={completeSignup} loading={loading} variant="brand" disabled={metaLoading} aria-disabled={metaLoading}>
                     {metaLoading ? 'Loading options…' : 'Create Brand Account'}
                   </Button>
-                  {showPwdMismatchBottom && (
-                    <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm" aria-live="polite">
-                      Passwords do not match.
-                    </div>
-                  )}
                 </div>
               </div>
             </div>

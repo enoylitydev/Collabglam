@@ -193,17 +193,17 @@ export default function MyCampaignsPage() {
   }, []);
 
 
-  const {
-    data: invitations,
-    meta: invMeta,
-    loading: loadInv,
-    error: errInv,
-    setPage: setInvPage,
-    refetch: reloadInv,
-  } = usePaginatedFetch<InvitationItemResponse, InvitationItem>(
-    '/invitation/getall',
-    (page) => ({ influencerId: localStorage.getItem('influencerId'), page, limit: 10 })
-  );
+  // const {
+  //   data: invitations,
+  //   meta: invMeta,
+  //   loading: loadInv,
+  //   error: errInv,
+  //   setPage: setInvPage,
+  //   refetch: reloadInv,
+  // } = usePaginatedFetch<InvitationItemResponse, InvitationItem>(
+  //   '/invitation/getall',
+  //   (page) => ({ influencerId: localStorage.getItem('influencerId'), page, limit: 10 })
+  // );
 
   const {
     data: campaigns,
@@ -217,18 +217,18 @@ export default function MyCampaignsPage() {
     (page, searchTerm) => ({ influencerId: localStorage.getItem('influencerId'), search: searchTerm?.trim(), page, limit: 10 })
   );
 
-  const acceptInvitation = useCallback(
-    async (id: string) => {
-      try {
-        await post('/invitation/accept', { invitationId: id });
-        toast({ icon: 'success', title: 'Invitation accepted!' });
-        reloadInv();
-      } catch (e: any) {
-        toast({ icon: 'error', title: 'Couldn’t accept', text: e.message });
-      }
-    },
-    [reloadInv]
-  );
+  // const acceptInvitation = useCallback(
+  //   async (id: string) => {
+  //     try {
+  //       await post('/invitation/accept', { invitationId: id });
+  //       toast({ icon: 'success', title: 'Invitation accepted!' });
+  //       reloadInv();
+  //     } catch (e: any) {
+  //       toast({ icon: 'error', title: 'Couldn’t accept', text: e.message });
+  //     }
+  //   },
+  //   [reloadInv]
+  // );
 
   // Debounce campaign table search
   useEffect(() => {
@@ -404,7 +404,7 @@ export default function MyCampaignsPage() {
       </div>
 
       {/* Brand Invitation Campaigns (only if there are invitations) */}
-      {loadInv ? (
+      {/* {loadInv ? (
         <p className="p-6">Loading...</p>
       ) : errInv ? (
         <p className="p-6 text-red-600">{errInv}</p>
@@ -471,7 +471,7 @@ export default function MyCampaignsPage() {
             <Pagination current={invMeta.page} total={invMeta.totalPages} onChange={setInvPage} />
           </div>
         </>
-      ) : null}
+      ) : null} */}
 
       {/* Top Featured Campaigns for You */}
       <h1 className="text-3xl font-semibold">Top Featured Campaigns for You</h1>

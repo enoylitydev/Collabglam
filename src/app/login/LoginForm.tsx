@@ -16,6 +16,7 @@ interface LoginFormProps {
 type BrandLoginResponse = {
   token: string;
   brandId: string;
+  brandAliasEmail?: string; // ⬅️ added
   subscriptionPlanName?: string;
   subscription?: {
     planId?: string;
@@ -75,6 +76,11 @@ export function LoginForm({ role, onForgotPassword, onSuccess }: LoginFormProps)
         localStorage.setItem('brandId', data.brandId);
         localStorage.setItem('userType', 'brand');
         localStorage.setItem('userEmail', formData.email);
+
+        // ⬇️ NEW: store brandAliasEmail if backend returns it
+        if (data.brandAliasEmail) {
+          localStorage.setItem('brandAliasEmail', data.brandAliasEmail);
+        }
 
         // 🔹 Brand plan info
         const brandPlanName =

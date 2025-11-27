@@ -127,6 +127,7 @@ type BrandData = {
   logoUrl?: string;
   logoFileId?: string;
   logoFilename?: string;
+  brandAliasEmail: string;
 };
 
 /* ===================== Utilities ===================== */
@@ -162,6 +163,12 @@ function normalizeBrand(data: any): BrandData {
     }
   }
 
+  // 🔽 alias email from backend (adjust keys if your API uses different name)
+  const brandAliasEmail =
+    brand?.brandAliasEmail ??
+    brand?.aliasEmail ??
+    "";
+
   return {
     name: brand?.name ?? "",
     email: brand?.email ?? "",
@@ -173,10 +180,11 @@ function normalizeBrand(data: any): BrandData {
     brandId: brand?.brandId ?? "",
     createdAt: brand?.createdAt ?? "",
     updatedAt: brand?.updatedAt ?? "",
-    // ⬇ include these so you still have access if needed
     logoUrl,
     logoFileId: brand?.logoFileId ?? "",
     logoFilename: brand?.logoFilename ?? "",
+    // 🔽 include alias in normalized object
+    brandAliasEmail,
     subscription: {
       planName: s?.planName ?? brand?.planName ?? "",
       startedAt: s?.startedAt ?? brand?.startedAt ?? "",
@@ -184,8 +192,8 @@ function normalizeBrand(data: any): BrandData {
       features: Array.isArray(s?.features)
         ? s.features
         : Array.isArray(brand?.features)
-        ? brand.features
-        : [],
+          ? brand.features
+          : [],
     },
     subscriptionExpired: !!brand?.subscriptionExpired,
     walletBalance: Number.isFinite(+brand?.walletBalance)
@@ -613,6 +621,10 @@ export default function BrandProfilePage() {
         setBrand(normalized);
         setForm(deepClone(normalized));
 
+        if (typeof window !== "undefined" && normalized.brandAliasEmail) {
+          localStorage.setItem("brandAliasEmail", normalized.brandAliasEmail);
+        }
+
         // Compute options from the fresh list (no stale memo), with fallbacks
         const localCO = buildCountryOptions(countriesList);
         const localKO = buildCallingOptions(countriesList);
@@ -708,6 +720,11 @@ export default function BrandProfilePage() {
         // Update main state
         setBrand(normalized);
         setForm(deepClone(normalized));
+
+        // 🔽 Update brandAliasEmail in localStorage whenever profile is refreshed
+        if (typeof window !== "undefined" && normalized.brandAliasEmail) {
+          localStorage.setItem("brandAliasEmail", normalized.brandAliasEmail);
+        }
 
         // Keep selects in sync with refreshed data
         const matchedCountry =
@@ -853,9 +870,13 @@ export default function BrandProfilePage() {
             </div>
 
             {/* Contact Information */}
+            {/* Contact Information */}
             <div className="space-y-6">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">Contact Information</h3>
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                Contact Information
+              </h3>
 
+              {/* Row 1: Email + Phone */}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 {!isEditing ? (
                   <IconField
@@ -867,7 +888,8 @@ export default function BrandProfilePage() {
                     editing={false}
                   />
                 ) : (
-                  brand && form && (
+                  brand &&
+                  form && (
                     <EmailEditorDualOTP
                       brandId={brand.brandId}
                       originalEmail={brand.email}
@@ -901,16 +923,29 @@ export default function BrandProfilePage() {
                 />
               </div>
 
-              {/* Country */}
-              <div className="max-w-md">
-                <CountryField
-                  editing={isEditing}
-                  readValue={brand?.country ?? ""}
-                  countryOptions={countryOptions}
-                  selectedCountry={selectedCountry}
-                  onCountryChange={(opt) => setSelectedCountry(opt as CountryOption)}
-                  selectStyles={selectStyles}
-                />
+              {/* Row 2: Country + Brand Alias Email */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div className="max-w-md">
+                  <CountryField
+                    editing={isEditing}
+                    readValue={brand?.country ?? ""}
+                    countryOptions={countryOptions}
+                    selectedCountry={selectedCountry}
+                    onCountryChange={(opt) => setSelectedCountry(opt as CountryOption)}
+                    selectStyles={selectStyles}
+                  />
+                </div>
+
+                <div className="max-w-xl">
+                  <IconField
+                    icon={HiMail}
+                    label="Brand Alias Email"
+                    value=""
+                    readValue={brand?.brandAliasEmail ?? ""}
+                    onChange={() => { }}
+                    editing={false}
+                  />
+                </div>
               </div>
             </div>
           </CardContent>
