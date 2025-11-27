@@ -413,7 +413,7 @@ export default function ViewBrandPage() {
               <SelectTrigger className="w-36">
                 <SelectValue placeholder="Status" />
               </SelectTrigger>
-              <SelectContent>
+              <SelectContent className="bg-white">
                 <SelectItem value="0">All</SelectItem>
                 <SelectItem value="1">Active</SelectItem>
                 <SelectItem value="2">Inactive</SelectItem>

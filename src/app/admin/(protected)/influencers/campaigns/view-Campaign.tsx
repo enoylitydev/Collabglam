@@ -103,7 +103,7 @@ export default function InfluencerCampaignsPage() {
           <SelectTrigger className="w-32">
             <SelectValue placeholder="Filter" />
           </SelectTrigger>
-          <SelectContent>
+          <SelectContent className="bg-white">
             <SelectItem value="all">All</SelectItem>
             <SelectItem value="approved">Approved</SelectItem>
           </SelectContent>
