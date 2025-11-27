@@ -1,4 +1,4 @@
-"use client"
+"use client";
 
 import React, { useEffect, useState, useMemo } from "react";
 import { post } from "@/lib/api";
@@ -28,6 +28,15 @@ interface Submission {
 
 const PAGE_SIZE = 10;
 
+// Simple HTML escaper for safe injection into SweetAlert html
+const escapeHtml = (unsafe: string) =>
+  unsafe
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+
 export default function ContactUsAdmin() {
   const [submissions, setSubmissions] = useState<Submission[]>([]);
   const [loading, setLoading] = useState(true);
@@ -50,28 +59,70 @@ export default function ContactUsAdmin() {
   }, []);
 
   const handleRowClick = (sub: Submission) => {
+    const createdAt = parseISO(sub.createdAt);
+
+    const safeName = escapeHtml(sub.name);
+    const safeEmail = escapeHtml(sub.email);
+    const safeSubject = escapeHtml(sub.subject || "Contact submission");
+    const safeMessage = escapeHtml(sub.message || "").replace(/\n/g, "<br />");
+
     Swal.fire({
-      title: sub.subject,
+      title: safeSubject,
+      icon: "info",
+      width: "100%",
+      customClass: {
+        popup: "max-w-2xl w-full", // responsive width via Tailwind classes
+        title: "text-left text-lg font-semibold",
+      },
       html: `
-        <p><strong>Name:</strong> ${sub.name}</p>
-        <p><strong>Email:</strong> ${sub.email}</p>
-        <p><strong>Date:</strong> ${new Date(sub.createdAt).toLocaleString()}</p>
-        <hr />
-        <p style="white-space: pre-wrap; text-align: left;">${sub.message}</p>
+        <div class="space-y-4 text-left">
+          <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+            <div>
+              <p class="text-sm">
+                <span class="font-semibold">From:</span> ${safeName}
+              </p>
+              <p class="text-sm text-gray-600">${safeEmail}</p>
+            </div>
+            <div class="text-xs sm:text-right text-gray-500 space-y-1">
+              <p>${createdAt.toLocaleString()}</p>
+              <span class="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium">
+                ${formatDistanceToNow(createdAt, { addSuffix: true })}
+              </span>
+            </div>
+          </div>
+
+          <hr class="border-gray-200" />
+
+          <div class="bg-gray-50 rounded-md p-3 max-h-72 overflow-y-auto text-sm leading-relaxed">
+            ${safeMessage || "<span class='text-gray-400 italic'>No message provided.</span>"}
+          </div>
+        </div>
       `,
-      width: '600px',
-      confirmButtonText: 'Close',
+      showCancelButton: true,
+      confirmButtonText: "Close",
+      cancelButtonText: "Reply via email",
+      reverseButtons: true,
+      focusConfirm: true,
+    }).then((result) => {
+      // If user clicks "Reply via email"
+      if (result.dismiss === Swal.DismissReason.cancel) {
+        const subject = `Re: ${sub.subject || "Your message"}`;
+        window.location.href = `mailto:${sub.email}?subject=${encodeURIComponent(
+          subject
+        )}`;
+      }
     });
   };
 
   // Filter & pagination
   const filtered = useMemo(
-    () => submissions.filter((sub) =>
-      [sub.name, sub.email, sub.subject]
-        .join(' ')
-        .toLowerCase()
-        .includes(searchTerm.toLowerCase())
-    ),
+    () =>
+      submissions.filter((sub) =>
+        [sub.name, sub.email, sub.subject]
+          .join(" ")
+          .toLowerCase()
+          .includes(searchTerm.toLowerCase())
+      ),
     [submissions, searchTerm]
   );
 
@@ -90,18 +141,34 @@ export default function ContactUsAdmin() {
   }, [filtered, page]);
 
   if (loading) {
-    return <CardContent>Loading submissions…</CardContent>;
+    return (
+      <div className="flex justify-center items-center p-6">
+        <p className="text-sm text-gray-600">Loading submissions…</p>
+      </div>
+    );
   }
+
   if (error) {
-    return <CardContent className="text-red-600">{error}</CardContent>;
+    return (
+      <div className="flex justify-center items-center p-6">
+        <p className="text-sm text-red-600">{error}</p>
+      </div>
+    );
   }
+
   if (total === 0) {
-    return <CardContent>No submissions yet.</CardContent>;
+    return (
+      <div className="flex justify-center items-center p-6">
+        <p className="text-sm text-gray-500">No submissions yet.</p>
+      </div>
+    );
   }
 
   return (
-    <div className="flex flex-col p-6 max-w-7xl mx-auto space-y-6">
-      <h1 className="text-3xl font-bold">Contact Us Submissions</h1>
+    <div className="flex flex-col p-4 sm:p-6 max-w-7xl mx-auto space-y-6">
+      <h1 className="text-2xl sm:text-3xl font-bold">
+        Contact Us Submissions
+      </h1>
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -109,16 +176,19 @@ export default function ContactUsAdmin() {
           <CardHeader>
             <CardTitle>Total Submissions</CardTitle>
           </CardHeader>
-          <CardContent className="text-2xl font-semibold">{total}</CardContent>
+          <CardContent className="text-2xl font-semibold">
+            {total}
+          </CardContent>
         </Card>
+
         <Card>
           <CardHeader>
             <CardTitle>Last Submission</CardTitle>
           </CardHeader>
           <CardContent>
             {lastSubmission ? (
-              <div className="flex items-center space-x-2">
-                <span>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-sm">
                   {formatDistanceToNow(parseISO(lastSubmission), {
                     addSuffix: true,
                   })}
@@ -128,10 +198,11 @@ export default function ContactUsAdmin() {
                 </Badge>
               </div>
             ) : (
-              <span>No submissions</span>
+              <span className="text-sm text-gray-500">No submissions</span>
             )}
           </CardContent>
         </Card>
+
         <Card>
           <CardHeader>
             <CardTitle>Search & Filter</CardTitle>
@@ -155,9 +226,9 @@ export default function ContactUsAdmin() {
         <Table>
           <TableHeader>
             <TableRow className="bg-gray-100">
-              <TableHead>Date</TableHead>
-              <TableHead>Name</TableHead>
-              <TableHead>Email</TableHead>
+              <TableHead className="min-w-[160px]">Date</TableHead>
+              <TableHead className="min-w-[140px]">Name</TableHead>
+              <TableHead className="min-w-[200px]">Email</TableHead>
               <TableHead>Subject</TableHead>
             </TableRow>
           </TableHeader>
@@ -168,10 +239,12 @@ export default function ContactUsAdmin() {
                 className="even:bg-gray-50 hover:bg-gray-50 cursor-pointer transition"
                 onClick={() => handleRowClick(sub)}
               >
-                <TableCell>{new Date(sub.createdAt).toLocaleString()}</TableCell>
-                <TableCell>{sub.name}</TableCell>
-                <TableCell>{sub.email}</TableCell>
-                <TableCell>{sub.subject}</TableCell>
+                <TableCell className="text-sm">
+                  {new Date(sub.createdAt).toLocaleString()}
+                </TableCell>
+                <TableCell className="text-sm">{sub.name}</TableCell>
+                <TableCell className="text-sm">{sub.email}</TableCell>
+                <TableCell className="text-sm">{sub.subject}</TableCell>
               </TableRow>
             ))}
           </TableBody>
@@ -180,8 +253,10 @@ export default function ContactUsAdmin() {
 
       {/* Pagination */}
       {pageCount > 1 && (
-        <div className="flex justify-center items-center space-x-4">
+        <div className="flex flex-wrap justify-center items-center gap-3 text-sm">
           <Button
+            variant="outline"
+            size="sm"
             onClick={() => setPage((p) => Math.max(1, p - 1))}
             disabled={page === 1}
           >
@@ -191,6 +266,8 @@ export default function ContactUsAdmin() {
             Page {page} of {pageCount}
           </span>
           <Button
+            variant="outline"
+            size="sm"
             onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
             disabled={page === pageCount}
           >
