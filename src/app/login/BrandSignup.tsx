@@ -360,7 +360,6 @@ export function BrandSignup({ onSuccess, onStepChange }: { onSuccess: () => void
       fd.append('callingId', formData.callingCodeId);
       fd.append('categoryId', formData.categoryId);
 
-      if (brandAliasEmail) fd.append('brandAliasEmail', brandAliasEmail);
       if (formData.website) fd.append('website', formData.website);
       if (instaHandle) fd.append('instagramHandle', instaHandle);
       if (formData.companySize) fd.append('companySize', formData.companySize);
