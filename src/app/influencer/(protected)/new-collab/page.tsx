@@ -2,18 +2,23 @@
 
 import React, { useState, useCallback, useEffect } from "react";
 import {
-  HiOutlineSearch,
-  HiChevronDown,
-  HiChevronUp,
-  HiFilter,
-  HiChevronLeft,
-  HiChevronRight,
-  HiOutlineLocationMarker,
-  HiOutlineCalendar,
-  HiOutlineUser,
-  HiOutlineCash,
-} from "react-icons/hi";
+  Search,
+  ChevronDown,
+  ChevronUp,
+  Filter as FilterIcon,
+  ChevronLeft,
+  ChevronRight,
+  MapPin,
+  Calendar,
+  Users,
+  DollarSign,
+} from "lucide-react";
+import { useRouter } from "next/navigation";
+import dayjs from "dayjs";
+import ReactSelect from "react-select";
 import { get, post } from "@/lib/api";
+import { resolveFileUrl } from "@/lib/files";
+
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -30,17 +35,7 @@ import {
   DialogTitle,
   DialogClose,
 } from "@/components/ui/dialog";
-import {
-  Card,
-  CardHeader,
-  CardTitle,
-  CardContent,
-  CardFooter,
-} from "@/components/ui/card";
-import { useRouter } from "next/navigation";
-import dayjs from "dayjs";
-import ReactSelect from "react-select";
-import { resolveFileUrl } from "@/lib/files";
+import { Card } from "@/components/ui/card";
 
 /* ──────────────────────────────────────────────────────────────────── */
 /* Constants                                                           */
@@ -60,7 +55,7 @@ interface UICampaign {
   product: string;
   goal: string;
   budget: number;
-  gender: number; // 0=female 1=male
+  gender: number; // 0 = Female, 1 = Male, 2 = All
   ageRange: string;
   locations: string; // "India, Afghanistan"
   timeline: string;
@@ -74,20 +69,23 @@ interface Country {
   countryCode: string;
   flag: string;
 }
+
 interface CountryOption {
   value: string; // countryId
   label: string; // "🇳🇱 Netherlands"
 }
+
+/* ──────────────────────────────────────────────────────────────────── */
+/* Helpers                                                             */
+/* ──────────────────────────────────────────────────────────────────── */
+
 const buildCountryOptions = (list: Country[]): CountryOption[] =>
   list.map((c) => ({
     value: c._id,
     label: `${c.flag} ${c.countryName}`,
   }));
 
-/* ──────────────────────────────────────────────────────────────────── */
-/* Helpers                                                             */
-/* ──────────────────────────────────────────────────────────────────── */
-// 0 = Male, 1 = Female, 2 = All
+// 0 = Female, 1 = Male, 2 = All (backend enum)
 const genderToEnum = (g: string): 0 | 1 | 2 | undefined =>
   g === "male" ? 1 : g === "female" ? 0 : g === "all" ? 2 : undefined;
 
@@ -103,25 +101,25 @@ const mapResponse = (raw: any): UICampaign => ({
   product: raw.productOrServiceName,
   goal: raw.goal,
   budget: raw.budget,
-  gender: raw.targetAudience.gender,
-  ageRange: `${raw.targetAudience.age.MinAge}-${raw.targetAudience.age.MaxAge}`,
-  locations: raw.targetAudience.locations
-    .map((l: any) => l.countryName)
-    .join(", "),
+  gender: raw.targetAudience?.gender,
+  ageRange: `${raw.targetAudience?.age?.MinAge}-${raw.targetAudience?.age?.MaxAge}`,
+  locations: Array.isArray(raw.targetAudience?.locations)
+    ? raw.targetAudience.locations.map((l: any) => l.countryName).join(", ")
+    : "",
   timeline: `${fmtDate(raw.timeline.startDate)} → ${fmtDate(
     raw.timeline.endDate
   )}`,
   imageUrls: Array.isArray(raw.images)
     ? raw.images
-      .filter((name: string) => !!name)
-      .map((name: string) => resolveFileUrl(name)) // ⬅️ convert filename → full URL
+        .filter((name: string) => !!name)
+        .map((name: string) => resolveFileUrl(name))
     : [],
 });
 
+/* ──────────────────────────────────────────────────────────────────── */
+/* Page Component                                                      */
+/* ──────────────────────────────────────────────────────────────────── */
 
-/* ──────────────────────────────────────────────────────────────────── */
-/* Component                                                            */
-/* ──────────────────────────────────────────────────────────────────── */
 export default function BrowseCampaignsPage() {
   const router = useRouter();
 
@@ -142,6 +140,7 @@ export default function BrowseCampaignsPage() {
   const [selectedCountries, setSelectedCountries] = useState<CountryOption[]>(
     []
   );
+
   const [countries, setCountries] = useState<CountryOption[]>([]);
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
     gender: false,
@@ -165,7 +164,7 @@ export default function BrowseCampaignsPage() {
       .catch(() => setCountries([])); // silent fail
   }, []);
 
-  /* fetch campaigns */
+  /* fetch campaigns (from 2nd snippet) */
   const fetchCampaigns = useCallback(() => {
     setLoading(true);
     setError(null);
@@ -209,13 +208,15 @@ export default function BrowseCampaignsPage() {
   useEffect(fetchCampaigns, [fetchCampaigns]);
 
   const applyFilters = () => {
+    // keep functionality similar to 2nd snippet:
     setCurrentPage(1);
     fetchCampaigns();
   };
 
   /* ────────────────────────────────────────────────────────────────── */
-  /* Sidebar (filters)                                                 */
+  /* Sidebar (filters) — UI from 1st snippet, + country ReactSelect    */
   /* ────────────────────────────────────────────────────────────────── */
+
   const filterContent = (
     <div className="border-l-2 w-full md:w-72 h-full md:h-screen overflow-y-auto bg-white p-6 flex flex-col border-r">
       <h2 className="text-xl font-semibold mb-6 text-gray-800">
@@ -229,7 +230,7 @@ export default function BrowseCampaignsPage() {
             className="flex w-full justify-between items-center py-2 font-medium border-b"
           >
             <span>Gender</span>
-            {openSections.gender ? <HiChevronUp /> : <HiChevronDown />}
+            {openSections.gender ? <ChevronUp /> : <ChevronDown />}
           </button>
           {openSections.gender && (
             <UiSelect value={tempGender} onValueChange={setTempGender}>
@@ -252,7 +253,7 @@ export default function BrowseCampaignsPage() {
             className="flex w-full justify-between items-center py-2 font-medium border-b"
           >
             <span>Age Range</span>
-            {openSections.age ? <HiChevronUp /> : <HiChevronDown />}
+            {openSections.age ? <ChevronUp /> : <ChevronDown />}
           </button>
           {openSections.age && (
             <div className="mt-2 space-y-2">
@@ -284,14 +285,14 @@ export default function BrowseCampaignsPage() {
           )}
         </div>
 
-        {/* Location */}
+        {/* Location (from 2nd snippet, styled into 1st layout) */}
         <div>
           <button
             onClick={() => toggleSection("location")}
             className="flex w-full justify-between items-center py-2 font-medium border-b"
           >
             <span>Location</span>
-            {openSections.location ? <HiChevronUp /> : <HiChevronDown />}
+            {openSections.location ? <ChevronUp /> : <ChevronDown />}
           </button>
           {openSections.location && (
             <div className="mt-2">
@@ -314,7 +315,7 @@ export default function BrowseCampaignsPage() {
             className="flex w-full justify-between items-center py-2 font-medium border-b"
           >
             <span>Goal</span>
-            {openSections.goal ? <HiChevronUp /> : <HiChevronDown />}
+            {openSections.goal ? <ChevronUp /> : <ChevronDown />}
           </button>
           {openSections.goal && (
             <UiSelect
@@ -336,7 +337,7 @@ export default function BrowseCampaignsPage() {
           )}
         </div>
 
-        {/* Budget */}
+        {/* Budget (UI from 1st snippet) */}
         <div>
           <button
             onClick={() => toggleSection("budget")}
@@ -346,12 +347,11 @@ export default function BrowseCampaignsPage() {
               Budget (${tempBudgetRange[0].toLocaleString()} – $
               {tempBudgetRange[1].toLocaleString()})
             </span>
-            {openSections.budget ? <HiChevronUp /> : <HiChevronDown />}
+            {openSections.budget ? <ChevronUp /> : <ChevronDown />}
           </button>
 
           {openSections.budget && (
             <div className="mt-4 space-y-4">
-              {/* Min */}
               <div>
                 <label className="text-xs text-gray-600">Min</label>
                 <input
@@ -373,7 +373,6 @@ export default function BrowseCampaignsPage() {
                 />
               </div>
 
-              {/* Max */}
               <div>
                 <label className="text-xs text-gray-600">Max</label>
                 <input
@@ -410,8 +409,9 @@ export default function BrowseCampaignsPage() {
   );
 
   /* ────────────────────────────────────────────────────────────────── */
-  /* Layout                                                            */
+  /* Layout — structure from 1st snippet, wired to 2nd's logic         */
   /* ────────────────────────────────────────────────────────────────── */
+
   return (
     <div className="flex min-h-screen bg-gray-50">
       {/* Sidebar (desktop) */}
@@ -426,7 +426,7 @@ export default function BrowseCampaignsPage() {
           <Dialog>
             <DialogTrigger asChild>
               <Button variant="outline" className="flex items-center space-x-2">
-                <HiFilter className="w-5 h-5" />
+                <FilterIcon className="w-5 h-5" />
                 <span>Filters</span>
               </Button>
             </DialogTrigger>
@@ -438,9 +438,7 @@ export default function BrowseCampaignsPage() {
                   </DialogTitle>
                   <DialogClose className="text-gray-600" />
                 </div>
-                <div className="flex-1 overflow-auto p-0">
-                  {filterContent}
-                </div>
+                <div className="flex-1 overflow-auto p-0">{filterContent}</div>
               </div>
             </DialogContent>
           </Dialog>
@@ -461,7 +459,7 @@ export default function BrowseCampaignsPage() {
             <div className="w-full md:w-auto flex justify-center md:justify-end">
               <div className="relative w-full max-w-md md:max-w-lg">
                 <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none">
-                  <HiOutlineSearch className="w-5 h-5 text-gray-400" />
+                  <Search className="w-5 h-5 text-gray-400" />
                 </div>
                 <Input
                   placeholder="Search by brand, product, or goal..."
@@ -502,7 +500,7 @@ export default function BrowseCampaignsPage() {
           </div>
         </section>
 
-        {/* Cards */}
+        {/* Cards / Content state */}
         <div className="flex-1 overflow-y-auto px-4 md:px-6 pb-6 pt-4">
           {loading ? (
             <div className="flex justify-center items-center py-16 text-gray-500">
@@ -514,7 +512,7 @@ export default function BrowseCampaignsPage() {
             </div>
           ) : campaigns.length ? (
             <>
-              <div className="grid gap-5 sm:grid-cols-1 md:grid-cols-2 xl:grid-cols-3">
+              <div className="grid gap-6 sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3">
                 {campaigns.map((c) => (
                   <CampaignCard
                     key={c.id}
@@ -531,7 +529,9 @@ export default function BrowseCampaignsPage() {
                 currentPage={currentPage}
                 totalPages={totalPages}
                 onPrev={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                onNext={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                onNext={() =>
+                  setCurrentPage((p) => Math.min(totalPages, p + 1))
+                }
               />
             </>
           ) : (
@@ -549,8 +549,9 @@ export default function BrowseCampaignsPage() {
 }
 
 /* ──────────────────────────────────────────────────────────────────── */
-/* Campaign Card                                                       */
+/* Campaign Card — UI from 1st snippet, data from API                  */
 /* ──────────────────────────────────────────────────────────────────── */
+
 function CampaignCard({
   campaign,
   onView,
@@ -561,7 +562,6 @@ function CampaignCard({
   const [currentImageIndex, setCurrentImageIndex] = React.useState(0);
   const hasImages = campaign.imageUrls && campaign.imageUrls.length > 0;
 
-  // Reset to first image when campaign changes
   React.useEffect(() => {
     setCurrentImageIndex(0);
   }, [campaign.id]);
@@ -583,130 +583,141 @@ function CampaignCard({
   };
 
   return (
-    <Card className="flex flex-col h-full rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow bg-white">
-      <CardHeader className="pb-3">
-        {/* Image Carousel */}
-        {hasImages && (
-          <div className="mb-3 w-full rounded-xl overflow-hidden bg-gray-100 relative flex items-center justify-center max-h-72">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={campaign.imageUrls[currentImageIndex]}
-              alt={`${campaign.product} campaign image ${currentImageIndex + 1}`}
-              className="w-full h-auto object-contain"
-            />
+    <Card className="group flex flex-col h-full rounded-xl border border-gray-200 shadow-sm hover:shadow-lg hover:border-gray-300 transition-all duration-300 bg-white overflow-hidden">
+      {hasImages && (
+        <div className="relative w-full h-56 bg-gradient-to-br from-gray-50 to-gray-100 overflow-hidden">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={campaign.imageUrls[currentImageIndex]}
+            alt={`${campaign.product} campaign image ${
+              currentImageIndex + 1
+            }`}
+            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+          />
 
-            {/* Left arrow */}
-            {campaign.imageUrls.length > 1 && (
-              <>
-                <button
-                  type="button"
-                  onClick={goPrev}
-                  className="absolute left-2 top-1/2 -translate-y-1/2 inline-flex items-center justify-center w-8 h-8 rounded-full bg-black/60 text-white hover:bg-black/80 transition"
-                >
-                  <HiChevronLeft className="w-4 h-4" />
-                </button>
+          {campaign.imageUrls.length > 1 && (
+            <>
+              <button
+                type="button"
+                onClick={goPrev}
+                className="absolute left-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-white/90 backdrop-blur-sm text-gray-800 hover:bg-white shadow-md flex items-center justify-center transition-all opacity-0 group-hover:opacity-100"
+                aria-label="Previous image"
+              >
+                <ChevronLeft className="w-5 h-5" />
+              </button>
 
-                {/* Right arrow */}
-                <button
-                  type="button"
-                  onClick={goNext}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 inline-flex items-center justify-center w-8 h-8 rounded-full bg-black/60 text-white hover:bg-black/80 transition"
-                >
-                  <HiChevronRight className="w-4 h-4" />
-                </button>
+              <button
+                type="button"
+                onClick={goNext}
+                className="absolute right-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-white/90 backdrop-blur-sm text-gray-800 hover:bg-white shadow-md flex items-center justify-center transition-all opacity-0 group-hover:opacity-100"
+                aria-label="Next image"
+              >
+                <ChevronRight className="w-5 h-5" />
+              </button>
 
-                {/* Counter badge */}
-                <div className="absolute bottom-2 right-2 px-2 py-1 rounded-full bg-black/60 text-[11px] text-white">
-                  {currentImageIndex + 1} / {campaign.imageUrls.length}
-                </div>
-              </>
-            )}
+              <div className="absolute bottom-3 right-3 px-2.5 py-1 rounded-full bg-black/70 backdrop-blur-sm text-xs font-medium text-white">
+                {currentImageIndex + 1} / {campaign.imageUrls.length}
+              </div>
+            </>
+          )}
+
+          <div className="absolute top-3 right-3">
+            <span className="inline-flex items-center rounded-full bg-white/95 backdrop-blur-sm px-3 py-1.5 text-xs font-semibold text-gray-800 shadow-sm">
+              {campaign.goal}
+            </span>
           </div>
-        )}
+        </div>
+      )}
 
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <span className="inline-flex items-center rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-gray-600">
+      <div className="flex flex-col flex-1 p-5">
+        <div className="mb-4">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="inline-flex items-center rounded-md bg-gray-100 px-2.5 py-1 text-xs font-medium uppercase tracking-wider text-gray-700">
               {campaign.brand}
             </span>
-            <CardTitle className="mt-3 text-lg md:text-xl text-gray-900 line-clamp-2">
-              {campaign.product}
-            </CardTitle>
           </div>
-          <span className="inline-flex items-center rounded-full bg-yellow-50 px-3 py-1 text-xs font-medium text-yellow-800">
-            {campaign.goal}
-          </span>
+          <h3 className="text-lg font-semibold text-gray-900 line-clamp-2 leading-snug">
+            {campaign.product}
+          </h3>
         </div>
-      </CardHeader>
 
-      <CardContent className="space-y-4 text-sm text-gray-700">
-        {/* Budget & Timeline */}
-        <div className="flex flex-wrap gap-3 justify-between">
-          <div className="flex items-center gap-2">
-            <span className="inline-flex items-center justify-center rounded-full bg-gray-100 p-2">
-              <HiOutlineCash className="w-4 h-4 text-gray-700" />
-            </span>
-            <div>
-              <p className="text-xs text-gray-500">Budget</p>
-              <p className="font-semibold">
+        <div className="grid grid-cols-2 gap-4 mb-5 pb-5 border-b border-gray-100">
+          <div className="flex items-start gap-3">
+            <div className="flex-shrink-0 w-10 h-10 rounded-lg bg-gradient-to-br from-green-50 to-green-100 flex items-center justify-center">
+              <DollarSign className="w-5 h-5 text-green-600" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-0.5">
+                Budget
+              </p>
+              <p className="text-base font-bold text-gray-900 truncate">
                 ${campaign.budget.toLocaleString()}
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <span className="inline-flex items-center justify-center rounded-full bg-gray-100 p-2">
-              <HiOutlineCalendar className="w-4 h-4 text-gray-700" />
-            </span>
-            <div>
-              <p className="text-xs text-gray-500">Timeline</p>
-              <p className="font-semibold">{campaign.timeline}</p>
+          <div className="flex items-start gap-3">
+            <div className="flex-shrink-0 w-10 h-10 rounded-lg bg-gradient-to-br from-blue-50 to-blue-100 flex items-center justify-center">
+              <Calendar className="w-5 h-5 text-blue-600" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-0.5">
+                Timeline
+              </p>
+              <p className="text-sm font-semibold text-gray-900 leading-tight">
+                {campaign.timeline}
+              </p>
             </div>
           </div>
         </div>
 
-        {/* Audience */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div className="space-y-1">
-            <p className="text-xs uppercase tracking-wide text-gray-500">
-              Target Audience
-            </p>
-            <div className="flex items-center gap-2 text-sm">
-              <HiOutlineUser className="w-4 h-4 text-gray-600" />
-              <span>{genderLabel(campaign.gender)}</span>
-              <span className="mx-1 text-gray-300">•</span>
-              <span>Age {campaign.ageRange}</span>
+        <div className="space-y-3 mb-5">
+          <div className="flex items-start gap-2.5">
+            <div className="flex-shrink-0 w-5 h-5 rounded bg-gray-100 flex items-center justify-center mt-0.5">
+              <Users className="w-3.5 h-3.5 text-gray-600" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-medium text-gray-500 mb-1">
+                Target Audience
+              </p>
+              <p className="text-sm text-gray-800 font-medium">
+                {genderLabel(campaign.gender)} • Age {campaign.ageRange}
+              </p>
             </div>
           </div>
 
-          <div className="space-y-1">
-            <p className="text-xs uppercase tracking-wide text-gray-500">
-              Locations
-            </p>
-            <div className="flex items-start gap-2 text-sm">
-              <HiOutlineLocationMarker className="w-4 h-4 mt-0.5 text-gray-600" />
-              <span className="line-clamp-2">{campaign.locations}</span>
+          <div className="flex items-start gap-2.5">
+            <div className="flex-shrink-0 w-5 h-5 rounded bg-gray-100 flex items-center justify-center mt-0.5">
+              <MapPin className="w-3.5 h-3.5 text-gray-600" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-medium text-gray-500 mb-1">
+                Locations
+              </p>
+              <p className="text-sm text-gray-800 line-clamp-2 leading-snug">
+                {campaign.locations}
+              </p>
             </div>
           </div>
         </div>
-      </CardContent>
 
-      <CardFooter className="mt-auto flex items-center justify-end pt-3 border-t border-gray-100">
-        <Button
-          size="sm"
-          className="bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-900 font-semibold rounded-full px-4"
-          onClick={onView}
-        >
-          View Details
-        </Button>
-      </CardFooter>
+        <div className="mt-auto pt-4">
+          <Button
+            onClick={onView}
+            className="w-full h-11 bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] hover:from-[#FFB300] hover:to-[#FFD700] text-gray-900 font-semibold rounded-lg shadow-sm hover:shadow-md transition-all duration-200"
+          >
+            View Campaign Details
+          </Button>
+        </div>
+      </div>
     </Card>
   );
 }
 
 /* ──────────────────────────────────────────────────────────────────── */
-/* Pagination                                                          */
+/* Pagination — styling from 1st, logic from 2nd                       */
 /* ──────────────────────────────────────────────────────────────────── */
+
 function Pagination({
   currentPage,
   totalPages,
@@ -718,7 +729,6 @@ function Pagination({
   onPrev: () => void;
   onNext: () => void;
 }) {
-  // Always show pagination, even if there's only 1 page
   return (
     <div className="flex justify-end items-center mt-6 space-x-3">
       <button
@@ -726,7 +736,7 @@ function Pagination({
         disabled={currentPage === 1}
         className="inline-flex items-center justify-center px-3 py-2 rounded-full bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
       >
-        <HiChevronLeft size={18} />
+        <ChevronLeft size={18} />
       </button>
       <span className="text-sm text-gray-700">
         Page <span className="font-semibold">{currentPage}</span> of{" "}
@@ -737,7 +747,7 @@ function Pagination({
         disabled={currentPage === totalPages}
         className="inline-flex items-center justify-center px-3 py-2 rounded-full bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
       >
-        <HiChevronRight size={18} />
+        <ChevronRight size={18} />
       </button>
     </div>
   );
