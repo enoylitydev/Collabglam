@@ -382,7 +382,7 @@ export const DetailPanel = React.memo<DetailPanelProps>(
         setSendingInvite(true);
 
         // Resolve email using BOTH sources in parallel (again, at click time)
-        const { email: creatorEmail, source } = await resolveCreatorEmail(
+        const { email: creatorEmail } = await resolveCreatorEmail(
           safeHandle,
           normalizedPlatform
         );
@@ -390,50 +390,28 @@ export const DetailPanel = React.memo<DetailPanelProps>(
         if (!creatorEmail) {
           await Swal.fire(
             'No email found',
-            'No email found in both primary contacts and admin-added list. Try sending an invitation or adding email manually.',
+            'We could not find a contact email for this creator. Try sending an invitation or adding the email manually.',
             'warning'
           );
-          setSendingInvite(false);
           return;
         }
 
-        if (source === 'admin') {
-          await Swal.fire(
-            'Using admin email',
-            `Using admin-added email ${creatorEmail} for this creator.`,
-            'info'
-          );
-        } else if (source === 'both') {
-          await Swal.fire(
-            'Email confirmed',
-            `Email ${creatorEmail} is present in both systems.`,
-            'success'
-          );
-        }
+        // // Call /emails/invitation with the resolved email
+        // await post<InvitationResponse>('/emails/invitation', {
+        //   email: creatorEmail,
+        //   brandId,
+        // });
 
-        // Call /emails/invitation with the resolved email
-        const inviteResp = await post<InvitationResponse>('/emails/invitation', {
-          email: creatorEmail,
-          brandId,
-        });
-
-        if (inviteResp.isExistingInfluencer) {
-          // Influencer is signed up → go to messages
-          if (inviteResp.roomId) {
-            router.push(`/brand/messages/${inviteResp.roomId}`);
-          } else {
-            router.push('/brand/messages');
-          }
-        } else {
-          router.push('/brand/invited');
-        }
+        // ✅ Always redirect to /brand/invited
+        router.push('/brand/invited');
       } catch (err: any) {
-        const msg =
-          err?.response?.data?.message ||
-          err?.message ||
-          'Failed to start conversation';
         console.error(err);
-        await Swal.fire('Error', msg, 'error');
+        // ✅ Do NOT surface any backend message that might contain the email
+        await Swal.fire(
+          'Error',
+          'Failed to start conversation. Please try again.',
+          'error'
+        );
       } finally {
         setSendingInvite(false);
       }
