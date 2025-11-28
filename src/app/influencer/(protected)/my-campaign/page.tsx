@@ -12,7 +12,7 @@
  * -----------------------------------------------------------------------------
  */
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   HiChevronLeft,
@@ -297,7 +297,12 @@ function apiMessage(e: any, fallback = "Something went wrong") {
 }
 
 /* ───────────────────────────── Signature Modal ────────────────────────────── */
-function SignatureModal({ open, onClose, onSubmit, title = "Add Signature" }: {
+function SignatureModal({
+  open,
+  onClose,
+  onSubmit,
+  title = "Add Signature",
+}: {
   open: boolean;
   onClose: () => void;
   onSubmit: (signatureDataUrl: string) => Promise<void> | void;
@@ -305,59 +310,289 @@ function SignatureModal({ open, onClose, onSubmit, title = "Add Signature" }: {
 }) {
   const [sig, setSig] = useState<string>("");
   const [err, setErr] = useState<string>("");
+  const [fileName, setFileName] = useState<string>("");
+  const [fileSize, setFileSize] = useState<number | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
 
+  const dropRef = useRef<HTMLDivElement | null>(null);
+
+  // Reset when closed
   useEffect(() => {
     if (!open) {
       setSig("");
       setErr("");
+      setFileName("");
+      setFileSize(null);
+      setIsDragging(false);
     }
   }, [open]);
 
+  // Close with ESC
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [open, onClose]);
+
+  const formatSize = (size: number | null) => {
+    if (!size) return "";
+    if (size < 1024) return `${size} B`;
+    if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+    return `${(size / (1024 * 1024)).toFixed(2)} MB`;
+  };
+
   const onFile = (f?: File) => {
     setErr("");
+    setIsDragging(false);
     if (!f) return;
-    if (!/image\/(png|jpeg)/i.test(f.type)) return setErr("Please upload a PNG or JPG.");
-    if (f.size > 50 * 1024) return setErr("Signature must be ≤ 50 KB.");
+
+    setFileName(f.name);
+    setFileSize(f.size);
+
+    if (!/image\/(png|jpeg)/i.test(f.type)) {
+      setSig("");
+      return setErr("Please upload a PNG or JPG image.");
+    }
+    if (f.size > 50 * 1024) {
+      setSig("");
+      return setErr("Signature must be ≤ 50 KB.");
+    }
+
     const r = new FileReader();
     r.onload = () => setSig(String(r.result || ""));
     r.readAsDataURL(f);
   };
 
+  // Drag & drop behavior
+  useEffect(() => {
+    if (!open) return;
+    const el = dropRef.current;
+    if (!el) return;
+
+    const onDragOver = (e: DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setIsDragging(true);
+    };
+    const onDragEnter = (e: DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setIsDragging(true);
+    };
+    const onDragLeave = (e: DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.target === el) setIsDragging(false);
+    };
+    const onDrop = (e: DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setIsDragging(false);
+      const f = e.dataTransfer?.files?.[0];
+      onFile(f || undefined);
+    };
+
+    el.addEventListener("dragover", onDragOver);
+    el.addEventListener("dragenter", onDragEnter);
+    el.addEventListener("dragleave", onDragLeave);
+    el.addEventListener("drop", onDrop);
+
+    return () => {
+      el.removeEventListener("dragover", onDragOver);
+      el.removeEventListener("dragenter", onDragEnter);
+      el.removeEventListener("dragleave", onDragLeave);
+      el.removeEventListener("drop", onDrop);
+    };
+  }, [open]);
+
   if (!open) return null;
 
+  const handleSign = () => {
+    if (!sig) {
+      setErr("Please select a signature image first.");
+      return;
+    }
+    onSubmit(sig);
+  };
+
   return (
-    <div className="fixed inset-0 z-[60]">
-      <div className="absolute inset-0 bg-black/50 backdrop-blur-[2px]" onClick={onClose} />
-      <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 mx-auto w-[96%] max-w-xl bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden">
-        <div className="relative h-20">
-          <div className="absolute inset-0" style={{ background: `linear-gradient(135deg, #FFBF00 0%, #FFDB58 100%)` }} />
+    <div className="fixed inset-0 z-[60] flex items-center justify-center">
+      {/* Backdrop */}
+      <div
+        className="absolute inset-0 bg-black/50 backdrop-blur-[2px]"
+        onClick={onClose}
+      />
+
+      {/* Modal */}
+      <div className="relative z-[61] w-[96%] max-w-xl bg-white rounded-2xl shadow-2xl border border-gray-100 overflow-hidden">
+        {/* Header */}
+        <div className="relative h-24">
+          <div
+            className="absolute inset-0"
+            style={{
+              background:
+                "linear-gradient(135deg, #FFBF00 0%, #FFDB58 100%)",
+            }}
+          />
           <div className="relative z-10 h-full px-5 flex items-center justify-between text-gray-900">
-            <div className="font-semibold tracking-wide">{title}</div>
-            <button className="w-9 h-9 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center" onClick={onClose} aria-label="Close" title="Close">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-xl bg-white/50 flex items-center justify-center text-lg">
+                ✍️
+              </div>
+              <div className="flex flex-col">
+                <div className="font-semibold tracking-wide text-sm sm:text-base">
+                  {title}
+                </div>
+                <div className="text-xs text-gray-800/80">
+                  Upload your official brand signature (PNG/JPG, ≤ 50 KB)
+                </div>
+              </div>
+            </div>
+            <button
+              className="w-9 h-9 rounded-full bg-white/40 hover:bg-white flex items-center justify-center text-gray-800 transition"
+              onClick={onClose}
+              aria-label="Close"
+              title="Close"
+            >
               ✕
             </button>
           </div>
         </div>
 
+        {/* Body */}
         <div className="p-5 space-y-4">
-          <p className="text-sm text-gray-700">
-            Upload your signature image (PNG/JPG up to <strong>50&nbsp;KB</strong>).
-          </p>
-          <div className="space-y-2">
-            <input type="file" accept="image/png,image/jpeg" onChange={(e) => onFile(e.target.files?.[0] || undefined)} className="text-sm" />
-            {err && <div className="text-xs text-red-600">{err}</div>}
+          <div className="flex flex-col gap-2">
+            <p className="text-sm text-gray-700">
+              This signature will be embedded into your agreement as the
+              authorized brand sign-off.
+            </p>
+            <div className="flex flex-wrap items-center gap-2 text-[11px] text-gray-500">
+              <span className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                Best with transparent PNG
+              </span>
+              <span className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5">
+                💡 Tip: Use a dark pen on white paper, then crop neatly.
+              </span>
+            </div>
           </div>
+
+          {/* Drag & Drop Area */}
+          <div
+            ref={dropRef}
+            className={`rounded-xl border-2 border-dashed p-5 text-center text-sm transition-all cursor-pointer select-none
+              ${
+                isDragging
+                  ? "border-amber-400 bg-amber-50 shadow-sm"
+                  : "border-gray-300 bg-gray-50 hover:bg-gray-100/80"
+              }`}
+          >
+            <div className="flex flex-col items-center gap-2">
+              <div className="w-10 h-10 rounded-full bg-white flex items-center justify-center shadow-sm">
+                <span className="text-lg">📁</span>
+              </div>
+              <div className="font-medium text-gray-800">
+                {isDragging
+                  ? "Drop your signature image here"
+                  : "Drag & drop signature image here"}
+              </div>
+              <div className="text-xs text-gray-500">
+                or use the file picker below
+              </div>
+            </div>
+          </div>
+
+          {/* File input + meta + errors */}
+          <div className="space-y-1.5">
+            <label className="block text-xs font-medium text-gray-600">
+              Signature file
+            </label>
+            <input
+              type="file"
+              accept="image/png,image/jpeg"
+              onChange={(e) => onFile(e.target.files?.[0])}
+              className="block w-full text-xs sm:text-sm text-gray-700 file:mr-3 file:rounded-md file:border-0 file:bg-gray-900 file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-white hover:file:bg-black"
+            />
+            <div className="flex justify-between items-center text-[11px] text-gray-500">
+              <span>Allowed: PNG, JPG · Max size: 50 KB</span>
+              {fileSize !== null && (
+                <span>
+                  Selected:{" "}
+                  <span
+                    className={
+                      fileSize > 50 * 1024
+                        ? "text-red-600 font-medium"
+                        : ""
+                    }
+                  >
+                    {formatSize(fileSize)}
+                  </span>
+                </span>
+              )}
+            </div>
+            {fileName && (
+              <div className="text-[11px] text-gray-600 truncate">
+                File: <span className="font-medium">{fileName}</span>
+              </div>
+            )}
+            {err && (
+              <div className="text-xs text-red-600 flex items-center gap-1 mt-1">
+                <span>⚠️</span>
+                <span>{err}</span>
+              </div>
+            )}
+          </div>
+
+          {/* Preview */}
           {sig && (
-            <div className="border rounded-md p-3 bg-gray-50">
-              <div className="text-xs text-gray-600 mb-2">Preview</div>
-              <img src={sig} alt="Signature preview" className="h-12 border bg-white rounded" />
+            <div className="border rounded-xl p-3 bg-gray-50 flex items-center gap-3">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="text-xs font-semibold text-gray-700">
+                    Signature preview
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSig("");
+                      setFileName("");
+                      setFileSize(null);
+                      setErr("");
+                    }}
+                    className="text-[11px] text-gray-500 hover:text-gray-700 underline"
+                  >
+                    Clear
+                  </button>
+                </div>
+                <div className="flex items-center justify-center rounded-lg border bg-white px-3 py-2">
+                  <img
+                    src={sig}
+                    alt="Signature preview"
+                    className="max-h-14 object-contain"
+                  />
+                </div>
+              </div>
             </div>
           )}
         </div>
 
-        <div className="p-5 pt-0 flex justify-end gap-3">
-          <Button variant="outline" className="text-gray-900" onClick={onClose}>Cancel</Button>
-          <Button className="bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-900" onClick={() => (sig ? onSubmit(sig) : setErr("Please select a signature image first."))}>
+        {/* Footer */}
+        <div className="px-5 pb-5 pt-1 flex justify-end gap-3">
+          <Button
+            variant="outline"
+            className="text-gray-900 border-gray-300 hover:bg-gray-100"
+            onClick={onClose}
+          >
+            Cancel
+          </Button>
+          <Button
+            className="bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-900 hover:from-[#FFDB58] hover:to-[#FFBF00] disabled:opacity-60 disabled:cursor-not-allowed"
+            onClick={handleSign}
+            disabled={!sig}
+          >
             Sign
           </Button>
         </div>
