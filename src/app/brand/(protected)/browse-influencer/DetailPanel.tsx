@@ -425,12 +425,7 @@ export const DetailPanel = React.memo<DetailPanelProps>(
             router.push('/brand/messages');
           }
         } else {
-          // Not in DB → email invitation sent
-          await Swal.fire(
-            'Invitation sent',
-            `Invitation email sent to ${creatorEmail}`,
-            'success'
-          );
+          router.push('/brand/invited');
         }
       } catch (err: any) {
         const msg =
