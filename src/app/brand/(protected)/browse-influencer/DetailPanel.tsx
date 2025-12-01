@@ -409,7 +409,7 @@ export const DetailPanel = React.memo<DetailPanelProps>(
         } else {
           // influencer not signed up → go to email composer with invitationId
           const { invitationId } = resp;
-          router.push(`/brand/emails?invitationId=${invitationId}`);
+          router.push(`/brand/email?invitationId=${invitationId}`);
         }
       } catch (err: any) {
         console.error(err);

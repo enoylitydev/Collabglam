@@ -26,21 +26,21 @@ import {
   HiOutlineChevronDown,
   HiOutlineChevronUp,
 } from "react-icons/hi";
-import { CheckCircle, Clock, XCircle, Copy, Dot, ShieldCheck, Hourglass, Ban } from "lucide-react";
+import { Copy, Dot, ShieldCheck, Hourglass, Ban, FileText } from "lucide-react";
 
 interface Influencer {
   influencerId: string;
   name: string;
-  handle: string;           // @handle
-  category: string;         // e.g. "Electronics & Computers"
-  audienceSize: number;     // present in API, hidden in UI
+  handle: string; // @handle
+  category: string | null; // can be null from API
+  audienceSize: number; // present in API, hidden in UI
   createdAt: string;
-  isAssigned: number;       // 1/0
-  isContracted: number;     // 1/0
+  isAssigned: number; // 1/0
+  isContracted: number; // 1/0
   contractId: string | null;
-  feeAmount: string;        // string from API
-  isAccepted: number;       // 1/0
-  isRejected: number;       // 1/0
+  feeAmount: string | number; // string or number from API
+  isAccepted: number; // 1/0
+  isRejected: number; // 1/0
   rejectedReason: string;
 }
 
@@ -69,6 +69,7 @@ export default function AppliedInfluencersPage() {
     limit: PAGE_SIZE_OPTIONS[0],
     totalPages: 1,
   });
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -79,15 +80,55 @@ export default function AppliedInfluencersPage() {
   const [sortField, setSortField] = useState<keyof Influencer>("createdAt");
   const [sortOrder, setSortOrder] = useState<1 | 0>(1);
   const [filter, setFilter] = useState<FilterKey>("all");
+  const [contractLoadingId, setContractLoadingId] = useState<string | null>(null);
 
-  // Navigate to details
+  // Navigate to influencer details
   const handleViewDetails = (inf: Influencer) => {
     router.push(`/admin/influencers/view?influencerId=${inf.influencerId}`);
   };
 
-  // Helpers
+  // Open contract PDF for influencers that have a contractId
+  const handleViewContract = async (inf: Influencer) => {
+    if (!inf.contractId) return;
+
+    try {
+      setError(null);
+      setContractLoadingId(inf.influencerId);
+
+      // Adjust base URL as per your setup
+      const baseUrl =
+        process.env.NEXT_PUBLIC_API_URL?.replace(/\/+$/, "") || "";
+      const res = await fetch(`${baseUrl}/contract/viewPdf`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ contractId: inf.contractId }),
+      });
+
+      if (!res.ok) {
+        throw new Error("Failed to fetch contract PDF");
+      }
+
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      window.open(url, "_blank");
+    } catch (e) {
+      console.error(e);
+      setError("Failed to open contract PDF.");
+    } finally {
+      setContractLoadingId(null);
+    }
+  };
+
+  // Format currency (INR by default from example)
   const currency = (val?: string | number) => {
-    const num = typeof val === "string" ? Number(val) : val ?? 0;
+    const num =
+      typeof val === "string"
+        ? Number(val)
+        : typeof val === "number"
+        ? val
+        : 0;
     if (Number.isNaN(num)) return "—";
     return new Intl.NumberFormat(undefined, {
       style: "currency",
@@ -119,6 +160,7 @@ export default function AppliedInfluencersPage() {
       setLoading(false);
       return;
     }
+
     (async () => {
       setLoading(true);
       setError(null);
@@ -139,10 +181,12 @@ export default function AppliedInfluencersPage() {
           sortField,
           sortOrder,
         });
-        setInfluencers(list);
-        setApplicantCount(cnt);
-        setMeta(m);
-      } catch {
+
+        setInfluencers(list || []);
+        setApplicantCount(cnt ?? 0);
+        setMeta(m || { total: 0, page: 1, limit, totalPages: 1 });
+      } catch (err) {
+        console.error(err);
         setError("Failed to load applicants.");
       } finally {
         setLoading(false);
@@ -153,8 +197,9 @@ export default function AppliedInfluencersPage() {
   // Sorting helpers
   const toggleSort = (field: keyof Influencer) => {
     setPage(1);
-    if (sortField === field) setSortOrder((o) => (o === 1 ? 0 : 1));
-    else {
+    if (sortField === field) {
+      setSortOrder((o) => (o === 1 ? 0 : 1));
+    } else {
       setSortField(field);
       setSortOrder(1);
     }
@@ -196,12 +241,13 @@ export default function AppliedInfluencersPage() {
   const rows = useMemo(
     () =>
       shown.map((inf) => {
-        const initials = inf.name
-          .split(" ")
-          .map((n) => n[0])
-          .join("")
-          .slice(0, 2)
-          .toUpperCase();
+        const initials =
+          inf.name
+            ?.split(" ")
+            .map((n) => n[0])
+            .join("")
+            .slice(0, 2)
+            .toUpperCase() || "?";
 
         const statusBadge = (() => {
           const key = statusKey(inf);
@@ -229,6 +275,8 @@ export default function AppliedInfluencersPage() {
           );
         })();
 
+        const hasContract = inf.isContracted === 1 && !!inf.contractId;
+
         return (
           <TableRow
             key={inf.influencerId}
@@ -254,7 +302,7 @@ export default function AppliedInfluencersPage() {
             {/* Category */}
             <TableCell>
               <Badge variant="secondary" className="capitalize">
-                {inf.category}
+                {inf.category || "—"}
               </Badge>
             </TableCell>
 
@@ -262,30 +310,6 @@ export default function AppliedInfluencersPage() {
             <TableCell className="whitespace-nowrap">
               <HiOutlineCalendar className="inline mr-1" />
               {new Date(inf.createdAt).toLocaleDateString()}
-            </TableCell>
-
-            {/* Contract ID with copy */}
-            <TableCell className="font-mono text-xs">
-              <div className="flex items-center gap-2">
-                <span
-                  className="truncate max-w-[220px]"
-                  title={inf.contractId ?? ""}
-                >
-                  {inf.contractId ? inf.contractId : "—"}
-                </span>
-                {inf.contractId && (
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    className="h-7 w-7"
-                    onClick={() => copyText(inf.contractId)}
-                    title="Copy Contract ID"
-                    aria-label="Copy Contract ID"
-                  >
-                    <Copy className="h-4 w-4" />
-                  </Button>
-                )}
-              </div>
             </TableCell>
 
             {/* Fee */}
@@ -298,19 +322,36 @@ export default function AppliedInfluencersPage() {
 
             {/* Actions */}
             <TableCell className="text-right">
-              <Button
-                size="sm"
-                variant="outline"
-                className="border-indigo-500 text-indigo-600 hover:bg-indigo-50"
-                onClick={() => handleViewDetails(inf)}
-              >
-                View
-              </Button>
+              <div className="flex justify-end gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="border-indigo-500 text-indigo-600 hover:bg-indigo-50"
+                  onClick={() => handleViewDetails(inf)}
+                >
+                  View
+                </Button>
+
+                {hasContract && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="border-emerald-500 text-emerald-600 hover:bg-emerald-50 inline-flex items-center gap-1"
+                    onClick={() => handleViewContract(inf)}
+                    disabled={contractLoadingId === inf.influencerId}
+                  >
+                    <FileText className="h-4 w-4" />
+                    {contractLoadingId === inf.influencerId
+                      ? "Opening..."
+                      : "View Contract"}
+                  </Button>
+                )}
+              </div>
             </TableCell>
           </TableRow>
         );
       }),
-    [shown]
+    [shown, contractLoadingId]
   );
 
   return (
@@ -373,7 +414,8 @@ export default function AppliedInfluencersPage() {
           <select
             value={limit}
             onChange={(e) => {
-              setLimit(Number(e.target.value));
+              const newLimit = Number(e.target.value);
+              setLimit(newLimit);
               setPage(1);
             }}
             className="h-10 rounded-md border bg-white px-3 text-sm self-end sm:self-auto"
@@ -411,7 +453,7 @@ export default function AppliedInfluencersPage() {
         </div>
       </div>
 
-      {/* Table */}
+      {/* Table / States */}
       {loading ? (
         <LoadingSkeleton rows={limit} />
       ) : error ? (
@@ -447,7 +489,6 @@ export default function AppliedInfluencersPage() {
                 >
                   Date <SortIndicator field="createdAt" />
                 </TableHead>
-                <TableHead>Contract ID</TableHead>
                 <TableHead>Fee</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
@@ -489,6 +530,8 @@ export default function AppliedInfluencersPage() {
     </div>
   );
 }
+
+/* ============== Small Components ============== */
 
 function StatCard({
   icon,
@@ -537,14 +580,16 @@ const EmptyState = () => (
 
 const LoadingSkeleton = ({ rows }: { rows: number }) => (
   <div className="p-6 space-y-2">
-    {Array(rows)
-      .fill(0)
-      .map((_, i) => (
-        <Skeleton key={i} className="h-12 w-full rounded-md" />
-      ))}
+    {Array.from({ length: rows }).map((_, i) => (
+      <Skeleton key={i} className="h-12 w-full rounded-md" />
+    ))}
   </div>
 );
 
 const ErrorMessage: React.FC<{ children: React.ReactNode }> = ({
   children,
-}) => <p className="p-6 text-center text-destructive">{children}</p>;
+}) => (
+  <p className="p-6 text-center text-destructive whitespace-pre-line">
+    {children}
+  </p>
+);

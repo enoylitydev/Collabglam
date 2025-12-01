@@ -148,7 +148,7 @@ async function updateInvitationStatus(body: {
   status: "available";
   missingEmailId?: string;
 }): Promise<UpdateInvitationStatusResponse> {
-  return await post<UpdateInvitationStatusResponse>("/invitation/updateStatus", body);
+  return await post<UpdateInvitationStatusResponse>("/newinvitations/update", body);
 }
 
 // --- Small utilities ---
