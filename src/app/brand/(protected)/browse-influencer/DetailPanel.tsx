@@ -638,7 +638,7 @@ export const DetailPanel = React.memo<DetailPanelProps>(
                       ) : (
                         <>
                           <MessageSquare className="h-4 w-4" />
-                          Message Now
+                          Send Message
                         </>
                       )}
                     </button>
@@ -661,7 +661,7 @@ export const DetailPanel = React.memo<DetailPanelProps>(
                       ) : (
                         <>
                           <Send className="h-4 w-4" />
-                          Send Invitation
+                          Send Collaboration Request
                         </>
                       )}
                     </button>

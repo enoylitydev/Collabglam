@@ -193,6 +193,9 @@ export default function CampaignFormPage() {
     campaignType === "Other" ? customCampaignType.trim() : campaignType;
   const campaignTypeMissing = !finalCampaignTypeForUI;
 
+  // 🔴 NEW: images required – true when no existing or new images
+  const imagesMissing = existingImages.length + productImages.length === 0;
+
   const [draftLoaded, setDraftLoaded] = useState(false);
   const [isSavingDraft, setIsSavingDraft] = useState(false);
 
@@ -583,7 +586,7 @@ export default function CampaignFormPage() {
         formData.append("additionalNotes", additionalNotes.trim());
       }
 
-      // Images (optional)
+      // Images (optional for draft)
       productImages.forEach((f) => formData.append("image", f));
 
       // Creative brief (optional for drafts)
@@ -644,6 +647,7 @@ export default function CampaignFormPage() {
       budget === "" ||
       !timeline.start ||
       !timeline.end ||
+      imagesMissing || // 🔴 NEW: require at least one image
       (!creativeBriefText.trim() && !useFileUploadForBrief)
     ) {
       setShowRequiredHints(true);
@@ -746,7 +750,6 @@ export default function CampaignFormPage() {
     );
   }
 
-
   // ── JSX ───────────────────────────────────────────────────
   return (
     <>
@@ -792,7 +795,7 @@ export default function CampaignFormPage() {
                     htmlFor="description"
                     className="text-sm font-medium text-gray-700 mb-2 block"
                   >
-                    Description
+                    Description <span className="text-red-500">*</span>
                   </Label>
                   <Textarea
                     id="description"
@@ -813,7 +816,7 @@ export default function CampaignFormPage() {
                     htmlFor="productImages"
                     className="text-sm font-medium text-gray-700 mb-3 block"
                   >
-                    Product Images
+                    Product Images <span className="text-red-500">*</span>
                   </Label>
 
                   <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 hover:border-orange-400 transition-colors duration-200 bg-gray-50/50">
@@ -838,6 +841,13 @@ export default function CampaignFormPage() {
                       />
                     </div>
                   </div>
+
+                  {/* NEW: required hint for images */}
+                  {showRequiredHints && imagesMissing && (
+                    <p className="text-xs text-red-600 mt-2">
+                      At least one product image is required
+                    </p>
+                  )}
 
                   {(existingImages.length > 0 || productImages.length > 0) && (
                     <div className="mt-4 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
@@ -940,7 +950,7 @@ export default function CampaignFormPage() {
 
                 <div className="space-y-1">
                   <Label className="text-sm font-medium text-gray-700 mb-2 block">
-                    Gender
+                    Gender <span className="text-red-500">*</span>
                   </Label>
                   <ReactSelect
                     options={GENDER_SELECT_OPTIONS}
@@ -967,7 +977,7 @@ export default function CampaignFormPage() {
 
                 <div className="space-y-1">
                   <Label className="text-sm font-medium text-gray-700 mb-2 block">
-                    Target Locations
+                    Target Locations <span className="text-red-500">*</span>
                   </Label>
                   <ReactSelect
                     isMulti
@@ -987,7 +997,8 @@ export default function CampaignFormPage() {
 
                 <div className="space-y-1">
                   <Label className="text-sm font-medium text-gray-700 mb-2 block">
-                    Categories & Subcategories
+                    Categories &amp; Subcategories{" "}
+                    <span className="text-red-500">*</span>
                   </Label>
                   <ReactSelect
                     isMulti
@@ -1019,7 +1030,7 @@ export default function CampaignFormPage() {
                 {/* Campaign Type */}
                 <div className="space-y-1">
                   <Label className="text-sm font-medium text-gray-700 mb-2 block">
-                    Campaign Type
+                    Campaign Type <span className="text-red-500">*</span>
                   </Label>
                   <ReactSelect
                     options={CAMPAIGN_TYPE_OPTIONS}
@@ -1058,7 +1069,7 @@ export default function CampaignFormPage() {
                 <div className="grid sm:grid-cols-2 gap-6">
                   <div className="space-y-1">
                     <Label className="text-sm font-medium text-gray-700 mb-2 block">
-                      Campaign Goal
+                      Campaign Goal <span className="text-red-500">*</span>
                     </Label>
                     <ReactSelect
                       options={GOAL_OPTIONS}
@@ -1083,7 +1094,7 @@ export default function CampaignFormPage() {
 
                   <div className="space-y-1">
                     <Label className="text-sm font-medium text-gray-700 mb-2 block">
-                      Budget (USD)
+                      Budget (USD) <span className="text-red-500">*</span>
                     </Label>
                     <div className="relative">
                       <HiOutlineCurrencyDollar className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 h-5 w-5" />
@@ -1108,7 +1119,7 @@ export default function CampaignFormPage() {
                 <div className="grid sm:grid-cols-2 gap-6">
                   <div className="space-y-1">
                     <Label className="text-sm font-medium text-gray-700 mb-2 block">
-                      Start Date
+                      Start Date <span className="text-red-500">*</span>
                     </Label>
                     <div className="relative">
                       <HiOutlineCalendar className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 h-5 w-5" />
@@ -1131,7 +1142,7 @@ export default function CampaignFormPage() {
 
                   <div className="space-y-1">
                     <Label className="text-sm font-medium text-gray-700 mb-2 block">
-                      End Date
+                      End Date <span className="text-red-500">*</span>
                     </Label>
                     <div className="relative">
                       <HiOutlineCalendar className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 h-5 w-5" />
@@ -1279,7 +1290,7 @@ export default function CampaignFormPage() {
                       htmlFor="briefText"
                       className="text-sm font-medium text-gray-700 mb-2 block"
                     >
-                      Creative Brief
+                      Creative Brief <span className="text-red-500">*</span>
                     </Label>
                     <Textarea
                       id="briefText"
@@ -1374,9 +1385,10 @@ export default function CampaignFormPage() {
               text-white font-semibold text-base
               px-8 py-3 rounded-lg shadow-lg
               transition-all duration-200
-              ${isSubmitting
-                ? "opacity-50 cursor-not-allowed"
-                : "hover:scale-105 hover:shadow-xl active:scale-95"
+              ${
+                isSubmitting
+                  ? "opacity-50 cursor-not-allowed"
+                  : "hover:scale-105 hover:shadow-xl active:scale-95"
               }
             `}
           >
