@@ -53,7 +53,19 @@ interface Influencer {
 // -------------- Constants --------------
 const API_ENDPOINT = "/admin/influencer/list"; // unified backend path
 
-const HEADERS: { key: keyof Influencer | "status" | "planName" | "expiresAt" | "primaryPlatform" | "name" | "email" | "phone"; label: string; sortable?: boolean }[] = [
+const HEADERS: {
+  key:
+    | keyof Influencer
+    | "status"
+    | "planName"
+    | "expiresAt"
+    | "primaryPlatform"
+    | "name"
+    | "email"
+    | "phone";
+  label: string;
+  sortable?: boolean;
+}[] = [
   { key: "name", label: "Name", sortable: true },
   { key: "email", label: "Email", sortable: true },
   { key: "phone", label: "Phone", sortable: true },
@@ -98,15 +110,35 @@ function PlatformBadge({ platform }: { platform?: string | null }) {
         <span className="capitalize">{p}</span>
       </div>
     );
-  if (p === "tiktok")
-    return <span className="capitalize">{p}</span>;
+  if (p === "tiktok") return <span className="capitalize">{p}</span>;
   return <span className="text-muted-foreground">—</span>;
 }
 
+// ✅ StatusBadge: Free Plan (blue) + Active (brand pink) instead of green
 function StatusBadge({ expired }: { expired?: boolean }) {
+  if (expired) {
+    return (
+      <Badge
+        variant="outline"
+        className={cn(
+          "rounded-full px-3",
+          "bg-blue-50 text-blue-700 border-blue-300"
+        )}
+      >
+        Free Plan
+      </Badge>
+    );
+  }
+
   return (
-    <Badge variant={expired ? "destructive" : "default"} className={cn("rounded-full px-3", expired ? "bg-red-600 hover:bg-red-600" : "bg-emerald-600 hover:bg-emerald-600")}>
-      {expired ? "Expired" : "Active"}
+    <Badge
+      variant="default"
+      className={cn(
+        "rounded-full px-3 text-white",
+        "bg-[#ef2f5b] hover:bg-[#ef2f5b]"
+      )}
+    >
+      Active
     </Badge>
   );
 }
@@ -134,22 +166,25 @@ const AdminInfluencersPage = () => {
     return () => clearTimeout(t);
   }, [search]);
 
-  const fetchData = React.useCallback(async () => {
-    setLoading(true);
-    try {
-      const params = { page, limit, search: debouncedSearch, sortBy, sortOrder };
-      const res = await post<GetListResponse>(API_ENDPOINT, params);
-      setRows(res.influencers || []);
-      setTotal(res.total || 0);
-      setTotalPages(res.totalPages || 1);
-      setError(null);
-    } catch (e: any) {
-      console.error(e);
-      setError(e?.message || "Failed to load influencers.");
-    } finally {
-      setLoading(false);
-    }
-  }, [page, limit, debouncedSearch, sortBy, sortOrder]);
+  const fetchData = React.useCallback(
+    async () => {
+      setLoading(true);
+      try {
+        const params = { page, limit, search: debouncedSearch, sortBy, sortOrder };
+        const res = await post<GetListResponse>(API_ENDPOINT, params);
+        setRows(res.influencers || []);
+        setTotal(res.total || 0);
+        setTotalPages(res.totalPages || 1);
+        setError(null);
+      } catch (e: any) {
+        console.error(e);
+        setError(e?.message || "Failed to load influencers.");
+      } finally {
+        setLoading(false);
+      }
+    },
+    [page, limit, debouncedSearch, sortBy, sortOrder]
+  );
 
   React.useEffect(() => {
     fetchData();
@@ -182,7 +217,9 @@ const AdminInfluencersPage = () => {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Influencers</h1>
-          <p className="text-sm text-muted-foreground">Admin overview of all creators, plans, and statuses.</p>
+          <p className="text-sm text-muted-foreground">
+            Admin overview of all creators, plans, and statuses.
+          </p>
         </div>
         <div className="flex items-center gap-2">
           <Input
@@ -205,13 +242,23 @@ const AdminInfluencersPage = () => {
       <Card className="overflow-hidden">
         <div className="overflow-x-auto">
           <Table>
-            <TableHeader >
+            <TableHeader>
               <TableRow>
                 {HEADERS.map(({ key, label, sortable }) => (
                   <TableHead
                     key={String(key)}
-                    onClick={() => toggleSort(String(key), !!sortable && ALLOWED_SORT.has(String(key)))}
-                    className={cn("select-none", sortable && ALLOWED_SORT.has(String(key)) ? "cursor-pointer" : "")}
+                    onClick={() =>
+                      toggleSort(
+                        String(key),
+                        !!sortable && ALLOWED_SORT.has(String(key))
+                      )
+                    }
+                    className={cn(
+                      "select-none",
+                      sortable && ALLOWED_SORT.has(String(key))
+                        ? "cursor-pointer"
+                        : ""
+                    )}
                   >
                     <div className="flex items-center justify-center">
                       {label}
@@ -232,16 +279,21 @@ const AdminInfluencersPage = () => {
               {loading ? (
                 Array.from({ length: Math.min(limit, 10) }).map((_, rowIdx) => (
                   <TableRow key={rowIdx}>
-                    {Array(HEADERS.length + 1).fill(0).map((_, cellIdx) => (
-                      <TableCell key={cellIdx}>
-                        <div className="h-4 w-full bg-muted rounded animate-pulse" />
-                      </TableCell>
-                    ))}
+                    {Array(HEADERS.length + 1)
+                      .fill(0)
+                      .map((_, cellIdx) => (
+                        <TableCell key={cellIdx}>
+                          <div className="h-4 w-full bg-muted rounded animate-pulse" />
+                        </TableCell>
+                      ))}
                   </TableRow>
                 ))
               ) : rows.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={HEADERS.length + 1} className="text-center py-10 text-muted-foreground">
+                  <TableCell
+                    colSpan={HEADERS.length + 1}
+                    className="text-center py-10 text-muted-foreground"
+                  >
                     No influencers match the criteria.
                   </TableCell>
                 </TableRow>
@@ -250,8 +302,13 @@ const AdminInfluencersPage = () => {
                   const expired = !!inf.subscriptionExpired;
                   const dLeft = daysUntil(inf.expiresAt);
                   return (
-                    <TableRow key={inf.influencerId} className={expired ? "bg-red-50/30" : undefined}>
-                      <TableCell className="font-medium">{inf.name || "—"}</TableCell>
+                    <TableRow
+                      key={inf.influencerId}
+                      className={expired ? "bg-red-50/30" : undefined}
+                    >
+                      <TableCell className="font-medium">
+                        {inf.name || "—"}
+                      </TableCell>
                       <TableCell>{inf.email || "—"}</TableCell>
                       <TableCell>{inf.phone || "—"}</TableCell>
                       <TableCell className="items-center justify-center">
@@ -270,8 +327,21 @@ const AdminInfluencersPage = () => {
                         <div className="flex flex-col">
                           <span>{formatDate(inf.expiresAt)}</span>
                           {typeof dLeft === "number" && (
-                            <span className={cn("text-xs", dLeft < 0 ? "text-red-600" : dLeft <= 7 ? "text-amber-600" : "text-muted-foreground")}>
-                              {dLeft < 0 ? `${Math.abs(dLeft)} days ago` : dLeft === 0 ? "today" : `in ${dLeft} days`}
+                            <span
+                              className={cn(
+                                "text-xs",
+                                dLeft < 0
+                                  ? "text-red-600"
+                                  : dLeft <= 7
+                                  ? "text-amber-600"
+                                  : "text-muted-foreground"
+                              )}
+                            >
+                              {dLeft < 0
+                                ? `${Math.abs(dLeft)} days ago`
+                                : dLeft === 0
+                                ? "today"
+                                : `in ${dLeft} days`}
                             </span>
                           )}
                         </div>
@@ -282,8 +352,10 @@ const AdminInfluencersPage = () => {
                       <TableCell>
                         <div className="flex gap-1 items-center justify-center">
                           <Tooltip>
-                            <TooltipTrigger asChild >
-                              <Link href={`/admin/influencers/view?influencerId=${inf.influencerId}`}>
+                            <TooltipTrigger asChild>
+                              <Link
+                                href={`/admin/influencers/view?influencerId=${inf.influencerId}`}
+                              >
                                 <Button variant="ghost" size="icon">
                                   <HiOutlineEye />
                                 </Button>
@@ -293,8 +365,14 @@ const AdminInfluencersPage = () => {
                           </Tooltip>
                           <Tooltip>
                             <TooltipTrigger asChild>
-                              <Link href={`/admin/influencers/campaigns?influencerId=${inf.influencerId}`}>
-                                <Button variant="ghost" size="icon" className="item-center">
+                              <Link
+                                href={`/admin/influencers/campaigns?influencerId=${inf.influencerId}`}
+                              >
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="item-center"
+                                >
                                   <HiOutlineClipboardList />
                                 </Button>
                               </Link>
@@ -338,10 +416,18 @@ const AdminInfluencersPage = () => {
           </div>
         )}
       </Card>
+
       <Card className="p-4 flex items-center justify-between gap-4 whitespace-nowrap overflow-x-auto">
         <div className="text-sm text-muted-foreground shrink-0">
-          Showing <span className="font-medium">{(page - 1) * limit + (rows.length ? 1 : 0)}</span>–
-          <span className="font-medium">{Math.min(page * limit, total)}</span> of <span className="font-medium">{total}</span>
+          Showing{" "}
+          <span className="font-medium">
+            {(page - 1) * limit + (rows.length ? 1 : 0)}
+          </span>
+          –
+          <span className="font-medium">
+            {Math.min(page * limit, total)}
+          </span>{" "}
+          of <span className="font-medium">{total}</span>
         </div>
 
         <div className="flex items-center gap-3 shrink-0">
@@ -364,7 +450,6 @@ const AdminInfluencersPage = () => {
           </div>
         </div>
       </Card>
-
     </div>
   );
 };
