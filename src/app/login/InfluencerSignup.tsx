@@ -1,9 +1,14 @@
 import { useEffect, useMemo, useState, useCallback } from 'react';
-import { Instagram, Youtube, Globe, CheckCircle2, Eye, EyeOff } from 'lucide-react';
+import { Instagram, Youtube, Globe, CheckCircle2, Eye, EyeOff, Copy } from 'lucide-react';
 import { FloatingLabelInput } from '@/components/common/FloatingLabelInput';
 import { Button } from './Button';
 import { ProgressIndicator } from './ProgressIndicator';
-import Select, { MultiValue, SingleValue } from 'react-select';
+import Select, {
+  MultiValue,
+  SingleValue,
+  components,
+  type OptionProps,
+} from 'react-select';
 import { rsStyles, rsTheme } from '../styles/reactSelectStyles'
 import type { Country } from './types';
 import { get, post } from '@/lib/api';
@@ -60,7 +65,7 @@ type ApiCategory = {
 type Option = { value: string; label: string; meta?: any };
 type Language = { _id: string; code: string; name: string };
 
-const genders = ['Female', 'Male', 'Non-binary', 'Prefer not to say'];
+const genders = ['Female', 'Male', 'Prefer not to say'];
 
 // flip to true if you want to allow proceeding without Modash payload
 const ALLOW_SELF_REPORT_FALLBACK = false;
@@ -111,6 +116,38 @@ function InfoTip({ title, desc }: { title: string; desc?: string }) {
     </Tooltip>
   );
 }
+
+// Custom Option for story prompts with a copy icon on the right
+type PromptOptionProps = OptionProps<Option, false>;
+
+const PromptOption = (props: PromptOptionProps) => {
+  const { data } = props;
+
+  const handleCopy = (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.stopPropagation(); // prevent selecting/closing the menu
+    if (typeof navigator !== 'undefined' && navigator.clipboard && data?.label) {
+      navigator.clipboard.writeText(String(data.label)).catch(() => {
+        // optional: you can hook a toast here if needed
+      });
+    }
+  };
+
+  return (
+    <components.Option {...props}>
+      <div className="flex items-center justify-between gap-2">
+        <span className="flex-1 text-sm">{props.children}</span>
+        <button
+          type="button"
+          onClick={handleCopy}
+          className="p-1 rounded hover:bg-gray-100 cursor-pointer"
+          aria-label="Copy prompt text"
+        >
+          <Copy className="w-3 h-3 text-gray-500" />
+        </button>
+      </div>
+    </components.Option>
+  );
+};
 
 // =========================
 export default function InfluencerSignup({ onSuccess, onStepChange }: { onSuccess: () => void; onStepChange?: (currentStep: number) => void }) {
@@ -1536,11 +1573,10 @@ function QuickQuestions({
 
           <div className="space-y-5">
             {(['Content', 'Audience', 'Brand'] as const).map((grp) => {
-              const options = storyPrompts[grp].map((t) => ({ value: t, label: t }));
+              const options: Option[] = storyPrompts[grp].map((t) => ({ value: t, label: t }));
               const selected = answers.selectedPrompts.find((s) => s.group === grp)?.prompt || '';
-              const selectedOption = options.find((o) => o.value === selected) || null;
+              const selectedOption: Option | null = options.find((o) => o.value === selected) || null;
 
-              // local per-card values (in scope for wordCount/MAX_WORDS)
               const currentAnswer = selected ? (answers.promptAnswers[selected] || '') : '';
               const wc = wordCount(currentAnswer);
               const atLimit = wc >= MAX_WORDS;
@@ -1554,7 +1590,7 @@ function QuickQuestions({
                     instanceId={`prompt-${grp}`}
                     options={options}
                     value={selectedOption}
-                    onChange={(opt: SingleValue<{ value: string; label: string }>) => {
+                    onChange={(opt: SingleValue<Option>) => {
                       const prompt = opt?.value || '';
                       setGroupPrompt(grp, prompt);
                     }}
@@ -1562,6 +1598,7 @@ function QuickQuestions({
                     theme={theme}
                     placeholder={`Choose a ${grp.toLowerCase()} prompt`}
                     isClearable
+                    components={{ Option: PromptOption }}  // copy-icon option
                   />
                   <p className="mt-2 text-xs text-gray-500">Select only one prompt for this category.</p>
 

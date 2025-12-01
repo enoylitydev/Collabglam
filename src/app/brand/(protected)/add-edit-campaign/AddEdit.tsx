@@ -193,7 +193,7 @@ export default function CampaignFormPage() {
     campaignType === "Other" ? customCampaignType.trim() : campaignType;
   const campaignTypeMissing = !finalCampaignTypeForUI;
 
-  // 🔴 NEW: images required – true when no existing or new images
+  // 🔴 images required – true when no existing or new images
   const imagesMissing = existingImages.length + productImages.length === 0;
 
   const [draftLoaded, setDraftLoaded] = useState(false);
@@ -562,10 +562,10 @@ export default function CampaignFormPage() {
         );
       }
 
-      const finalCampaignType =
+      const finalCampaignTypeDraft =
         campaignType === "Other" ? customCampaignType.trim() : campaignType;
-      if (finalCampaignType) {
-        formData.append("campaignType", finalCampaignType);
+      if (finalCampaignTypeDraft) {
+        formData.append("campaignType", finalCampaignTypeDraft);
       }
 
       if (budget !== "") {
@@ -647,8 +647,11 @@ export default function CampaignFormPage() {
       budget === "" ||
       !timeline.start ||
       !timeline.end ||
-      imagesMissing || // 🔴 NEW: require at least one image
-      (!creativeBriefText.trim() && !useFileUploadForBrief)
+      imagesMissing ||
+      (!useFileUploadForBrief && !creativeBriefText.trim()) ||
+      (useFileUploadForBrief &&
+        creativeBriefFiles.length === 0 &&
+        existingBriefFiles.length === 0)
     ) {
       setShowRequiredHints(true);
       setIsPreviewOpen(false);
@@ -842,7 +845,6 @@ export default function CampaignFormPage() {
                     </div>
                   </div>
 
-                  {/* NEW: required hint for images */}
                   {showRequiredHints && imagesMissing && (
                     <p className="text-xs text-red-600 mt-2">
                       At least one product image is required
@@ -1214,7 +1216,8 @@ export default function CampaignFormPage() {
                       htmlFor="creativeBriefFiles"
                       className="text-sm font-medium text-gray-700 mb-3 block"
                     >
-                      Upload Creative Brief Documents
+                      Upload Creative Brief Documents{" "}
+                      <span className="text-red-500">*</span>
                     </Label>
                     <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 hover:border-orange-400 transition-colors duration-200 bg-gray-50/50">
                       <div className="text-center">
@@ -1283,6 +1286,16 @@ export default function CampaignFormPage() {
                         ))}
                       </div>
                     )}
+
+                    {/* required hint for upload mode */}
+                    {showRequiredHints &&
+                      useFileUploadForBrief &&
+                      creativeBriefFiles.length === 0 &&
+                      existingBriefFiles.length === 0 && (
+                        <p className="text-xs text-red-600 mt-2">
+                          At least one creative brief document is required
+                        </p>
+                      )}
                   </div>
                 ) : (
                   <div className="space-y-1">
