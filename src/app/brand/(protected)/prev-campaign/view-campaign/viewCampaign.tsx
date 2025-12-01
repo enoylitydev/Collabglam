@@ -26,25 +26,50 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 
+interface CampaignLocation {
+  countryId: string;
+  countryName: string;
+}
+
+interface CampaignCategory {
+  categoryId: number;
+  categoryName: string;
+  subcategoryId: string;
+  subcategoryName: string;
+}
+
 interface CampaignData {
   _id: string;
+  brandId?: string;
+  brandName?: string;
+
   productOrServiceName: string;
   description: string;
   images: string[];
+
   targetAudience: {
     age: { MinAge: number; MaxAge: number };
-    gender: number;
-    location: string;
+    gender: 0 | 1 | 2;
+    locations?: CampaignLocation[];
   };
-  interestId: { _id: string; name: string }[];
+
+  categories?: CampaignCategory[];
+
   goal: string;
+  campaignType?: string;
   budget: number;
   timeline: { startDate: string; endDate: string };
+
   creativeBriefText?: string;
   creativeBrief: string[];
+
   additionalNotes?: string;
   isActive: number;
   createdAt: string;
+
+  isDraft?: number;
+  applicantCount?: number;
+  hasApplied?: number;
 }
 
 const isPdf = (href: string) => /\.pdf(?:$|[?#])/i.test(href);
@@ -212,7 +237,8 @@ export default function ViewCampaignPage() {
   }
 
   const c = campaign;
-  const interests = c.interestId.map((i) => i.name).join(", ");
+  const locations = c.targetAudience.locations ?? [];
+  const categories = c.categories ?? [];
   const currentImage = imageUrls[previewIndex] || "";
 
   return (
@@ -306,20 +332,42 @@ export default function ViewCampaignPage() {
                   : "All"}
               </p>
             </div>
-            <div>
-              <p className="text-sm font-medium text-gray-600">Location</p>
-              <p className="mt-1 text-gray-800">{c.targetAudience.location}</p>
-            </div>
-            <div className="md:col-span-3">
-              <p className="text-sm font-medium text-gray-600">Interests</p>
+
+            <div className="md:col-span-2 lg:col-span-3">
+              <p className="text-sm font-medium text-gray-600">Locations</p>
               <div className="mt-2 flex flex-wrap gap-2">
-                {c.interestId.map((i) => (
-                  <Badge key={i._id} variant="outline" className="bg-orange-50 text-orange-700">
-                    {i.name}
-                  </Badge>
-                ))}
+                {locations.length > 0 ? (
+                  locations.map((loc) => (
+                    <Badge
+                      key={loc.countryId}
+                      variant="outline"
+                      className="bg-orange-50 text-orange-700"
+                    >
+                      {loc.countryName}
+                    </Badge>
+                  ))
+                ) : (
+                  <span className="text-gray-500 text-sm">No locations specified</span>
+                )}
               </div>
             </div>
+
+            {categories.length > 0 && (
+              <div className="md:col-span-2 lg:col-span-3">
+                <p className="text-sm font-medium text-gray-600">Categories</p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {categories.map((cat) => (
+                    <Badge
+                      key={cat.subcategoryId}
+                      variant="outline"
+                      className="bg-orange-50 text-orange-700"
+                    >
+                      {cat.categoryName} — {cat.subcategoryName}
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -341,6 +389,12 @@ export default function ViewCampaignPage() {
               <p className="text-sm font-medium text-gray-600">Budget</p>
               <p className="mt-1 text-gray-800">${c.budget.toLocaleString()}</p>
             </div>
+            {c.campaignType && (
+              <div>
+                <p className="text-sm font-medium text-gray-600">Campaign Type</p>
+                <p className="mt-1 text-gray-800">{c.campaignType}</p>
+              </div>
+            )}
             <div className="flex items-center gap-3">
               <Tooltip>
                 <TooltipTrigger>
@@ -460,7 +514,7 @@ export default function ViewCampaignPage() {
             </div>
           )}
 
-          {c.additionalNotes && (
+          {c.additionalNotes && c.additionalNotes.trim() !== "" && (
             <>
               <hr className="border-1" />
               <div>
@@ -473,7 +527,10 @@ export default function ViewCampaignPage() {
       </Card>
 
       {/* ===== Image Preview Modal ===== */}
-      <Dialog open={isPreviewOpen} onOpenChange={(o) => (o ? setPreviewOpen(true) : closePreview())}>
+      <Dialog
+        open={isPreviewOpen}
+        onOpenChange={(o) => (o ? setPreviewOpen(true) : closePreview())}
+      >
         <DialogContent
           className="
             sm:max-w-[1000px] max-w-[95vw]
@@ -526,7 +583,9 @@ export default function ViewCampaignPage() {
                   key={src + idx}
                   onClick={() => setPreviewIndex(idx)}
                   className={`h-16 w-16 flex-shrink-0 overflow-hidden rounded-md border ${
-                    idx === previewIndex ? "ring-2 ring-orange-500 border-transparent" : "border-gray-200"
+                    idx === previewIndex
+                      ? "ring-2 ring-orange-500 border-transparent"
+                      : "border-gray-200"
                   }`}
                   aria-label={`Open image ${idx + 1}`}
                 >
@@ -550,7 +609,8 @@ export default function ViewCampaignPage() {
                 onClick={() =>
                   downloadFile(
                     currentImage,
-                    (currentImage && decodeURIComponent(currentImage.split("/").pop() || "")) || "image"
+                    (currentImage && decodeURIComponent(currentImage.split("/").pop() || "")) ||
+                      "image"
                   )
                 }
               >

@@ -163,15 +163,15 @@ export default function BrandTopbar({
       rawLimit === undefined || rawLimit === null
         ? null
         : Number.isFinite(Number(rawLimit))
-          ? Number(rawLimit)
-          : null;
+        ? Number(rawLimit)
+        : null;
 
     const used =
       row.used === undefined || row.used === null
         ? 0
         : Number.isFinite(Number(row.used))
-          ? Number(row.used)
-          : 0;
+        ? Number(row.used)
+        : 0;
 
     return { limit, used };
   }
@@ -223,7 +223,7 @@ export default function BrandTopbar({
             const exp = legacy?.subscription?.expiresAt;
             if (exp) setSubscriptionExpiresAt(exp);
 
-            // 🔥 Credits from features
+            // Credits from features
             const features = legacy?.subscription?.features;
             const searchFeat = extractFeature(features, "searches_per_month");
             const profileFeat = extractFeature(
@@ -320,40 +320,54 @@ export default function BrandTopbar({
       setNotifLoading(false);
     }
   }
+
   async function reloadCredits() {
-  if (!brandId) return;
+    if (!brandId) return;
 
-  try {
-    const legacy = await get<LegacyBrandResp>(
-      `/brand?id=${encodeURIComponent(brandId)}`
-    );
+    try {
+      const legacy = await get<LegacyBrandResp>(
+        `/brand?id=${encodeURIComponent(brandId)}`
+      );
 
-    const features = legacy?.subscription?.features;
+      const features = legacy?.subscription?.features;
 
-    const searchFeat = extractFeature(features, "searches_per_month");
-    const profileFeat = extractFeature(features, "profile_views_per_month");
+      const searchFeat = extractFeature(features, "searches_per_month");
+      const profileFeat = extractFeature(
+        features,
+        "profile_views_per_month"
+      );
 
-    setSearchLimit(searchFeat.limit);
-    setSearchUsed(searchFeat.used);
+      setSearchLimit(searchFeat.limit);
+      setSearchUsed(searchFeat.used);
 
-    setProfileLimit(profileFeat.limit);
-    setProfileUsed(profileFeat.used);
+      setProfileLimit(profileFeat.limit);
+      setProfileUsed(profileFeat.used);
 
-    const plan = legacy?.subscription?.planName;
-    if (plan) setSubscriptionName(plan.toLowerCase());
+      const plan = legacy?.subscription?.planName;
+      if (plan) setSubscriptionName(plan.toLowerCase());
 
-    const exp = legacy?.subscription?.expiresAt;
-    if (exp) setSubscriptionExpiresAt(exp);
-
-  } catch (err) {
-    console.error("Failed to reload credits", err);
+      const exp = legacy?.subscription?.expiresAt;
+      if (exp) setSubscriptionExpiresAt(exp);
+    } catch (err) {
+      console.error("Failed to reload credits", err);
+    }
   }
-}
 
   // Notifications: fetch on load + when brandId changes
   useEffect(() => {
     if (!brandId) return;
     reloadNotifications();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [brandId]);
+
+  // 🔁 AUTO-POLL NOTIFICATIONS EVERY 5 SECONDS (no page refresh)
+  useEffect(() => {
+    if (!brandId) return;
+    const intervalId = window.setInterval(() => {
+      reloadNotifications();
+    }, 5000);
+
+    return () => window.clearInterval(intervalId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [brandId]);
 
@@ -363,10 +377,11 @@ export default function BrandTopbar({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [notifOpen]);
 
+  // Reload credits when credits dropdown opens
   useEffect(() => {
-  if (creditsOpen) reloadCredits();
+    if (creditsOpen) reloadCredits();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [creditsOpen]);
-
 
   async function onNotifClick(n: NotificationItem) {
     try {
@@ -467,7 +482,6 @@ export default function BrandTopbar({
 
           {/* Search (desktop) */}
           <div className="hidden md:block relative" ref={searchRef}>
-
             {searchOpen && (
               <div className="absolute left-0 mt-2 w-80 bg-white border border-gray-200 rounded-xl shadow-lg z-[900]">
                 <div className="px-3 py-2 border-b border-gray-100">
@@ -597,8 +611,9 @@ export default function BrandTopbar({
                       {notifications.map((n) => (
                         <li
                           key={n.id}
-                          className={`px-4 py-3 hover:bg-gray-50 cursor-pointer ${n.isRead ? "bg-white" : "bg-yellow-50"
-                            }`}
+                          className={`px-4 py-3 hover:bg-gray-50 cursor-pointer ${
+                            n.isRead ? "bg-white" : "bg-yellow-50"
+                          }`}
                           onClick={() => onNotifClick(n)}
                         >
                           <div className="flex items-start gap-2">
@@ -641,12 +656,8 @@ export default function BrandTopbar({
           </div>
 
           {/* Credits (Desktop) – icon + dropdown */}
-          {/* Credits (Desktop) – icon + dropdown */}
           {isDesktop && !loading && hasAnyCredits && (
-            <div
-              className="hidden md:block relative"
-              ref={creditsRef}
-            >
+            <div className="hidden md:block relative" ref={creditsRef}>
               {/* Trigger */}
               <button
                 type="button"
@@ -700,19 +711,21 @@ export default function BrandTopbar({
                           <>
                             <div className="w-full h-1.5 rounded-full bg-gray-200 overflow-hidden">
                               <div
-                                className={`h-full rounded-full ${searchPercent > 80
+                                className={`h-full rounded-full ${
+                                  searchPercent > 80
                                     ? "bg-red-500"
                                     : searchPercent > 50
-                                      ? "bg-yellow-400"
-                                      : "bg-green-500"
-                                  }`}
+                                    ? "bg-yellow-400"
+                                    : "bg-green-500"
+                                }`}
                                 style={{ width: `${searchPercent}%` }}
                               />
                             </div>
                             {searchRemaining != null && (
                               <p className="mt-1 text-[11px] text-gray-500">
                                 {searchRemaining} search
-                                {searchRemaining === 1 ? "" : "es"} left this month
+                                {searchRemaining === 1 ? "" : "es"} left this
+                                month
                               </p>
                             )}
                           </>
@@ -741,19 +754,21 @@ export default function BrandTopbar({
                           <>
                             <div className="w-full h-1.5 rounded-full bg-gray-200 overflow-hidden">
                               <div
-                                className={`h-full rounded-full ${profilePercent > 80
+                                className={`h-full rounded-full ${
+                                  profilePercent > 80
                                     ? "bg-red-500"
                                     : profilePercent > 50
-                                      ? "bg-yellow-400"
-                                      : "bg-green-500"
-                                  }`}
+                                    ? "bg-yellow-400"
+                                    : "bg-green-500"
+                                }`}
                                 style={{ width: `${profilePercent}%` }}
                               />
                             </div>
                             {profileRemaining != null && (
                               <p className="mt-1 text-[11px] text-gray-500">
                                 {profileRemaining} profile view
-                                {profileRemaining === 1 ? "" : "s"} left this month
+                                {profileRemaining === 1 ? "" : "s"} left this
+                                month
                               </p>
                             )}
                           </>
