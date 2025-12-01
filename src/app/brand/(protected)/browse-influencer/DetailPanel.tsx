@@ -50,19 +50,20 @@ type EmailStatusResponse =
 /** /emails/invitation response shape */
 type InvitationResponse =
   | {
-      message: string;
-      isExistingInfluencer: true;
-      influencerId: string;
-      influencerName: string;
-      brandName: string;
-      roomId?: string;
-    }
+    message: string;
+    isExistingInfluencer: true;
+    influencerId: string;
+    influencerName: string;
+    brandName: string;
+    roomId: string;        // required when influencer exists
+  }
   | {
-      message: string;
-      isExistingInfluencer: false;
-      brandName: string;
-      signupUrl: string;
-    };
+    message: string;
+    isExistingInfluencer: false;
+    brandName: string;
+    invitationId: string;  // used to open /brand/emails
+  };
+
 
 /** /admin/checkstatus response shape */
 type AdminCheckStatusResponse = {
@@ -332,9 +333,6 @@ export const DetailPanel = React.memo<DetailPanelProps>(
       }
     };
 
-    /* ------------------------------------------------------------------ */
-    /*                     Message Now (has email)                        */
-    /* ------------------------------------------------------------------ */
     const handleMessageNow = async (e: React.MouseEvent) => {
       e.preventDefault();
       if (!canAct) return;
@@ -378,7 +376,7 @@ export const DetailPanel = React.memo<DetailPanelProps>(
       try {
         setSendingInvite(true);
 
-        // Resolve email using BOTH sources in parallel (again, at click time)
+        // 1) Resolve email from both DBs
         const { email: creatorEmail } = await resolveCreatorEmail(
           safeHandle,
           normalizedPlatform
@@ -393,17 +391,28 @@ export const DetailPanel = React.memo<DetailPanelProps>(
           return;
         }
 
-        // // Call /emails/invitation with the resolved email
-        // await post<InvitationResponse>('/emails/invitation', {
-        //   email: creatorEmail,
-        //   brandId,
-        // });
+        // 2) Ask backend whether influencer is signed up or not
+        const resp = await post<InvitationResponse>('/emails/invitation', {
+          email: creatorEmail,
+          brandId,
+          campaignId: campaignId || undefined,
+          handle: safeHandle,
+          platform: normalizedPlatform,
+        });
 
-        // ✅ Always redirect to /brand/invited
-        router.push('/brand/invited');
+        // 3) Redirect based on sign-up status
+        if (resp.isExistingInfluencer) {
+          // influencer is signed up → go to chat
+          const { roomId } = resp;
+          // adjust if your route uses query param instead
+          router.push(`/brand/messages/${roomId}`);
+        } else {
+          // influencer not signed up → go to email composer with invitationId
+          const { invitationId } = resp;
+          router.push(`/brand/emails?invitationId=${invitationId}`);
+        }
       } catch (err: any) {
         console.error(err);
-        // ✅ Do NOT surface any backend message that might contain the email
         await Swal.fire(
           'Error',
           'Failed to start conversation. Please try again.',
@@ -535,7 +544,16 @@ export const DetailPanel = React.memo<DetailPanelProps>(
           .filter(Boolean)
           .join('\n');
 
-        await Swal.fire(title, text, hasError ? 'warning' : 'success');
+        const result = await Swal.fire(
+          title,
+          text,
+          hasError ? 'warning' : 'success'
+        );
+
+        // After clicking OK (or closing), redirect to brand/invited
+        if (result.isConfirmed || result.isDismissed) {
+          router.push('/brand/invited');
+        }
       } catch (err: any) {
         const msg =
           err?.response?.data?.message ||

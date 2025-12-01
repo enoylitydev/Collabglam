@@ -1133,9 +1133,12 @@ export default function AppliedInfluencersPage() {
         <TableRow
           key={inf.influencerId}
           id={`inf-row-${inf.influencerId}`}
-          className={`${idx % 2 === 0 ? "bg-white" : "bg-gray-50"} hover:bg-gray-100/60 focus-within:bg-gray-100/80 transition-colors ${isHighlighted ? "animate-pulse ring-2 ring-offset-2 ring-[#FFA135]" : ""
+          className={`${idx % 2 === 0 ? "bg-white" : "bg-gray-50"} hover:bg-gray-100/60 focus-within:bg-gray-100/80 transition-colors ${isHighlighted
+              ? "bg-[#FFF0D6] !bg-[#FFF0D6] shadow-[0_0_0_2px_rgba(234,88,12,0.9)] outline outline-2 outline-[#EA580C] animate-pulse"
+              : ""
             }`}
         >
+
           <TableCell className="font-medium">
             <div className="flex items-center gap-2">
               <span className="truncate max-w-[220px]" title={inf.name}>{inf.name}</span>
@@ -1214,7 +1217,7 @@ export default function AppliedInfluencersPage() {
             id={`inf-card-${inf.influencerId}`}
             className={`relative rounded-xl border p-4 bg-white transition-all duration-300
     ${highlightInfId === inf.influencerId
-                ? "border-[#FFA135] bg-[#FFF4E5] shadow-[0_0_0_1px_rgba(255,161,53,0.4),0_14px_35px_rgba(0,0,0,0.18)] animate-pulse scale-[1.01]"
+                ? "border-[#EA580C] bg-[#FFE4C4] shadow-[0_0_0_2px_rgba(234,88,12,0.9),0_18px_45px_rgba(0,0,0,0.35)] animate-pulse scale-[1.02]"
                 : "border-gray-200 hover:shadow-md hover:-translate-y-[1px]"
               }
   `}
