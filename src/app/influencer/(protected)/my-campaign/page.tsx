@@ -29,6 +29,12 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import Swal from "sweetalert2";
 import MilestoneHistoryCard from "@/components/common/milestoneCard";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 /* ─────────────────────────── Toast & Confirm helpers ───────────────────────── */
 const toast = (opts: { icon: "success" | "error" | "info"; title: string; text?: string }) =>
@@ -484,10 +490,9 @@ function SignatureModal({
           <div
             ref={dropRef}
             className={`rounded-xl border-2 border-dashed p-5 text-center text-sm transition-all cursor-pointer select-none
-              ${
-                isDragging
-                  ? "border-amber-400 bg-amber-50 shadow-sm"
-                  : "border-gray-300 bg-gray-50 hover:bg-gray-100/80"
+              ${isDragging
+                ? "border-amber-400 bg-amber-50 shadow-sm"
+                : "border-gray-300 bg-gray-50 hover:bg-gray-100/80"
               }`}
           >
             <div className="flex flex-col items-center gap-2">
@@ -602,13 +607,22 @@ function SignatureModal({
 }
 
 /* ───────────────────── Contract Modal: Accept / Edit / Sign ───────────────── */
-function InfluencerContractModal({ open, onClose, contractId, campaign, readOnly = false, onAfterAction, }: {
+function InfluencerContractModal({
+  open,
+  onClose,
+  contractId,
+  campaign,
+  readOnly = false,
+  onAfterAction,
+  initialMode = "edit",
+}: {
   open: boolean;
   onClose: () => void;
   contractId: string;
   campaign: Campaign;
   readOnly?: boolean;
   onAfterAction?: () => void;
+  initialMode?: "view" | "edit";
 }) {
   const [local, setLocal] = useState<LocalInfluencer>(emptyLocal);
   const [previewUrl, setPreviewUrl] = useState<string>("");
@@ -644,7 +658,7 @@ function InfluencerContractModal({ open, onClose, contractId, campaign, readOnly
     return true;
   }, [readOnly, isLocked, anyoneSigned, isFinalizedPhase, influencerConfirmed, meta?.flags?.canEditInfluencerFields]);
 
-  const [mode, setMode] = useState<"view" | "edit">(readOnly ? "view" : "edit");
+  const [mode, setMode] = useState<"view" | "edit">(initialMode);
 
   // Hide Edit entirely when not allowed & force to View
   useEffect(() => {
@@ -784,12 +798,20 @@ function InfluencerContractModal({ open, onClose, contractId, campaign, readOnly
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, contractId, fetchInfluencerLite, fetchContractMeta]);
 
-  // start mode based on confirmation + readOnly
+  // Reset mode when modal opens or initialMode changes
   useEffect(() => {
     if (!open) return;
-    if (readOnly) setMode("view");
-    else if (!influencerConfirmed) setMode("edit");
-  }, [open, readOnly, influencerConfirmed]);
+    if (initialMode === "edit" && !readOnly) {
+      setMode("edit");
+    } else {
+      setMode("view");
+    }
+  }, [open, initialMode, readOnly]);
+
+  // If editing becomes disallowed while in edit mode, force back to view
+  useEffect(() => {
+    if (!canEdit && mode === "edit") setMode("view");
+  }, [canEdit, mode]);
 
   // Ensure a preview exists when switching to either view OR edit (via /contract/viewPdf)
   useEffect(() => {
@@ -978,9 +1000,6 @@ function InfluencerContractModal({ open, onClose, contractId, campaign, readOnly
                       <HiOutlineEye className="mr-2 h-5 w-5" />
                       {previewUrl ? "Open in New Tab" : "Load PDF"}
                     </Button>
-                    {canEdit && (
-                      <Button className="bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-900" onClick={() => setMode("edit")}>Edit Details</Button>
-                    )}
                   </div>
                 </div>
                 {previewUrl ? (
@@ -1090,16 +1109,96 @@ function InfluencerContractModal({ open, onClose, contractId, campaign, readOnly
                     <Textarea id="notes" label="Notes (optional)" value={local.notes} onChange={(v) => setLocal((p) => ({ ...p, notes: v }))} rows={3} disabled={!canEdit} />
                   </div>
 
-                  {/* Data/Access Consents */}
                   <div className="mt-4">
-                    <div className="text-sm font-medium text-gray-800 mb-2">Data / Access Consents</div>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-                      <Checkbox label="Read-Only Insights Access" checked={!!local.dataAccess.insightsReadOnly} onChange={(checked) => setLocal((p) => ({ ...p, dataAccess: { ...p.dataAccess, insightsReadOnly: checked } }))} disabled={!canEdit} />
-                      <Checkbox label="Whitelisting Access" checked={!!local.dataAccess.whitelisting} onChange={(checked) => setLocal((p) => ({ ...p, dataAccess: { ...p.dataAccess, whitelisting: checked } }))} disabled={!canEdit} />
-                      <Checkbox label="Spark Ads Access" checked={!!local.dataAccess.sparkAds} onChange={(checked) => setLocal((p) => ({ ...p, dataAccess: { ...p.dataAccess, sparkAds: checked } }))} disabled={!canEdit} />
+                    <div className="text-sm font-medium text-gray-800 mb-2">
+                      Data / Access Consents
                     </div>
-                    <div className="text-xs text-gray-500 mt-1">Consents appear in Parties block / Section 12(e) and Schedule K references inside the contract.</div>
+
+                    <TooltipProvider delayDuration={150}>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                        {/* Read-Only Insights Access */}
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <div>
+                              <Checkbox
+                                label="Read-Only Insights Access"
+                                checked={!!local.dataAccess.insightsReadOnly}
+                                onChange={(checked) =>
+                                  setLocal((p) => ({
+                                    ...p,
+                                    dataAccess: { ...p.dataAccess, insightsReadOnly: checked },
+                                  }))
+                                }
+                                disabled={!canEdit}
+                              />
+                            </div>
+                          </TooltipTrigger>
+                          <TooltipContent className="bg-black text-white border-black text-xs max-w-xs">
+                            <p>
+                              Allows the brand to view your analytics / insights only. No posting,
+                              editing, or account control.
+                            </p>
+                          </TooltipContent>
+                        </Tooltip>
+
+                        {/* Whitelisting Access */}
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <div>
+                              <Checkbox
+                                label="Whitelisting Access"
+                                checked={!!local.dataAccess.whitelisting}
+                                onChange={(checked) =>
+                                  setLocal((p) => ({
+                                    ...p,
+                                    dataAccess: { ...p.dataAccess, whitelisting: checked },
+                                  }))
+                                }
+                                disabled={!canEdit}
+                              />
+                            </div>
+                          </TooltipTrigger>
+                          <TooltipContent className="bg-black text-white border-black text-xs max-w-xs">
+                            <p>
+                              Lets the brand run paid ads using your handle/content (whitelisted
+                              usage) according to this agreement.
+                            </p>
+                          </TooltipContent>
+                        </Tooltip>
+
+                        {/* Spark Ads Access */}
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <div>
+                              <Checkbox
+                                label="Spark Ads Access"
+                                checked={!!local.dataAccess.sparkAds}
+                                onChange={(checked) =>
+                                  setLocal((p) => ({
+                                    ...p,
+                                    dataAccess: { ...p.dataAccess, sparkAds: checked },
+                                  }))
+                                }
+                                disabled={!canEdit}
+                              />
+                            </div>
+                          </TooltipTrigger>
+                          <TooltipContent className="bg-black text-white border-black text-xs max-w-xs">
+                            <p>
+                              Authorizes the brand to run Spark Ads on your posts where supported
+                              (e.g. TikTok Spark Ads).
+                            </p>
+                          </TooltipContent>
+                        </Tooltip>
+                      </div>
+                    </TooltipProvider>
+
+                    <div className="text-xs text-gray-500 mt-1">
+                      Consents appear in Parties block / Section 12(e) and Schedule K references
+                      inside the contract.
+                    </div>
                   </div>
+
 
                   <div className="mt-5 flex flex-wrap gap-2">
                     <Button onClick={acceptOrSave} disabled={isWorking || !liteLoaded} className="bg-emerald-600 hover:bg-emerald-700 text-white" title={!liteLoaded ? "Loading your profile…" : ""}>
@@ -1221,7 +1320,7 @@ function CampaignTable({ data, loading, error, emptyMessage, page, totalPages, o
   onPrev: () => void;
   onNext: () => void;
   showMilestones?: boolean;
-  onOpenEditor: (c: Campaign, viewOnly: boolean) => void;
+  onOpenEditor: (c: Campaign, viewOnly: boolean, startMode?: "view" | "edit") => void;
   onRefreshAll: () => void;
   metaCache: Record<string, ContractMeta | null>;
   onSignDirect: (opts: { contractId: string; influencerConfirmed: boolean; isLocked: boolean; brandConfirmed: boolean; }) => void;
@@ -1308,7 +1407,7 @@ function CampaignTable({ data, loading, error, emptyMessage, page, totalPages, o
                       <Button
                         variant="outline"
                         className="bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-900"
-                        onClick={() => onOpenEditor(c, false)}
+                        onClick={() => onOpenEditor(c, false, "edit")}
                         title="Fill details to accept"
                       >
                         Accept & Edit
@@ -1338,9 +1437,15 @@ function CampaignTable({ data, loading, error, emptyMessage, page, totalPages, o
                       </Button>
                     )}
 
-                    <Button variant="outline" onClick={() => onOpenEditor(c, true)} className="bg-white" title="View contract">
+                    <Button
+                      variant="outline"
+                      onClick={() => onOpenEditor(c, !canShowEdit, "view")}
+                      className="bg-white"
+                      title="View contract"
+                    >
                       View Contract
                     </Button>
+
                     <RejectButton contractId={effectiveContractId} onDone={onRefreshAll} />
                   </>
                 ) : accepted ? (
@@ -1350,7 +1455,7 @@ function CampaignTable({ data, loading, error, emptyMessage, page, totalPages, o
                       <Button
                         variant="outline"
                         className="bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-900"
-                        onClick={() => onOpenEditor(c, false)}
+                        onClick={() => onOpenEditor(c, false, "edit")}
                         title="Edit your details"
                       >
                         Edit Contract
@@ -1368,9 +1473,15 @@ function CampaignTable({ data, loading, error, emptyMessage, page, totalPages, o
                       </Button>
                     )}
 
-                    <Button variant="outline" onClick={() => onOpenEditor(c, true)} className="bg-white" title="View contract">
+                    <Button
+                      variant="outline"
+                      onClick={() => onOpenEditor(c, !canShowEdit, "view")}
+                      className="bg-white"
+                      title="View contract"
+                    >
                       View Contract
                     </Button>
+
                   </>
                 ) : (
                   <Button
@@ -1642,13 +1753,16 @@ export default function MyCampaignsPage() {
   const [editorReadOnly, setEditorReadOnly] = useState(false);
   const [editorContractId, setEditorContractId] = useState<string>("");
   const [editorCampaign, setEditorCampaign] = useState<Campaign | null>(null);
+  const [editorInitialMode, setEditorInitialMode] = useState<"view" | "edit">("edit");
 
-  const openEditor = (c: Campaign, viewOnly = false) => {
+  const openEditor = (c: Campaign, viewOnly = false, startMode: "view" | "edit" = "edit") => {
     setEditorCampaign(c);
     setEditorReadOnly(viewOnly);
     setEditorContractId(c.contractId);
+    setEditorInitialMode(startMode);
     setEditorOpen(true);
   };
+
 
   const refreshAll = () => {
     fetchActiveCampaigns();
@@ -1863,7 +1977,6 @@ export default function MyCampaignsPage() {
         </section>
       ) : null}
 
-      {/* Editor Modal */}
       {editorOpen && editorCampaign && (
         <InfluencerContractModal
           open={editorOpen}
@@ -1871,6 +1984,7 @@ export default function MyCampaignsPage() {
           contractId={editorContractId}
           campaign={editorCampaign}
           readOnly={editorReadOnly}
+          initialMode={editorInitialMode}
           onAfterAction={refreshAll}
         />
       )}

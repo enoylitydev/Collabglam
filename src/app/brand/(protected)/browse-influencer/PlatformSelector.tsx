@@ -20,7 +20,9 @@ export function PlatformSelector({ selected, onChange }: PlatformSelectorProps) 
 
   return (
     <div>
-      <label className="block text-sm font-medium text-gray-700 mb-3">Platform(s)</label>
+      <label className="block text-sm font-medium text-gray-700 mb-3">
+        Platform(s)
+      </label>
       <div className="grid grid-cols-3 gap-2">
         {platforms.map((platform) => {
           const theme = platformTheme[platform];
@@ -32,7 +34,7 @@ export function PlatformSelector({ selected, onChange }: PlatformSelectorProps) 
               onClick={() => toggle(platform)}
               className={`relative flex flex-col items-center p-3 rounded-lg border transition-all ${
                 isSelected
-                  ? `border-blue-300 ${theme.color} text-white shadow-md`
+                  ? `border-gray-700 ${theme.color} text-white shadow-md`
                   : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
               }`}
               aria-pressed={isSelected}
@@ -41,7 +43,10 @@ export function PlatformSelector({ selected, onChange }: PlatformSelectorProps) 
                 {theme.icon}
               </div>
               <span className="text-xs font-medium">{theme.label}</span>
-              {isSelected && <div className="absolute inset-0 rounded-lg ring-2 ring-blue-500 ring-offset-1" />}
+
+              {isSelected && (
+                <div className="pointer-events-none absolute inset-0 rounded-lg ring-2 ring-gray-700 ring-offset-1" />
+              )}
             </button>
           );
         })}

@@ -142,14 +142,13 @@ async function updateMissingEmail(body: {
   return await post<UpdateMissingEmailResponse>("/admin/updateMissingEmail", body);
 }
 
-/** ⭐ Wrapper for /newinvitations/update to set status = 'available' + optional missingEmailId */
 async function updateInvitationStatus(body: {
   handle: string;
   platform: string;
   status: "available";
   missingEmailId?: string;
 }): Promise<UpdateInvitationStatusResponse> {
-  return await post<UpdateInvitationStatusResponse>("/newinvitations/update", body);
+  return await post<UpdateInvitationStatusResponse>("/invitation/updateStatus", body);
 }
 
 // --- Small utilities ---
@@ -424,8 +423,8 @@ export default function MissingListPage() {
   const modalTitle = modalMissingEmailId
     ? "Update email for handle"
     : modalMode === "row"
-    ? "Add details for missing handle"
-    : "Add new handle & email";
+      ? "Add details for missing handle"
+      : "Add new handle & email";
 
   const primaryButtonLabel = modalMissingEmailId ? "Update email" : "Save details";
 
@@ -605,11 +604,12 @@ export default function MissingListPage() {
                   </tr>
                 )}
 
+                {/* Missing view */}
                 {!loading &&
                   viewMode === "missing" &&
                   (items as MissingItem[]).map((item, index) => (
                     <tr
-                      key={item.missingId}
+                      key={item.missingId || `${item.handle}-${item.platform}-${index}`}
                       className="hover:bg-gray-50 transition-colors"
                       style={{ animationDelay: `${index * 50}ms` }}
                     >
@@ -645,11 +645,13 @@ export default function MissingListPage() {
                     </tr>
                   ))}
 
+
+                {/* Available view */}
                 {!loading &&
                   viewMode === "available" &&
                   (items as MissingEmailItem[]).map((item, index) => (
                     <tr
-                      key={item.missingEmailId}
+                      key={item.missingEmailId || `${item.handle}-${index}`}
                       className="hover:bg-gray-50 transition-colors"
                       style={{ animationDelay: `${index * 50}ms` }}
                     >
@@ -836,9 +838,8 @@ function Td({
 }) {
   return (
     <td
-      className={`px-6 py-4 whitespace-nowrap ${
-        mono ? "font-mono text-sm" : ""
-      }`}
+      className={`px-6 py-4 whitespace-nowrap ${mono ? "font-mono text-sm" : ""
+        }`}
     >
       {children}
     </td>
