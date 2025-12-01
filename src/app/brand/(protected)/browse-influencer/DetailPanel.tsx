@@ -32,11 +32,8 @@ interface DetailPanelProps {
   emailExists?: boolean | null;
   onChangeCalc: (calc: 'median' | 'average') => void;
   brandId: string;
-  /** passed from parent; the creator's handle */
   handle: string | null;
-  /** last time the Modash report was fetched (ISO string) */
   lastFetchedAt?: string | null;
-  /** parent-supplied refresher: forces /modash/report refresh + DB update */
   onRefreshReport?: () => Promise<void> | void;
 }
 
@@ -53,19 +50,19 @@ type EmailStatusResponse =
 /** /emails/invitation response shape */
 type InvitationResponse =
   | {
-    message: string;
-    isExistingInfluencer: true;
-    influencerId: string;
-    influencerName: string;
-    brandName: string;
-    roomId?: string;
-  }
+      message: string;
+      isExistingInfluencer: true;
+      influencerId: string;
+      influencerName: string;
+      brandName: string;
+      roomId?: string;
+    }
   | {
-    message: string;
-    isExistingInfluencer: false;
-    brandName: string;
-    signupUrl: string;
-  };
+      message: string;
+      isExistingInfluencer: false;
+      brandName: string;
+      signupUrl: string;
+    };
 
 /** /admin/checkstatus response shape */
 type AdminCheckStatusResponse = {

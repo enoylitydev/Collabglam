@@ -39,7 +39,7 @@ export function SearchHeader({
             </div>
             <input
               type="text"
-              className="block w-full pl-10 pr-3 py-3 border border-gray-300 rounded-lg leading-5 bg-white placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-1 focus:ring-blue-500 focus:border-blue-500 text-sm"
+              className="block w-full pl-10 pr-3 py-3 border border-gray-300 rounded-lg leading-5 bg-white placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-1 focus:ring-black-500 focus:border-black-500 text-sm"
               placeholder={`Search ${theme.label} creators by keywords, hashtags, or topics...`}
               value={queryText}
               onChange={(e) => setQueryText(e.target.value)}

@@ -230,10 +230,12 @@ type FormErrors = Record<string, string>;
 export default function AppliedInfluencersPage() {
   const searchParams = useSearchParams();
   const campaignId = searchParams.get("id");
+  const influencerId = searchParams.get("infId");
   const [serverBudget, setServerBudget] = useState<number | null>(null);
   const [serverTimeline, setServerTimeline] = useState<{ startDate?: string | Date; endDate?: string | Date } | null>(null);
 
   const router = useRouter();
+  const [highlightInfId, setHighlightInfId] = useState<string | null>(null);
 
   // Data & Pagination
   const [influencers, setInfluencers] = useState<Influencer[]>([]);
@@ -482,6 +484,32 @@ export default function AppliedInfluencersPage() {
   }, [campaignId, page, limit, sortField, sortOrder, searchTerm]);
 
   useEffect(() => { fetchApplicants(debouncedSearch); /* eslint-disable-next-line */ }, [campaignId, page, debouncedSearch, sortField, sortOrder]);
+
+  useEffect(() => {
+    if (!influencerId) return;           // no infId in URL
+    if (!influencers.length) return;     // nothing loaded yet
+
+    const exists = influencers.some(
+      (inf) => String(inf.influencerId) === String(influencerId)
+    );
+    if (!exists) return;
+
+    // ✅ mark for highlight
+    setHighlightInfId(influencerId);
+
+    // Try desktop row first, then mobile card
+    const el =
+      document.getElementById(`inf-row-${influencerId}`) ||
+      document.getElementById(`inf-card-${influencerId}`);
+
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+
+    // ⏱ keep blinking for ~4 seconds
+    const timeout = setTimeout(() => setHighlightInfId(null), 4000);
+    return () => clearTimeout(timeout);
+  }, [influencerId, influencers]);
 
   /* ---------------- Contract meta cache ---------------- */
   const getLatestContractFor = async (inf: Influencer): Promise<ContractMeta | null> => {
@@ -1099,8 +1127,15 @@ export default function AppliedInfluencersPage() {
       const locked = meta ? meta.status === "locked" : false;
       const rejected = isRejectedMeta(meta);
 
+      const isHighlighted = highlightInfId === inf.influencerId;
+
       return (
-        <TableRow key={inf.influencerId} className={`${idx % 2 === 0 ? "bg-white" : "bg-gray-50"} hover:bg-gray-100/60 focus-within:bg-gray-100/80 transition-colors`}>
+        <TableRow
+          key={inf.influencerId}
+          id={`inf-row-${inf.influencerId}`}
+          className={`${idx % 2 === 0 ? "bg-white" : "bg-gray-50"} hover:bg-gray-100/60 focus-within:bg-gray-100/80 transition-colors ${isHighlighted ? "animate-pulse ring-2 ring-offset-2 ring-[#FFA135]" : ""
+            }`}
+        >
           <TableCell className="font-medium">
             <div className="flex items-center gap-2">
               <span className="truncate max-w-[220px]" title={inf.name}>{inf.name}</span>
@@ -1149,7 +1184,7 @@ export default function AppliedInfluencersPage() {
         </TableRow>
       );
     })
-  ), [influencers, metaCache, metaCacheLoading]);
+  ), [influencers, metaCache, metaCacheLoading, highlightInfId]);
 
   const EmptyState = () => (
     <div className="p-12 text-center space-y-3">
@@ -1174,7 +1209,21 @@ export default function AppliedInfluencersPage() {
         const href = buildHandleUrl(inf.primaryPlatform, inf.handle);
 
         return (
-          <div key={inf.influencerId} className="rounded-xl border border-gray-200 p-4 bg-white">
+          <div
+            key={inf.influencerId}
+            id={`inf-card-${inf.influencerId}`}
+            className={`relative rounded-xl border p-4 bg-white transition-all duration-300
+    ${highlightInfId === inf.influencerId
+                ? "border-[#FFA135] bg-[#FFF4E5] shadow-[0_0_0_1px_rgba(255,161,53,0.4),0_14px_35px_rgba(0,0,0,0.18)] animate-pulse scale-[1.01]"
+                : "border-gray-200 hover:shadow-md hover:-translate-y-[1px]"
+              }
+  `}
+          >
+            {highlightInfId === inf.influencerId && (
+              <span className="absolute -top-2 right-3 rounded-full bg-gradient-to-r from-[#FFA135] to-[#FF7236] px-2 py-0.5 text-[10px] font-semibold text-white shadow-sm">
+                From notification
+              </span>
+            )}
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <div className="font-semibold truncate" title={inf.name}>{inf.name}</div>
@@ -2080,10 +2129,9 @@ function SignatureModal({
           <div
             ref={dropRef}
             className={`rounded-xl border-2 border-dashed p-5 text-center text-sm transition-all cursor-pointer select-none
-              ${
-                isDragging
-                  ? "border-orange-400 bg-orange-50/80 shadow-sm"
-                  : "border-gray-300 bg-gray-50 hover:bg-gray-100/80"
+              ${isDragging
+                ? "border-orange-400 bg-orange-50/80 shadow-sm"
+                : "border-gray-300 bg-gray-50 hover:bg-gray-100/80"
               }`}
           >
             <div className="flex flex-col items-center gap-2">
