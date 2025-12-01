@@ -661,7 +661,7 @@ export const DetailPanel = React.memo<DetailPanelProps>(
                       ) : (
                         <>
                           <Send className="h-4 w-4" />
-                          Send Collaboration Request
+                          Request Contact
                         </>
                       )}
                     </button>

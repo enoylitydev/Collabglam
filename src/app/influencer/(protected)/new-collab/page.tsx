@@ -164,7 +164,7 @@ export default function BrowseCampaignsPage() {
       .catch(() => setCountries([])); // silent fail
   }, []);
 
-  /* fetch campaigns (from 2nd snippet) */
+  /* fetch campaigns */
   const fetchCampaigns = useCallback(() => {
     setLoading(true);
     setError(null);
@@ -208,13 +208,12 @@ export default function BrowseCampaignsPage() {
   useEffect(fetchCampaigns, [fetchCampaigns]);
 
   const applyFilters = () => {
-    // keep functionality similar to 2nd snippet:
     setCurrentPage(1);
     fetchCampaigns();
   };
 
   /* ────────────────────────────────────────────────────────────────── */
-  /* Sidebar (filters) — UI from 1st snippet, + country ReactSelect    */
+  /* Sidebar (filters)                                                 */
   /* ────────────────────────────────────────────────────────────────── */
 
   const filterContent = (
@@ -285,7 +284,7 @@ export default function BrowseCampaignsPage() {
           )}
         </div>
 
-        {/* Location (from 2nd snippet, styled into 1st layout) */}
+        {/* Location */}
         <div>
           <button
             onClick={() => toggleSection("location")}
@@ -337,7 +336,7 @@ export default function BrowseCampaignsPage() {
           )}
         </div>
 
-        {/* Budget (UI from 1st snippet) */}
+        {/* Budget */}
         <div>
           <button
             onClick={() => toggleSection("budget")}
@@ -409,7 +408,7 @@ export default function BrowseCampaignsPage() {
   );
 
   /* ────────────────────────────────────────────────────────────────── */
-  /* Layout — structure from 1st snippet, wired to 2nd's logic         */
+  /* Layout                                                             */
   /* ────────────────────────────────────────────────────────────────── */
 
   return (
@@ -549,7 +548,7 @@ export default function BrowseCampaignsPage() {
 }
 
 /* ──────────────────────────────────────────────────────────────────── */
-/* Campaign Card — UI from 1st snippet, data from API                  */
+/* Campaign Card — compact budget & timeline                           */
 /* ──────────────────────────────────────────────────────────────────── */
 
 function CampaignCard({
@@ -630,7 +629,7 @@ function CampaignCard({
       )}
 
       <div className="flex flex-col flex-1 p-5">
-        <div className="mb-4">
+        <div className="mb-3">
           <div className="flex items-center gap-2 mb-2">
             <span className="inline-flex items-center rounded-md bg-gray-100 px-2.5 py-1 text-xs font-medium uppercase tracking-wider text-gray-700">
               {campaign.brand}
@@ -641,33 +640,20 @@ function CampaignCard({
           </h3>
         </div>
 
-        <div className="grid grid-cols-2 gap-4 mb-5 pb-5 border-b border-gray-100">
-          <div className="flex items-start gap-3">
-            <div className="flex-shrink-0 w-10 h-10 rounded-lg bg-gradient-to-br from-green-50 to-green-100 flex items-center justify-center">
-              <DollarSign className="w-5 h-5 text-green-600" />
-            </div>
-            <div className="min-w-0">
-              <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-0.5">
-                Budget
-              </p>
-              <p className="text-base font-bold text-gray-900 truncate">
-                ${campaign.budget.toLocaleString()}
-              </p>
-            </div>
+        {/* Compact budget + timeline pills */}
+        <div className="flex flex-wrap gap-2 mb-4 pb-3 border-b border-gray-100">
+          <div className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1">
+            <DollarSign className="w-3.5 h-3.5 text-emerald-600" />
+            <span className="text-xs font-semibold text-gray-900">
+              ${campaign.budget.toLocaleString()}
+            </span>
           </div>
 
-          <div className="flex items-start gap-3">
-            <div className="flex-shrink-0 w-10 h-10 rounded-lg bg-gradient-to-br from-blue-50 to-blue-100 flex items-center justify-center">
-              <Calendar className="w-5 h-5 text-blue-600" />
-            </div>
-            <div className="min-w-0">
-              <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-0.5">
-                Timeline
-              </p>
-              <p className="text-sm font-semibold text-gray-900 leading-tight">
-                {campaign.timeline}
-              </p>
-            </div>
+          <div className="inline-flex items-center gap-1.5 rounded-full bg-blue-50 px-2.5 py-1">
+            <Calendar className="w-3.5 h-3.5 text-blue-600" />
+            <span className="text-xs font-medium text-gray-900">
+              {campaign.timeline}
+            </span>
           </div>
         </div>
 
@@ -701,7 +687,7 @@ function CampaignCard({
           </div>
         </div>
 
-        <div className="mt-auto pt-4">
+        <div className="mt-auto pt-2">
           <Button
             onClick={onView}
             className="w-full h-11 bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] hover:from-[#FFB300] hover:to-[#FFD700] text-gray-900 font-semibold rounded-lg shadow-sm hover:shadow-md transition-all duration-200"
@@ -715,7 +701,7 @@ function CampaignCard({
 }
 
 /* ──────────────────────────────────────────────────────────────────── */
-/* Pagination — styling from 1st, logic from 2nd                       */
+/* Pagination                                                          */
 /* ──────────────────────────────────────────────────────────────────── */
 
 function Pagination({
