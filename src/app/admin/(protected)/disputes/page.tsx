@@ -1,10 +1,16 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { post } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useRouter } from "next/navigation";
 
@@ -16,18 +22,25 @@ type Comment = {
   createdAt: string;
 };
 
+type DisputeStatus =
+  | "open"
+  | "in_review"
+  | "awaiting_user"
+  | "resolved"
+  | "rejected";
+
 type Dispute = {
   disputeId: string;
   subject: string;
   description?: string;
-  status: "open" | "in_review" | "awaiting_user" | "resolved" | "rejected";
+  status: DisputeStatus;
   campaignId: string;
   brandId: string;
   influencerId: string;
   campaignName?: string | null;
   brandName?: string | null;
   influencerName?: string | null;
-    createdBy?: { id?: string; role?: "Brand" | "Influencer" };
+  createdBy?: { id?: string; role?: "Brand" | "Influencer" };
   assignedTo?: { adminId?: string | null; name?: string | null } | null;
   comments?: Comment[];
   createdAt: string;
@@ -58,11 +71,14 @@ export default function AdminDisputesPage() {
   const [rows, setRows] = useState<Dispute[]>([]);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
-  const [status, setStatus] = useState<string>("");
-  const [appliedBy, setAppliedBy] = useState<string>("all");
+  const [total, setTotal] = useState(0);
+
+  const [status, setStatus] = useState<string>("all");
+  const [appliedBy, setAppliedBy] = useState<"all" | "Brand" | "Influencer">(
+    "all"
+  );
   const [searchInput, setSearchInput] = useState<string>("");
   const [appliedSearch, setAppliedSearch] = useState<string>("");
-  // List page shows summary only; details and actions move to detail page
 
   const load = async () => {
     setLoading(true);
@@ -72,9 +88,11 @@ export default function AdminDisputesPage() {
       if (status && status !== "all") body.status = status;
       if (appliedSearch.trim()) body.search = appliedSearch.trim();
       if (appliedBy && appliedBy !== "all") body.appliedBy = appliedBy;
+
       const data = await post<ListResp>("/dispute/admin/list", body);
       setRows(data.disputes || []);
       setTotalPages(data.totalPages || 1);
+      setTotal(data.total || 0);
     } catch (e: any) {
       setError(e?.message || "Failed to load disputes");
     } finally {
@@ -87,43 +105,82 @@ export default function AdminDisputesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, status, appliedBy, appliedSearch]);
 
-  // (removed client-side brand/influencer filters)
+  const StatusBadge = ({ s }: { s: DisputeStatus }) => {
+    const tone =
+      {
+        open: "bg-blue-100 text-blue-800",
+        in_review: "bg-purple-100 text-purple-800",
+        awaiting_user: "bg-amber-100 text-amber-800",
+        resolved: "bg-green-100 text-green-700",
+        rejected: "bg-red-100 text-red-700",
+      }[s] || "bg-gray-100 text-gray-700";
 
-  const StatusBadge = ({ s }: { s: Dispute["status"] }) => {
-    const tone = {
-      open: "bg-blue-100 text-blue-800",
-      in_review: "bg-purple-100 text-purple-800",
-      awaiting_user: "bg-amber-100 text-amber-800",
-      resolved: "bg-green-100 text-green-700",
-      rejected: "bg-red-100 text-red-700",
-    }[s];
-    return <span className={`px-2 py-1 rounded text-xs font-medium ${tone}`}>{s.replace("_", " ")}</span>;
+    return (
+      <span className={`px-2 py-1 rounded text-xs font-medium ${tone}`}>
+        {s.replace("_", " ")}
+      </span>
+    );
   };
+
+  // For display like "showing 1–10 of 32"
+  const from = total === 0 ? 0 : (page - 1) * 10 + 1;
+  const to = Math.min(page * 10, total);
+
+  const pageNumbers = useMemo(() => {
+    const pages: number[] = [];
+    const maxButtons = 5;
+    let start = Math.max(1, page - Math.floor(maxButtons / 2));
+    let end = Math.min(totalPages, start + maxButtons - 1);
+    start = Math.max(1, end - maxButtons + 1);
+
+    for (let i = start; i <= end; i++) pages.push(i);
+    return pages;
+  }, [page, totalPages]);
 
   return (
     <div className="p-6 max-w-7xl mx-auto">
-      <div className="mb-4">
+      <div className="mb-4 flex items-center justify-between">
         <h1 className="text-2xl font-semibold">All Disputes</h1>
       </div>
-      <div className="flex gap-3 mb-4">
-        <div className="w-48">
-          <Select value={status} onValueChange={(v) => { setStatus(v); setPage(1); }}>
+
+      {/* Filters */}
+      <div className="flex flex-col gap-3 mb-4 md:flex-row md:items-center">
+        {/* Status filter */}
+        <div className="w-full md:w-48">
+          <Select
+            value={status}
+            onValueChange={(v) => {
+              setStatus(v);
+              setPage(1);
+            }}
+          >
             <SelectTrigger className="!bg-white">
               <SelectValue placeholder="Status" />
             </SelectTrigger>
             <SelectContent className="!bg-white">
               {statusOptions.map((o) => (
-                <SelectItem key={o.value || "all"} value={o.value}>{o.label}</SelectItem>
+                <SelectItem key={o.value} value={o.value}>
+                  {o.label}
+                </SelectItem>
               ))}
             </SelectContent>
           </Select>
         </div>
+
+        {/* Applied-by filter (Brand/Influencer) */}
         <div className="flex items-center gap-3 px-3 py-2 border rounded !bg-white">
           <span className="text-sm text-gray-700">Applied</span>
           {(() => {
-            const brandChecked = appliedBy === 'Brand' || appliedBy === 'all';
-            const influencerChecked = appliedBy === 'Influencer' || appliedBy === 'all';
-            const nextFrom = (b: boolean, i: boolean) => (b && i) || (!b && !i) ? 'all' : (b ? 'Brand' : 'Influencer');
+            const brandChecked = appliedBy === "Brand" || appliedBy === "all";
+            const influencerChecked =
+              appliedBy === "Influencer" || appliedBy === "all";
+            const nextFrom = (b: boolean, i: boolean): typeof appliedBy =>
+              (b && i) || (!b && !i)
+                ? "all"
+                : b
+                ? "Brand"
+                : "Influencer";
+
             return (
               <>
                 <label className="flex items-center gap-2 text-sm">
@@ -154,17 +211,34 @@ export default function AdminDisputesPage() {
             );
           })()}
         </div>
-        <Input
-          placeholder="Search subject/description"
-          value={searchInput}
-          onChange={(e) => setSearchInput(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') { setPage(1); setAppliedSearch(searchInput); }
-          }}
-        />
-        <Button className="border" onClick={() => { setPage(1); setAppliedSearch(searchInput); }}>Search</Button>
+
+        {/* Search */}
+        <div className="flex flex-1 gap-2">
+          <Input
+            placeholder="Search subject/description"
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                setPage(1);
+                setAppliedSearch(searchInput);
+              }
+            }}
+            className="bg-white"
+          />
+          <Button
+            className="border"
+            onClick={() => {
+              setPage(1);
+              setAppliedSearch(searchInput);
+            }}
+          >
+            Search
+          </Button>
+        </div>
       </div>
 
+      {/* Table */}
       {loading ? (
         <p>Loading…</p>
       ) : error ? (
@@ -183,6 +257,7 @@ export default function AdminDisputesPage() {
                 <th className="text-left p-3">Influencer</th>
                 <th className="text-left p-3">Applied By</th>
                 <th className="text-left p-3">Status</th>
+                <th className="text-left p-3">Updated</th>
               </tr>
             </thead>
             <tbody>
@@ -190,29 +265,58 @@ export default function AdminDisputesPage() {
                 <tr
                   key={d.disputeId}
                   className="border-t align-top cursor-pointer hover:bg-gray-50"
-                  onClick={() => router.push(`/admin/disputes/${d.disputeId}`)}
+                  onClick={() =>
+                    router.push(`/admin/disputes/${d.disputeId}`)
+                  }
                 >
                   <td className="p-3 font-mono text-xs">{d.disputeId}</td>
-                  <td className="p-3 font-medium">{d.subject}</td>
+                  <td className="p-3 font-medium max-w-xs truncate">
+                    {d.subject}
+                  </td>
                   <td className="p-3">
                     {d.campaignName ? (
-                      d.campaignName
+                      <>
+                        <div className="text-sm">{d.campaignName}</div>
+                        <div className="text-[11px] text-gray-500 font-mono">
+                          {d.campaignId}
+                        </div>
+                      </>
+                    ) : d.campaignId ? (
+                      <span className="font-mono text-xs">
+                        {d.campaignId}
+                      </span>
                     ) : (
-                      <span className="font-mono text-xs">{d.campaignId || '—'}</span>
+                      <span className="text-xs text-gray-500">—</span>
                     )}
                   </td>
                   <td className="p-3">
                     {d.brandName ? (
-                      d.brandName
+                      <>
+                        <div className="text-sm">{d.brandName}</div>
+                        <div className="text-[11px] text-gray-500 font-mono">
+                          {d.brandId}
+                        </div>
+                      </>
+                    ) : d.brandId ? (
+                      <span className="font-mono text-xs">{d.brandId}</span>
                     ) : (
-                      <span className="font-mono text-xs">{d.brandId || '—'}</span>
+                      <span className="text-xs text-gray-500">—</span>
                     )}
                   </td>
                   <td className="p-3">
                     {d.influencerName ? (
-                      d.influencerName
+                      <>
+                        <div className="text-sm">{d.influencerName}</div>
+                        <div className="text-[11px] text-gray-500 font-mono">
+                          {d.influencerId}
+                        </div>
+                      </>
+                    ) : d.influencerId ? (
+                      <span className="font-mono text-xs">
+                        {d.influencerId}
+                      </span>
                     ) : (
-                      <span className="font-mono text-xs">{d.influencerId || '—'}</span>
+                      <span className="text-xs text-gray-500">—</span>
                     )}
                   </td>
                   <td className="p-3">
@@ -224,7 +328,12 @@ export default function AdminDisputesPage() {
                       <span className="text-xs text-gray-500">—</span>
                     )}
                   </td>
-                  <td className="p-3"><StatusBadge s={d.status} /></td>
+                  <td className="p-3">
+                    <StatusBadge s={d.status} />
+                  </td>
+                  <td className="p-3 text-xs text-gray-600 whitespace-nowrap">
+                    {new Date(d.updatedAt).toLocaleString()}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -232,15 +341,55 @@ export default function AdminDisputesPage() {
         </div>
       )}
 
+      {/* Pagination */}
       {totalPages > 1 && (
-        <div className="flex items-center gap-3 mt-4">
-          <Button variant="outline" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
-            Prev
-          </Button>
-          <span className="text-sm text-gray-700">Page {page} of {totalPages}</span>
-          <Button variant="outline" disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)}>
-            Next
-          </Button>
+        <div className="flex flex-col md:flex-row items-center justify-between gap-3 mt-4">
+          <div className="text-xs text-gray-600">
+            {total > 0 ? (
+              <>
+                Showing{" "}
+                <span className="font-medium">
+                  {from}-{to}
+                </span>{" "}
+                of <span className="font-medium">{total}</span> disputes
+              </>
+            ) : (
+              "No results"
+            )}
+          </div>
+          <div className="flex items-center gap-1">
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-8 w-8"
+              disabled={page <= 1}
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+            >
+              ‹
+            </Button>
+            {pageNumbers.map((pNum) => (
+              <Button
+                key={pNum}
+                size="icon"
+                className="h-8 w-8"
+                variant={pNum === page ? "default" : "outline"}
+                onClick={() => setPage(pNum)}
+              >
+                {pNum}
+              </Button>
+            ))}
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-8 w-8"
+              disabled={page >= totalPages}
+              onClick={() =>
+                setPage((p) => (p >= totalPages ? totalPages : p + 1))
+              }
+            >
+              ›
+            </Button>
+          </div>
         </div>
       )}
     </div>

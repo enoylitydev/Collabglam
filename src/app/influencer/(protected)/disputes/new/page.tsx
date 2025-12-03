@@ -13,30 +13,43 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
 
 type AppliedCampaign = {
-  campaignsId: string;
-  productOrServiceName?: string;
-  brandId?: string;
-  brand?: { brandId?: string; name?: string };
-  brandName?: string;
+  campaignId: string;
+  campaignName: string;
+  brandId: string;
+  brandName: string;
+  isActive: number;
+  applicantCount: number;
+  hasApplied: number;
+  isDraft: number;
+  createdAt: string;
+  isContracted: number;
+  isAccepted: number;
+  contractId: string | null;
+  contractStatus: string | null;
+};
+
+const formatContractStatus = (status: string | null) => {
+  if (!status) return "Contracted";
+  const pretty =
+    status.charAt(0).toUpperCase() + status.slice(1).replace(/_/g, " ");
+  return `Contract • ${pretty}`;
 };
 
 export default function NewInfluencerDisputePage() {
   const router = useRouter();
   const [influencerId, setInfluencerId] = useState<string | null>(null);
 
-  // Applied campaigns (from backend)
   const [campaigns, setCampaigns] = useState<AppliedCampaign[]>([]);
   const [loadingCampaigns, setLoadingCampaigns] = useState(false);
   const [campaignId, setCampaignId] = useState("");
 
-  // Brand (auto from campaign)
   const [brandId, setBrandId] = useState("");
   const [brandName, setBrandName] = useState("");
   const [loadingBrand, setLoadingBrand] = useState(false);
 
-  // Form
   const [subject, setSubject] = useState("");
   const [description, setDescription] = useState("");
   const [relatedType] = useState("other");
@@ -44,31 +57,48 @@ export default function NewInfluencerDisputePage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Guard + influencer id
   useEffect(() => {
-    const id =
-      typeof window !== "undefined"
-        ? localStorage.getItem("influencerId")
-        : null;
-    setInfluencerId(id);
-  }, []);
+    if (typeof window === "undefined") return;
 
-  // Load applied campaigns (backend: /campaign/applied)
+    const userType = localStorage.getItem("userType");
+    if (userType !== "influencer") {
+      router.replace("/login");
+      return;
+    }
+
+    const id = localStorage.getItem("influencerId");
+    if (!id) {
+      router.replace("/login");
+      return;
+    }
+
+    setInfluencerId(id);
+  }, [router]);
+
+  // Load campaigns usable for dispute (applied/contracted/accepted)
   useEffect(() => {
     const load = async () => {
       if (!influencerId) return;
       setLoadingCampaigns(true);
+      setError(null);
       try {
-        const data = await post<{ meta?: any; campaigns?: AppliedCampaign[] }>(
-          "/campaign/applied",
-          { influencerId, page: 1, limit: 1000 }
-        );
+        const data = await post<{
+          meta?: any;
+          campaigns?: AppliedCampaign[];
+        }>("/dispute/influencer/applied", {
+          influencerId,
+          page: 1,
+          limit: 1000,
+        });
+
         setCampaigns(data?.campaigns || []);
       } catch (e: any) {
         setCampaigns([]);
         setError(
           e?.response?.data?.message ||
-            e?.message ||
-            "Failed to load applied campaigns"
+          e?.message ||
+          "Failed to load applied campaigns"
         );
       } finally {
         setLoadingCampaigns(false);
@@ -78,11 +108,11 @@ export default function NewInfluencerDisputePage() {
   }, [influencerId]);
 
   const selectedCampaign = useMemo(
-    () => campaigns.find((c) => c.campaignsId === campaignId),
+    () => campaigns.find((c) => c.campaignId === campaignId),
     [campaigns, campaignId]
   );
 
-  // Auto-fill brand from the selected campaign
+  // Auto-fill brand from selected campaign
   useEffect(() => {
     const fillBrand = async () => {
       if (!selectedCampaign) {
@@ -91,10 +121,8 @@ export default function NewInfluencerDisputePage() {
         return;
       }
 
-      const inferredBrandId =
-        selectedCampaign.brandId || selectedCampaign.brand?.brandId || "";
-      const inferredBrandName =
-        selectedCampaign.brandName || selectedCampaign.brand?.name || "";
+      const inferredBrandId = selectedCampaign.brandId || "";
+      const inferredBrandName = selectedCampaign.brandName || "";
 
       setBrandId(inferredBrandId);
 
@@ -103,31 +131,32 @@ export default function NewInfluencerDisputePage() {
         return;
       }
 
-      if (inferredBrandId) {
-        setLoadingBrand(true);
-        try {
-          let name = "";
-          try {
-            const resA = await post<{ brand?: { name?: string } }>(
-              "/admin/brand/getById",
-              { brandId: inferredBrandId }
-            );
-            name = resA?.brand?.name || "";
-          } catch {
-            const resB = await post<{ brand?: { name?: string } }>(
-              "/brand/getById",
-              { brandId: inferredBrandId }
-            );
-            name = resB?.brand?.name || "";
-          }
-          setBrandName(name || inferredBrandId);
-        } catch {
-          setBrandName(inferredBrandId);
-        } finally {
-          setLoadingBrand(false);
-        }
-      } else {
+      if (!inferredBrandId) {
         setBrandName("");
+        return;
+      }
+
+      setLoadingBrand(true);
+      try {
+        let name = "";
+        try {
+          const resA = await post<{ brand?: { name?: string } }>(
+            "/admin/brand/getById",
+            { brandId: inferredBrandId }
+          );
+          name = resA?.brand?.name || "";
+        } catch {
+          const resB = await post<{ brand?: { name?: string } }>(
+            "/brand/getById",
+            { brandId: inferredBrandId }
+          );
+          name = resB?.brand?.name || "";
+        }
+        setBrandName(name || inferredBrandId);
+      } catch {
+        setBrandName(inferredBrandId);
+      } finally {
+        setLoadingBrand(false);
       }
     };
     fillBrand();
@@ -135,6 +164,7 @@ export default function NewInfluencerDisputePage() {
 
   const submit = async () => {
     setError(null);
+
     if (!influencerId) {
       setError("Missing influencer id (not logged in?)");
       return;
@@ -143,23 +173,23 @@ export default function NewInfluencerDisputePage() {
       setError("Please select a campaign you applied to.");
       return;
     }
-    if (!brandId || !subject) {
+    if (!brandId || !subject.trim()) {
       setError("Brand and subject are required.");
       return;
     }
 
     setSubmitting(true);
     try {
-      // payload unchanged
       const body: any = {
         campaignId: campaignId || undefined,
         brandId,
         influencerId,
-        subject,
-        description,
+        subject: subject.trim(),
+        description: description.trim(),
         related: { type: relatedType as any, id: relatedId || undefined },
       };
-      await post("/dispute/create", body);
+
+      await post("/dispute/influencer/create", body);
       router.push("/influencer/disputes");
     } catch (e: any) {
       setError(
@@ -177,7 +207,7 @@ export default function NewInfluencerDisputePage() {
       <div className="space-y-4 bg-white p-6 rounded border">
         {error && <p className="text-red-600">{error}</p>}
 
-        {/* 1) Campaign */}
+        {/* Campaign */}
         <div>
           <label className="block text-sm font-medium mb-1">Campaign</label>
           <Select
@@ -189,32 +219,75 @@ export default function NewInfluencerDisputePage() {
               <SelectValue
                 placeholder={
                   loadingCampaigns
-                    ? "Loading your applied campaigns…"
+                    ? "Loading your campaigns…"
                     : campaigns.length
-                    ? "Select a campaign"
-                    : "No applied campaigns found"
+                      ? "Select a campaign"
+                      : "No campaigns found"
                 }
               />
             </SelectTrigger>
             <SelectContent className="!bg-white max-h-64 overflow-auto w-[var(--radix-select-trigger-width)]">
               {campaigns.length > 0 ? (
                 campaigns.map((c) => (
-                  <SelectItem key={c.campaignsId} value={c.campaignsId}>
-                    <span className="block truncate max-w-[28rem]">
-                      {c.productOrServiceName || c.campaignsId}
-                    </span>
+                  <SelectItem key={c.campaignId} value={c.campaignId}>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="block truncate max-w-[18rem]">
+                        {c.campaignName || c.campaignId}
+                      </span>
+                      <div className="flex flex-wrap gap-1 justify-end">
+                        {/* Always show Applied */}
+                        {c.hasApplied === 1 && (
+                          <Badge
+                            variant="outline"
+                            className="text-[10px] uppercase tracking-wide bg-slate-50 text-slate-700 border border-slate-200"
+                          >
+                            Applied
+                          </Badge>
+                        )}
+
+                        {/* Contracted (shows contract status like Sent / Negotiation / etc.) */}
+                        {c.isContracted === 1 && (
+                          <Badge
+                            variant="outline"
+                            className="text-[10px] uppercase tracking-wide bg-sky-50 text-sky-700 border border-sky-200"
+                          >
+                            {formatContractStatus(c.contractStatus)}
+                          </Badge>
+                        )}
+
+                        {/* Accepted (final state) */}
+                        {c.isAccepted === 1 && (
+                          <Badge
+                            variant="outline"
+                            className="text-[10px] uppercase tracking-wide bg-emerald-50 text-emerald-700 border border-emerald-200"
+                          >
+                            Accepted
+                          </Badge>
+                        )}
+
+                        {/* Optional: show if campaign is no longer active */}
+                        {c.isActive === 0 && (
+                          <Badge
+                            variant="outline"
+                            className="text-[10px] uppercase tracking-wide bg-zinc-50 text-zinc-600 border border-zinc-200"
+                          >
+                            Inactive
+                          </Badge>
+                        )}
+                      </div>
+                    </div>
                   </SelectItem>
                 ))
               ) : (
                 <div className="px-2 py-2 text-sm text-gray-500">
-                  No applied campaigns found
+                  No campaigns found
                 </div>
               )}
             </SelectContent>
           </Select>
         </div>
 
-        {/* 2) Brand (auto-filled, read-only) */}
+        {/* Brand (read-only auto-filled) */}
         <div>
           <label className="block text-sm font-medium mb-1">Brand</label>
           <Input
@@ -229,7 +302,7 @@ export default function NewInfluencerDisputePage() {
           />
         </div>
 
-        {/* 3) Subject */}
+        {/* Subject */}
         <div>
           <label className="block text-sm font-medium mb-1">Subject</label>
           <Input
@@ -239,7 +312,7 @@ export default function NewInfluencerDisputePage() {
           />
         </div>
 
-        {/* 4) Description */}
+        {/* Description */}
         <div>
           <label className="block text-sm font-medium mb-1">Description</label>
           <Textarea
@@ -263,7 +336,7 @@ export default function NewInfluencerDisputePage() {
             onClick={submit}
             disabled={submitting}
           >
-            Create Dispute
+            {submitting ? "Creating…" : "Create Dispute"}
           </Button>
         </div>
       </div>

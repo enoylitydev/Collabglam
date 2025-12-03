@@ -6,13 +6,26 @@ import { useRouter } from "next/navigation";
 import { post } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+
+type DisputeStatus =
+  | "open"
+  | "in_review"
+  | "awaiting_user"
+  | "resolved"
+  | "rejected";
 
 type Dispute = {
   disputeId: string;
   subject: string;
   description?: string;
-  status: "open" | "in_review" | "awaiting_user" | "resolved" | "rejected";
+  status: DisputeStatus;
   campaignId?: string | null;
   campaignName?: string | null;
   brandId: string;
@@ -41,25 +54,60 @@ const statusOptions = [
 
 export default function InfluencerDisputesPage() {
   const router = useRouter();
+  const [influencerId, setInfluencerId] = useState<string | null>(null);
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [rows, setRows] = useState<Dispute[]>([]);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
+  const [total, setTotal] = useState(0);
   const [status, setStatus] = useState<string>("all");
   const [searchInput, setSearchInput] = useState<string>("");
   const [appliedSearch, setAppliedSearch] = useState<string>("");
 
+  // Guard + load influencerId from localStorage
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const userType = localStorage.getItem("userType");
+    if (userType !== "influencer") {
+      router.replace("/login");
+      return;
+    }
+
+    const storedInfluencerId = localStorage.getItem("influencerId");
+    if (!storedInfluencerId) {
+      router.replace("/login");
+      return;
+    }
+
+    setInfluencerId(storedInfluencerId);
+  }, [router]);
+
   const load = async () => {
+    if (!influencerId) return;
     setLoading(true);
     setError(null);
     try {
-      const body: any = { page, limit: 10 };
-      if (status && status !== "all") body.status = status;
-      if (appliedSearch.trim()) body.search = appliedSearch.trim();
-      const data = await post<ListResp>("/dispute/my", body);
+      const body: any = {
+        influencerId, // REQUIRED by backend
+        page,
+        limit: 10,
+      };
+
+      if (status && status !== "all") {
+        body.status = status; // backend accepts string status via normalizeStatusInput
+      }
+
+      if (appliedSearch.trim()) {
+        body.search = appliedSearch.trim();
+      }
+
+      const data = await post<ListResp>("/dispute/influencer/list", body);
       setRows(data.disputes || []);
       setTotalPages(data.totalPages || 1);
+      setTotal(data.total || 0);
     } catch (e: any) {
       setError(e?.message || "Failed to load disputes");
     } finally {
@@ -67,32 +115,41 @@ export default function InfluencerDisputesPage() {
     }
   };
 
-  // Guard: ensure userType is influencer
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const userType = localStorage.getItem('userType');
-      if (userType !== 'influencer') {
-        router.replace('/login');
-      }
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, status, appliedSearch]);
+  }, [page, status, appliedSearch, influencerId]);
 
-  const StatusBadge = ({ s }: { s: Dispute["status"] }) => {
-    const tone = {
-      open: "bg-blue-100 text-blue-800",
-      in_review: "bg-purple-100 text-purple-800",
-      awaiting_user: "bg-amber-100 text-amber-800",
-      resolved: "bg-green-100 text-green-700",
-      rejected: "bg-red-100 text-red-700",
-    }[s];
-    return <span className={`px-2 py-1 rounded text-xs font-medium ${tone}`}>{s.replace("_", " ")}</span>;
+  const StatusBadge = ({ s }: { s: DisputeStatus }) => {
+    const tone =
+      {
+        open: "bg-blue-100 text-blue-800",
+        in_review: "bg-purple-100 text-purple-800",
+        awaiting_user: "bg-amber-100 text-amber-800",
+        resolved: "bg-green-100 text-green-700",
+        rejected: "bg-red-100 text-red-700",
+      }[s] || "bg-gray-100 text-gray-700";
+
+    return (
+      <span className={`px-2 py-1 rounded text-xs font-medium capitalize ${tone}`}>
+        {s.replace("_", " ")}
+      </span>
+    );
   };
+
+  const pageNumbers = useMemo(() => {
+    const pages: number[] = [];
+    const maxButtons = 5;
+    let start = Math.max(1, page - Math.floor(maxButtons / 2));
+    let end = Math.min(totalPages, start + maxButtons - 1);
+    start = Math.max(1, end - maxButtons + 1);
+
+    for (let i = start; i <= end; i++) pages.push(i);
+    return pages;
+  }, [page, totalPages]);
+
+  const from = total === 0 ? 0 : (page - 1) * 10 + 1;
+  const to = Math.min(page * 10, total);
 
   return (
     <div className="p-6 max-w-6xl mx-auto">
@@ -106,36 +163,55 @@ export default function InfluencerDisputesPage() {
         </Button>
       </div>
 
-      <div className="flex gap-3 mb-4">
-        <div className="w-48">
-          <Select value={status} onValueChange={(v) => { setStatus(v); setPage(1); }}>
+      {/* Filters */}
+      <div className="flex flex-col md:flex-row gap-3 md:items-center mb-4">
+        <div className="w-full md:w-48">
+          <Select
+            value={status}
+            onValueChange={(v) => {
+              setStatus(v);
+              setPage(1);
+            }}
+          >
             <SelectTrigger className="!bg-white">
               <SelectValue placeholder="Status" />
             </SelectTrigger>
             <SelectContent className="!bg-white">
               {statusOptions.map((o) => (
-                <SelectItem key={o.value || "all"} value={o.value}>{o.label}</SelectItem>
+                <SelectItem key={o.value} value={o.value}>
+                  {o.label}
+                </SelectItem>
               ))}
             </SelectContent>
           </Select>
         </div>
-        {/* Removed 'Applied by' filter for influencer view */}
-        <Input className="bg-white text-gray-800"
-          placeholder="Search subject/description"
-          value={searchInput}
-          onChange={(e) => setSearchInput(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') { setPage(1); setAppliedSearch(searchInput); }
-          }}
-        />
-        <Button
-          className="bg-white text-gray-800 border"
-          onClick={() => { setPage(1); setAppliedSearch(searchInput); }}
-        >
-          Search
-        </Button>
+
+        <div className="flex-1 flex gap-2">
+          <Input
+            className="bg-white text-gray-800"
+            placeholder="Search subject/description"
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                setPage(1);
+                setAppliedSearch(searchInput);
+              }
+            }}
+          />
+          <Button
+            className="bg-white text-gray-800 border"
+            onClick={() => {
+              setPage(1);
+              setAppliedSearch(searchInput);
+            }}
+          >
+            Search
+          </Button>
+        </div>
       </div>
 
+      {/* Table */}
       {loading ? (
         <p>Loading…</p>
       ) : error ? (
@@ -157,14 +233,23 @@ export default function InfluencerDisputesPage() {
             <tbody>
               {rows.map((d) => (
                 <tr key={d.disputeId} className="border-t">
-                  <td className="p-3 font-medium">{d.subject}</td>
-                  <td className="p-3">{d.campaignName || '—'}</td>
+                  <td className="p-3 font-medium max-w-xs truncate">
+                    {d.subject}
+                  </td>
+                  <td className="p-3">{d.campaignName || "—"}</td>
                   <td className="p-3">
                     <StatusBadge s={d.status} />
                   </td>
-                  <td className="p-3 text-gray-600">{new Date(d.updatedAt).toLocaleString()}</td>
-                  <td className="p-3">
-                    <Link className="text-black-600 hover:underline" href={`/influencer/disputes/${d.disputeId}`}>View</Link>
+                  <td className="p-3 text-gray-600">
+                    {new Date(d.updatedAt).toLocaleString()}
+                  </td>
+                  <td className="p-3 text-right">
+                    <Link
+                      className="text-black-600 hover:underline"
+                      href={`/influencer/disputes/${d.disputeId}`}
+                    >
+                      View
+                    </Link>
                   </td>
                 </tr>
               ))}
@@ -173,15 +258,56 @@ export default function InfluencerDisputesPage() {
         </div>
       )}
 
+      {/* Pagination */}
       {totalPages > 1 && (
-        <div className="flex items-center gap-3 mt-4">
-          <Button variant="outline" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
-            Prev
-          </Button>
-          <span className="text-sm text-gray-700">Page {page} of {totalPages}</span>
-          <Button variant="outline" disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)}>
-            Next
-          </Button>
+        <div className="flex flex-col md:flex-row items-center justify-between gap-3 mt-4">
+          <div className="text-xs text-gray-600">
+            {total > 0 ? (
+              <>
+                Showing{" "}
+                <span className="font-medium">
+                  {from}-{to}
+                </span>{" "}
+                of <span className="font-medium">{total}</span> disputes
+              </>
+            ) : (
+              "No results"
+            )}
+          </div>
+
+          <div className="flex items-center gap-1">
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-8 w-8"
+              disabled={page <= 1}
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+            >
+              ‹
+            </Button>
+            {pageNumbers.map((pNum) => (
+              <Button
+                key={pNum}
+                size="icon"
+                className="h-8 w-8"
+                variant={pNum === page ? "default" : "outline"}
+                onClick={() => setPage(pNum)}
+              >
+                {pNum}
+              </Button>
+            ))}
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-8 w-8"
+              disabled={page >= totalPages}
+              onClick={() =>
+                setPage((p) => (p >= totalPages ? totalPages : p + 1))
+              }
+            >
+              ›
+            </Button>
+          </div>
         </div>
       )}
     </div>
