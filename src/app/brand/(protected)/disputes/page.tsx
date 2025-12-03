@@ -14,7 +14,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  ArrowLeft,
   ChevronLeft,
   ChevronRight,
   ChevronsLeft,
@@ -22,6 +21,13 @@ import {
 } from "lucide-react";
 
 type DisputeStatus = "open" | "in_review" | "awaiting_user" | "resolved" | "rejected";
+type Role = "Admin" | "Brand" | "Influencer";
+
+type DisputeParty = {
+  role: "Brand" | "Influencer";
+  id: string;
+  name?: string | null;
+};
 
 type Dispute = {
   disputeId: string;
@@ -35,6 +41,13 @@ type Dispute = {
   assignedTo?: { adminId?: string | null; name?: string | null } | null;
   createdAt: string;
   updatedAt: string;
+
+  // From backend
+  raisedByRole?: Role | null;
+  raisedById?: string | null;
+  raisedBy?: DisputeParty | null;
+  raisedAgainst?: DisputeParty | null;
+  viewerIsRaiser?: boolean;
 };
 
 type ListResp = {
@@ -57,6 +70,55 @@ const statusOptions = [
 ];
 
 const PAGE_SIZE_OPTIONS = [10, 20, 50];
+
+const StatusBadge = ({ s }: { s: DisputeStatus }) => {
+  const tone =
+    {
+      open: "bg-blue-100 text-blue-800",
+      in_review: "bg-purple-100 text-purple-800",
+      awaiting_user: "bg-amber-100 text-amber-800",
+      resolved: "bg-green-100 text-green-700",
+      rejected: "bg-red-100 text-red-700",
+    }[s] || "bg-gray-100 text-gray-700";
+
+  return (
+    <span className={`px-2 py-1 rounded text-xs font-medium capitalize ${tone}`}>
+      {s.replace("_", " ")}
+    </span>
+  );
+};
+
+// Helper: generic message like
+// "You raised this dispute against Suruchi Tyagi"
+// "Suruchi Tyagi raised this dispute against you"
+const getDirectionLabel = (d: Dispute): string => {
+  const viewerIsRaiser =
+    typeof d.viewerIsRaiser === "boolean"
+      ? d.viewerIsRaiser
+      : d.raisedByRole === "Brand"; // fallback, just in case
+
+  const otherNameFromAgainst =
+    d.raisedAgainst?.name ||
+    (d.raisedAgainst?.role === "Influencer"
+      ? "this influencer"
+      : d.raisedAgainst?.role === "Brand"
+      ? "this brand"
+      : "the other party");
+
+  const otherNameFromBy =
+    d.raisedBy?.name ||
+    (d.raisedBy?.role === "Influencer"
+      ? "this influencer"
+      : d.raisedBy?.role === "Brand"
+      ? "this brand"
+      : "the other party");
+
+  if (viewerIsRaiser) {
+    return `You raised this dispute against ${otherNameFromAgainst}`;
+  } else {
+    return `${otherNameFromBy} raised this dispute against you`;
+  }
+};
 
 export default function BrandDisputesPage() {
   const router = useRouter();
@@ -102,10 +164,9 @@ export default function BrandDisputesPage() {
       const body: any = {
         page,
         limit: pageSize,
-        brandId, // send brandId to backend (even if it also uses token)
+        brandId,
       };
 
-      // send numeric status (0–5) to backend
       const statusNum = parseInt(status, 10);
       if (!Number.isNaN(statusNum)) {
         body.status = statusNum;
@@ -133,22 +194,26 @@ export default function BrandDisputesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [brandLoaded, brandId, page, status, appliedSearch, pageSize]);
 
-  const StatusBadge = ({ s }: { s: DisputeStatus }) => {
-    const tone =
-      {
-        open: "bg-blue-100 text-blue-800",
-        in_review: "bg-purple-100 text-purple-800",
-        awaiting_user: "bg-amber-100 text-amber-800",
-        resolved: "bg-green-100 text-green-700",
-        rejected: "bg-red-100 text-red-700",
-      }[s] || "bg-gray-100 text-gray-700";
+  // 🔹 Split current page rows into two groups
+  const raisedByMe = useMemo(
+    () =>
+      rows.filter((d) =>
+        typeof d.viewerIsRaiser === "boolean"
+          ? d.viewerIsRaiser
+          : d.raisedByRole === "Brand"
+      ),
+    [rows]
+  );
 
-    return (
-      <span className={`px-2 py-1 rounded text-xs font-medium capitalize ${tone}`}>
-        {s.replace("_", " ")}
-      </span>
-    );
-  };
+  const raisedAgainstMe = useMemo(
+    () =>
+      rows.filter((d) =>
+        typeof d.viewerIsRaiser === "boolean"
+          ? !d.viewerIsRaiser
+          : d.raisedByRole === "Influencer"
+      ),
+    [rows]
+  );
 
   const pageNumbers = useMemo(() => {
     const pages: number[] = [];
@@ -171,9 +236,66 @@ export default function BrandDisputesPage() {
     setPage(1);
   };
 
+  const renderTable = (items: Dispute[]) => {
+    if (!items.length) {
+      return (
+        <div className="p-3 text-xs text-gray-500">
+          No disputes in this category for the current filters.
+        </div>
+      );
+    }
+
+    return (
+      <div className="overflow-x-auto rounded-[12px] border bg-white">
+        <table className="min-w-full text-sm">
+          <thead className="bg-gray-50">
+            <tr>
+              <th className="text-left p-3">Subject</th>
+              <th className="text-left p-3">Campaign</th>
+              <th className="text-left p-3">Status</th>
+              <th className="text-left p-3">Updated</th>
+              <th className="text-left p-3"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((d) => {
+              const direction = getDirectionLabel(d);
+              return (
+                <tr key={d.disputeId} className="border-t">
+                  <td className="p-3 max-w-xs">
+                    <div className="font-medium truncate">{d.subject}</div>
+                    {direction && (
+                      <div className="text-[11px] text-gray-500 mt-1 line-clamp-2">
+                        {direction}
+                      </div>
+                    )}
+                  </td>
+                  <td className="p-3">{d.campaignName || "—"}</td>
+                  <td className="p-3">
+                    <StatusBadge s={d.status} />
+                  </td>
+                  <td className="p-3 text-gray-600">
+                    {new Date(d.updatedAt).toLocaleString()}
+                  </td>
+                  <td className="p-3 text-right">
+                    <Link
+                      className="text-sm text-gray-800 hover:underline"
+                      href={`/brand/disputes/${d.disputeId}`}
+                    >
+                      View
+                    </Link>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    );
+  };
+
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-4">
-
       {/* Header */}
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">Disputes</h1>
@@ -244,7 +366,7 @@ export default function BrandDisputesPage() {
         </Button>
       </div>
 
-      {/* Table */}
+      {/* Content */}
       {loading ? (
         <p>Loading…</p>
       ) : error ? (
@@ -252,40 +374,26 @@ export default function BrandDisputesPage() {
       ) : rows.length === 0 ? (
         <p className="text-gray-600">No disputes found.</p>
       ) : (
-        <div className="overflow-x-auto rounded-[16px] border bg-white">
-          <table className="min-w-full text-sm">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="text-left p-3">Subject</th>
-                <th className="text-left p-3">Campaign</th>
-                <th className="text-left p-3">Status</th>
-                <th className="text-left p-3">Updated</th>
-                <th className="text-left p-3"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((d) => (
-                <tr key={d.disputeId} className="border-t">
-                  <td className="p-3 font-medium max-w-xs truncate">{d.subject}</td>
-                  <td className="p-3">{d.campaignName || "—"}</td>
-                  <td className="p-3">
-                    <StatusBadge s={d.status} />
-                  </td>
-                  <td className="p-3 text-gray-600">
-                    {new Date(d.updatedAt).toLocaleString()}
-                  </td>
-                  <td className="p-3 text-right">
-                    <Link
-                      className="text-sm text-gray-800 hover:underline"
-                      href={`/brand/disputes/${d.disputeId}`}
-                    >
-                      View
-                    </Link>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Box 1 – Brand raised */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-semibold">
+                Disputes you raised ({raisedByMe.length})
+              </h2>
+            </div>
+            {renderTable(raisedByMe)}
+          </div>
+
+          {/* Box 2 – Against Brand */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-semibold">
+                Disputes raised against your brand ({raisedAgainstMe.length})
+              </h2>
+            </div>
+            {renderTable(raisedAgainstMe)}
+          </div>
         </div>
       )}
 
