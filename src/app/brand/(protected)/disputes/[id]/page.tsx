@@ -22,6 +22,14 @@ type DisputeStatus =
   | "resolved"
   | "rejected";
 
+type Role = "Admin" | "Brand" | "Influencer";
+
+type DisputeParty = {
+  role: "Brand" | "Influencer";
+  id: string;
+  name?: string | null;
+};
+
 type Dispute = {
   disputeId: string;
   subject: string;
@@ -35,6 +43,62 @@ type Dispute = {
   comments: Comment[];
   createdAt: string;
   updatedAt: string;
+
+  // NEW direction info
+  raisedByRole?: Role | null;
+  raisedById?: string | null;
+  raisedBy?: DisputeParty | null;
+  raisedAgainst?: DisputeParty | null;
+  viewerIsRaiser?: boolean;
+};
+
+const statusTone = (s: DisputeStatus) =>
+  ({
+    open: "bg-blue-100 text-blue-800",
+    in_review: "bg-purple-100 text-purple-800",
+    awaiting_user: "bg-amber-100 text-amber-800",
+    resolved: "bg-green-100 text-green-700",
+    rejected: "bg-red-100 text-red-700",
+  }[s] || "bg-gray-100 text-gray-700");
+
+// Same helper as list page – but works for detail
+const getDirectionLabel = (d: Dispute | null): string => {
+  if (!d) return "";
+  const viewerIsRaiser = d.viewerIsRaiser;
+
+  const otherNameFromAgainst =
+    d.raisedAgainst?.name ||
+    (d.raisedAgainst?.role === "Influencer"
+      ? "this influencer"
+      : d.raisedAgainst?.role === "Brand"
+      ? "this brand"
+      : "the other party");
+
+  const otherNameFromBy =
+    d.raisedBy?.name ||
+    (d.raisedBy?.role === "Influencer"
+      ? "this influencer"
+      : d.raisedBy?.role === "Brand"
+      ? "this brand"
+      : "the other party");
+
+  if (viewerIsRaiser) {
+    if (d.raisedAgainst?.role === "Influencer") {
+      return `You raised this dispute against ${otherNameFromAgainst}`;
+    }
+    if (d.raisedAgainst?.role === "Brand") {
+      return `You raised this dispute against ${otherNameFromAgainst}`;
+    }
+  } else {
+    if (d.raisedBy?.role === "Influencer") {
+      return `${otherNameFromBy} raised this dispute against you`;
+    }
+    if (d.raisedBy?.role === "Brand") {
+      return `${otherNameFromBy} raised this dispute against you`;
+    }
+  }
+
+  return "";
 };
 
 export default function BrandDisputeDetailPage() {
@@ -103,14 +167,7 @@ export default function BrandDisputeDetailPage() {
     }
   };
 
-  const statusTone = (s: DisputeStatus) =>
-    ({
-      open: "bg-blue-100 text-blue-800",
-      in_review: "bg-purple-100 text-purple-800",
-      awaiting_user: "bg-amber-100 text-amber-800",
-      resolved: "bg-green-100 text-green-700",
-      rejected: "bg-red-100 text-red-700",
-    }[s] || "bg-gray-100 text-gray-700");
+  const directionLabel = getDirectionLabel(d);
 
   return (
     <div className="p-6 max-w-4xl mx-auto space-y-4">
@@ -148,6 +205,11 @@ export default function BrandDisputeDetailPage() {
               <p className="text-xs text-gray-500">
                 Ticket ID: <span className="font-mono">{d.disputeId}</span>
               </p>
+
+              {directionLabel && (
+                <p className="text-xs text-gray-600 mt-1">{directionLabel}</p>
+              )}
+
               {d.campaignName ? (
                 <p className="text-gray-600 mt-1">
                   Campaign:{" "}
