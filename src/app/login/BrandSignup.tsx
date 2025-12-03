@@ -36,7 +36,7 @@ const companySizes = ['1-10', '11-50', '51-200', '200+'];
 
 const MAX_LOGO_MB = 3;
 const ACCEPT_LOGO_MIME = ['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml'];
-const BRAND_ALIAS_DOMAIN = 'collabglam.com';
+const BRAND_ALIAS_DOMAIN = 'mail.collabglam.com';
 
 /** Normalize helpers to survive different API shapes */
 function unwrap<T = any>(x: any): T {
