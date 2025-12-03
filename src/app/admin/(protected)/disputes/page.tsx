@@ -64,6 +64,18 @@ const statusOptions = [
   { value: "rejected", label: "Rejected" },
 ];
 
+// Simple debounce hook (same pattern you can reuse everywhere)
+function useDebouncedValue<T>(value: T, delay = 400) {
+  const [debounced, setDebounced] = useState(value);
+
+  useEffect(() => {
+    const id = setTimeout(() => setDebounced(value), delay);
+    return () => clearTimeout(id);
+  }, [value, delay]);
+
+  return debounced;
+}
+
 export default function AdminDisputesPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
@@ -77,17 +89,27 @@ export default function AdminDisputesPage() {
   const [appliedBy, setAppliedBy] = useState<"all" | "Brand" | "Influencer">(
     "all"
   );
+
   const [searchInput, setSearchInput] = useState<string>("");
-  const [appliedSearch, setAppliedSearch] = useState<string>("");
+  // 👇 debounced search value that actually hits the backend
+  const debouncedSearch = useDebouncedValue(searchInput, 400);
 
   const load = async () => {
     setLoading(true);
     setError(null);
     try {
       const body: any = { page, limit: 10 };
+
       if (status && status !== "all") body.status = status;
-      if (appliedSearch.trim()) body.search = appliedSearch.trim();
-      if (appliedBy && appliedBy !== "all") body.appliedBy = appliedBy;
+
+      // 🔍 backend search uses debounced value
+      if (debouncedSearch.trim()) {
+        body.search = debouncedSearch.trim();
+      }
+
+      if (appliedBy && appliedBy !== "all") {
+        body.appliedBy = appliedBy; // backend lowercases it
+      }
 
       const data = await post<ListResp>("/dispute/admin/list", body);
       setRows(data.disputes || []);
@@ -103,7 +125,7 @@ export default function AdminDisputesPage() {
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, status, appliedBy, appliedSearch]);
+  }, [page, status, appliedBy, debouncedSearch]);
 
   const StatusBadge = ({ s }: { s: DisputeStatus }) => {
     const tone =
@@ -174,6 +196,7 @@ export default function AdminDisputesPage() {
             const brandChecked = appliedBy === "Brand" || appliedBy === "all";
             const influencerChecked =
               appliedBy === "Influencer" || appliedBy === "all";
+
             const nextFrom = (b: boolean, i: boolean): typeof appliedBy =>
               (b && i) || (!b && !i)
                 ? "all"
@@ -220,8 +243,8 @@ export default function AdminDisputesPage() {
             onChange={(e) => setSearchInput(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter") {
+                // debounce will handle search, we just reset page
                 setPage(1);
-                setAppliedSearch(searchInput);
               }
             }}
             className="bg-white"
@@ -229,8 +252,8 @@ export default function AdminDisputesPage() {
           <Button
             className="border"
             onClick={() => {
+              // Same: debounce uses searchInput, this just resets to first page
               setPage(1);
-              setAppliedSearch(searchInput);
             }}
           >
             Search

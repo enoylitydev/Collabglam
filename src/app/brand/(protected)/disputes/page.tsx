@@ -20,7 +20,13 @@ import {
   ChevronsRight,
 } from "lucide-react";
 
-type DisputeStatus = "open" | "in_review" | "awaiting_user" | "resolved" | "rejected";
+type DisputeStatus =
+  | "open"
+  | "in_review"
+  | "awaiting_user"
+  | "resolved"
+  | "rejected";
+
 type Role = "Admin" | "Brand" | "Influencer";
 
 type DisputeParty = {
@@ -42,7 +48,11 @@ type Dispute = {
   createdAt: string;
   updatedAt: string;
 
-  // From backend
+  // extra direction info from backend
+  createdBy?: {
+    id: string;
+    role: Role;
+  };
   raisedByRole?: Role | null;
   raisedById?: string | null;
   raisedBy?: DisputeParty | null;
@@ -69,6 +79,13 @@ const statusOptions = [
   { value: "5", label: "Rejected" },
 ];
 
+// Direction filter
+const directionOptions = [
+  { value: "all", label: "All disputes" },
+  { value: "raised_by_you", label: "Raised by you" },
+  { value: "against_you", label: "Raised against you" },
+];
+
 const PAGE_SIZE_OPTIONS = [10, 20, 50];
 
 const StatusBadge = ({ s }: { s: DisputeStatus }) => {
@@ -88,39 +105,47 @@ const StatusBadge = ({ s }: { s: DisputeStatus }) => {
   );
 };
 
-// Helper: generic message like
-// "You raised this dispute against Suruchi Tyagi"
-// "Suruchi Tyagi raised this dispute against you"
-const getDirectionLabel = (d: Dispute): string => {
+// Brand-side direction message (viewer = Brand)
+const getDirectionLabelForViewer = (d: Dispute): string => {
   const viewerIsRaiser =
     typeof d.viewerIsRaiser === "boolean"
       ? d.viewerIsRaiser
-      : d.raisedByRole === "Brand"; // fallback, just in case
+      : d.raisedByRole === "Brand"; // fallback
 
-  const otherNameFromAgainst =
+  const otherFromAgainst =
     d.raisedAgainst?.name ||
-    (d.raisedAgainst?.role === "Influencer"
-      ? "this influencer"
-      : d.raisedAgainst?.role === "Brand"
+    (d.raisedAgainst?.role === "Brand"
       ? "this brand"
+      : d.raisedAgainst?.role === "Influencer"
+      ? "this influencer"
       : "the other party");
 
-  const otherNameFromBy =
+  const otherFromBy =
     d.raisedBy?.name ||
-    (d.raisedBy?.role === "Influencer"
-      ? "this influencer"
-      : d.raisedBy?.role === "Brand"
+    (d.raisedBy?.role === "Brand"
       ? "this brand"
+      : d.raisedBy?.role === "Influencer"
+      ? "this influencer"
       : "the other party");
 
   if (viewerIsRaiser) {
-    return `You raised this dispute against ${otherNameFromAgainst}`;
+    return `You raised this dispute against ${otherFromAgainst}`;
   } else {
-    return `${otherNameFromBy} raised this dispute against you`;
+    return `${otherFromBy} raised this dispute against you`;
   }
 };
 
-export default function BrandDisputesPage() {
+const buildPageNumbers = (page: number, totalPages: number) => {
+  const pages: number[] = [];
+  const maxButtons = 5;
+  let start = Math.max(1, page - Math.floor(maxButtons / 2));
+  let end = Math.min(totalPages, start + maxButtons - 1);
+  start = Math.max(1, end - maxButtons + 1);
+  for (let i = start; i <= end; i++) pages.push(i);
+  return pages;
+};
+
+const BrandDisputesPage: React.FC = () => {
   const router = useRouter();
 
   const [brandId, setBrandId] = useState<string | null>(null);
@@ -133,7 +158,9 @@ export default function BrandDisputesPage() {
   const [pageSize, setPageSize] = useState<number>(10);
   const [totalPages, setTotalPages] = useState(1);
   const [total, setTotal] = useState(0);
+
   const [status, setStatus] = useState<string>("0"); // numeric string, maps to backend
+  const [direction, setDirection] = useState<string>("all");
   const [searchInput, setSearchInput] = useState<string>("");
   const [appliedSearch, setAppliedSearch] = useState<string>("");
 
@@ -144,6 +171,17 @@ export default function BrandDisputesPage() {
     setBrandId(id);
     setBrandLoaded(true);
   }, []);
+
+  // 🔍 Debounce search input → appliedSearch
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      // reset to first page whenever search changes
+      setPage(1);
+      setAppliedSearch(searchInput.trim());
+    }, 200); // 500ms debounce
+
+    return () => clearTimeout(handler);
+  }, [searchInput]);
 
   const load = async () => {
     if (!brandLoaded) return;
@@ -172,8 +210,16 @@ export default function BrandDisputesPage() {
         body.status = statusNum;
       }
 
-      if (appliedSearch.trim()) {
-        body.search = appliedSearch.trim();
+      // map direction to backend appliedBy filter
+      if (direction === "raised_by_you") {
+        body.appliedBy = "brand"; // disputes the brand raised
+      } else if (direction === "against_you") {
+        body.appliedBy = "influencer"; // disputes raised against the brand
+      }
+      // direction === "all" → no appliedBy, backend returns all
+
+      if (appliedSearch) {
+        body.search = appliedSearch;
       }
 
       const data = await post<ListResp>("/dispute/brand/list", body);
@@ -192,39 +238,12 @@ export default function BrandDisputesPage() {
     if (!brandLoaded) return;
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [brandLoaded, brandId, page, status, appliedSearch, pageSize]);
+  }, [brandLoaded, brandId, page, status, appliedSearch, pageSize, direction]);
 
-  // 🔹 Split current page rows into two groups
-  const raisedByMe = useMemo(
-    () =>
-      rows.filter((d) =>
-        typeof d.viewerIsRaiser === "boolean"
-          ? d.viewerIsRaiser
-          : d.raisedByRole === "Brand"
-      ),
-    [rows]
+  const pageNumbers = useMemo(
+    () => buildPageNumbers(page, totalPages),
+    [page, totalPages]
   );
-
-  const raisedAgainstMe = useMemo(
-    () =>
-      rows.filter((d) =>
-        typeof d.viewerIsRaiser === "boolean"
-          ? !d.viewerIsRaiser
-          : d.raisedByRole === "Influencer"
-      ),
-    [rows]
-  );
-
-  const pageNumbers = useMemo(() => {
-    const pages: number[] = [];
-    const maxButtons = 5;
-    let start = Math.max(1, page - Math.floor(maxButtons / 2));
-    let end = Math.min(totalPages, start + maxButtons - 1);
-    start = Math.max(1, end - maxButtons + 1);
-
-    for (let i = start; i <= end; i++) pages.push(i);
-    return pages;
-  }, [page, totalPages]);
 
   const from = total === 0 ? 0 : (page - 1) * pageSize + 1;
   const to = Math.min(page * pageSize, total);
@@ -233,65 +252,8 @@ export default function BrandDisputesPage() {
     setStatus("0");
     setSearchInput("");
     setAppliedSearch("");
+    setDirection("all");
     setPage(1);
-  };
-
-  const renderTable = (items: Dispute[]) => {
-    if (!items.length) {
-      return (
-        <div className="p-3 text-xs text-gray-500">
-          No disputes in this category for the current filters.
-        </div>
-      );
-    }
-
-    return (
-      <div className="overflow-x-auto rounded-[12px] border bg-white">
-        <table className="min-w-full text-sm">
-          <thead className="bg-gray-50">
-            <tr>
-              <th className="text-left p-3">Subject</th>
-              <th className="text-left p-3">Campaign</th>
-              <th className="text-left p-3">Status</th>
-              <th className="text-left p-3">Updated</th>
-              <th className="text-left p-3"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {items.map((d) => {
-              const direction = getDirectionLabel(d);
-              return (
-                <tr key={d.disputeId} className="border-t">
-                  <td className="p-3 max-w-xs">
-                    <div className="font-medium truncate">{d.subject}</div>
-                    {direction && (
-                      <div className="text-[11px] text-gray-500 mt-1 line-clamp-2">
-                        {direction}
-                      </div>
-                    )}
-                  </td>
-                  <td className="p-3">{d.campaignName || "—"}</td>
-                  <td className="p-3">
-                    <StatusBadge s={d.status} />
-                  </td>
-                  <td className="p-3 text-gray-600">
-                    {new Date(d.updatedAt).toLocaleString()}
-                  </td>
-                  <td className="p-3 text-right">
-                    <Link
-                      className="text-sm text-gray-800 hover:underline"
-                      href={`/brand/disputes/${d.disputeId}`}
-                    >
-                      View
-                    </Link>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-    );
   };
 
   return (
@@ -331,6 +293,28 @@ export default function BrandDisputesPage() {
           </Select>
         </div>
 
+        {/* Direction filter */}
+        <div className="w-full md:w-56">
+          <Select
+            value={direction}
+            onValueChange={(v) => {
+              setDirection(v);
+              setPage(1);
+            }}
+          >
+            <SelectTrigger className="!bg-white">
+              <SelectValue placeholder="Direction" />
+            </SelectTrigger>
+            <SelectContent className="!bg-white">
+              {directionOptions.map((o) => (
+                <SelectItem key={o.value} value={o.value}>
+                  {o.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
         {/* Search */}
         <div className="flex-1 flex gap-2">
           <Input
@@ -338,35 +322,11 @@ export default function BrandDisputesPage() {
             placeholder="Search subject/description"
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                setPage(1);
-                setAppliedSearch(searchInput);
-              }
-            }}
           />
-          <Button
-            className="bg-white text-black border"
-            onClick={() => {
-              setPage(1);
-              setAppliedSearch(searchInput);
-            }}
-          >
-            Search
-          </Button>
         </div>
-
-        {/* Clear filters */}
-        <Button
-          variant="destructive"
-          className="bg-red-500 text-white"
-          onClick={clearFilters}
-        >
-          Clear
-        </Button>
       </div>
 
-      {/* Content */}
+      {/* Table – same structure as influencer side */}
       {loading ? (
         <p>Loading…</p>
       ) : error ? (
@@ -374,26 +334,63 @@ export default function BrandDisputesPage() {
       ) : rows.length === 0 ? (
         <p className="text-gray-600">No disputes found.</p>
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Box 1 – Brand raised */}
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <h2 className="text-sm font-semibold">
-                Disputes you raised ({raisedByMe.length})
-              </h2>
-            </div>
-            {renderTable(raisedByMe)}
-          </div>
+        <div className="overflow-x-auto rounded-[16px] border bg-white">
+          <table className="min-w-full text-sm">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="text-left p-3">Subject</th>
+                <th className="text-left p-3">Campaign</th>
+                <th className="text-left p-3">Raised By</th>
+                <th className="text-left p-3">Status</th>
+                <th className="text-left p-3">Updated</th>
+                <th className="text-left p-3"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((d: Dispute) => {
+                const directionText = getDirectionLabelForViewer(d);
 
-          {/* Box 2 – Against Brand */}
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <h2 className="text-sm font-semibold">
-                Disputes raised against your brand ({raisedAgainstMe.length})
-              </h2>
-            </div>
-            {renderTable(raisedAgainstMe)}
-          </div>
+                const raisedByLabel = d.raisedBy
+                  ? `${d.raisedBy.role === "Brand" ? "Brand" : "Influencer"}${
+                      d.raisedBy.name ? ` (${d.raisedBy.name})` : ""
+                    }`
+                  : "—";
+
+                return (
+                  <tr key={d.disputeId} className="border-t">
+                    <td className="p-3 max-w-xs">
+                      <div className="font-medium truncate">{d.subject}</div>
+                      {directionText && (
+                        <div className="text-[11px] text-gray-500 mt-1 line-clamp-2">
+                          {directionText}
+                        </div>
+                      )}
+                    </td>
+                    <td className="p-3">{d.campaignName || "—"}</td>
+                    <td className="p-3">
+                      <span className="text-xs text-gray-800">
+                        {raisedByLabel}
+                      </span>
+                    </td>
+                    <td className="p-3">
+                      <StatusBadge s={d.status} />
+                    </td>
+                    <td className="p-3 text-gray-600">
+                      {new Date(d.updatedAt).toLocaleString()}
+                    </td>
+                    <td className="p-3 text-right">
+                      <Link
+                        className="text-sm text-gray-800 hover:underline"
+                        href={`/brand/disputes/${d.disputeId}`}
+                      >
+                        View
+                      </Link>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       )}
 
@@ -424,7 +421,8 @@ export default function BrandDisputesPage() {
               <Select
                 value={String(pageSize)}
                 onValueChange={(v) => {
-                  setPageSize(Number(v));
+                  const next = Number(v);
+                  setPageSize(next);
                   setPage(1);
                 }}
               >
@@ -457,12 +455,12 @@ export default function BrandDisputesPage() {
                 size="icon"
                 className="h-8 w-8"
                 disabled={page <= 1}
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                onClick={() => setPage((p: number) => Math.max(1, p - 1))}
               >
                 <ChevronLeft className="h-4 w-4" />
               </Button>
 
-              {pageNumbers.map((pNum) => (
+              {pageNumbers.map((pNum: number) => (
                 <Button
                   key={pNum}
                   size="icon"
@@ -479,7 +477,9 @@ export default function BrandDisputesPage() {
                 size="icon"
                 className="h-8 w-8"
                 disabled={page >= totalPages}
-                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                onClick={() =>
+                  setPage((p: number) => Math.min(totalPages, p + 1))
+                }
               >
                 <ChevronRight className="h-4 w-4" />
               </Button>
@@ -498,4 +498,6 @@ export default function BrandDisputesPage() {
       )}
     </div>
   );
-}
+};
+
+export default BrandDisputesPage;

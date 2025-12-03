@@ -61,12 +61,6 @@ export default function NewInfluencerDisputePage() {
   useEffect(() => {
     if (typeof window === "undefined") return;
 
-    const userType = localStorage.getItem("userType");
-    if (userType !== "influencer") {
-      router.replace("/login");
-      return;
-    }
-
     const id = localStorage.getItem("influencerId");
     if (!id) {
       router.replace("/login");

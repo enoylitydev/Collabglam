@@ -21,6 +21,14 @@ type DisputeStatus =
   | "resolved"
   | "rejected";
 
+type Role = "Admin" | "Brand" | "Influencer";
+
+type DisputeParty = {
+  role: "Brand" | "Influencer";
+  id: string;
+  name?: string | null;
+};
+
 type Dispute = {
   disputeId: string;
   subject: string;
@@ -34,6 +42,53 @@ type Dispute = {
   comments: Comment[];
   createdAt: string;
   updatedAt: string;
+
+  // direction info from backend
+  raisedByRole?: Role | null;
+  raisedById?: string | null;
+  raisedBy?: DisputeParty | null;
+  raisedAgainst?: DisputeParty | null;
+  viewerIsRaiser?: boolean;
+};
+
+const statusTone = (s: DisputeStatus) =>
+  ({
+    open: "bg-blue-100 text-blue-800",
+    in_review: "bg-purple-100 text-purple-800",
+    awaiting_user: "bg-amber-100 text-amber-800",
+    resolved: "bg-green-100 text-green-700",
+    rejected: "bg-red-100 text-red-700",
+  }[s] || "bg-gray-100 text-gray-700");
+
+const getDirectionLabel = (d: Dispute | null): string => {
+  if (!d) return "";
+
+  const viewerIsRaiser =
+    typeof d.viewerIsRaiser === "boolean"
+      ? d.viewerIsRaiser
+      : d.raisedByRole === "Influencer"; // influencer perspective fallback
+
+  const otherFromAgainst =
+    d.raisedAgainst?.name ||
+    (d.raisedAgainst?.role === "Influencer"
+      ? "this influencer"
+      : d.raisedAgainst?.role === "Brand"
+      ? "this brand"
+      : "the other party");
+
+  const otherFromBy =
+    d.raisedBy?.name ||
+    (d.raisedBy?.role === "Influencer"
+      ? "this influencer"
+      : d.raisedBy?.role === "Brand"
+      ? "this brand"
+      : "the other party");
+
+  if (viewerIsRaiser) {
+    return `You raised this dispute against ${otherFromAgainst}`;
+  } else {
+    return `${otherFromBy} raised this dispute against you`;
+  }
 };
 
 export default function InfluencerDisputeDetailPage() {
@@ -52,12 +107,6 @@ export default function InfluencerDisputeDetailPage() {
   // Guard + influencer id
   useEffect(() => {
     if (typeof window === "undefined") return;
-
-    const userType = localStorage.getItem("userType");
-    if (userType !== "influencer") {
-      router.replace("/login");
-      return;
-    }
 
     const storedId = localStorage.getItem("influencerId");
     if (!storedId) {
@@ -110,17 +159,19 @@ export default function InfluencerDisputeDetailPage() {
     }
   };
 
-  const statusTone = (s: DisputeStatus) =>
-    ({
-      open: "bg-blue-100 text-blue-800",
-      in_review: "bg-purple-100 text-purple-800",
-      awaiting_user: "bg-amber-100 text-amber-800",
-      resolved: "bg-green-100 text-green-700",
-      rejected: "bg-red-100 text-red-700",
-    }[s] || "bg-gray-100 text-gray-700");
+  const directionLabel = getDirectionLabel(d);
 
   return (
-    <div className="p-6 max-w-4xl mx-auto">
+    <div className="p-6 max-w-4xl mx-auto space-y-4">
+      {/* Back */}
+      <Button
+        variant="destructive"
+        className="px-0 flex items-center gap-2 text-sm text-gray-800 bg-gray-200 hover:bg-gray-300"
+        onClick={() => router.back()}
+      >
+        ← Back
+      </Button>
+
       {loading ? (
         <p>Loading…</p>
       ) : error ? (
@@ -139,15 +190,21 @@ export default function InfluencerDisputeDetailPage() {
       ) : (
         <div className="space-y-6">
           {/* Header */}
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-3">
             <div>
               <h1 className="text-2xl font-semibold">{d.subject}</h1>
               <p className="text-xs text-gray-500">
                 Ticket ID: <span className="font-mono">{d.disputeId}</span>
               </p>
+
+              {directionLabel && (
+                <p className="text-xs text-gray-600 mt-1">{directionLabel}</p>
+              )}
+
               {d.campaignName ? (
                 <p className="text-gray-600 mt-1">
-                  Campaign: <span className="font-medium">{d.campaignName}</span>
+                  Campaign:{" "}
+                  <span className="font-medium">{d.campaignName}</span>
                 </p>
               ) : (
                 <p className="text-gray-600 mt-1">No campaign linked</p>
@@ -189,7 +246,7 @@ export default function InfluencerDisputeDetailPage() {
             <h2 className="font-medium mb-3">Comments</h2>
             {d.comments?.length ? (
               <ul className="space-y-3">
-                {d.comments.map((c) => (
+                {d.comments.map((c: Comment) => (
                   <li
                     key={c.commentId}
                     className="border rounded p-3 bg-gray-50"

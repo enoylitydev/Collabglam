@@ -100,7 +100,7 @@ const getDirectionLabelForViewer = (d: Dispute): string => {
   const viewerIsRaiser =
     typeof d.viewerIsRaiser === "boolean"
       ? d.viewerIsRaiser
-      : d.raisedByRole === "Influencer";
+      : d.raisedByRole === "Influencer"; // influencer perspective
 
   const otherFromAgainst =
     d.raisedAgainst?.name ||
@@ -155,12 +155,6 @@ export default function InfluencerDisputesPage() {
   useEffect(() => {
     if (typeof window === "undefined") return;
 
-    const userType = localStorage.getItem("userType");
-    if (userType !== "influencer") {
-      router.replace("/login");
-      return;
-    }
-
     const storedInfluencerId = localStorage.getItem("influencerId");
     if (!storedInfluencerId) {
       router.replace("/login");
@@ -169,6 +163,16 @@ export default function InfluencerDisputesPage() {
 
     setInfluencerId(storedInfluencerId);
   }, [router]);
+
+  // 🔍 Debounce search input → appliedSearch
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setPage(1);
+      setAppliedSearch(searchInput.trim());
+    }, 500);
+
+    return () => clearTimeout(handler);
+  }, [searchInput]);
 
   const load = async () => {
     if (!influencerId) return;
@@ -194,8 +198,8 @@ export default function InfluencerDisputesPage() {
       }
       // if direction === "all" → no appliedBy, backend returns all
 
-      if (appliedSearch.trim()) {
-        body.search = appliedSearch.trim();
+      if (appliedSearch) {
+        body.search = appliedSearch;
       }
 
       const data = await post<ListResp>("/dispute/influencer/list", body);
@@ -288,22 +292,7 @@ export default function InfluencerDisputesPage() {
             placeholder="Search subject/description"
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                setPage(1);
-                setAppliedSearch(searchInput);
-              }
-            }}
           />
-          <Button
-            className="bg-white text-gray-800 border"
-            onClick={() => {
-              setPage(1);
-              setAppliedSearch(searchInput);
-            }}
-          >
-            Search
-          </Button>
         </div>
       </div>
 
@@ -321,14 +310,22 @@ export default function InfluencerDisputesPage() {
               <tr>
                 <th className="text-left p-3">Subject</th>
                 <th className="text-left p-3">Campaign</th>
+                <th className="text-left p-3">Raised By</th>
                 <th className="text-left p-3">Status</th>
                 <th className="text-left p-3">Updated</th>
                 <th className="text-left p-3"></th>
               </tr>
             </thead>
             <tbody>
-              {rows.map((d) => {
+              {rows.map((d: Dispute) => {
                 const directionText = getDirectionLabelForViewer(d);
+
+                const raisedByLabel = d.raisedBy
+                  ? `${d.raisedBy.role === "Brand" ? "Brand" : "Influencer"}${
+                      d.raisedBy.name ? ` (${d.raisedBy.name})` : ""
+                    }`
+                  : "—";
+
                 return (
                   <tr key={d.disputeId} className="border-t">
                     <td className="p-3 max-w-xs">
@@ -340,6 +337,11 @@ export default function InfluencerDisputesPage() {
                       )}
                     </td>
                     <td className="p-3">{d.campaignName || "—"}</td>
+                    <td className="p-3">
+                      <span className="text-xs text-gray-800">
+                        {raisedByLabel}
+                      </span>
+                    </td>
                     <td className="p-3">
                       <StatusBadge s={d.status} />
                     </td>
@@ -389,7 +391,7 @@ export default function InfluencerDisputesPage() {
             >
               ‹
             </Button>
-            {pageNumbers.map((pNum) => (
+            {pageNumbers.map((pNum: number) => (
               <Button
                 key={pNum}
                 size="icon"

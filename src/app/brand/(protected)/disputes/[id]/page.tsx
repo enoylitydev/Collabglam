@@ -44,7 +44,6 @@ type Dispute = {
   createdAt: string;
   updatedAt: string;
 
-  // NEW direction info
   raisedByRole?: Role | null;
   raisedById?: string | null;
   raisedBy?: DisputeParty | null;
@@ -64,7 +63,11 @@ const statusTone = (s: DisputeStatus) =>
 // Same helper as list page – but works for detail
 const getDirectionLabel = (d: Dispute | null): string => {
   if (!d) return "";
-  const viewerIsRaiser = d.viewerIsRaiser;
+
+  const viewerIsRaiser =
+    typeof d.viewerIsRaiser === "boolean"
+      ? d.viewerIsRaiser
+      : d.raisedByRole === "Brand";
 
   const otherNameFromAgainst =
     d.raisedAgainst?.name ||
@@ -83,22 +86,10 @@ const getDirectionLabel = (d: Dispute | null): string => {
       : "the other party");
 
   if (viewerIsRaiser) {
-    if (d.raisedAgainst?.role === "Influencer") {
-      return `You raised this dispute against ${otherNameFromAgainst}`;
-    }
-    if (d.raisedAgainst?.role === "Brand") {
-      return `You raised this dispute against ${otherNameFromAgainst}`;
-    }
+    return `You raised this dispute against ${otherNameFromAgainst}`;
   } else {
-    if (d.raisedBy?.role === "Influencer") {
-      return `${otherNameFromBy} raised this dispute against you`;
-    }
-    if (d.raisedBy?.role === "Brand") {
-      return `${otherNameFromBy} raised this dispute against you`;
-    }
+    return `${otherNameFromBy} raised this dispute against you`;
   }
-
-  return "";
 };
 
 export default function BrandDisputeDetailPage() {
@@ -129,7 +120,6 @@ export default function BrandDisputeDetailPage() {
     setLoading(true);
     setError(null);
     try {
-      // brandGetById expects brandId (query or body). We pass as query params.
       const data = await get<{ dispute: Dispute }>(`/dispute/brand/${id}`, {
         brandId,
       });
@@ -151,7 +141,6 @@ export default function BrandDisputeDetailPage() {
     if (!id || !comment.trim() || !brandId) return;
     setPosting(true);
     try {
-      // brandAddComment expects { brandId, text, attachments? }
       await post(`/dispute/brand/${id}/comment`, {
         brandId,
         text: comment.trim(),
@@ -169,12 +158,24 @@ export default function BrandDisputeDetailPage() {
 
   const directionLabel = getDirectionLabel(d);
 
+  const raisedByChip =
+    d?.raisedBy &&
+    `${d.raisedBy.role === "Brand" ? "Brand" : "Influencer"}${
+      d.raisedBy.name ? ` • ${d.raisedBy.name}` : ""
+    }`;
+
+  const raisedAgainstChip =
+    d?.raisedAgainst &&
+    `${d.raisedAgainst.role === "Brand" ? "Brand" : "Influencer"}${
+      d.raisedAgainst.name ? ` • ${d.raisedAgainst.name}` : ""
+    }`;
+
   return (
     <div className="p-6 max-w-4xl mx-auto space-y-4">
       {/* Back */}
       <Button
-        variant="ghost"
-        className="px-0 flex items-center gap-2 text-sm text-gray-700"
+        variant="destructive"
+        className="px-0 flex items-center gap-2 text-sm text-gray-700 bg-gray-200 hover:bg-gray-300"
         onClick={() => router.back()}
       >
         <ArrowLeft className="h-4 w-4" />
@@ -210,13 +211,29 @@ export default function BrandDisputeDetailPage() {
                 <p className="text-xs text-gray-600 mt-1">{directionLabel}</p>
               )}
 
+              {/* Raised by / against chips */}
+              <div className="flex flex-wrap items-center gap-2 mt-2">
+                {raisedByChip && (
+                  <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-[11px] text-gray-700">
+                    <span className="font-semibold mr-1">Raised by:</span>{" "}
+                    {raisedByChip}
+                  </span>
+                )}
+                {raisedAgainstChip && (
+                  <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-[11px] text-gray-700">
+                    <span className="font-semibold mr-1">Against:</span>{" "}
+                    {raisedAgainstChip}
+                  </span>
+                )}
+              </div>
+
               {d.campaignName ? (
-                <p className="text-gray-600 mt-1">
+                <p className="text-gray-600 mt-2">
                   Campaign:{" "}
                   <span className="font-medium">{d.campaignName}</span>
                 </p>
               ) : (
-                <p className="text-gray-600 mt-1">No campaign linked</p>
+                <p className="text-gray-600 mt-2">No campaign linked</p>
               )}
               <p className="text-xs text-gray-500 mt-1">
                 Opened: {new Date(d.createdAt).toLocaleString()} • Last update:{" "}
