@@ -36,7 +36,7 @@ const companySizes = ['1-10', '11-50', '51-200', '200+'];
 
 const MAX_LOGO_MB = 3;
 const ACCEPT_LOGO_MIME = ['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml'];
-const BRAND_ALIAS_DOMAIN = 'collabglam.cloud';
+const BRAND_ALIAS_DOMAIN = 'collabglam.com';
 
 /** Normalize helpers to survive different API shapes */
 function unwrap<T = any>(x: any): T {
@@ -209,7 +209,7 @@ export function BrandSignup({ onSuccess, onStepChange }: { onSuccess: () => void
 
   const pwd = passwordScore(formData.password);
 
-  // Brand alias email (uneditable): brand-name@collabglam.cloud
+  // Brand alias email (uneditable): brand-name@collabglam.com
   const brandAliasEmail = useMemo(() => {
     const localPart = buildBrandAliasLocalPart(formData.name);
     return localPart ? `${localPart}@${BRAND_ALIAS_DOMAIN}` : '';
