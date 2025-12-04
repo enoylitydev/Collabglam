@@ -99,7 +99,7 @@ export function BrandSignup({
 }) {
   const router = useRouter();
   // NOTE: default to 'details' currently (for testing). Change to 'email' for full flow.
-  const [step, setStep] = useState<Step>('details');
+  const [step, setStep] = useState<Step>('email');
   const [countries, setCountries] = useState<Country[]>([]);
   const [categories, setCategories] = useState<MetaCategory[]>([]);
   const [businessTypes, setBusinessTypes] = useState<MetaBusinessType[]>([]);
