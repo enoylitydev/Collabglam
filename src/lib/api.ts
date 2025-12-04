@@ -138,6 +138,20 @@ export const post = async <T = any>(
   return res.data
 }
 
+/** Explicit helper for multipart/form-data (BASE_URL) */
+export const postFormData = async <T = any>(
+  url: string,
+  formData: FormData,
+  opts?: { signal?: AbortSignal }
+): Promise<T> => {
+  const baseConfig: AxiosRequestConfig = {
+    signal: opts?.signal,
+    headers: { 'Content-Type': 'multipart/form-data' },
+  }
+  const res = await api.post<T>(url, formData, baseConfig)
+  return res.data
+}
+
 /** GET (BASE_URL2) */
 export const get2 = async <T = any>(url: string, params?: any): Promise<T> => {
   const res = await api2.get<T>(url, { params })
@@ -156,6 +170,20 @@ export const post2 = async <T = any>(
     baseConfig.headers = { ...(baseConfig.headers || {}), 'Content-Type': 'multipart/form-data' }
   }
   const res = await api2.post<T>(url, data, baseConfig)
+  return res.data
+}
+
+/** Explicit helper for multipart/form-data (BASE_URL2) */
+export const postFormData2 = async <T = any>(
+  url: string,
+  formData: FormData,
+  opts?: { signal?: AbortSignal }
+): Promise<T> => {
+  const baseConfig: AxiosRequestConfig = {
+    signal: opts?.signal,
+    headers: { 'Content-Type': 'multipart/form-data' },
+  }
+  const res = await api2.post<T>(url, formData, baseConfig)
   return res.data
 }
 

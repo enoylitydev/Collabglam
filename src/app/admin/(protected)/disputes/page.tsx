@@ -29,6 +29,13 @@ type DisputeStatus =
   | "resolved"
   | "rejected";
 
+type Attachment = {
+  url: string;
+  originalName?: string | null;
+  mimeType?: string | null;
+  size?: number | null;
+};
+
 type Dispute = {
   disputeId: string;
   subject: string;
@@ -43,6 +50,7 @@ type Dispute = {
   createdBy?: { id?: string; role?: "Brand" | "Influencer" };
   assignedTo?: { adminId?: string | null; name?: string | null } | null;
   comments?: Comment[];
+  attachments?: Attachment[];
   createdAt: string;
   updatedAt: string;
 };
@@ -64,7 +72,7 @@ const statusOptions = [
   { value: "rejected", label: "Rejected" },
 ];
 
-// Simple debounce hook (same pattern you can reuse everywhere)
+// Simple debounce hook
 function useDebouncedValue<T>(value: T, delay = 400) {
   const [debounced, setDebounced] = useState(value);
 
@@ -91,7 +99,6 @@ export default function AdminDisputesPage() {
   );
 
   const [searchInput, setSearchInput] = useState<string>("");
-  // 👇 debounced search value that actually hits the backend
   const debouncedSearch = useDebouncedValue(searchInput, 400);
 
   const load = async () => {
@@ -102,7 +109,6 @@ export default function AdminDisputesPage() {
 
       if (status && status !== "all") body.status = status;
 
-      // 🔍 backend search uses debounced value
       if (debouncedSearch.trim()) {
         body.search = debouncedSearch.trim();
       }
@@ -242,17 +248,13 @@ export default function AdminDisputesPage() {
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                // debounce will handle search, we just reset page
-                setPage(1);
-              }
+              if (e.key === "Enter") setPage(1);
             }}
             className="bg-white"
           />
           <Button
             className="border"
             onClick={() => {
-              // Same: debounce uses searchInput, this just resets to first page
               setPage(1);
             }}
           >

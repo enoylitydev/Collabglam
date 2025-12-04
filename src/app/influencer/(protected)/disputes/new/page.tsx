@@ -2,7 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { post } from "@/lib/api";
+import { post, postFormData } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -54,6 +54,10 @@ export default function NewInfluencerDisputePage() {
   const [description, setDescription] = useState("");
   const [relatedType] = useState("other");
   const [relatedId] = useState("");
+
+  const [attachments, setAttachments] = useState<File[]>([]);
+  const [attachmentsInputKey, setAttachmentsInputKey] = useState(0);
+
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -70,7 +74,7 @@ export default function NewInfluencerDisputePage() {
     setInfluencerId(id);
   }, [router]);
 
-  // Load campaigns usable for dispute (applied/contracted/accepted)
+  // Load campaigns usable for dispute
   useEffect(() => {
     const load = async () => {
       if (!influencerId) return;
@@ -91,8 +95,8 @@ export default function NewInfluencerDisputePage() {
         setCampaigns([]);
         setError(
           e?.response?.data?.message ||
-          e?.message ||
-          "Failed to load applied campaigns"
+            e?.message ||
+            "Failed to load applied campaigns"
         );
       } finally {
         setLoadingCampaigns(false);
@@ -156,6 +160,20 @@ export default function NewInfluencerDisputePage() {
     fillBrand();
   }, [selectedCampaign]);
 
+  const handleAttachmentsChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files) {
+      setAttachments([]);
+      return;
+    }
+    setAttachments(Array.from(files));
+  };
+
+  const resetAttachments = () => {
+    setAttachments([]);
+    setAttachmentsInputKey((k) => k + 1); // reset file input
+  };
+
   const submit = async () => {
     setError(null);
 
@@ -174,16 +192,24 @@ export default function NewInfluencerDisputePage() {
 
     setSubmitting(true);
     try {
-      const body: any = {
-        campaignId: campaignId || undefined,
-        brandId,
-        influencerId,
-        subject: subject.trim(),
-        description: description.trim(),
-        related: { type: relatedType as any, id: relatedId || undefined },
-      };
+      const formData = new FormData();
+      formData.append("influencerId", influencerId);
+      formData.append("brandId", brandId);
+      if (campaignId) formData.append("campaignId", campaignId);
+      formData.append("subject", subject.trim());
+      if (description.trim()) formData.append("description", description.trim());
 
-      await post("/dispute/influencer/create", body);
+      // Optional future fields – backend can ignore safely
+      formData.append("relatedType", relatedType);
+      if (relatedId) formData.append("relatedId", relatedId);
+
+      // Attachments (multi)
+      attachments.forEach((file) => {
+        // MUST match multer field name in backend (e.g. "attachments")
+        formData.append("attachments", file);
+      });
+
+      await postFormData("/dispute/influencer/create", formData);
       router.push("/influencer/disputes");
     } catch (e: any) {
       setError(
@@ -199,7 +225,7 @@ export default function NewInfluencerDisputePage() {
       <h1 className="text-2xl font-semibold mb-4">Raise a Dispute</h1>
 
       <div className="space-y-4 bg-white p-6 rounded border">
-        {error && <p className="text-red-600">{error}</p>}
+        {error && <p className="text-red-600 text-sm">{error}</p>}
 
         {/* Campaign */}
         <div>
@@ -215,8 +241,8 @@ export default function NewInfluencerDisputePage() {
                   loadingCampaigns
                     ? "Loading your campaigns…"
                     : campaigns.length
-                      ? "Select a campaign"
-                      : "No campaigns found"
+                    ? "Select a campaign"
+                    : "No campaigns found"
                 }
               />
             </SelectTrigger>
@@ -229,7 +255,6 @@ export default function NewInfluencerDisputePage() {
                         {c.campaignName || c.campaignId}
                       </span>
                       <div className="flex flex-wrap gap-1 justify-end">
-                        {/* Always show Applied */}
                         {c.hasApplied === 1 && (
                           <Badge
                             variant="outline"
@@ -238,8 +263,6 @@ export default function NewInfluencerDisputePage() {
                             Applied
                           </Badge>
                         )}
-
-                        {/* Contracted (shows contract status like Sent / Negotiation / etc.) */}
                         {c.isContracted === 1 && (
                           <Badge
                             variant="outline"
@@ -248,8 +271,6 @@ export default function NewInfluencerDisputePage() {
                             {formatContractStatus(c.contractStatus)}
                           </Badge>
                         )}
-
-                        {/* Accepted (final state) */}
                         {c.isAccepted === 1 && (
                           <Badge
                             variant="outline"
@@ -258,8 +279,6 @@ export default function NewInfluencerDisputePage() {
                             Accepted
                           </Badge>
                         )}
-
-                        {/* Optional: show if campaign is no longer active */}
                         {c.isActive === 0 && (
                           <Badge
                             variant="outline"
@@ -281,7 +300,7 @@ export default function NewInfluencerDisputePage() {
           </Select>
         </div>
 
-        {/* Brand (read-only auto-filled) */}
+        {/* Brand (read-only) */}
         <div>
           <label className="block text-sm font-medium mb-1">Brand</label>
           <Input
@@ -315,6 +334,46 @@ export default function NewInfluencerDisputePage() {
             placeholder="Describe the issue"
             rows={6}
           />
+        </div>
+
+        {/* Attachments */}
+        <div>
+          <label className="block text-sm font-medium mb-1">
+            Attachments (optional)
+          </label>
+          <Input
+            key={attachmentsInputKey}
+            type="file"
+            multiple
+            accept="image/*,application/pdf"
+            onChange={handleAttachmentsChange}
+            className="bg-white"
+          />
+          {attachments.length > 0 && (
+            <div className="mt-1 text-xs text-gray-600 space-y-1">
+              <p>
+                {attachments.length} file
+                {attachments.length > 1 ? "s" : ""} selected
+              </p>
+              <ul className="list-disc list-inside">
+                {attachments.map((f) => (
+                  <li key={f.name}>
+                    {f.name}{" "}
+                    <span className="text-[10px] text-gray-400">
+                      ({Math.round(f.size / 1024)} KB)
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              <button
+                type="button"
+                className="text-[11px] text-blue-600 underline"
+                onClick={resetAttachments}
+              >
+                Clear attachments
+              </button>
+            </div>
+          )}
         </div>
 
         <div className="flex gap-3 justify-end pt-2">

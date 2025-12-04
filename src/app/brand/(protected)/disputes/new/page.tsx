@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { get, post } from "@/lib/api";
+import { get, post, postFormData } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -13,7 +13,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Paperclip, X } from "lucide-react";
 
 type Campaign = {
   campaignsId: string;
@@ -42,6 +42,8 @@ export default function NewBrandDisputePage() {
   const [description, setDescription] = useState("");
   const [relatedType, setRelatedType] = useState("other");
   const [relatedId, setRelatedId] = useState("");
+  const [attachments, setAttachments] = useState<File[]>([]);
+
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -105,6 +107,19 @@ export default function NewBrandDisputePage() {
     loadApplicants();
   }, [campaignId]);
 
+  const handleAttachmentChange = (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+    setAttachments((prev) => [...prev, ...files]);
+    e.target.value = "";
+  };
+
+  const removeAttachment = (index: number) => {
+    setAttachments((prev) => prev.filter((_, i) => i !== index));
+  };
+
   const submit = async () => {
     setError(null);
 
@@ -119,16 +134,28 @@ export default function NewBrandDisputePage() {
 
     setSubmitting(true);
     try {
-      const body: any = {
-        campaignId: campaignId || undefined,
-        brandId, // required by backend brandCreateDispute
-        influencerId,
-        subject: subject.trim(),
-        description: description.trim(),
-        // kept for future, backend ignores for now
-        related: { type: relatedType as any, id: relatedId || undefined },
-      };
-      await post("/dispute/brand/create", body);
+      const form = new FormData();
+      form.append("brandId", brandId);
+      form.append("influencerId", influencerId);
+      if (campaignId) form.append("campaignId", campaignId);
+      form.append("subject", subject.trim());
+      form.append("description", description.trim());
+
+      // Optional metadata you kept before (backend currently ignores this)
+      form.append(
+        "related",
+        JSON.stringify({
+          type: relatedType,
+          id: relatedId || undefined,
+        })
+      );
+
+      // Multi-attachment support – field name matches backend: "attachments"
+      attachments.forEach((file) => {
+        form.append("attachments", file);
+      });
+
+      await postFormData("/dispute/brand/create", form);
       router.push("/brand/disputes");
     } catch (e: any) {
       setError(
@@ -252,6 +279,55 @@ export default function NewBrandDisputePage() {
           />
         </div>
 
+        {/* Attachments */}
+        <div>
+          <label className="block text-sm font-medium mb-1">
+            Attachments (optional)
+          </label>
+          <div className="flex items-center gap-2">
+            <label className="inline-flex items-center gap-2 px-3 py-2 border rounded-md text-sm cursor-pointer bg-gray-50 hover:bg-gray-100">
+              <Paperclip className="h-4 w-4" />
+              <span>Add files</span>
+              <input
+                type="file"
+                multiple
+                className="hidden"
+                onChange={handleAttachmentChange}
+              />
+            </label>
+            {attachments.length > 0 && (
+              <span className="text-xs text-gray-600">
+                {attachments.length} file
+                {attachments.length > 1 ? "s" : ""} attached
+              </span>
+            )}
+          </div>
+
+          {attachments.length > 0 && (
+            <ul className="mt-2 space-y-1 text-xs text-gray-700">
+              {attachments.map((file, idx) => (
+                <li
+                  key={`${file.name}-${idx}`}
+                  className="flex items-center justify-between gap-2 border rounded px-2 py-1 bg-gray-50"
+                >
+                  <span className="truncate max-w-xs">{file.name}</span>
+                  <button
+                    type="button"
+                    onClick={() => removeAttachment(idx)}
+                    className="text-gray-500 hover:text-red-600"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          <p className="text-[11px] text-gray-500 mt-1">
+            You can attach screenshots, contracts, or other relevant documents.
+          </p>
+        </div>
+
         {/* Optional Related info */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <div>
@@ -272,16 +348,6 @@ export default function NewBrandDisputePage() {
                 <SelectItem value="content">Content</SelectItem>
               </SelectContent>
             </Select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium mb-1">
-              Related ID (optional)
-            </label>
-            <Input
-              value={relatedId}
-              onChange={(e) => setRelatedId(e.target.value)}
-              placeholder="e.g. invoice id, reference code"
-            />
           </div>
         </div>
 

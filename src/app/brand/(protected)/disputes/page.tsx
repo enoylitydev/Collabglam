@@ -35,6 +35,13 @@ type DisputeParty = {
   name?: string | null;
 };
 
+type Attachment = {
+  url: string;
+  originalName?: string | null;
+  mimeType?: string | null;
+  size?: number | null;
+};
+
 type Dispute = {
   disputeId: string;
   subject: string;
@@ -47,6 +54,7 @@ type Dispute = {
   assignedTo?: { adminId?: string | null; name?: string | null } | null;
   createdAt: string;
   updatedAt: string;
+  attachments?: Attachment[];
 
   // extra direction info from backend
   createdBy?: {
@@ -175,10 +183,9 @@ const BrandDisputesPage: React.FC = () => {
   // 🔍 Debounce search input → appliedSearch
   useEffect(() => {
     const handler = setTimeout(() => {
-      // reset to first page whenever search changes
       setPage(1);
       setAppliedSearch(searchInput.trim());
-    }, 200); // 500ms debounce
+    }, 200);
 
     return () => clearTimeout(handler);
   }, [searchInput]);
@@ -210,13 +217,11 @@ const BrandDisputesPage: React.FC = () => {
         body.status = statusNum;
       }
 
-      // map direction to backend appliedBy filter
       if (direction === "raised_by_you") {
-        body.appliedBy = "brand"; // disputes the brand raised
+        body.appliedBy = "brand";
       } else if (direction === "against_you") {
-        body.appliedBy = "influencer"; // disputes raised against the brand
+        body.appliedBy = "influencer";
       }
-      // direction === "all" → no appliedBy, backend returns all
 
       if (appliedSearch) {
         body.search = appliedSearch;
@@ -247,14 +252,6 @@ const BrandDisputesPage: React.FC = () => {
 
   const from = total === 0 ? 0 : (page - 1) * pageSize + 1;
   const to = Math.min(page * pageSize, total);
-
-  const clearFilters = () => {
-    setStatus("0");
-    setSearchInput("");
-    setAppliedSearch("");
-    setDirection("all");
-    setPage(1);
-  };
 
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-4">
@@ -326,7 +323,7 @@ const BrandDisputesPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Table – same structure as influencer side */}
+      {/* Table */}
       {loading ? (
         <p>Loading…</p>
       ) : error ? (
@@ -397,7 +394,6 @@ const BrandDisputesPage: React.FC = () => {
       {/* Pagination */}
       {totalPages > 1 && (
         <div className="flex flex-col md:flex-row items-center justify-between gap-3 mt-4">
-          {/* Range info */}
           <div className="text-xs text-gray-600">
             {total > 0 ? (
               <>

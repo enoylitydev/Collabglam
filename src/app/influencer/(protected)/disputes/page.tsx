@@ -29,6 +29,13 @@ type DisputeParty = {
   name?: string | null;
 };
 
+type Attachment = {
+  url: string;
+  originalName?: string | null;
+  mimeType?: string | null;
+  size?: number | null;
+};
+
 type Dispute = {
   disputeId: string;
   subject: string;
@@ -41,6 +48,7 @@ type Dispute = {
   assignedTo?: { adminId?: string | null; name?: string | null } | null;
   createdAt: string;
   updatedAt: string;
+  attachments?: Attachment[];
 
   // extra direction info from backend
   createdBy?: {
@@ -71,7 +79,6 @@ const statusOptions = [
   { value: "rejected", label: "Rejected" },
 ];
 
-// new direction filter
 const directionOptions = [
   { value: "all", label: "All disputes" },
   { value: "raised_by_you", label: "Raised by you" },
@@ -96,11 +103,10 @@ const StatusBadge = ({ s }: { s: DisputeStatus }) => {
 };
 
 const getDirectionLabelForViewer = (d: Dispute): string => {
-  // if API didn’t send viewerIsRaiser for some reason, fallback using raisedByRole
   const viewerIsRaiser =
     typeof d.viewerIsRaiser === "boolean"
       ? d.viewerIsRaiser
-      : d.raisedByRole === "Influencer"; // influencer perspective
+      : d.raisedByRole === "Influencer";
 
   const otherFromAgainst =
     d.raisedAgainst?.name ||
@@ -147,11 +153,10 @@ export default function InfluencerDisputesPage() {
   const [total, setTotal] = useState(0);
 
   const [status, setStatus] = useState<string>("all");
-  const [direction, setDirection] = useState<string>("all"); // 👈 new filter
+  const [direction, setDirection] = useState<string>("all");
   const [searchInput, setSearchInput] = useState<string>("");
   const [appliedSearch, setAppliedSearch] = useState<string>("");
 
-  // Guard + load influencerId from localStorage
   useEffect(() => {
     if (typeof window === "undefined") return;
 
@@ -164,7 +169,6 @@ export default function InfluencerDisputesPage() {
     setInfluencerId(storedInfluencerId);
   }, [router]);
 
-  // 🔍 Debounce search input → appliedSearch
   useEffect(() => {
     const handler = setTimeout(() => {
       setPage(1);
@@ -180,23 +184,20 @@ export default function InfluencerDisputesPage() {
     setError(null);
     try {
       const body: any = {
-        influencerId, // REQUIRED by backend
+        influencerId,
         page,
         limit: 10,
       };
 
-      // status filter
       if (status && status !== "all") {
         body.status = status;
       }
 
-      // 👇 direction filter → appliedBy
       if (direction === "raised_by_you") {
-        body.appliedBy = "influencer"; // disputes you raised
+        body.appliedBy = "influencer";
       } else if (direction === "against_you") {
-        body.appliedBy = "brand"; // disputes raised against you
+        body.appliedBy = "brand";
       }
-      // if direction === "all" → no appliedBy, backend returns all
 
       if (appliedSearch) {
         body.search = appliedSearch;
@@ -228,7 +229,6 @@ export default function InfluencerDisputesPage() {
 
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-4">
-      {/* Header */}
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">My Disputes</h1>
         <Button
@@ -239,9 +239,7 @@ export default function InfluencerDisputesPage() {
         </Button>
       </div>
 
-      {/* Filters */}
       <div className="flex flex-col md:flex-row gap-3 md:items-center">
-        {/* Status */}
         <div className="w-full md:w-40">
           <Select
             value={status}
@@ -263,7 +261,6 @@ export default function InfluencerDisputesPage() {
           </Select>
         </div>
 
-        {/* 👇 New direction filter beside status */}
         <div className="w-full md:w-52">
           <Select
             value={direction}
@@ -285,7 +282,6 @@ export default function InfluencerDisputesPage() {
           </Select>
         </div>
 
-        {/* Search */}
         <div className="flex-1 flex gap-2">
           <Input
             className="bg-white text-gray-800"
@@ -296,7 +292,6 @@ export default function InfluencerDisputesPage() {
         </div>
       </div>
 
-      {/* Table (single partition) */}
       {loading ? (
         <p>Loading…</p>
       ) : error ? (
@@ -364,7 +359,6 @@ export default function InfluencerDisputesPage() {
         </div>
       )}
 
-      {/* Pagination (single) */}
       {totalPages > 1 && (
         <div className="flex flex-col md:flex-row items-center justify-between gap-3 mt-4">
           <div className="text-xs text-gray-600">
