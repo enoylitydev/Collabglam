@@ -38,6 +38,29 @@ const MAX_LOGO_MB = 3;
 const ACCEPT_LOGO_MIME = ['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml'];
 const BRAND_ALIAS_DOMAIN = 'mail.collabglam.com';
 
+// 🇺🇸 US helpers
+const US_COUNTRY_CODE = 'US';
+const US_CALLING_CODE = '+1';
+
+function sortCountriesWithUSFirst(list: Country[] = []): Country[] {
+  return [...list].sort((a, b) => {
+    const aIsUS =
+      a.countryCode === US_COUNTRY_CODE ||
+      a.callingCode === US_CALLING_CODE ||
+      /united states/i.test(a.countryName || '');
+    const bIsUS =
+      b.countryCode === US_COUNTRY_CODE ||
+      b.callingCode === US_CALLING_CODE ||
+      /united states/i.test(b.countryName || '');
+
+    if (aIsUS && !bIsUS) return -1;
+    if (!aIsUS && bIsUS) return 1;
+
+    // fallback: alphabetical by country name
+    return (a.countryName || '').localeCompare(b.countryName || '');
+  });
+}
+
 /** Normalize helpers to survive different API shapes */
 function unwrap<T = any>(x: any): T {
   return (x && typeof x === 'object' && 'data' in x ? (x as any).data : x) as T;
@@ -67,10 +90,16 @@ function buildBrandAliasLocalPart(name: string): string {
   return cleaned;
 }
 
-export function BrandSignup({ onSuccess, onStepChange }: { onSuccess: () => void; onStepChange?: (currentStep: number) => void }) {
+export function BrandSignup({
+  onSuccess,
+  onStepChange,
+}: {
+  onSuccess: () => void;
+  onStepChange?: (currentStep: number) => void;
+}) {
   const router = useRouter();
   // NOTE: default to 'details' currently (for testing). Change to 'email' for full flow.
-  const [step, setStep] = useState<Step>('email');
+  const [step, setStep] = useState<Step>('details');
   const [countries, setCountries] = useState<Country[]>([]);
   const [categories, setCategories] = useState<MetaCategory[]>([]);
   const [businessTypes, setBusinessTypes] = useState<MetaBusinessType[]>([]);
@@ -209,7 +238,7 @@ export function BrandSignup({ onSuccess, onStepChange }: { onSuccess: () => void
 
   const pwd = passwordScore(formData.password);
 
-  // Brand alias email (uneditable): brand-name@collabglam.com
+  // Brand alias email (uneditable): brand-name@mail.collabglam.com
   const brandAliasEmail = useMemo(() => {
     const localPart = buildBrandAliasLocalPart(formData.name);
     return localPart ? `${localPart}@${BRAND_ALIAS_DOMAIN}` : '';
@@ -217,21 +246,35 @@ export function BrandSignup({ onSuccess, onStepChange }: { onSuccess: () => void
 
   // ————————————————— Select options (react-select)
   const callingCodeOptions: Option[] = useMemo(
-    () => (countries || []).map((c) => ({ value: c._id, label: `${c.flag ?? ''} ${c.callingCode}` })),
+    () =>
+      sortCountriesWithUSFirst(countries || []).map((c) => ({
+        value: c._id,
+        // Show flag + calling code + country name (e.g. "🇺🇸 +1 United States")
+        label: `${c.flag ?? ''} ${c.callingCode ?? ''} ${c.countryName ?? ''}`.trim(),
+      })),
     [countries]
   );
+
   const countryOptions: Option[] = useMemo(
-    () => (countries || []).map((c) => ({ value: c._id, label: `${c.flag ?? ''} ${c.countryName}` })),
+    () =>
+      sortCountriesWithUSFirst(countries || []).map((c) => ({
+        value: c._id,
+        // Show flag + country name
+        label: `${c.flag ?? ''} ${c.countryName ?? ''}`.trim(),
+      })),
     [countries]
   );
+
   const categoryOptions: Option[] = useMemo(
     () => (Array.isArray(categories) ? categories : []).map((cat) => ({ value: cat._id, label: cat.name })),
     [categories]
   );
+
   const businessTypeOptions: Option[] = useMemo(
     () => (Array.isArray(businessTypes) ? businessTypes : []).map((t) => ({ value: t.name, label: t.name })),
     [businessTypes]
   );
+
   const companySizeOptions: Option[] = useMemo(
     () => companySizes.map((s) => ({ value: s, label: s.includes('+') ? s : `${s} employees` })),
     []
@@ -297,17 +340,28 @@ export function BrandSignup({ onSuccess, onStepChange }: { onSuccess: () => void
   const completeSignup = async () => {
     setShowRequiredHints(false);
 
-    if (!formData.name || !formData.password || !formData.phone || !formData.countryId || !formData.callingCodeId || !formData.categoryId) {
+    if (
+      !formData.name ||
+      !formData.password ||
+      !formData.phone ||
+      !formData.countryId ||
+      !formData.callingCodeId ||
+      !formData.categoryId
+    ) {
       setShowRequiredHints(true);
-      const firstMissingId = [
-        ['brand-name', !formData.name],
-        ['calling-code', !formData.callingCodeId],
-        ['brand-phone', !formData.phone],
-        ['country', !formData.countryId],
-        ['category', !formData.categoryId],
-        ['brand-password', !formData.password],
-      ].find(([, miss]) => miss)?.[0] as string | undefined;
-      if (firstMissingId) document.getElementById(firstMissingId)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      const firstMissingId = (
+        [
+          ['brand-name', !formData.name],
+          ['calling-code', !formData.callingCodeId],
+          ['brand-phone', !formData.phone],
+          ['country', !formData.countryId],
+          ['category', !formData.categoryId],
+          ['brand-password', !formData.password],
+        ] as const
+      ).find(([, miss]) => miss)?.[0] as string | undefined;
+      if (firstMissingId) {
+        document.getElementById(firstMissingId)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
       return;
     }
 
@@ -385,11 +439,7 @@ export function BrandSignup({ onSuccess, onStepChange }: { onSuccess: () => void
           localStorage.setItem('brandAliasEmail', alias);
         }
 
-        const brandPlanName =
-          login.subscriptionPlanName ??
-          login.subscription?.planName ??
-          'free';
-
+        const brandPlanName = login.subscriptionPlanName ?? login.subscription?.planName ?? 'free';
         const brandPlanId = login.subscription?.planId ?? '';
 
         localStorage.setItem('brandPlanName', brandPlanName);
@@ -399,6 +449,7 @@ export function BrandSignup({ onSuccess, onStepChange }: { onSuccess: () => void
       }
 
       router.replace('/brand/dashboard');
+      onSuccess?.();
     } catch (err: any) {
       setError(err?.response?.data?.message || err?.message || 'Signup failed');
     } finally {
@@ -436,10 +487,7 @@ export function BrandSignup({ onSuccess, onStepChange }: { onSuccess: () => void
     callingCodeId: showRequiredHints && !formData.callingCodeId,
   } as const;
 
-  const filteredError =
-    error === 'Please fill in all required fields.'
-      ? ''
-      : error;
+  const filteredError = error === 'Please fill in all required fields.' ? '' : error;
 
   // ————————————————— Render
   return (
@@ -517,9 +565,7 @@ export function BrandSignup({ onSuccess, onStepChange }: { onSuccess: () => void
               onClick={sendOTP}
               disabled={resendIn > 0 || loading}
               className={`sm:ml-auto text-sm underline font-medium transition-colors ${
-                resendIn > 0 || loading
-                  ? 'text-gray-400 cursor-not-allowed'
-                  : 'text-gray-700 hover:text-gray-900'
+                resendIn > 0 || loading ? 'text-gray-400 cursor-not-allowed' : 'text-gray-700 hover:text-gray-900'
               }`}
               aria-live="polite"
             >
@@ -567,18 +613,10 @@ export function BrandSignup({ onSuccess, onStepChange }: { onSuccess: () => void
                       onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                       required
                     />
-                    {missing.name && (
-                      <p className="text-xs text-red-600">This field is required</p>
-                    )}
+                    {missing.name && <p className="text-xs text-red-600">This field is required</p>}
                   </div>
 
-                  <FloatingLabelInput
-                    id="brand-email-display"
-                    label="Email"
-                    type="email"
-                    value={formData.email}
-                    disabled
-                  />
+                  <FloatingLabelInput id="brand-email-display" label="Email" type="email" value={formData.email} disabled />
                 </div>
 
                 {/* Row 2: Brand Alias Email + Website */}
@@ -614,13 +652,13 @@ export function BrandSignup({ onSuccess, onStepChange }: { onSuccess: () => void
                       placeholder="Select Country"
                       options={countryOptions}
                       value={getOption(countryOptions, formData.countryId)}
-                      onChange={(opt: SingleValue<Option>) => setFormData({ ...formData, countryId: opt?.value || '' })}
+                      onChange={(opt: SingleValue<Option>) =>
+                        setFormData({ ...formData, countryId: opt?.value || '' })
+                      }
                       isDisabled={loading}
                       isLoading={metaLoading}
                     />
-                    {missing.countryId && (
-                      <p className="text-xs text-red-600">This field is required</p>
-                    )}
+                    {missing.countryId && <p className="text-xs text-red-600">This field is required</p>}
                   </div>
 
                   <div className="space-y-1">
@@ -633,13 +671,13 @@ export function BrandSignup({ onSuccess, onStepChange }: { onSuccess: () => void
                       placeholder={metaLoading ? 'Loading categories…' : 'Brand Category / Industry'}
                       options={categoryOptions}
                       value={getOption(categoryOptions, formData.categoryId)}
-                      onChange={(opt: SingleValue<Option>) => setFormData({ ...formData, categoryId: opt?.value || '' })}
+                      onChange={(opt: SingleValue<Option>) =>
+                        setFormData({ ...formData, categoryId: opt?.value || '' })
+                      }
                       isDisabled={metaLoading || loading}
                       isLoading={metaLoading}
                     />
-                    {missing.categoryId && (
-                      <p className="text-xs text-red-600">This field is required</p>
-                    )}
+                    {missing.categoryId && <p className="text-xs text-red-600">This field is required</p>}
                   </div>
                 </div>
 
@@ -655,13 +693,13 @@ export function BrandSignup({ onSuccess, onStepChange }: { onSuccess: () => void
                       placeholder="Calling Code"
                       options={callingCodeOptions}
                       value={getOption(callingCodeOptions, formData.callingCodeId)}
-                      onChange={(opt: SingleValue<Option>) => setFormData({ ...formData, callingCodeId: opt?.value || '' })}
+                      onChange={(opt: SingleValue<Option>) =>
+                        setFormData({ ...formData, callingCodeId: opt?.value || '' })
+                      }
                       isDisabled={loading}
                       isLoading={metaLoading}
                     />
-                    {missing.callingCodeId && (
-                      <p className="text-xs text-red-600">This field is required</p>
-                    )}
+                    {missing.callingCodeId && <p className="text-xs text-red-600">This field is required</p>}
                   </div>
 
                   <div className="space-y-1">
@@ -673,12 +711,12 @@ export function BrandSignup({ onSuccess, onStepChange }: { onSuccess: () => void
                       maxLength={10}
                       minLength={10}
                       value={formData.phone}
-                      onChange={(e) => setFormData({ ...formData, phone: e.target.value.replace(/[^0-9]/g, '') })}
+                      onChange={(e) =>
+                        setFormData({ ...formData, phone: e.target.value.replace(/[^0-9]/g, '') })
+                      }
                       required
                     />
-                    {missing.phone && (
-                      <p className="text-xs text-red-600">This field is required</p>
-                    )}
+                    {missing.phone && <p className="text-xs text-red-600">This field is required</p>}
                   </div>
                 </div>
 
@@ -702,7 +740,9 @@ export function BrandSignup({ onSuccess, onStepChange }: { onSuccess: () => void
                     placeholder="Company Size (Optional)"
                     options={companySizeOptions}
                     value={getOption(companySizeOptions, formData.companySize)}
-                    onChange={(opt: SingleValue<Option>) => setFormData({ ...formData, companySize: opt?.value || '' })}
+                    onChange={(opt: SingleValue<Option>) =>
+                      setFormData({ ...formData, companySize: opt?.value || '' })
+                    }
                     isDisabled={loading}
                     isClearable
                   />
@@ -719,7 +759,9 @@ export function BrandSignup({ onSuccess, onStepChange }: { onSuccess: () => void
                     placeholder={metaLoading ? 'Loading business types…' : 'Business Type (Optional)'}
                     options={businessTypeOptions}
                     value={getOption(businessTypeOptions, formData.businessType)}
-                    onChange={(opt: SingleValue<Option>) => setFormData({ ...formData, businessType: opt?.value || '' })}
+                    onChange={(opt: SingleValue<Option>) =>
+                      setFormData({ ...formData, businessType: opt?.value || '' })
+                    }
                     isDisabled={metaLoading || loading}
                     isLoading={metaLoading}
                     isClearable
@@ -765,13 +807,20 @@ export function BrandSignup({ onSuccess, onStepChange }: { onSuccess: () => void
                       required
                     />
                     <span className="text-sm text-gray-700 group-hover:text-gray-900">
-                      I confirm that I'm an official representative of this brand. By continuing, I agree to receive transactional emails.
+                      I confirm that I'm an official representative of this brand. By continuing, I agree to receive
+                      transactional emails.
                     </span>
                   </label>
                 </div>
 
                 <div className="flex flex-col gap-3">
-                  <Button onClick={completeSignup} loading={loading} variant="brand" disabled={metaLoading} aria-disabled={metaLoading}>
+                  <Button
+                    onClick={completeSignup}
+                    loading={loading}
+                    variant="brand"
+                    disabled={metaLoading}
+                    aria-disabled={metaLoading}
+                  >
                     {metaLoading ? 'Loading options…' : 'Create Brand Account'}
                   </Button>
                 </div>
