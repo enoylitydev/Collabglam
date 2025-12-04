@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import {
   Users,
   Loader2,
@@ -46,6 +46,15 @@ type ListInvitationsRequest = {
   limit?: number;
 };
 
+type AttachmentPayload = {
+  filename: string;
+  contentType: string;
+  contentBase64: string;
+  size: number;
+};
+
+const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024; // 20MB
+
 // Wrapper for backend: exports.listInvitations → /newinvitations/list
 async function listInvitations(
   body: ListInvitationsRequest
@@ -56,9 +65,9 @@ async function listInvitations(
 const prettyDate = (iso: string) =>
   iso
     ? new Date(iso).toLocaleString(undefined, {
-      dateStyle: 'medium',
-      timeStyle: 'short',
-    })
+        dateStyle: 'medium',
+        timeStyle: 'short',
+      })
     : '';
 
 const truncateText = (value: string, max = 60) =>
@@ -80,6 +89,10 @@ export default function InvitedInfluencersPage() {
   const [composeBody, setComposeBody] = useState('');
   const [composeError, setComposeError] = useState<string | null>(null);
   const [isSending, setIsSending] = useState(false);
+
+  // Attachments
+  const [composeAttachments, setComposeAttachments] = useState<File[]>([]);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const composeToDisplay = selectedInvitation?.handle ?? '';
 
@@ -120,8 +133,8 @@ export default function InvitedInfluencersPage() {
         console.error(err);
         setError(
           err?.response?.data?.message ||
-          err?.message ||
-          'Failed to load All handles'
+            err?.message ||
+            'Failed to load All handles'
         );
       } finally {
         setLoading(false);
@@ -133,9 +146,16 @@ export default function InvitedInfluencersPage() {
 
   const invitedCount = items.length;
 
+  const resetComposeState = () => {
+    setComposeSubject('');
+    setComposeBody('');
+    setComposeAttachments([]);
+    setComposeError(null);
+  };
+
   const openComposeForInvitation = async (inv: Invitation) => {
     setSelectedInvitation(inv);
-    setComposeError(null);
+    resetComposeState();
     setIsComposeOpen(true);
 
     // If there's no campaign, fall back to simple template
@@ -149,8 +169,9 @@ export default function InvitedInfluencersPage() {
 
       const bodyTemplate = `Hi ${inv.handle},
 
-We’re excited about your content and would love to collaborate${inv.campaignName ? ` on our "${inv.campaignName}" campaign` : ''
-        }.
+We’re excited about your content and would love to collaborate${
+        inv.campaignName ? ` on our "${inv.campaignName}" campaign` : ''
+      }.
 
 [Add your brief, deliverables, timelines, and budget details here]
 
@@ -162,7 +183,6 @@ CollabGlam Brand Team
     }
 
     try {
-      // You can show a small "loading template..." state if you want
       const res = await post<{
         success: boolean;
         subject: string;
@@ -174,11 +194,10 @@ CollabGlam Brand Team
       });
 
       setComposeSubject(res.subject || '');
-      // Use text version in the textarea by default
       setComposeBody(res.textBody || '');
     } catch (err: any) {
       console.error('Failed to fetch invitation template:', err);
-      // Fallback to your old minimal template if preview fails
+      // Fallback to minimal template if preview fails
       const subjectBase = 'Collaboration opportunity';
       const subject = inv.campaignName
         ? `${subjectBase} – ${inv.campaignName}`
@@ -188,8 +207,9 @@ CollabGlam Brand Team
 
       const bodyTemplate = `Hi ${inv.handle},
 
-We’re excited about your content and would love to collaborate${inv.campaignName ? ` on our "${inv.campaignName}" campaign` : ''
-        }.
+We’re excited about your content and would love to collaborate${
+        inv.campaignName ? ` on our "${inv.campaignName}" campaign` : ''
+      }.
 
 [Add your brief, deliverables, timelines, and budget details here]
 
@@ -198,6 +218,75 @@ CollabGlam Brand Team
 `;
       setComposeBody(bodyTemplate);
     }
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+
+    let tooLargeCount = 0;
+    const accepted: File[] = [];
+
+    files.forEach((file) => {
+      if (file.size > MAX_ATTACHMENT_BYTES) {
+        tooLargeCount += 1;
+      } else {
+        accepted.push(file);
+      }
+    });
+
+    if (tooLargeCount > 0) {
+      setComposeError(
+        'Some files were too large and skipped (max size: 20MB per file).'
+      );
+    } else {
+      setComposeError(null);
+    }
+
+    if (accepted.length) {
+      setComposeAttachments((prev) => [...prev, ...accepted]);
+    }
+
+    // allow selecting same file again
+    e.target.value = '';
+  };
+
+  const removeAttachment = (index: number) => {
+    setComposeAttachments((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const buildAttachmentPayload = async (): Promise<AttachmentPayload[]> => {
+    if (!composeAttachments.length) return [];
+
+    const results = await Promise.all(
+      composeAttachments.map(
+        (file) =>
+          new Promise<AttachmentPayload>((resolve, reject) => {
+            const reader = new FileReader();
+
+            reader.onload = () => {
+              const result = reader.result as string; // data:...;base64,XXXX
+              const base64 = result.includes(',')
+                ? result.split(',')[1]
+                : result;
+
+              resolve({
+                filename: file.name,
+                contentType: file.type || 'application/octet-stream',
+                contentBase64: base64,
+                size: file.size,
+              });
+            };
+
+            reader.onerror = () =>
+              reject(new Error(`Failed to read attachment: ${file.name}`));
+
+            reader.readAsDataURL(file);
+          })
+      )
+    );
+
+    return results;
   };
 
   const handleSend = async () => {
@@ -217,6 +306,20 @@ CollabGlam Brand Team
     setIsSending(true);
     setComposeError(null);
 
+    let attachmentsPayload: AttachmentPayload[] = [];
+    try {
+      attachmentsPayload = await buildAttachmentPayload();
+    } catch (err: any) {
+      console.error('Error preparing attachments:', err);
+      setComposeError(
+        err instanceof Error
+          ? err.message
+          : 'Failed to read attachment(s). Please try again.'
+      );
+      setIsSending(false);
+      return;
+    }
+
     try {
       // New architecture: let backend resolve emails using IDs & metadata
       await post('/emails/campaign-invitation', {
@@ -227,16 +330,18 @@ CollabGlam Brand Team
         platform: selectedInvitation.platform, // optional
         subject: composeSubject.trim(),
         body: composeBody.trim(),
+        attachments: attachmentsPayload,
       });
 
       setIsComposeOpen(false);
       setSelectedInvitation(null);
+      setComposeAttachments([]);
     } catch (err: any) {
       console.error(err);
       setComposeError(
         err?.response?.data?.message ||
-        err?.message ||
-        'Failed to send email'
+          err?.message ||
+          'Failed to send email'
       );
     } finally {
       setIsSending(false);
@@ -412,9 +517,10 @@ CollabGlam Brand Team
                             className={`
                               inline-flex items-center gap-1.5 rounded-full border border-orange-200 px-3 py-1 
                               text-xs font-medium transition-colors
-                              ${isInvited || isSending
-                                ? 'bg-orange-50 text-orange-300 cursor-not-allowed opacity-60'
-                                : 'bg-orange-50 text-orange-700 hover:bg-orange-100 cursor-pointer'
+                              ${
+                                isInvited || isSending
+                                  ? 'bg-orange-50 text-orange-300 cursor-not-allowed opacity-60'
+                                  : 'bg-orange-50 text-orange-700 hover:bg-orange-100 cursor-pointer'
                               }
                             `}
                           >
@@ -460,7 +566,10 @@ CollabGlam Brand Team
               </div>
               <button
                 type="button"
-                onClick={() => setIsComposeOpen(false)}
+                onClick={() => {
+                  setIsComposeOpen(false);
+                  setComposeAttachments([]);
+                }}
                 className="p-1.5 rounded-full hover:bg-gray-100 text-gray-500 transition-colors"
               >
                 <X className="w-4 h-4" />
@@ -533,6 +642,33 @@ CollabGlam Brand Team`}
                   rows={8}
                   className="w-full text-xs px-3 py-2 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#FFA135] focus:border-[#FFA135] resize-none"
                 />
+
+                {/* Attachments preview */}
+                {composeAttachments.length > 0 && (
+                  <div className="flex flex-wrap gap-2 pt-2">
+                    {composeAttachments.map((file, index) => (
+                      <div
+                        key={`${file.name}-${index}`}
+                        className="inline-flex items-center gap-1.5 px-2 py-1 rounded-full bg-gray-100 text-[11px] text-gray-700"
+                      >
+                        <Paperclip className="w-3 h-3" />
+                        <span className="max-w-[140px] truncate">
+                          {file.name}
+                        </span>
+                        <span className="text-[10px] text-gray-400">
+                          {Math.round(file.size / 1024)} KB
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => removeAttachment(index)}
+                          className="ml-1 rounded-full hover:bg-gray-200 p-0.5"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {composeError && (
@@ -545,25 +681,33 @@ CollabGlam Brand Team`}
               <div className="flex items-center gap-2">
                 <button
                   type="button"
+                  onClick={() => fileInputRef.current?.click()}
                   className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full border border-gray-200 bg-white hover:bg-gray-100 text-gray-600"
                 >
                   <Paperclip className="w-3 h-3" />
                   Attach
                 </button>
+                <input
+                  type="file"
+                  multiple
+                  ref={fileInputRef}
+                  className="hidden"
+                  onChange={handleFileChange}
+                />
+                <span className="text-[10px] text-gray-400">
+                  Max 20MB per file.
+                </span>
               </div>
               <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => setIsComposeOpen(false)}
+                  onClick={() => {
+                    setIsComposeOpen(false);
+                    setComposeAttachments([]);
+                  }}
                   className="text-xs px-3 py-1.5 rounded-full border border-gray-200 bg-white hover:bg-gray-100 text-gray-600"
                 >
                   Cancel
-                </button>
-                <button
-                  type="button"
-                  className="text-xs px-3 py-1.5 rounded-full border border-orange-200 bg-white hover:bg-orange-50 text-[#FF7236]"
-                >
-                  Save as Draft
                 </button>
                 <button
                   type="button"

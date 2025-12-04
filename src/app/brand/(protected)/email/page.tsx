@@ -1,6 +1,11 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, {
+  useState,
+  useEffect,
+  useMemo,
+  useRef,
+} from 'react';
 import {
   HiInboxIn,
   HiPaperAirplane,
@@ -8,27 +13,45 @@ import {
   HiMail,
   HiSearch,
 } from 'react-icons/hi';
-import { X, Paperclip, Send, CornerUpLeft, CornerUpRight } from 'lucide-react';
+import {
+  X,
+  Paperclip,
+  Send,
+  CornerUpLeft,
+  CornerUpRight,
+  Image as ImageIcon,
+  FileVideo,
+} from 'lucide-react';
 import { get, post } from '@/lib/api';
 
 type MailDirection = 'incoming' | 'outgoing';
 
+interface MailAttachment {
+  _id?: string;
+  filename: string;
+  contentType: string;
+  size: number;
+  url?: string;
+  storageKey?: string;
+}
+
 interface Mail {
   id: string;
   direction: MailDirection;
-  from: string; // display-only label: "You" or creator name
-  to: string; // display-only label: "You" or creator name
+  from: string;
+  to: string;
   subject: string;
   preview: string;
   body: string;
-  date: string; // formatted, e.g. "Nov 20, 2025"
-  time: string; // formatted, e.g. "10:32 AM"
+  date: string;
+  time: string;
   tags?: string[];
   isRead?: boolean;
   threadId: string;
   influencerId: string;
   influencerName?: string;
-  createdAt: string; // ISO from backend
+  createdAt: string;
+  attachments?: MailAttachment[];
 }
 
 interface InfluencerOption {
@@ -39,6 +62,15 @@ interface InfluencerOption {
 }
 
 type FilterType = 'all' | 'incoming' | 'outgoing';
+
+interface AttachmentPayload {
+  filename: string;
+  contentType: string;
+  contentBase64: string;
+  size: number;
+}
+
+const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024; // 20MB
 
 const EmailPage: React.FC = () => {
   const [brandId, setBrandId] = useState<string>('');
@@ -52,10 +84,8 @@ const EmailPage: React.FC = () => {
   const [composeSubject, setComposeSubject] = useState('');
   const [composeBody, setComposeBody] = useState('');
   const [composeThreadId, setComposeThreadId] = useState<string | null>(null);
-  const [composeInfluencerIds, setComposeInfluencerIds] = useState<string[]>(
-    []
-  );
-  const [composeToDisplay, setComposeToDisplay] = useState(''); // reply-only label
+  const [composeInfluencerIds, setComposeInfluencerIds] = useState<string[]>([]);
+  const [composeToDisplay, setComposeToDisplay] = useState('');
 
   const [composeError, setComposeError] = useState<string | null>(null);
   const [isSending, setIsSending] = useState(false);
@@ -63,18 +93,22 @@ const EmailPage: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  // Influencer list for multi-select (used only for IDs + display labels)
+  // Influencer list for multi-select
   const [influencers, setInfluencers] = useState<InfluencerOption[]>([]);
   const [isLoadingInfluencers, setIsLoadingInfluencers] = useState(false);
   const [influencerError, setInfluencerError] = useState<string | null>(null);
   const [influencerSearch, setInfluencerSearch] = useState('');
+
+  // Attachments (compose)
+  const [composeAttachments, setComposeAttachments] = useState<File[]>([]);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const stripHtml = (html: string): string => {
     if (!html) return '';
     return html.replace(/<[^>]+>/g, '');
   };
 
-  // 1) Determine brandId (from env or localStorage)
+  // 1) Determine brandId (from localStorage or env)
   useEffect(() => {
     let resolved = '';
 
@@ -130,11 +164,7 @@ const EmailPage: React.FC = () => {
             messages =
               msgsJson?.messages || msgsJson?.data || msgsJson || [];
           } catch (err) {
-            console.error(
-              'Failed to fetch messages for thread',
-              threadId,
-              err
-            );
+            console.error('Failed to fetch messages for thread', threadId, err);
             continue;
           }
 
@@ -161,11 +191,19 @@ const EmailPage: React.FC = () => {
                 ? 'outgoing'
                 : 'incoming';
 
-            // Display-only labels (no emails / aliases)
-            const fromLabel =
-              direction === 'outgoing' ? 'You' : influencerName;
-            const toLabel =
-              direction === 'outgoing' ? influencerName : 'You';
+            const fromLabel = direction === 'outgoing' ? 'You' : influencerName;
+            const toLabel = direction === 'outgoing' ? influencerName : 'You';
+
+            const attachments: MailAttachment[] = Array.isArray(msg.attachments)
+              ? msg.attachments.map((att: any) => ({
+                _id: att._id,
+                filename: att.filename,
+                contentType: att.contentType,
+                size: att.size,
+                url: att.url,
+                storageKey: att.storageKey,
+              }))
+              : [];
 
             const mail: Mail = {
               id: msg._id,
@@ -183,6 +221,7 @@ const EmailPage: React.FC = () => {
               influencerId,
               influencerName,
               createdAt: msg.createdAt,
+              attachments,
             };
 
             allMails.push(mail);
@@ -211,7 +250,7 @@ const EmailPage: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [brandId]);
 
-  // 3) Load influencers for compose (brandId → list of influencer IDs & labels)
+  // 3) Load influencers list for compose
   useEffect(() => {
     if (!brandId) return;
 
@@ -249,6 +288,8 @@ const EmailPage: React.FC = () => {
 
     loadInfluencers();
   }, [brandId]);
+
+  // 4) Filtering + selected mail
 
   const filteredMails = useMemo(() => {
     let result = [...mails];
@@ -291,12 +332,12 @@ const EmailPage: React.FC = () => {
     mails.find((m) => m.id === selectedMailId) || filteredMails[0] || null;
 
   useEffect(() => {
-    if (!selectedMail && filteredMails.length > 0) {
+    if (!selectedMail && filteredMails.length > 0 && !selectedMailId) {
       setSelectedMailId(filteredMails[0].id);
     }
-  }, [filteredMails, selectedMail]);
+  }, [filteredMails, selectedMail, selectedMailId]);
 
-  // --- Compose ---
+  // 5) Compose helpers
 
   const openCompose = (opts?: {
     subject?: string;
@@ -310,6 +351,9 @@ const EmailPage: React.FC = () => {
     setComposeThreadId(opts?.threadId ?? null);
     setComposeError(null);
 
+    // fresh attachments every time
+    setComposeAttachments([]);
+
     if (opts?.threadId && opts.influencerId) {
       // Reply mode – single influencer
       setComposeInfluencerIds([opts.influencerId]);
@@ -321,6 +365,75 @@ const EmailPage: React.FC = () => {
     }
 
     setIsComposeOpen(true);
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+
+    let tooLargeCount = 0;
+    const accepted: File[] = [];
+
+    files.forEach((file) => {
+      if (file.size > MAX_ATTACHMENT_BYTES) {
+        tooLargeCount += 1;
+      } else {
+        accepted.push(file);
+      }
+    });
+
+    if (tooLargeCount > 0) {
+      setComposeError(
+        `Some files were too large and skipped (max size: 20MB per file).`
+      );
+    } else {
+      setComposeError(null);
+    }
+
+    if (accepted.length) {
+      setComposeAttachments((prev) => [...prev, ...accepted]);
+    }
+
+    // allow selecting same file again
+    e.target.value = '';
+  };
+
+  const removeAttachment = (index: number) => {
+    setComposeAttachments((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const buildAttachmentPayload = async (): Promise<AttachmentPayload[]> => {
+    if (!composeAttachments.length) return [];
+
+    const results = await Promise.all(
+      composeAttachments.map(
+        (file) =>
+          new Promise<AttachmentPayload>((resolve, reject) => {
+            const reader = new FileReader();
+
+            reader.onload = () => {
+              const result = reader.result as string; // data:...;base64,XXXX
+              const base64 = result.includes(',')
+                ? result.split(',')[1]
+                : result;
+
+              resolve({
+                filename: file.name,
+                contentType: file.type || 'application/octet-stream',
+                contentBase64: base64,
+                size: file.size,
+              });
+            };
+
+            reader.onerror = () =>
+              reject(new Error(`Failed to read attachment: ${file.name}`));
+
+            reader.readAsDataURL(file);
+          })
+      )
+    );
+
+    return results;
   };
 
   const handleSend = async () => {
@@ -341,6 +454,19 @@ const EmailPage: React.FC = () => {
       return;
     }
 
+    let attachmentsPayload: AttachmentPayload[] = [];
+    try {
+      attachmentsPayload = await buildAttachmentPayload();
+    } catch (err) {
+      console.error('Error preparing attachments:', err);
+      setComposeError(
+        err instanceof Error
+          ? err.message
+          : 'Failed to read attachment(s). Please try again.'
+      );
+      return;
+    }
+
     try {
       setIsSending(true);
       setComposeError(null);
@@ -355,6 +481,7 @@ const EmailPage: React.FC = () => {
             influencerId,
             subject: composeSubject.trim(),
             body: composeBody.trim(),
+            attachments: attachmentsPayload,
           });
 
           const now = new Date();
@@ -374,6 +501,16 @@ const EmailPage: React.FC = () => {
 
           const influencerName = getInfluencerNameById(influencerId);
 
+          // Local metadata for newly-sent mail
+          const attachmentsMeta: MailAttachment[] = attachmentsPayload.map(
+            (att) => ({
+              filename: att.filename,
+              contentType: att.contentType,
+              size: att.size,
+              // url will be populated once re-fetched from backend
+            })
+          );
+
           const newMail: Mail = {
             id: data.messageId || `${influencerId}-${Date.now()}`,
             direction: 'outgoing',
@@ -390,6 +527,7 @@ const EmailPage: React.FC = () => {
             influencerId,
             influencerName,
             createdAt: now.toISOString(),
+            attachments: attachmentsMeta,
           };
 
           sentMails.push(newMail);
@@ -407,11 +545,11 @@ const EmailPage: React.FC = () => {
 
       if (failures.length > 0) {
         setComposeError(
-          `Some emails failed to send (${failures.length} recipient${
-            failures.length > 1 ? 's' : ''
+          `Some emails failed to send (${failures.length} recipient${failures.length > 1 ? 's' : ''
           }). Check logs / API and try again if needed.`
         );
       } else {
+        setComposeAttachments([]);
         setIsComposeOpen(false);
       }
     } catch (err: any) {
@@ -484,6 +622,15 @@ const EmailPage: React.FC = () => {
     selectedMail?.direction === 'incoming'
       ? 'You'
       : selectedMail?.influencerName || 'Creator';
+
+  // helpers for previews
+  const selectedAttachments = selectedMail?.attachments || [];
+  const imageAttachments = selectedAttachments.filter(
+    (att) => att.contentType?.startsWith('image/') && att.url
+  );
+  const videoAttachments = selectedAttachments.filter(
+    (att) => att.contentType?.startsWith('video/') && att.url
+  );
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#FFF9F2] via-white to-[#FFE7CF]">
@@ -558,11 +705,10 @@ const EmailPage: React.FC = () => {
                           key={f}
                           type="button"
                           onClick={() => setFilter(f)}
-                          className={`px-3 py-1 rounded-full text-xs font-medium transition-all ${
-                            isActive
+                          className={`px-3 py-1 rounded-full text-xs font-medium transition-all ${isActive
                               ? 'bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white shadow-sm'
                               : 'text-gray-600 hover:bg-white hover:text-gray-900'
-                          }`}
+                            }`}
                         >
                           {labels[f]}
                         </button>
@@ -614,16 +760,18 @@ const EmailPage: React.FC = () => {
                     const isActive = mail.id === selectedMailId;
                     const isIncoming = mail.direction === 'incoming';
                     const creatorLabel = mail.influencerName || 'Creator';
+                    const hasAttachments =
+                      mail.attachments && mail.attachments.length > 0;
+
                     return (
                       <li key={mail.id}>
                         <button
                           type="button"
                           onClick={() => setSelectedMailId(mail.id)}
-                          className={`relative w-full text-left px-4 py-3 flex flex-col gap-1 transition-all group ${
-                            isActive
+                          className={`relative w-full text-left px-4 py-3 flex flex-col gap-1 transition-all group ${isActive
                               ? 'bg-gradient-to-r from-[#FFF1DF] to-[#FFE0D0]'
                               : 'hover:bg:white'
-                          }`.replace('hover:bg:white', 'hover:bg-white')}
+                            }`.replace('hover:bg:white', 'hover:bg-white')}
                         >
                           {isActive && (
                             <span className="absolute left-0 top-0 h-full w-1 rounded-r-full bg-gradient-to-b from-[#FFA135] to-[#FF7236]" />
@@ -646,18 +794,26 @@ const EmailPage: React.FC = () => {
                               {isIncoming ? creatorLabel : 'You'}
                             </p>
                             <span
-                              className={`text-[10px] px-2 py-0.5 rounded-full border ${
-                                isIncoming
+                              className={`text-[10px] px-2 py-0.5 rounded-full border ${isIncoming
                                   ? 'bg-emerald-50 text-emerald-700 border-emerald-100'
                                   : 'bg-indigo-50 text-indigo-700 border-indigo-100'
-                              }`}
+                                }`}
                             >
                               {isIncoming ? 'Incoming' : 'Outgoing'}
                             </span>
                           </div>
-                          <p className="text-xs text-gray-500 line-clamp-2 pl-1">
-                            {mail.preview}
-                          </p>
+                          <div className="flex items-center justify-between gap-2 pl-1">
+                            <p className="text-xs text-gray-500 line-clamp-2">
+                              {mail.preview}
+                            </p>
+
+                            {hasAttachments && (
+                              <span className="inline-flex items-center gap-1 text-[10px] text-gray-500 shrink-0">
+                                <Paperclip className="w-3 h-3" />
+                                {mail.attachments!.length}
+                              </span>
+                            )}
+                          </div>
                           {mail.tags && mail.tags.length > 0 && (
                             <div className="flex flex-wrap gap-1 pt-1 pl-1">
                               {mail.tags.map((tag) => (
@@ -694,10 +850,18 @@ const EmailPage: React.FC = () => {
                             : 'Sent from CollabGlam'}
                         </span>
                       </div>
+
                       <h2 className="text-lg md:text-xl font-semibold text-slate-900 leading-snug">
                         {selectedMail.subject}
                       </h2>
+
+                      {selectedMail.preview && (
+                        <p className="text-xs text-gray-500 max-w-xl leading-snug line-clamp-2">
+                          {selectedMail.preview}
+                        </p>
+                      )}
                     </div>
+
                     <div className="text-right text-xs text-gray-500">
                       <p className="font-medium text-gray-700">
                         {selectedMail.date}
@@ -747,6 +911,101 @@ const EmailPage: React.FC = () => {
                   <div className="bg-gray-50/80 border border-gray-100 rounded-2xl px-4 py-4 text-sm text-gray-800 whitespace-pre-line leading-relaxed shadow-sm">
                     {selectedMail.body}
                   </div>
+
+                  {/* Image preview */}
+                  {imageAttachments.length > 0 && (
+                    <div className="mt-4 space-y-2">
+                      <div className="flex items-center gap-1 text-xs font-medium text-gray-600">
+                        <ImageIcon className="w-3 h-3" />
+                        <span>Image preview</span>
+                      </div>
+                      <div className="flex flex-wrap gap-3">
+                        {imageAttachments.map((att) => (
+                          <div
+                            key={att._id || att.filename}
+                            className="max-w-[220px] rounded-xl overflow-hidden border border-gray-200 bg-white shadow-sm"
+                          >
+                            <img
+                              src={att.url!}
+                              alt={att.filename}
+                              className="w-full h-auto object-cover"
+                            />
+                            <div className="px-2 py-1">
+                              <p className="text-[11px] text-gray-700 truncate">
+                                {att.filename}
+                              </p>
+                              <p className="text-[10px] text-gray-400">
+                                {Math.round(att.size / 1024)} KB
+                              </p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Video preview */}
+                  {videoAttachments.length > 0 && (
+                    <div className="mt-4 space-y-2">
+                      <div className="flex items-center gap-1 text-xs font-medium text-gray-600">
+                        <FileVideo className="w-3 h-3" />
+                        <span>Video preview</span>
+                      </div>
+                      <div className="flex flex-wrap gap-3">
+                        {videoAttachments.map((att) => (
+                          <div
+                            key={att._id || att.filename}
+                            className="max-w-[260px] rounded-xl overflow-hidden border border-gray-200 bg-black shadow-sm"
+                          >
+                            <video
+                              controls
+                              className="w-full h-auto"
+                              src={att.url!}
+                            />
+                            <div className="px-2 py-1 bg-white">
+                              <p className="text-[11px] text-gray-700 truncate">
+                                {att.filename}
+                              </p>
+                              <p className="text-[10px] text-gray-400">
+                                {Math.round(att.size / 1024)} KB
+                              </p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Attachment chips (clickable) */}
+                  {selectedAttachments.length > 0 && (
+                    <div className="mt-4 space-y-2">
+                      <div className="flex items-center gap-1 text-xs font-medium text-gray-600">
+                        <Paperclip className="w-3 h-3" />
+                        <span>
+                          Attachments ({selectedAttachments.length})
+                        </span>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {selectedAttachments.map((att) => (
+                          <a
+                            key={att._id || att.filename}
+                            href={att.url || '#'}
+                            target={att.url ? '_blank' : undefined}
+                            rel={att.url ? 'noreferrer' : undefined}
+                            className="inline-flex items-center gap-1.5 px-2 py-1 rounded-full bg-white border border-gray-200 text-[11px] text-gray-700 hover:bg-gray-50"
+                          >
+                            <Paperclip className="w-3 h-3" />
+                            <span className="max-w-[160px] truncate">
+                              {att.filename}
+                            </span>
+                            <span className="text-[10px] text-gray-400">
+                              {Math.round(att.size / 1024)} KB
+                            </span>
+                          </a>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </>
             ) : (
@@ -816,7 +1075,7 @@ const EmailPage: React.FC = () => {
                 />
               </div>
 
-              {/* Recipients: single (reply) vs multi (new/forward) */}
+              {/* Recipients */}
               {composeThreadId ? (
                 <div className="space-y-1.5">
                   <label className="text-[11px] font-medium text-gray-500">
@@ -864,9 +1123,8 @@ const EmailPage: React.FC = () => {
                         {filteredInfluencersForPicker.map((inf) => {
                           const checked = composeInfluencerIds.includes(inf.id);
                           const secondaryLine = inf.handle
-                            ? `${inf.handle}${
-                                inf.platform ? ` • ${inf.platform}` : ''
-                              }`
+                            ? `${inf.handle}${inf.platform ? ` • ${inf.platform}` : ''
+                            }`
                             : inf.platform || 'Creator';
                           return (
                             <li key={inf.id}>
@@ -924,7 +1182,7 @@ const EmailPage: React.FC = () => {
                 />
               </div>
 
-              {/* Message */}
+              {/* Message + attachments preview */}
               <div className="space-y-1.5">
                 <label className="text-[11px] font-medium text-gray-500">
                   Message
@@ -943,6 +1201,32 @@ CollabGlam Brand Team`}
                   rows={8}
                   className="w-full text-xs px-3 py-2 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#FFA135] focus:border-[#FFA135] resize-none"
                 />
+
+                {composeAttachments.length > 0 && (
+                  <div className="flex flex-wrap gap-2 pt-2">
+                    {composeAttachments.map((file, index) => (
+                      <div
+                        key={`${file.name}-${index}`}
+                        className="inline-flex items-center gap-1.5 px-2 py-1 rounded-full bg-gray-100 text-[11px] text-gray-700"
+                      >
+                        <Paperclip className="w-3 h-3" />
+                        <span className="max-w-[140px] truncate">
+                          {file.name}
+                        </span>
+                        <span className="text-[10px] text-gray-400">
+                          {Math.round(file.size / 1024)} KB
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => removeAttachment(index)}
+                          className="ml-1 rounded-full hover:bg-gray-200 p-0.5"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {composeError && (
@@ -955,11 +1239,19 @@ CollabGlam Brand Team`}
               <div className="flex items-center gap-2">
                 <button
                   type="button"
+                  onClick={() => fileInputRef.current?.click()}
                   className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full border border-gray-200 bg-white hover:bg-gray-100 text-gray-600"
                 >
                   <Paperclip className="w-3 h-3" />
                   Attach
                 </button>
+                <input
+                  type="file"
+                  multiple
+                  ref={fileInputRef}
+                  className="hidden"
+                  onChange={handleFileChange}
+                />
               </div>
               <div className="flex items-center gap-2">
                 <button
@@ -968,12 +1260,6 @@ CollabGlam Brand Team`}
                   className="text-xs px-3 py-1.5 rounded-full border border-gray-200 bg-white hover:bg-gray-100 text-gray-600"
                 >
                   Cancel
-                </button>
-                <button
-                  type="button"
-                  className="text-xs px-3 py-1.5 rounded-full border border-orange-200 bg-white hover:bg-orange-50 text-[#FF7236]"
-                >
-                  Save as Draft
                 </button>
                 <button
                   type="button"
