@@ -62,13 +62,11 @@ const HEADERS: {
     | "primaryPlatform"
     | "name"
     | "email"
-    | "phone";
   label: string;
   sortable?: boolean;
 }[] = [
   { key: "name", label: "Name", sortable: true },
   { key: "email", label: "Email", sortable: true },
-  { key: "phone", label: "Phone", sortable: true },
   { key: "primaryPlatform", label: "Platform", sortable: true },
   { key: "planName", label: "Plan", sortable: true },
   { key: "expiresAt", label: "Expires", sortable: true },
@@ -204,7 +202,6 @@ const AdminInfluencersPage = () => {
   const ALLOWED_SORT = new Set([
     "name",
     "email",
-    "phone",
     "primaryPlatform",
     "planName",
     "expiresAt",
@@ -310,7 +307,6 @@ const AdminInfluencersPage = () => {
                         {inf.name || "—"}
                       </TableCell>
                       <TableCell>{inf.email || "—"}</TableCell>
-                      <TableCell>{inf.phone || "—"}</TableCell>
                       <TableCell className="items-center justify-center">
                         <PlatformBadge platform={inf.primaryPlatform} />
                       </TableCell>

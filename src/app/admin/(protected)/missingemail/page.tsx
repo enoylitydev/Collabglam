@@ -230,6 +230,9 @@ export default function MissingListPage() {
   /** store platform for the modal row (so we can hit invitations/update) */
   const [modalPlatform, setModalPlatform] = useState<string | null>(null);
 
+  /** NEW: checkbox state */
+  const [emailConfirmed, setEmailConfirmed] = useState(false); // NEW
+
   const fetchData = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -301,6 +304,7 @@ export default function MissingListPage() {
     setModalMissingEmailId(null);
     setModalEmail("");
     setModalPlatform(row.platform || "youtube"); // capture platform for invitations/update
+    setEmailConfirmed(false); // NEW: reset checkbox
     setModalOpen(true);
   };
 
@@ -312,6 +316,7 @@ export default function MissingListPage() {
     setModalMissingEmailId(row.missingEmailId);
     setModalMissingId(null);
     setModalPlatform(row.platform || "youtube");
+    setEmailConfirmed(false); // NEW: reset checkbox
     setModalOpen(true);
   };
 
@@ -323,6 +328,7 @@ export default function MissingListPage() {
     setModalMissingId(null);
     setModalMissingEmailId(null);
     setModalPlatform(null);
+    setEmailConfirmed(false); // NEW: reset checkbox
     setModalOpen(true);
   };
 
@@ -334,6 +340,7 @@ export default function MissingListPage() {
     setModalMissingId(null);
     setModalMissingEmailId(null);
     setModalPlatform(null);
+    setEmailConfirmed(false); // NEW: reset on close
   };
 
   // --- Save handler (calls backend) ---
@@ -347,6 +354,16 @@ export default function MissingListPage() {
     }
     if (!email) {
       await Swal.fire("Missing email", "Please enter an email address.", "warning");
+      return;
+    }
+
+    // NEW: require checkbox confirmation
+    if (!emailConfirmed) {
+      await Swal.fire(
+        "Confirm email",
+        "Please confirm that this email is correct for the influencer by checking the box.",
+        "warning"
+      );
       return;
     }
 
@@ -645,7 +662,6 @@ export default function MissingListPage() {
                     </tr>
                   ))}
 
-
                 {/* Available view */}
                 {!loading &&
                   viewMode === "available" &&
@@ -788,6 +804,23 @@ export default function MissingListPage() {
                   value={modalEmail}
                   onChange={(e) => setModalEmail(e.target.value)}
                 />
+
+                {/* NEW: Confirmation checkbox */}
+                <div className="mt-3 flex items-start gap-2">
+                  <input
+                    id="email-confirm-checkbox"
+                    type="checkbox"
+                    className="mt-0.5 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    checked={emailConfirmed}
+                    onChange={(e) => setEmailConfirmed(e.target.checked)}
+                  />
+                  <label
+                    htmlFor="email-confirm-checkbox"
+                    className="text-xs text-gray-700"
+                  >
+                    This email is correct for the influencer.
+                  </label>
+                </div>
               </div>
             </div>
 
@@ -801,7 +834,7 @@ export default function MissingListPage() {
               </button>
               <button
                 onClick={handleSaveDetails}
-                disabled={saving}
+                disabled={saving || !emailConfirmed} // NEW: also disable button
                 className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 {saving && <Loader2 className="w-4 h-4 animate-spin" />}
@@ -838,8 +871,9 @@ function Td({
 }) {
   return (
     <td
-      className={`px-6 py-4 whitespace-nowrap ${mono ? "font-mono text-sm" : ""
-        }`}
+      className={`px-6 py-4 whitespace-nowrap ${
+        mono ? "font-mono text-sm" : ""
+      }`}
     >
       {children}
     </td>
