@@ -30,9 +30,9 @@ export default function FooterWithNewsletter() {
         { label: "About Us", href: "/about-us" },
         { label: "Contact Us", href: "/contact-us" },
         { label: "FAQs", href: "/faqs" },
-        { label: "How It Works", href: "#how-it-works" },
-        { label: "Features", href: "#features" },
-        { label: "Pricing", href: "#pricing" },
+        { label: "How It Works", href: "/#how-it-works" },
+        { label: "Features", href: "/#features" },
+        { label: "Pricing", href: "/#pricing" },
       ],
     },
     {
