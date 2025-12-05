@@ -15,6 +15,7 @@ import {
   HiCreditCard,
   HiPlay,
   HiMail,
+  HiOutlineMail,
 } from 'react-icons/hi';
 import { SendIcon } from 'lucide-react';
 import { useBrandSidebar } from './brand-sidebar-context';
@@ -40,6 +41,13 @@ const BASE_MENU_ITEMS: MenuItem[] = [
   { name: 'Disputes', href: '/brand/disputes', icon: HiClipboardList },
   { name: 'Messages', href: '/brand/messages', icon: SendIcon },
   { name: 'Email', href: '/brand/email', icon: HiMail },
+
+  {
+    name: 'Feedback',
+    href: 'https://docs.google.com/forms/d/e/1FAIpQLSemRB9YO6-YUJhHe4W4Y2QfEygwqUXW2MYW1QCGyHmUZlzyyg/viewform?usp=preview',
+    icon: HiOutlineMail,
+  },
+
   { name: 'My Subscriptions', href: '/brand/subscriptions', icon: HiCreditCard },
 ];
 

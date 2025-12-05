@@ -33,6 +33,12 @@ const menuItems: MenuItem[] = [
   { name: "Messages", href: "/influencer/messages", icon: HiChatAlt2 },
   // { name: "E-Mails", href: "/influencer/email", icon: HiOutlineMail },
   { name: "Payment Details", href: "/influencer/payment-detail", icon: HiBanknotes },
+
+    {
+    name: "Feedback",
+    href: "https://docs.google.com/forms/d/e/1FAIpQLSemRB9YO6-YUJhHe4W4Y2QfEygwqUXW2MYW1QCGyHmUZlzyyg/viewform?usp=preview",
+    icon: HiOutlineMail,
+  },
   { name: "Subscriptions", href: "/influencer/subscriptions", icon: HiCreditCard },
 ];
 
