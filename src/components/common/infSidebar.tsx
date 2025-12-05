@@ -114,28 +114,35 @@ export default function InfluencerSidebar({ isOpen, onClose }: InfluencerSidebar
     return true;
   });
 
-  const renderLinks = () =>
-    filteredMenuItems.map((item) => {
-      const isActive = pathname.startsWith(item.href);
-      const base = "flex items-center py-3 px-4 rounded-md transition-all duration-200";
-      const active = isActive
-        ? "bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-800"
-        : "text-gray-800 hover:bg-gradient-to-r hover:from-[#FFBF00] hover:to-[#FFDB58] ";
+const renderLinks = () =>
+  filteredMenuItems.map((item) => {
+    const isActive = pathname.startsWith(item.href);
+    const isExternal = item.href.startsWith('http'); // 👈 external link check
 
-      return (
-        <li key={item.href} className="group">
-          <Link
-            href={item.href}
-            className={`${base} ${active}`}
-            title={isCollapsed ? item.name : undefined}
-            onClick={onClose}
-          >
-            <item.icon size={20} className="flex-shrink-0" />
-            {!isCollapsed && <span className="ml-3 text-md font-medium">{item.name}</span>}
-          </Link>
-        </li>
-      );
-    });
+    const base =
+      'flex items-center py-3 px-4 rounded-md transition-all duration-200';
+    const active = isActive
+      ? 'bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-800'
+      : 'text-gray-800 hover:bg-gradient-to-r hover:from-[#FFBF00] hover:to-[#FFDB58]';
+
+    return (
+      <li key={item.href} className="group">
+        <Link
+          href={item.href}
+          className={`${base} ${active}`}
+          title={isCollapsed ? item.name : undefined}
+          onClick={onClose}
+          target={isExternal ? '_blank' : undefined}              // 👈 new tab
+          rel={isExternal ? 'noopener noreferrer' : undefined}    // 👈 safe
+        >
+          <item.icon size={20} className="flex-shrink-0" />
+          {!isCollapsed && (
+            <span className="ml-3 text-md font-medium">{item.name}</span>
+          )}
+        </Link>
+      </li>
+    );
+  });
 
   const sidebarContent = (
     <div
