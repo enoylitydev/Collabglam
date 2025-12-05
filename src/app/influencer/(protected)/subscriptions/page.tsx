@@ -270,7 +270,7 @@ export default function InfluencerSubscriptionPage() {
       const { id: orderId, amount, currency } = orderResp.order;
 
       const rzp = new window.Razorpay({
-        key: "rzp_test_2oIQzZ7i0uQ6sn",
+        key: "rzp_live_GngmINuJmpWywN",
         amount,
         currency,
         name: "CollabGlam",

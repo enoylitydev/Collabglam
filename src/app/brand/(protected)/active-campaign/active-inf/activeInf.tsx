@@ -30,7 +30,11 @@ import MilestoneHistoryCard from "@/components/common/milestoneCard";
 const TABLE_GRADIENT_FROM = "#FFA135";
 const TABLE_GRADIENT_TO = "#FF7236";
 
-const toast = (opts: { icon: "success" | "error"; title: string; text?: string }) =>
+const toast = (opts: {
+  icon: "success" | "error";
+  title: string;
+  text?: string;
+}) =>
   Swal.fire({
     showConfirmButton: false,
     timer: 1200,
@@ -58,7 +62,7 @@ interface RawInfluencer {
   isAccepted?: number;
   isAssigned?: number;
 
-  // 🔥 New fields from backend
+  // New fields from backend
   socialHandle?: string | null;
   audienceSize?: number | null;
 }
@@ -87,6 +91,13 @@ interface InfluencerRow {
 
 type SortKey = "name" | "username" | "followers" | "updatedAt";
 const PAGE_SIZE = 10;
+
+/* Razorpay global type */
+declare global {
+  interface Window {
+    Razorpay: any;
+  }
+}
 
 /* --------------------------- Helper functions --------------------------- */
 const formatNumber = (n?: number | null) =>
@@ -132,10 +143,10 @@ const toRow = (doc: RawInfluencer): InfluencerRow => {
       doc.primaryPlatform === "instagram"
         ? "Instagram"
         : doc.primaryPlatform === "youtube"
-          ? "YouTube"
-          : doc.primaryPlatform === "tiktok"
-            ? "TikTok"
-            : doc.primaryPlatform || undefined,
+        ? "YouTube"
+        : doc.primaryPlatform === "tiktok"
+        ? "TikTok"
+        : doc.primaryPlatform || undefined,
     categoryNames,
     followers,
     updatedAt: doc.updatedAt ?? null,
@@ -143,6 +154,15 @@ const toRow = (doc: RawInfluencer): InfluencerRow => {
     isAssigned: doc.isAssigned,
   };
 };
+
+const loadScript = (src: string) =>
+  new Promise<boolean>((res) => {
+    const s = document.createElement("script");
+    s.src = src;
+    s.onload = () => res(true);
+    s.onerror = () => res(false);
+    document.body.appendChild(s);
+  });
 
 /* ============================== Component =============================== */
 export default function ActiveInfluencersPage() {
@@ -176,9 +196,28 @@ export default function ActiveInfluencersPage() {
   });
   const [isSavingMilestone, setIsSavingMilestone] = useState(false);
 
-  // 🔥 NEW: campaign budget + allocated milestones (for this brand)
+  // Razorpay fee settings
+  const FEE_PERCENT = 0.02; // 2%
+
+  const amountNum = useMemo(
+    () => Number(milestoneForm.amount) || 0,
+    [milestoneForm.amount]
+  );
+
+  const razorpayFee = useMemo(
+    () => Math.round(amountNum * FEE_PERCENT * 100) / 100,
+    [amountNum]
+  );
+
+  const totalWithFee = useMemo(
+    () => amountNum + razorpayFee,
+    [amountNum, razorpayFee]
+  );
+
+  // campaign budget + allocated milestones (for this brand)
   const [campaignBudget, setCampaignBudget] = useState<number | null>(null);
-  const [campaignMilestoneTotal, setCampaignMilestoneTotal] = useState<number>(0);
+  const [campaignMilestoneTotal, setCampaignMilestoneTotal] =
+    useState<number>(0);
   const [isBudgetLocked, setIsBudgetLocked] = useState<boolean>(false);
 
   const remainingBudget = useMemo(() => {
@@ -207,7 +246,7 @@ export default function ActiveInfluencersPage() {
       )
     ) : null;
 
-  // 🔥 NEW: fetch budget + milestone total for this campaign/brand
+  // fetch budget + milestone total for this campaign/brand
   const refreshBudgetAndTotals = useCallback(async () => {
     if (!campaignId) return;
 
@@ -215,7 +254,6 @@ export default function ActiveInfluencersPage() {
       const brandId =
         typeof window !== "undefined" ? localStorage.getItem("brandId") : null;
 
-      // Get campaign details (for budget) + all milestones for this campaign
       const [campaignResp, milestoneResp] = await Promise.all([
         get<any>(`/campaign/id?id=${campaignId}`),
         post<{ milestones: { amount: number; brandId: string }[] }>(
@@ -248,11 +286,10 @@ export default function ActiveInfluencersPage() {
       }
     } catch (e) {
       console.error("Failed to refresh campaign budget / milestones", e);
-      // Don't hard-fail UI, just log.
     }
   }, [campaignId]);
 
-  // Fetch influencers accepted for this campaign (ONE SHOT per filter/sort)
+  // Fetch influencers accepted for this campaign
   useEffect(() => {
     if (!campaignId) {
       setError("No campaign selected.");
@@ -267,7 +304,6 @@ export default function ActiveInfluencersPage() {
           "campaign/accepted-inf",
           {
             campaignId,
-            // backend can still use these to sort, but we do pagination via slicing
             search: searchTerm.trim(),
             sortBy: sortField,
             order: sortOrder === 1 ? "desc" : "asc",
@@ -312,8 +348,6 @@ export default function ActiveInfluencersPage() {
   const handleSaveMilestone = async () => {
     if (!selectedInf?.influencerId || !campaignId) return;
 
-    const amountNum = Number(milestoneForm.amount);
-
     if (!milestoneForm.title.trim()) {
       toast({
         icon: "error",
@@ -331,7 +365,7 @@ export default function ActiveInfluencersPage() {
       return;
     }
 
-    // 🔥 Client-side check vs remaining budget (if we know it)
+    // client-side budget check
     if (campaignBudget != null) {
       if (remainingBudget !== null && remainingBudget <= 0) {
         setIsBudgetLocked(true);
@@ -356,39 +390,131 @@ export default function ActiveInfluencersPage() {
 
     try {
       setIsSavingMilestone(true);
-      await post("milestone/create", {
+
+      // Load Razorpay SDK
+      const ok = await loadScript("https://checkout.razorpay.com/v1/checkout.js");
+      if (!ok) {
+        toast({
+          icon: "error",
+          title: "Payment error",
+          text: "Payment SDK failed to load. Please try again.",
+        });
+        setIsSavingMilestone(false);
+        return;
+      }
+
+      const brandId =
+        typeof window !== "undefined" ? localStorage.getItem("brandId") : null;
+
+      if (!brandId) {
+        toast({
+          icon: "error",
+          title: "Missing brand",
+          text: "Please log in again as a brand.",
+        });
+        setIsSavingMilestone(false);
+        return;
+      }
+
+      // 1️⃣ Create milestone order on backend (using dedicated endpoint)
+      const orderResp = await post<any>("/payment/milestone-order", {
+        amount: totalWithFee,
+        currency: "USD", // keep consistent with your backend / budget
+        brandId,
         influencerId: selectedInf.influencerId,
         campaignId,
         milestoneTitle: milestoneForm.title,
-        amount: amountNum,
-        milestoneDescription: milestoneForm.description,
-        brandId:
-          typeof window !== "undefined"
-            ? localStorage.getItem("brandId")
-            : undefined,
       });
 
-      Swal.fire({
-        icon: "success",
-        title: "Milestone added",
-        text: "Milestone has been created successfully for this campaign.",
-        showConfirmButton: false,
-        timer: 1500,
-        timerProgressBar: true,
+      const { id: order_id, amount, currency } = orderResp.order;
+
+      // 2️⃣ Open Razorpay Checkout
+      const rzp = new window.Razorpay({
+        key: "rzp_live_GngmINuJmpWywN", // or process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID
+        amount,
+        currency,
+        name: "CollabGlam",
+        description: `Milestone - ${milestoneForm.title}`,
+        order_id,
+        handler: async (response: any) => {
+          try {
+            // 3️⃣ Verify milestone payment
+            await post("/payment/milestone-verify", {
+              razorpay_order_id: order_id,
+              razorpay_payment_id: response.razorpay_payment_id,
+              razorpay_signature: response.razorpay_signature,
+            });
+
+            // 4️⃣ Create milestone AFTER successful payment
+            await post("milestone/create", {
+              influencerId: selectedInf.influencerId,
+              campaignId,
+              milestoneTitle: milestoneForm.title,
+              amount: amountNum, // base amount (for influencer & budget)
+              milestoneDescription: milestoneForm.description,
+              brandId,
+              razorpayOrderId: order_id,
+              razorpayPaymentId: response.razorpay_payment_id,
+            });
+
+            Swal.fire({
+              icon: "success",
+              title: "Milestone added",
+              text:
+                "Milestone has been created successfully for this campaign.\n" +
+                `Base: ${amountNum.toFixed(2)}, Fee: ${razorpayFee.toFixed(
+                  2
+                )}, Total: ${totalWithFee.toFixed(2)}`,
+              showConfirmButton: false,
+              timer: 1500,
+              timerProgressBar: true,
+            });
+
+            setShowMilestoneModal(false);
+            setMilestoneForm({ title: "", amount: "", description: "" });
+            setPage(1);
+            await refreshBudgetAndTotals();
+          } catch (err) {
+            console.error(err);
+            toast({
+              icon: "error",
+              title: "Payment verification failed",
+              text:
+                "Payment was captured but we could not create the milestone. Please contact support with your payment ID.",
+            });
+          } finally {
+            setIsSavingMilestone(false);
+          }
+        },
+        prefill: {
+          name: "",
+          email: "",
+          contact: "",
+        },
+        theme: { color: "#FFA135" },
+        modal: {
+          ondismiss: () => {
+            setIsSavingMilestone(false);
+          },
+        },
       });
 
-      setShowMilestoneModal(false);
-      setMilestoneForm({ title: "", amount: "", description: "" });
-      setPage(1);
-      await refreshBudgetAndTotals();
+      rzp.on("payment.failed", (resp: any) => {
+        console.error("Razorpay payment failed", resp);
+        toast({
+          icon: "error",
+          title: "Payment failed",
+          text: resp?.error?.description || "Payment was not completed.",
+        });
+        setIsSavingMilestone(false);
+      });
+
+      rzp.open();
     } catch (err: any) {
       console.error(err);
       const apiMessage =
-        err?.response?.data?.message ||
-        err.message ||
-        "Something went wrong";
+        err?.response?.data?.message || err.message || "Something went wrong";
 
-      // 🔥 Handle special messages from backend
       if (
         apiMessage.includes(
           "You have added milestone equal to campaign now not able to add now milestone"
@@ -402,9 +528,7 @@ export default function ActiveInfluencersPage() {
         });
         await refreshBudgetAndTotals();
       } else if (
-        apiMessage.includes(
-          "Total milestone amount cannot exceed campaign budget"
-        )
+        apiMessage.includes("Total milestone amount cannot exceed campaign budget")
       ) {
         toast({
           icon: "error",
@@ -419,7 +543,6 @@ export default function ActiveInfluencersPage() {
           text: apiMessage,
         });
       }
-    } finally {
       setIsSavingMilestone(false);
     }
   };
@@ -429,7 +552,7 @@ export default function ActiveInfluencersPage() {
     router.push(`/brand/influencers?id=${inf.influencerId}`);
   };
 
-  // 🔥 SLICING for pagination
+  // pagination
   const paginatedRows = useMemo(() => {
     const start = (page - 1) * PAGE_SIZE;
     const end = start + PAGE_SIZE;
@@ -444,8 +567,9 @@ export default function ActiveInfluencersPage() {
       const baseRow = (
         <TableRow
           key={rowKey}
-          className={`${idx % 2 === 0 ? "bg-white" : "bg-gray-50"
-            } transition-colors`}
+          className={`${
+            idx % 2 === 0 ? "bg-white" : "bg-gray-50"
+          } transition-colors`}
           onMouseEnter={(e) =>
             (e.currentTarget.style.backgroundImage = hoverGradient)
           }
@@ -454,7 +578,7 @@ export default function ActiveInfluencersPage() {
           {/* Name */}
           <TableCell>{inf.name}</TableCell>
 
-          {/* Social Handle — clickable @username with provider hint */}
+          {/* Social Handle */}
           <TableCell>
             {inf.username ? (
               <a
@@ -476,7 +600,7 @@ export default function ActiveInfluencersPage() {
             )}
           </TableCell>
 
-          {/* Categories — from onboarding main + subcategories */}
+          {/* Categories */}
           <TableCell className="space-x-1">
             {inf.categoryNames.length ? (
               inf.categoryNames.map((cat, i) => (
@@ -493,14 +617,14 @@ export default function ActiveInfluencersPage() {
             )}
           </TableCell>
 
-          {/* Audience — Followers */}
+          {/* Audience */}
           <TableCell>
             <div>
               <strong>{formatNumber(inf.followers)}</strong>
             </div>
           </TableCell>
 
-          {/* Updated column */}
+          {/* Updated */}
           <TableCell className="whitespace-nowrap">
             <HiOutlineCalendar className="inline mr-1" />
             {formatDate(inf.updatedAt)}
@@ -550,8 +674,8 @@ export default function ActiveInfluencersPage() {
                 !inf.influencerId
                   ? "Missing influencerId"
                   : isBudgetLocked
-                    ? "Campaign budget already fully allocated in milestones"
-                    : "Add milestone"
+                  ? "Campaign budget already fully allocated in milestones"
+                  : "Add milestone"
               }
             >
               Add Milestone
@@ -563,9 +687,7 @@ export default function ActiveInfluencersPage() {
               className="ml-1 cursor-pointer"
               onClick={() => toggleExpand(rowKey)}
               disabled={!inf.influencerId}
-              title={
-                inf.influencerId ? "Toggle history" : "Missing influencerId"
-              }
+              title={inf.influencerId ? "Toggle history" : "Missing influencerId"}
             >
               {expandedRow === rowKey ? (
                 <HiOutlineChevronUp className="w-4 h-4" />
@@ -637,9 +759,9 @@ export default function ActiveInfluencersPage() {
               <strong>
                 {remainingBudget != null
                   ? remainingBudget.toLocaleString(undefined, {
-                    style: "currency",
-                    currency: "USD",
-                  })
+                      style: "currency",
+                      currency: "USD",
+                    })
                   : "—"}
               </strong>
             </p>
@@ -781,9 +903,7 @@ export default function ActiveInfluencersPage() {
               }}
             >
               <div className="text-white">
-                <p className="text-xs uppercase tracking-wide">
-                  Create milestone
-                </p>
+                <p className="text-xs uppercase tracking-wide">Create milestone</p>
                 <h2 className="text-lg font-semibold mt-1">
                   {selectedInf.name}
                 </h2>
@@ -839,9 +959,9 @@ export default function ActiveInfluencersPage() {
                   <strong>
                     {remainingBudget != null
                       ? remainingBudget.toLocaleString(undefined, {
-                        style: "currency",
-                        currency: "USD",
-                      })
+                          style: "currency",
+                          currency: "USD",
+                        })
                       : "—"}
                   </strong>
                 </p>
@@ -852,6 +972,39 @@ export default function ActiveInfluencersPage() {
                   Milestone total has reached the campaign budget. You cannot
                   create more milestones.
                 </p>
+              )}
+
+              {/* Razorpay fee breakdown */}
+              {amountNum > 0 && (
+                <div className="mt-2 text-xs text-gray-700 space-y-1 border border-gray-200 rounded-md p-3 bg-gray-50">
+                  <p>
+                    Milestone amount:{" "}
+                    <strong>
+                      {amountNum.toLocaleString(undefined, {
+                        style: "currency",
+                        currency: "USD", // change to "INR" if needed
+                      })}
+                    </strong>
+                  </p>
+                  <p>
+                    Razorpay fee (2%):{" "}
+                    <strong className="text-orange-600">
+                      {razorpayFee.toLocaleString(undefined, {
+                        style: "currency",
+                        currency: "USD",
+                      })}
+                    </strong>
+                  </p>
+                  <p>
+                    Total payable:{" "}
+                    <strong>
+                      {totalWithFee.toLocaleString(undefined, {
+                        style: "currency",
+                        currency: "USD",
+                      })}
+                    </strong>
+                  </p>
+                </div>
               )}
 
               <div className="grid gap-4 md:grid-cols-2">
@@ -893,6 +1046,7 @@ export default function ActiveInfluencersPage() {
                   variant="outline"
                   onClick={() => setShowMilestoneModal(false)}
                   className="cursor-pointer"
+                  disabled={isSavingMilestone}
                 >
                   Cancel
                 </Button>
@@ -908,8 +1062,10 @@ export default function ActiveInfluencersPage() {
                   {isBudgetLocked
                     ? "Budget Reached"
                     : isSavingMilestone
-                      ? "Saving..."
-                      : "Add Milestone"}
+                    ? "Processing..."
+                    : amountNum > 0
+                    ? `Pay ${totalWithFee.toFixed(2)} (incl. fee)`
+                    : "Add Milestone"}
                 </Button>
               </div>
             </div>
