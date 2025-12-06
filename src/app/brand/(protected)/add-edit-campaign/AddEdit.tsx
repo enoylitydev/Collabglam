@@ -34,7 +34,7 @@ import {
 import { Separator } from "@/components/ui/separator";
 
 const ReactSelect = dynamic(() => import("react-select"), { ssr: false });
-import type { FilterOptionOption, GroupBase } from "react-select";
+import type { FilterOptionOption } from "react-select";
 
 // ── types ───────────────────────────────────────────────────
 
@@ -60,10 +60,12 @@ interface CategoryDTO {
   name: string;
   subcategories: { subcategoryId: string; name: string }[];
 }
+
 interface CategoriesResponse {
   count: number;
   categories: CategoryDTO[];
 }
+
 interface SubcategoryOption {
   value: string; // subcategoryId
   label: string; // subcategory name
@@ -120,6 +122,7 @@ const GENDER_SELECT_OPTIONS: SimpleOption[] = ["Male", "Female", "All"].map(
     label: g,
   })
 );
+
 const GOAL_OPTIONS: SimpleOption[] = ["Brand Awareness", "Sales", "Engagement"].map(
   (g) => ({ value: g, label: g })
 );
@@ -141,6 +144,8 @@ const CAMPAIGN_TYPE_OPTIONS: SimpleOption[] = [
   "Post Promo",
   "Other",
 ].map((t) => ({ value: t, label: t }));
+
+// ── main component ─────────────────────────────────────────
 
 export default function CampaignFormPage() {
   const router = useRouter();
@@ -164,7 +169,10 @@ export default function CampaignFormPage() {
   const [selectedCountries, setSelectedCountries] = useState<CountryOption[]>([]);
 
   const [categories, setCategories] = useState<CategoryDTO[]>([]);
-  const [selectedSubcategories, setSelectedSubcategories] = useState<SubcategoryOption[]>([]);
+  const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(null);
+  const [selectedSubcategories, setSelectedSubcategories] = useState<SubcategoryOption[]>(
+    []
+  );
 
   const [selectedGoal, setSelectedGoal] = useState<string>("");
   const [campaignType, setCampaignType] = useState<string>("");
@@ -175,17 +183,22 @@ export default function CampaignFormPage() {
     start: "",
     end: "",
   });
+
   const [creativeBriefText, setCreativeBriefText] = useState("");
   const [creativeBriefFiles, setCreativeBriefFiles] = useState<File[]>([]);
   const [existingBriefFiles, setExistingBriefFiles] = useState<string[]>([]);
   const [useFileUploadForBrief, setUseFileUploadForBrief] = useState(false);
+
   const [additionalNotes, setAdditionalNotes] = useState("");
+
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showRequiredHints, setShowRequiredHints] = useState(false);
+
   const ageOrderError =
     ageRange.min !== "" &&
     ageRange.max !== "" &&
     Number(ageRange.min) >= Number(ageRange.max);
+
   const dateOrderError =
     !!(timeline.start && timeline.end && new Date(timeline.start) > new Date(timeline.end));
 
@@ -220,26 +233,30 @@ export default function CampaignFormPage() {
     return `${y}-${m}-${day}`;
   }, []);
 
-  const categoryGroups = useMemo<GroupBase<SubcategoryOption>[]>(
+  // Single-select category options
+  const categorySelectOptions = useMemo<SimpleOption[]>(
     () =>
       categories.map((cat) => ({
+        value: String(cat.id),
         label: cat.name,
-        options: (cat.subcategories || []).map((sc) => ({
-          value: sc.subcategoryId,
-          label: sc.name,
-          categoryId: cat.id,
-          categoryName: cat.name,
-        })),
       })),
     [categories]
   );
 
-  const allSubcategoryOptions: SubcategoryOption[] = useMemo(
-    () => categoryGroups.flatMap((g) => g.options || []),
-    [categoryGroups]
-  );
+  // Multi-select subcategory options for selected category
+  const subcategoryOptionsForSelectedCategory = useMemo<SubcategoryOption[]>(() => {
+    if (selectedCategoryId == null) return [];
+    const cat = categories.find((c) => c.id === selectedCategoryId);
+    if (!cat) return [];
+    return (cat.subcategories || []).map((sc) => ({
+      value: sc.subcategoryId,
+      label: sc.name,
+      categoryId: cat.id,
+      categoryName: cat.name,
+    }));
+  }, [categories, selectedCategoryId]);
 
-  // Group selected subs by category for a nice preview list
+  // Group selected subs by category for preview list
   const groupedSubcats = useMemo(() => {
     const m = new Map<string, string[]>();
     selectedSubcategories.forEach((s) => {
@@ -295,8 +312,8 @@ export default function CampaignFormPage() {
       boxShadow: hasError
         ? "0 0 0 3px rgba(220, 38, 38, 0.1)"
         : state.isFocused
-          ? "0 0 0 3px rgba(255, 161, 53, 0.1)"
-          : "none",
+        ? "0 0 0 3px rgba(255, 161, 53, 0.1)"
+        : "none",
     }),
   });
 
@@ -357,6 +374,7 @@ export default function CampaignFormPage() {
     setSelectedCountries(locOptions);
 
     setSelectedGoal(data.goal || "");
+
     // campaign type
     if (data.campaignType) {
       if (CAMPAIGN_TYPE_OPTIONS.some((o) => o.value === data.campaignType)) {
@@ -366,6 +384,9 @@ export default function CampaignFormPage() {
         setCampaignType("Other");
         setCustomCampaignType(data.campaignType);
       }
+    } else {
+      setCampaignType("");
+      setCustomCampaignType("");
     }
 
     setBudget(typeof data.budget === "number" ? data.budget : "");
@@ -374,13 +395,35 @@ export default function CampaignFormPage() {
     const ed = data.timeline?.endDate ? data.timeline.endDate.split("T")[0] : "";
     setTimeline({ start: sd, end: ed });
 
-    if (
-      Array.isArray(data.categories) &&
-      data.categories.length &&
-      allSubcategoryOptions.length
-    ) {
-      const desired = new Set(data.categories.map((c) => c.subcategoryId));
-      setSelectedSubcategories(allSubcategoryOptions.filter((o) => desired.has(o.value)));
+    // categories + subcategories (single category, multi subcategories)
+    if (Array.isArray(data.categories) && data.categories.length && categories.length) {
+      const firstCatId = data.categories[0].categoryId;
+      setSelectedCategoryId(firstCatId);
+
+      const cat = categories.find((c) => c.id === firstCatId);
+      if (cat) {
+        const desiredSubIds = new Set(
+          data.categories
+            .filter((c) => c.categoryId === firstCatId)
+            .map((c) => c.subcategoryId)
+        );
+
+        const subs: SubcategoryOption[] = (cat.subcategories || [])
+          .filter((sc) => desiredSubIds.has(sc.subcategoryId))
+          .map((sc) => ({
+            value: sc.subcategoryId,
+            label: sc.name,
+            categoryId: cat.id,
+            categoryName: cat.name,
+          }));
+
+        setSelectedSubcategories(subs);
+      } else {
+        setSelectedSubcategories([]);
+      }
+    } else {
+      setSelectedCategoryId(null);
+      setSelectedSubcategories([]);
     }
   };
 
@@ -397,7 +440,9 @@ export default function CampaignFormPage() {
 
   // ── fetch campaign data if editing ───────────────────────
   useEffect(() => {
-    if (!isEditMode || !campaignId || countries.length === 0) return;
+    if (!isEditMode || !campaignId) return;
+    if (!countries.length || !categories.length) return;
+
     setIsLoading(true);
 
     get<CampaignEditPayload>(`/campaign/id?id=${campaignId}`)
@@ -406,7 +451,7 @@ export default function CampaignFormPage() {
       })
       .catch((err) => console.error("Failed to load campaign for editing", err))
       .finally(() => setIsLoading(false));
-  }, [isEditMode, campaignId, countries, countryOptions, allSubcategoryOptions]);
+  }, [isEditMode, campaignId, countries, categories]);
 
   // ── auto-load draft (only when creating, from backend) ───
   useEffect(() => {
@@ -436,28 +481,25 @@ export default function CampaignFormPage() {
         // If 404 (no draft), just ignore; do not show Swal
         console.error("No draft found or failed to load draft", err);
       });
-  }, [
-    isEditMode,
-    draftLoaded,
-    countries.length,
-    categories.length,
-    countryOptions,
-    allSubcategoryOptions,
-  ]);
+  }, [isEditMode, draftLoaded, countries, categories]);
 
   // ── handlers & reset ─────────────────────────────────────
   const handleProductImages = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) setProductImages(Array.from(e.target.files));
   };
+
   const handleCreativeBriefFiles = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) setCreativeBriefFiles(Array.from(e.target.files));
   };
+
   const removeProductImage = (idx: number) => {
     setProductImages(productImages.filter((_, i) => i !== idx));
   };
+
   const removeExistingImage = (idx: number) => {
     setExistingImages(existingImages.filter((_, i) => i !== idx));
   };
+
   const resetForm = () => {
     setProductName("");
     setDescription("");
@@ -466,6 +508,7 @@ export default function CampaignFormPage() {
     setAgeRange({ min: "", max: "" });
     setSelectedGender("");
     setSelectedCountries([]);
+    setSelectedCategoryId(null);
     setSelectedSubcategories([]);
     setSelectedGoal("");
     setCampaignType("");
@@ -600,8 +643,7 @@ export default function CampaignFormPage() {
       const saved = await post<any>("/campaign/save-draft", formData);
 
       // 🔹 keep the draft _id from backend so next save updates same draft
-      const newId =
-        saved?.campaign?._id || saved?._id || draftId || null;
+      const newId = saved?.campaign?._id || saved?._id || draftId || null;
       if (newId) {
         setDraftId(newId);
       }
@@ -641,6 +683,7 @@ export default function CampaignFormPage() {
       ageRange.max === "" ||
       !selectedGender ||
       selectedCountries.length === 0 ||
+      !selectedCategoryId ||
       selectedSubcategories.length === 0 ||
       !selectedGoal ||
       !finalCampaignType ||
@@ -657,6 +700,7 @@ export default function CampaignFormPage() {
       setIsPreviewOpen(false);
       return;
     }
+
     if (Number(ageRange.min) >= Number(ageRange.max)) {
       setIsPreviewOpen(false);
       return toast({
@@ -665,6 +709,7 @@ export default function CampaignFormPage() {
         text: "Min Age must be less than Max Age.",
       });
     }
+
     if (timeline.start && timeline.end && new Date(timeline.start) > new Date(timeline.end)) {
       setIsPreviewOpen(false);
       return toast({
@@ -997,25 +1042,76 @@ export default function CampaignFormPage() {
                   )}
                 </div>
 
-                <div className="space-y-1">
-                  <Label className="text-sm font-medium text-gray-700 mb-2 block">
-                    Categories &amp; Subcategories{" "}
-                    <span className="text-red-500">*</span>
-                  </Label>
-                  <ReactSelect
-                    isMulti
-                    closeMenuOnSelect={false}
-                    blurInputOnSelect={false}
-                    options={categoryGroups as unknown as GroupBase<SubcategoryOption>[]}
-                    styles={selectStyles as any}
-                    value={selectedSubcategories}
-                    onChange={(v) => setSelectedSubcategories(v as SubcategoryOption[])}
-                    placeholder="Search & choose subcategories..."
-                    noOptionsMessage={() => "No matching subcategories"}
-                  />
-                  {showRequiredHints && selectedSubcategories.length === 0 && (
-                    <p className="text-xs text-red-600">This field is required</p>
-                  )}
+                {/* Category & Subcategories */}
+                <div className="grid sm:grid-cols-2 gap-6">
+                  {/* Category */}
+                  <div className="space-y-1">
+                    <Label className="text-sm font-medium text-gray-700 mb-2 block">
+                      Category <span className="text-red-500">*</span>
+                    </Label>
+                    <ReactSelect
+                      options={categorySelectOptions}
+                      styles={makeSelectStyles(
+                        showRequiredHints && !selectedCategoryId
+                      ) as any}
+                      value={
+                        selectedCategoryId
+                          ? categorySelectOptions.find(
+                              (o) => o.value === String(selectedCategoryId)
+                            ) || null
+                          : null
+                      }
+                      onChange={(opt) => {
+                        const val = (opt as SimpleOption | null)?.value;
+                        const id = val ? Number(val) : null;
+                        setSelectedCategoryId(id);
+                        setSelectedSubcategories([]);
+                      }}
+                      placeholder="Select category..."
+                      isClearable
+                      closeMenuOnSelect
+                      blurInputOnSelect={false}
+                    />
+                    {showRequiredHints && !selectedCategoryId && (
+                      <p className="text-xs text-red-600">This field is required</p>
+                    )}
+                  </div>
+
+                  {/* Subcategories */}
+                  <div className="space-y-1">
+                    <Label className="text-sm font-medium text-gray-700 mb-2 block">
+                      Subcategories <span className="text-red-500">*</span>
+                    </Label>
+                    <ReactSelect
+                      isMulti
+                      closeMenuOnSelect={false}
+                      blurInputOnSelect={false}
+                      options={subcategoryOptionsForSelectedCategory}
+                      styles={makeSelectStyles(
+                        showRequiredHints &&
+                          !!selectedCategoryId &&
+                          selectedSubcategories.length === 0
+                      ) as any}
+                      value={selectedSubcategories}
+                      onChange={(v) => setSelectedSubcategories(v as SubcategoryOption[])}
+                      placeholder={
+                        selectedCategoryId
+                          ? "Select subcategories..."
+                          : "Select a category first"
+                      }
+                      isDisabled={!selectedCategoryId}
+                      noOptionsMessage={() =>
+                        selectedCategoryId
+                          ? "No matching subcategories"
+                          : "Select a category first"
+                      }
+                    />
+                    {showRequiredHints &&
+                      selectedCategoryId &&
+                      selectedSubcategories.length === 0 && (
+                        <p className="text-xs text-red-600">This field is required</p>
+                      )}
+                  </div>
                 </div>
               </CardContent>
             </Card>
@@ -1640,8 +1736,8 @@ export default function CampaignFormPage() {
               {isSubmitting
                 ? "Submitting..."
                 : isEditMode
-                  ? "Confirm Update"
-                  : "Create Campaign"}
+                ? "Confirm Update"
+                : "Create Campaign"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1649,6 +1745,8 @@ export default function CampaignFormPage() {
     </>
   );
 }
+
+// ── API payload interface ──────────────────────────────────
 
 interface CampaignEditPayload {
   _id?: string;
