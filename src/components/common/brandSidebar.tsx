@@ -41,7 +41,7 @@ const BASE_MENU_ITEMS: MenuItem[] = [
   { name: 'Invited Influencers', href: '/brand/invited', icon: HiUserPlus },
 
   { name: 'Disputes', href: '/brand/disputes', icon: HiScale },
-  { name: 'Messages', href: '/brand/messages', icon: HiChatBubbleOvalLeftEllipsis },
+  // { name: 'Messages', href: '/brand/messages', icon: HiChatBubbleOvalLeftEllipsis },
   { name: 'Email', href: '/brand/email', icon: HiEnvelopeOpen },
 
   {
