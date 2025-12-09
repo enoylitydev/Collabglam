@@ -96,7 +96,7 @@ interface AuditEvent {
   byUserId?: string;
   role?: string;
   type: string;
-  details?: { reason?: string; [k: string]: any };
+  details?: { reason?: string;[k: string]: any };
   at?: string;
 }
 
@@ -104,14 +104,14 @@ interface ContractMeta {
   contractId: string;
   campaignId: string;
   status:
-    | "draft"
-    | "sent"
-    | "viewed"
-    | "negotiation"
-    | "finalize"
-    | "signing"
-    | "rejected"
-    | "locked";
+  | "draft"
+  | "sent"
+  | "viewed"
+  | "negotiation"
+  | "finalize"
+  | "signing"
+  | "rejected"
+  | "locked";
   lastSentAt?: string;
   lockedAt?: string | null;
   confirmations?: { brand?: PartyConfirm; influencer?: PartyConfirm };
@@ -652,8 +652,8 @@ export default function AppliedInfluencersPage() {
       } catch (e: any) {
         setError(
           e?.response?.data?.message ||
-            e?.message ||
-            "Failed to load applicants."
+          e?.message ||
+          "Failed to load applicants."
         );
       } finally {
         setLoading(false);
@@ -712,8 +712,8 @@ export default function AppliedInfluencersPage() {
       return filtered.length
         ? filtered[0]
         : (list as ContractMeta[]).length
-        ? (list as ContractMeta[])[0]
-        : null;
+          ? (list as ContractMeta[])[0]
+          : null;
     } catch (e: any) {
       toast({
         icon: "error",
@@ -863,47 +863,55 @@ export default function AppliedInfluencersPage() {
 
       const expanded = brand.deliverablesExpanded;
       if (Array.isArray(expanded) && expanded.length) {
-        const first = expanded[0];
-        if (first.type) setDType([String(first.type)]);
-        if (first.quantity !== undefined && first.quantity !== null)
-          setDQuantity(String(first.quantity));
-        if (first.format) setDFormat(String(first.format));
-        if (first.durationSec !== undefined && first.durationSec !== null)
-          setDDurationSec(String(first.durationSec));
+        // types from all deliverables
+        const allTypes = expanded
+          .map((d: any) => d?.type)
+          .filter((t: any) => typeof t === "string" && t.trim());
 
-        if (first.draftRequired !== undefined)
-          setDDraftRequired(Boolean(first.draftRequired));
-
-        if (first.draftDueDate) setDDraftDue(toInputDate(first.draftDueDate));
-
-        if (
-          first.minLiveHours !== undefined &&
-          first.minLiveHours !== null &&
-          first.minLiveHours > 0
-        ) {
-          setRetentionUnits("hours");
-          setDMinLiveHours(String(first.minLiveHours));
-          setRetentionMonths("");
+        if (allTypes.length) {
+          setDType(allTypes);
         }
 
-        if (Array.isArray(first.tags))
-          setDTags(first.tags.map((t: any) => String(t)));
-        if (Array.isArray(first.handles))
-          setDHandles(
-            first.handles.map((h: any) => sanitizeHandle(String(h)))
-          );
-        if (first.captions) setDCaptions(String(first.captions));
-        if (Array.isArray(first.links))
-          setDLinks(first.links.map((l: any) => String(l)));
-        if (typeof first.disclosures === "string")
-          setDDisclosures(first.disclosures);
-        if (typeof first.whitelistingEnabled === "boolean")
-          setAllowWhitelisting(first.whitelistingEnabled);
-        if (typeof first.sparkAdsEnabled === "boolean")
-          setAllowSparkAds(first.sparkAdsEnabled);
-        if (typeof first.insightsReadOnly === "boolean")
-          setAllowReadOnlyInsights(first.insightsReadOnly);
+        const first = expanded[0];
+
+        if (first) {
+          if (first.quantity !== undefined && first.quantity !== null)
+            setDQuantity(String(first.quantity));
+          if (first.format) setDFormat(String(first.format));
+          if (first.durationSec !== undefined && first.durationSec !== null)
+            setDDurationSec(String(first.durationSec));
+          if (first.draftRequired !== undefined)
+            setDDraftRequired(Boolean(first.draftRequired));
+          if (first.draftDueDate) setDDraftDue(toInputDate(first.draftDueDate));
+
+          if (
+            first.minLiveHours !== undefined &&
+            first.minLiveHours !== null &&
+            first.minLiveHours > 0
+          ) {
+            setRetentionUnits("hours");
+            setDMinLiveHours(String(first.minLiveHours));
+            setRetentionMonths("");
+          }
+
+          if (Array.isArray(first.tags))
+            setDTags(first.tags.map((t: any) => String(t)));
+          if (Array.isArray(first.handles))
+            setDHandles(first.handles.map((h: any) => sanitizeHandle(String(h))));
+          if (first.captions) setDCaptions(String(first.captions));
+          if (Array.isArray(first.links))
+            setDLinks(first.links.map((l: any) => String(l)));
+          if (typeof first.disclosures === "string")
+            setDDisclosures(first.disclosures);
+          if (typeof first.whitelistingEnabled === "boolean")
+            setAllowWhitelisting(first.whitelistingEnabled);
+          if (typeof first.sparkAdsEnabled === "boolean")
+            setAllowSparkAds(first.sparkAdsEnabled);
+          if (typeof first.insightsReadOnly === "boolean")
+            setAllowReadOnlyInsights(first.insightsReadOnly);
+        }
       }
+
     }
   };
 
@@ -975,9 +983,9 @@ export default function AppliedInfluencersPage() {
     const goLive =
       goLiveStart || goLiveEnd
         ? {
-            start: goLiveStart ? new Date(goLiveStart) : undefined,
-            end: goLiveEnd ? new Date(goLiveEnd) : undefined,
-          }
+          start: goLiveStart ? new Date(goLiveStart) : undefined,
+          end: goLiveEnd ? new Date(goLiveEnd) : undefined,
+        }
         : undefined;
 
     const feeNum = Number(totalFee || "0");
@@ -991,7 +999,49 @@ export default function AppliedInfluencersPage() {
         ? (Number(retentionMonths || "0") || 0) * 720
         : Number(dMinLiveHours || "0") || 0;
 
-    const primary = primaryType || "Video";
+    // keep primaryType for validation/UX logic
+    const primaryType = dType[0] || "Video";
+
+    const deliverablesExpanded =
+      dType.length > 0
+        ? dType.map((type) => ({
+          type,
+          quantity: Number.isFinite(quantityNum) ? quantityNum : 0,
+          format: dFormat,
+          durationSec: Number.isFinite(durationNum) ? durationNum : 0,
+          postingWindow: goLive || { start: undefined, end: undefined },
+          draftRequired: Boolean(dDraftRequired),
+          draftDueDate: dDraftDue || undefined,
+          minLiveHours: minLiveHoursNum,
+          tags,
+          handles,
+          captions: dCaptions,
+          links,
+          disclosures: dDisclosures,
+          whitelistingEnabled: allowWhitelisting,
+          sparkAdsEnabled: allowSparkAds,
+          insightsReadOnly: allowReadOnlyInsights,
+        }))
+        : [
+          {
+            type: primaryType,
+            quantity: Number.isFinite(quantityNum) ? quantityNum : 0,
+            format: dFormat,
+            durationSec: Number.isFinite(durationNum) ? durationNum : 0,
+            postingWindow: goLive || { start: undefined, end: undefined },
+            draftRequired: Boolean(dDraftRequired),
+            draftDueDate: dDraftDue || undefined,
+            minLiveHours: minLiveHoursNum,
+            tags,
+            handles,
+            captions: dCaptions,
+            links,
+            disclosures: dDisclosures,
+            whitelistingEnabled: allowWhitelisting,
+            sparkAdsEnabled: allowSparkAds,
+            insightsReadOnly: allowReadOnlyInsights,
+          },
+        ];
 
     return {
       campaignTitle,
@@ -1010,26 +1060,7 @@ export default function AppliedInfluencersPage() {
         derivativeEditsAllowed: Boolean(usageDerivativeEdits),
       },
       deliverablesPresetKey: "ui-manual",
-      deliverablesExpanded: [
-        {
-          type: primary,
-          quantity: Number.isFinite(quantityNum) ? quantityNum : 0,
-          format: dFormat,
-          durationSec: Number.isFinite(durationNum) ? durationNum : 0,
-          postingWindow: goLive || { start: undefined, end: undefined },
-          draftRequired: Boolean(dDraftRequired),
-          draftDueDate: dDraftDue || undefined,
-          minLiveHours: minLiveHoursNum,
-          tags,
-          handles,
-          captions: dCaptions,
-          links,
-          disclosures: dDisclosures,
-          whitelistingEnabled: allowWhitelisting,
-          sparkAdsEnabled: allowSparkAds,
-          insightsReadOnly: allowReadOnlyInsights,
-        },
-      ],
+      deliverablesExpanded,
       ...(requestedEffDate ? { requestedEffectiveDate: requestedEffDate } : {}),
       ...(requestedEffTz
         ? { requestedEffectiveDateTimezone: requestedEffTz }
@@ -1516,9 +1547,8 @@ export default function AppliedInfluencersPage() {
     const rejected = isRejectedMeta(meta);
     return (
       <span
-        className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-          rejected ? "bg-black text-white" : "bg-gray-100 text-gray-800"
-        }`}
+        className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${rejected ? "bg-black text-white" : "bg-gray-100 text-gray-800"
+          }`}
       >
         {label}
       </span>
@@ -1661,13 +1691,11 @@ export default function AppliedInfluencersPage() {
           <TableRow
             key={inf.influencerId}
             id={`inf-row-${inf.influencerId}`}
-            className={`${
-              idx % 2 === 0 ? "bg-white" : "bg-gray-50"
-            } hover:bg-gray-100/60 focus-within:bg-gray-100/80 transition-colors ${
-              isHighlighted
+            className={`${idx % 2 === 0 ? "bg-white" : "bg-gray-50"
+              } hover:bg-gray-100/60 focus-within:bg-gray-100/80 transition-colors ${isHighlighted
                 ? "bg-[#FFF0D6] !bg-[#FFF0D6] shadow-[0_0_0_2px_rgba(234,88,12,0.9)] outline outline-2 outline-[#EA580C] animate-pulse"
                 : ""
-            }`}
+              }`}
           >
             <TableCell className="font-medium">
               <div className="flex items-center gap-2">
@@ -1780,11 +1808,10 @@ export default function AppliedInfluencersPage() {
           <div
             key={inf.influencerId}
             id={`inf-card-${inf.influencerId}`}
-            className={`relative rounded-xl border p-4 bg-white transition-all duration-300 ${
-              highlightInfId === inf.influencerId
-                ? "border-[#EA580C] bg-[#FFE4C4] shadow-[0_0_0_2px_rgba(234,88,12,0.9),0_18px_45px_rgba(0,0,0,0.35)] animate-pulse scale-[1.02]"
-                : "border-gray-200 hover:shadow-md hover:-translate-y-[1px]"
-            }`}
+            className={`relative rounded-xl border p-4 bg-white transition-all duration-300 ${highlightInfId === inf.influencerId
+              ? "border-[#EA580C] bg-[#FFE4C4] shadow-[0_0_0_2px_rgba(234,88,12,0.9),0_18px_45px_rgba(0,0,0,0.35)] animate-pulse scale-[1.02]"
+              : "border-gray-200 hover:shadow-md hover:-translate-y-[1px]"
+              }`}
           >
             {highlightInfId === inf.influencerId && (
               <span className="absolute -top-2 right-3 rounded-full bg-gradient-to-r from-[#FFA135] to-[#FF7236] px-2 py-0.5 text-[10px] font-semibold text-white shadow-sm">
@@ -2032,8 +2059,8 @@ export default function AppliedInfluencersPage() {
             panelMode === "send"
               ? "Send Contract"
               : selectedMeta && isRejectedMeta(selectedMeta)
-              ? "Resend Contract"
-              : "Edit Contract"
+                ? "Resend Contract"
+                : "Edit Contract"
           }
           subtitle={
             selectedInf
@@ -2207,11 +2234,10 @@ export default function AppliedInfluencersPage() {
                       setRequestedEffDate(e.target.value);
                       clearPreview();
                     }}
-                    className={`w-full px-3 py-2.5 border-2 rounded-lg text-sm transition-all duration-200 focus:border-black focus:outline-none ${
-                      formErrors.requestedEffDate
-                        ? "border-red-500"
-                        : "border-gray-200"
-                    }`}
+                    className={`w-full px-3 py-2.5 border-2 rounded-lg text-sm transition-all duration-200 focus:border-black focus:outline-none ${formErrors.requestedEffDate
+                      ? "border-red-500"
+                      : "border-gray-200"
+                      }`}
                     data-field-error={!!formErrors.requestedEffDate}
                   />
                   {formErrors.requestedEffDate && (
@@ -2275,11 +2301,10 @@ export default function AppliedInfluencersPage() {
                       setGoLiveStart(e.target.value);
                       clearPreview();
                     }}
-                    className={`w-full px-3 py-2.5 border-2 rounded-lg text-sm transition-all duration-200 focus:border-black focus:outline-none ${
-                      formErrors.goLiveStart
-                        ? "border-red-500"
-                        : "border-gray-200"
-                    }`}
+                    className={`w-full px-3 py-2.5 border-2 rounded-lg text-sm transition-all duration-200 focus:border-black focus:outline-none ${formErrors.goLiveStart
+                      ? "border-red-500"
+                      : "border-gray-200"
+                      }`}
                     data-field-error={!!formErrors.goLiveStart}
                   />
                   {formErrors.goLiveStart && (
@@ -2302,11 +2327,10 @@ export default function AppliedInfluencersPage() {
                       setGoLiveEnd(e.target.value);
                       clearPreview();
                     }}
-                    className={`w-full px-3 py-2.5 border-2 rounded-lg text-sm transition-all duration-200 focus:border-black focus:outline-none ${
-                      formErrors.goLiveEnd
-                        ? "border-red-500"
-                        : "border-gray-200"
-                    }`}
+                    className={`w-full px-3 py-2.5 border-2 rounded-lg text-sm transition-all duration-200 focus:border-black focus:outline-none ${formErrors.goLiveEnd
+                      ? "border-red-500"
+                      : "border-gray-200"
+                      }`}
                     data-field-error={!!formErrors.goLiveEnd}
                   />
                   {formErrors.goLiveEnd && (
@@ -2523,11 +2547,10 @@ export default function AppliedInfluencersPage() {
                       clearPreview();
                     }}
                     disabled={!dDraftRequired}
-                    className={`w-full px-3 py-2.5 border-2 rounded-lg text-sm transition-all duration-200 focus:border-black focus:outline-none ${
-                      dDraftRequired
-                        ? "border-gray-200"
-                        : "opacity-60 cursor-not-allowed border-gray-200"
-                    } ${formErrors.dDraftDue ? "!border-red-500" : ""}`}
+                    className={`w-full px-3 py-2.5 border-2 rounded-lg text-sm transition-all duration-200 focus:border-black focus:outline-none ${dDraftRequired
+                      ? "border-gray-200"
+                      : "opacity-60 cursor-not-allowed border-gray-200"
+                      } ${formErrors.dDraftDue ? "!border-red-500" : ""}`}
                     data-field-error={!!formErrors.dDraftDue}
                   />
                   {formErrors.dDraftDue && (
@@ -2897,21 +2920,19 @@ export function FloatingLabelInput({
         onChange={onChange}
         onFocus={() => setFocused(true)}
         onBlur={() => setFocused(false)}
-        className={`w-full px-4 pt-6 pb-2 border-2 rounded-lg text-sm transition-all duration-200 focus:outline-none peer ${
-          error
-            ? "border-red-500 focus:border-red-500"
-            : "border-gray-200 focus:border-black"
-        }`}
+        className={`w-full px-4 pt-6 pb-2 border-2 rounded-lg text-sm transition-all duration-200 focus:outline-none peer ${error
+          ? "border-red-500 focus:border-red-500"
+          : "border-gray-200 focus:border-black"
+          }`}
         placeholder=" "
         {...props}
       />
       <label
         htmlFor={id}
-        className={`absolute left-4 transition-all duration-200 pointer-events-none inline-flex items-center gap-1 ${
-          focused || hasValue
-            ? "top-2 text-[11px] text-black font-medium"
-            : "top-1/2 -translate-y-1/2 text-sm text-gray-500"
-        }`}
+        className={`absolute left-4 transition-all duration-200 pointer-events-none inline-flex items-center gap-1 ${focused || hasValue
+          ? "top-2 text-[11px] text-black font-medium"
+          : "top-1/2 -translate-y-1/2 text-sm text-gray-500"
+          }`}
       >
         <span>{label}</span>
         {info ? (
@@ -2952,11 +2973,9 @@ export function Select({
         value={value}
         onChange={onChange}
         disabled={disabled}
-        className={`w-full px-3 py-2.5 border-2 rounded-lg text-sm focus:outline-none ${
-          disabled ? "opacity-60 cursor-not-allowed" : ""
-        } ${
-          error ? "border-red-500" : "focus:border-black border-gray-200"
-        }`}
+        className={`w-full px-3 py-2.5 border-2 rounded-lg text-sm focus:outline-none ${disabled ? "opacity-60 cursor-not-allowed" : ""
+          } ${error ? "border-red-500" : "focus:border-black border-gray-200"
+          }`}
       >
         {flat.map((o) => (
           <option key={o.value} value={o.value}>
@@ -3012,11 +3031,10 @@ export function NumberInput({
         inputMode="decimal"
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className={`w-full px-4 pt-6 pb-2 border-2 rounded-lg text-sm transition-all duration-200 focus:outline-none ${
-          error
-            ? "border-red-500 focus:border-red-500"
-            : "border-gray-200 focus:border-black"
-        }`}
+        className={`w-full px-4 pt-6 pb-2 border-2 rounded-lg text-sm transition-all duration-200 focus:outline-none ${error
+          ? "border-red-500 focus:border-red-500"
+          : "border-gray-200 focus:border-black"
+          }`}
         {...props}
       />
       <label
@@ -3061,9 +3079,8 @@ export function NumberInputTop({
         inputMode="decimal"
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className={`w-full h-[44px] px-3 border-2 rounded-lg text-sm focus:outline-none focus:border-black ${
-          error ? "border-red-500" : "border-gray-200"
-        }`}
+        className={`w-full h-[44px] px-3 border-2 rounded-lg text-sm focus:outline-none focus:border-black ${error ? "border-red-500" : "border-gray-200"
+          }`}
         {...props}
       />
       {error && (
@@ -3083,9 +3100,8 @@ export function Checkbox({
   return (
     <label
       htmlFor={id}
-      className={`flex items-center gap-2 ${
-        disabled ? "opacity-60 cursor-not-allowed" : ""
-      }`}
+      className={`flex items-center gap-2 ${disabled ? "opacity-60 cursor-not-allowed" : ""
+        }`}
     >
       <input
         id={id}
@@ -3136,8 +3152,8 @@ export function PlatformSelector({
             style={
               active
                 ? {
-                    backgroundImage: `linear-gradient(to right, ${GRADIENT_FROM}, ${GRADIENT_TO})`,
-                  }
+                  backgroundImage: `linear-gradient(to right, ${GRADIENT_FROM}, ${GRADIENT_TO})`,
+                }
                 : undefined
             }
           >
@@ -3190,9 +3206,8 @@ export function ChipInput({
         )}
       </div>
       <div
-        className={`flex flex-wrap gap-2 rounded-lg border-2 p-2 ${
-          disabled ? "opacity-60 cursor-not-allowed" : ""
-        } ${error ? "border-red-500" : "border-gray-200"}`}
+        className={`flex flex-wrap gap-2 rounded-lg border-2 p-2 ${disabled ? "opacity-60 cursor-not-allowed" : ""
+          } ${error ? "border-red-500" : "border-gray-200"}`}
       >
         <div className="flex flex-wrap gap-2">
           {items.map((t: string, i: number) => (
@@ -3263,13 +3278,12 @@ export function TextArea({
         rows={rows}
         placeholder={placeholder}
         disabled={disabled}
-        className={`w-full px-3 py-2.5 border-2 rounded-lg text-sm focus:outline-none ${
-          disabled
-            ? "opacity-60 cursor-not-allowed"
-            : error
+        className={`w-full px-3 py-2.5 border-2 rounded-lg text-sm focus:outline-none ${disabled
+          ? "opacity-60 cursor-not-allowed"
+          : error
             ? "border-red-500"
             : "focus:border-black border-gray-200"
-        }`}
+          }`}
       />
       {error && (
         <div className="text-xs text-red-600">{error}</div>
@@ -3288,23 +3302,20 @@ function ContractSidebar({
 }: any) {
   return (
     <div
-      className={`fixed inset-0 z-50 ${
-        isOpen ? "" : "pointer-events-none"
-      }`}
+      className={`fixed inset-0 z-50 ${isOpen ? "" : "pointer-events-none"
+        }`}
       role="dialog"
       aria-modal="true"
       aria-labelledby="contract-title"
     >
       <div
-        className={`absolute inset-0 bg-black/50 backdrop-blur-[2px] transition-opacity duration-300 ${
-          isOpen ? "opacity-100" : "opacity-0"
-        }`}
+        className={`absolute inset-0 bg-black/50 backdrop-blur-[2px] transition-opacity duration-300 ${isOpen ? "opacity-100" : "opacity-0"
+          }`}
         onClick={onClose}
       />
       <div
-        className={`absolute right-0 top-0 h-full w-full bg-white shadow-2xl transform transition-transform duration-300 ease-out ${
-          isOpen ? "translate-x-0" : "translate-x-full"
-        }`}
+        className={`absolute right-0 top-0 h-full w-full bg-white shadow-2xl transform transition-transform duration-300 ease-out ${isOpen ? "translate-x-0" : "translate-x-full"
+          }`}
       >
         <div className="relative h-36 overflow-hidden">
           <div
@@ -3370,9 +3381,8 @@ function ContractSidebar({
             </div>
           )}
           <div
-            className={`${
-              previewUrl ? "w-full sm:w-1/2" : "w-full"
-            } h-full px-6 space-y-5 overflow-auto`}
+            className={`${previewUrl ? "w-full sm:w-1/2" : "w-full"
+              } h-full px-6 space-y-5 overflow-auto`}
           >
             {children}
           </div>
@@ -3569,11 +3579,10 @@ function SignatureModal({
 
           <div
             ref={dropRef}
-            className={`rounded-xl border-2 border-dashed p-5 text-center text-sm transition-all cursor-pointer select-none ${
-              isDragging
-                ? "border-orange-400 bg-orange-50/80 shadow-sm"
-                : "border-gray-300 bg-gray-50 hover:bg-gray-100/80"
-            }`}
+            className={`rounded-xl border-2 border-dashed p-5 text-center text-sm transition-all cursor-pointer select-none ${isDragging
+              ? "border-orange-400 bg-orange-50/80 shadow-sm"
+              : "border-gray-300 bg-gray-50 hover:bg-gray-100/80"
+              }`}
           >
             <div className="flex flex-col items-center gap-2">
               <div className="w-10 h-10 rounded-full bg-white flex items-center justify-center shadow-sm">
@@ -3769,8 +3778,8 @@ function ActionButton({
     variant === "grad"
       ? BTN_GRAD
       : variant === "outline"
-      ? `border ${BTN_OUTLINE} bg-white`
-      : "bg-white text-black";
+        ? `border ${BTN_OUTLINE} bg-white`
+        : "bg-white text-black";
 
   const BtnInner = (
     <Button
