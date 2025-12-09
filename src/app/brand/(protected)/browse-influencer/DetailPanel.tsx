@@ -50,20 +50,42 @@ type EmailStatusResponse =
 /** /emails/invitation response shape */
 type InvitationResponse =
   | {
+    status: 'success';
     message: string;
     isExistingInfluencer: true;
     influencerId: string;
     influencerName: string;
     brandName: string;
-    roomId: string;        // required when influencer exists
+    emailSent: boolean;
+    emailMeta?: {
+      recipientEmail: string;
+      threadId: string;
+      messageId: string;
+      subject: string;
+      campaignId: string | null;
+    };
+    // no roomId here anymore – no chat room creation
   }
   | {
+    status: 'success';
     message: string;
     isExistingInfluencer: false;
     brandName: string;
-    invitationId: string;  // used to open /brand/emails
+    invitationId: string; // still useful if you want to open /brand/email
+    emailSent: boolean;
+    emailMeta?: {
+      recipientEmail: string;
+      threadId: string;
+      messageId: string;
+      subject: string;
+      campaignId: string | null;
+    };
+    isNewInvitation?: boolean;
+  }
+  | {
+    status: 'error';
+    message: string;
   };
-
 
 /** /admin/checkstatus response shape */
 type AdminCheckStatusResponse = {
@@ -391,7 +413,7 @@ export const DetailPanel = React.memo<DetailPanelProps>(
           return;
         }
 
-        // 2) Ask backend whether influencer is signed up or not
+        // 2) Call /emails/invitation → backend now ONLY sends email (no chat room)
         const resp = await post<InvitationResponse>('/emails/invitation', {
           email: creatorEmail,
           brandId,
@@ -400,28 +422,51 @@ export const DetailPanel = React.memo<DetailPanelProps>(
           platform: normalizedPlatform,
         });
 
-        // 3) Redirect based on sign-up status
-        if (resp.isExistingInfluencer) {
-          // influencer is signed up → go to chat
-          const { roomId } = resp;
-          // adjust if your route uses query param instead
-          router.push(`/brand/messages/${roomId}`);
-        } else {
-          // influencer not signed up → go to email composer with invitationId
-          const { invitationId } = resp;
-          router.push(`/brand/email?invitationId=${invitationId}`);
+        if (!resp) {
+          await Swal.fire(
+            'Error',
+            'No response from server while sending invitation.',
+            'error'
+          );
+          return;
         }
+
+        // 3) Handle error branch from backend
+        if (resp.status === 'error') {
+          await Swal.fire('Error', resp.message || 'Failed to send email.', 'error');
+          return;
+        }
+
+        // 4) Success → just show a success toast (NO room / chat redirect)
+        // resp.isExistingInfluencer tells you if they already have an account,
+        // but in both cases we just confirm that the email was sent.
+        await Swal.fire(
+          'Email sent',
+          resp.message || 'We’ve emailed this creator.',
+          'success'
+        );
+
+        // If you still want to redirect for non-existing influencers
+        // to your email composer, you can optionally do:
+        //
+        // if (!resp.isExistingInfluencer && resp.invitationId) {
+        //   router.push(`/brand/email?invitationId=${resp.invitationId}`);
+        // }
+
       } catch (err: any) {
         console.error(err);
         await Swal.fire(
           'Error',
-          'Failed to start conversation. Please try again.',
+          err?.response?.data?.message ||
+          err?.message ||
+          'Failed to send invitation email. Please try again.',
           'error'
         );
       } finally {
         setSendingInvite(false);
       }
     };
+
 
     /* ------------------------------------------------------------------ */
     /*                Send Invitation (no email anywhere)                 */

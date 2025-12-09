@@ -1543,14 +1543,14 @@ export default function AppliedInfluencersPage() {
         nowrap ? "inline-flex flex-nowrap" : "flex flex-wrap justify-center",
       ].join(" ")}
     >
-      <ActionButton
+      {/* <ActionButton
         icon={HiChatAlt2}
         title="View Messages"
         variant="outline"
         onClick={() => handleViewMessage(inf)}
       >
         Send Messages
-      </ActionButton>
+      </ActionButton> */}
 
       <ActionButton
         title="View Influencer"

@@ -654,7 +654,7 @@ export default function ActiveInfluencersPage() {
               View
             </Button>
 
-            <Button
+            {/* <Button
               size="sm"
               variant="outline"
               className="bg-gradient-to-r from-[#FF8C00] via-[#FF5E7E] to-[#D12E53] text-white cursor-pointer hover:bg-gradient-to-r hover:from-[#FF5E7E] hover:to-[#D12E53]"
@@ -662,7 +662,7 @@ export default function ActiveInfluencersPage() {
               title="Message"
             >
               Message
-            </Button>
+            </Button> */}
 
             <Button
               size="sm"
