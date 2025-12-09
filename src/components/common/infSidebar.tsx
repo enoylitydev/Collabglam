@@ -5,17 +5,20 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
   HiHome,
-  HiPlusCircle,
-  HiClipboardList,
-  HiChatAlt2,
+  HiUserGroup,
+  HiDocumentText,
+  HiClipboardDocumentList,
+  HiXCircle,
+  HiScale,
+  HiChatBubbleOvalLeftEllipsis,
+  HiEnvelopeOpen,
+  HiBanknotes,
+  HiChatBubbleBottomCenterText,
   HiCreditCard,
-  HiLogout,
-  HiMenu,
-  HiX,
-  HiArchive,
-  HiOutlineMail,
-} from "react-icons/hi";
-import { HiBanknotes, HiDocument } from "react-icons/hi2";
+  HiArrowLeftOnRectangle,
+  HiBars3,
+  HiXMark,
+} from "react-icons/hi2";
 
 interface MenuItem {
   name: string;
@@ -25,19 +28,30 @@ interface MenuItem {
 
 const menuItems: MenuItem[] = [
   { name: "Dashboard", href: "/influencer/dashboard", icon: HiHome },
-  { name: "Find New Collab", href: "/influencer/new-collab", icon: HiPlusCircle },
-  { name: "My Media-Kit", href: "/influencer/media-kit", icon: HiDocument },
-  { name: "My Campaigns", href: "/influencer/my-campaign", icon: HiClipboardList },
-  { name: "Rejected Campaigns", href: "/influencer/rejected-campaign", icon: HiArchive },
-  { name: "Disputes", href: "/influencer/disputes", icon: HiClipboardList },
-  { name: "Messages", href: "/influencer/messages", icon: HiChatAlt2 },
-  // { name: "E-Mails", href: "/influencer/email", icon: HiOutlineMail },
-  { name: "Payment Details", href: "/influencer/payment-detail", icon: HiBanknotes },
-
-    {
+  { name: "Find New Collab", href: "/influencer/new-collab", icon: HiUserGroup },
+  { name: "My Media-Kit", href: "/influencer/media-kit", icon: HiDocumentText },
+  { name: "My Campaigns", href: "/influencer/my-campaign", icon: HiClipboardDocumentList },
+  {
+    name: "Rejected Campaigns",
+    href: "/influencer/rejected-campaign",
+    icon: HiXCircle,
+  },
+  { name: "Disputes", href: "/influencer/disputes", icon: HiScale },
+  // {
+  //   name: "Messages",
+  //   href: "/influencer/messages",
+  //   icon: HiChatBubbleOvalLeftEllipsis,
+  // },
+  { name: "E-Mails", href: "/influencer/email", icon: HiEnvelopeOpen },
+  {
+    name: "Payment Details",
+    href: "/influencer/payment-detail",
+    icon: HiBanknotes,
+  },
+  {
     name: "Feedback",
     href: "https://docs.google.com/forms/d/e/1FAIpQLSemRB9YO6-YUJhHe4W4Y2QfEygwqUXW2MYW1QCGyHmUZlzyyg/viewform?usp=preview",
-    icon: HiOutlineMail,
+    icon: HiChatBubbleBottomCenterText,
   },
   { name: "Subscriptions", href: "/influencer/subscriptions", icon: HiCreditCard },
 ];
@@ -61,12 +75,12 @@ export default function InfluencerSidebar({ isOpen, onClose }: InfluencerSidebar
 
   // Collapse thresholds (hysteresis to avoid flicker)
   const COLLAPSE_AT = 1280; // collapse below this width
-  const EXPAND_AT = 1440;   // expand above this width
+  const EXPAND_AT = 1440; // expand above this width
 
   useEffect(() => {
     const onResize = () => {
       const w = window.innerWidth;
-      setAutoCollapsed(prev => {
+      setAutoCollapsed((prev) => {
         if (w < COLLAPSE_AT) return true;
         if (w > EXPAND_AT) return false;
         return prev;
@@ -90,7 +104,7 @@ export default function InfluencerSidebar({ isOpen, onClose }: InfluencerSidebar
   const isCollapsed = (userCollapsed ?? autoCollapsed) === true;
 
   const handleToggle = () => {
-    setUserCollapsed(prev => (prev === null ? !autoCollapsed : !prev));
+    setUserCollapsed((prev) => (prev === null ? !autoCollapsed : !prev));
   };
 
   const handleLogout = () => {
@@ -114,35 +128,35 @@ export default function InfluencerSidebar({ isOpen, onClose }: InfluencerSidebar
     return true;
   });
 
-const renderLinks = () =>
-  filteredMenuItems.map((item) => {
-    const isActive = pathname.startsWith(item.href);
-    const isExternal = item.href.startsWith('http'); // 👈 external link check
+  const renderLinks = () =>
+    filteredMenuItems.map((item) => {
+      const isActive = pathname.startsWith(item.href);
+      const isExternal = item.href.startsWith("http"); // 👈 external link check
 
-    const base =
-      'flex items-center py-3 px-4 rounded-md transition-all duration-200';
-    const active = isActive
-      ? 'bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-800'
-      : 'text-gray-800 hover:bg-gradient-to-r hover:from-[#FFBF00] hover:to-[#FFDB58]';
+      const base =
+        "flex items-center py-3 px-4 rounded-md transition-all duration-200";
+      const active = isActive
+        ? "bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-800"
+        : "text-gray-800 hover:bg-gradient-to-r hover:from-[#FFBF00] hover:to-[#FFDB58]";
 
-    return (
-      <li key={item.href} className="group">
-        <Link
-          href={item.href}
-          className={`${base} ${active}`}
-          title={isCollapsed ? item.name : undefined}
-          onClick={onClose}
-          target={isExternal ? '_blank' : undefined}              // 👈 new tab
-          rel={isExternal ? 'noopener noreferrer' : undefined}    // 👈 safe
-        >
-          <item.icon size={20} className="flex-shrink-0" />
-          {!isCollapsed && (
-            <span className="ml-3 text-md font-medium">{item.name}</span>
-          )}
-        </Link>
-      </li>
-    );
-  });
+      return (
+        <li key={item.href} className="group">
+          <Link
+            href={item.href}
+            className={`${base} ${active}`}
+            title={isCollapsed ? item.name : undefined}
+            onClick={onClose}
+            target={isExternal ? "_blank" : undefined} // 👈 new tab
+            rel={isExternal ? "noopener noreferrer" : undefined} // 👈 safe
+          >
+            <item.icon size={20} className="flex-shrink-0" />
+            {!isCollapsed && (
+              <span className="ml-3 text-md font-medium">{item.name}</span>
+            )}
+          </Link>
+        </li>
+      );
+    });
 
   const sidebarContent = (
     <div
@@ -159,12 +173,19 @@ const renderLinks = () =>
           className="p-2 rounded-md hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#FFA135]"
           title={isCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
         >
-          <HiMenu size={24} className="text-gray-800" />
+          <HiBars3 size={24} className="text-gray-800" />
         </button>
 
-        <Link href="/influencer/dashboard" className="flex items-center space-x-2 ml-2">
+        <Link
+          href="/influencer/dashboard"
+          className="flex items-center space-x-2 ml-2"
+        >
           <img src="/logo.png" alt="CollabGlam logo" className="h-10 w-auto" />
-          {!isCollapsed && <span className="text-2xl font-semibold text-gray-900">CollabGlam</span>}
+          {!isCollapsed && (
+            <span className="text-2xl font-semibold text-gray-900">
+              CollabGlam
+            </span>
+          )}
         </Link>
       </div>
 
@@ -184,8 +205,10 @@ const renderLinks = () =>
           "
           title={isCollapsed ? "Logout" : undefined}
         >
-          <HiLogout size={20} className="flex-shrink-0" />
-          {!isCollapsed && <span className="ml-3 text-md font-medium">Logout</span>}
+          <HiArrowLeftOnRectangle size={20} className="flex-shrink-0" />
+          {!isCollapsed && (
+            <span className="ml-3 text-md font-medium">Logout</span>
+          )}
         </button>
       </div>
     </div>
@@ -209,16 +232,25 @@ const renderLinks = () =>
           <div className="relative flex flex-col h-full bg-white text-gray-800 w-64">
             {/* Header */}
             <div className="flex items-center justify-between h-16 px-4 border-b border-gray-200">
-              <Link href="/influencer/dashboard" className="flex items-center space-x-2">
-                <img src="/logo.png" alt="CollabGlam logo" className="h-8 w-auto" />
-                <span className="text-xl font-semibold text-gray-900">Influencer Hub</span>
+              <Link
+                href="/influencer/dashboard"
+                className="flex items-center space-x-2"
+              >
+                <img
+                  src="/logo.png"
+                  alt="CollabGlam logo"
+                  className="h-8 w-auto"
+                />
+                <span className="text-xl font-semibold text-gray-900">
+                  Influencer Hub
+                </span>
               </Link>
               <button
                 onClick={onClose}
                 className="p-2 rounded-md hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#FFA135]"
                 title="Close Sidebar"
               >
-                <HiX size={24} className="text-gray-800" />
+                <HiXMark size={24} className="text-gray-800" />
               </button>
             </div>
 
@@ -236,7 +268,7 @@ const renderLinks = () =>
                 }}
                 className="w-full flex items-center py-2 px-4 rounded-md text-gray-800 hover:bg-gradient-to-r hover:from-[#FFBF00] hover:to-[#FFDB58] transition-colors duration-200"
               >
-                <HiLogout size={20} className="flex-shrink-0" />
+                <HiArrowLeftOnRectangle size={20} className="flex-shrink-0" />
                 <span className="ml-3 text-md font-medium">Logout</span>
               </button>
             </div>
