@@ -79,6 +79,7 @@ interface Meta {
   limit: number;
   totalPages: number;
 }
+
 interface PartyConfirm {
   confirmed?: boolean;
   byUserId?: string;
@@ -96,7 +97,7 @@ interface AuditEvent {
   byUserId?: string;
   role?: string;
   type: string;
-  details?: { reason?: string;[k: string]: any };
+  details?: { reason?: string; [k: string]: any };
   at?: string;
 }
 
@@ -104,14 +105,14 @@ interface ContractMeta {
   contractId: string;
   campaignId: string;
   status:
-  | "draft"
-  | "sent"
-  | "viewed"
-  | "negotiation"
-  | "finalize"
-  | "signing"
-  | "rejected"
-  | "locked";
+    | "draft"
+    | "sent"
+    | "viewed"
+    | "negotiation"
+    | "finalize"
+    | "signing"
+    | "rejected"
+    | "locked";
   lastSentAt?: string;
   lockedAt?: string | null;
   confirmations?: { brand?: PartyConfirm; influencer?: PartyConfirm };
@@ -132,6 +133,17 @@ type TzOption = { value: string; label: string; meta?: any };
 
 type PanelMode = "send" | "edit";
 type FormErrors = Record<string, string>;
+
+// Per-row deliverable data
+interface DeliverableRow {
+  id: string;
+  type: string;
+  quantity: string;
+  format: string;
+  durationSec: string;
+  minLiveValue: string;
+  minLiveUnit: "hours" | "months";
+}
 
 /* ===============================================================
    Utilities
@@ -250,6 +262,8 @@ const sanitizeHandle = (h: string) => {
   return t.startsWith("@") ? t : `@${t}`;
 };
 
+const createRowId = () => Math.random().toString(36).slice(2);
+
 /* ===============================================================
    FDD-driven helpers
    =============================================================== */
@@ -290,6 +304,21 @@ const GEO_OPTIONS = [
 ];
 
 const PAGE_SIZE_OPTIONS = [10, 20, 50, 100] as const;
+
+const DELIVERABLE_TYPE_OPTIONS = [
+  { value: "Video", label: "Video" },
+  { value: "Reel/Short/TikTok", label: "Reel / Short / TikTok" },
+  { value: "Static Post (Image)", label: "Static Post (Image)" },
+  { value: "Carousel Post", label: "Carousel Post" },
+  { value: "Story (Single)", label: "Story (Single)" },
+  { value: "Story Set", label: "Story Set (Multiple)" },
+  { value: "UGC Video", label: "UGC Video" },
+  { value: "YouTube Integration", label: "YouTube Integration" },
+  { value: "YouTube Dedicated Video", label: "YouTube Dedicated Video" },
+  { value: "Live Stream", label: "Live Stream" },
+  { value: "Text (caption only)", label: "Text (caption only)" },
+  { value: "Custom Deliverable", label: "Custom Deliverable" },
+];
 
 /* ===============================================================
    Main Page Component
@@ -352,18 +381,21 @@ export default function AppliedInfluencersPage() {
   const [milestoneSplit, setMilestoneSplit] = useState("50/50");
   const [revisionsIncluded, setRevisionsIncluded] = useState<string>("1");
 
-  // Deliverable (single-row) – all string inputs
-  const [dType, setDType] = useState<string[]>(["Video"]); // multi-select
-  const [dQuantity, setDQuantity] = useState<string>("1");
-  const [dFormat, setDFormat] = useState<string>("");
-  const [dDurationSec, setDDurationSec] = useState<string>("");
+  // Deliverables list (per row)
+  const [deliverables, setDeliverables] = useState<DeliverableRow[]>([
+    {
+      id: createRowId(),
+      type: "Video",
+      quantity: "1",
+      format: "",
+      durationSec: "",
+      minLiveValue: "",
+      minLiveUnit: "hours",
+    },
+  ]);
   const [dDraftRequired, setDDraftRequired] = useState(false);
   const [dDraftDue, setDDraftDue] = useState<string>("");
-  const [dMinLiveHours, setDMinLiveHours] = useState<string>("");
-  const [retentionUnits, setRetentionUnits] = useState<"hours" | "months">(
-    "hours"
-  );
-  const [retentionMonths, setRetentionMonths] = useState<string>("");
+
   const [dTags, setDTags] = useState<string[]>([]);
   const [dHandles, setDHandles] = useState<string[]>([]);
   const [dCaptions, setDCaptions] = useState("");
@@ -552,9 +584,8 @@ export default function AppliedInfluencersPage() {
         const tzArr: any[] =
           (tzRes?.data?.timezones || tzRes?.timezones || tzRes || []) as any[];
         const tzOpts: TzOption[] = tzArr.map((t) => {
-          const canonical = Array.isArray(t.utc) && t.utc.length
-            ? t.utc[0]
-            : t.value;
+          const canonical =
+            Array.isArray(t.utc) && t.utc.length ? t.utc[0] : t.value;
           const label = t.text || t.value;
           return { value: canonical, label, meta: t };
         });
@@ -566,8 +597,7 @@ export default function AppliedInfluencersPage() {
         toast({
           icon: "error",
           title: "Lists failed",
-          text:
-            e?.message || "Could not load currency/timezones.",
+          text: e?.message || "Could not load currency/timezones.",
         });
       } finally {
         if (alive) setListsLoading(false);
@@ -652,8 +682,8 @@ export default function AppliedInfluencersPage() {
       } catch (e: any) {
         setError(
           e?.response?.data?.message ||
-          e?.message ||
-          "Failed to load applicants."
+            e?.message ||
+            "Failed to load applicants."
         );
       } finally {
         setLoading(false);
@@ -712,8 +742,8 @@ export default function AppliedInfluencersPage() {
       return filtered.length
         ? filtered[0]
         : (list as ContractMeta[]).length
-          ? (list as ContractMeta[])[0]
-          : null;
+        ? (list as ContractMeta[])[0]
+        : null;
     } catch (e: any) {
       toast({
         icon: "error",
@@ -791,15 +821,21 @@ export default function AppliedInfluencersPage() {
     setMilestoneSplit("50/50");
     setRevisionsIncluded("1");
 
-    setDType(["Video"]);
-    setDQuantity("1");
-    setDFormat("");
-    setDDurationSec("");
+    // Reset deliverables
+    setDeliverables([
+      {
+        id: createRowId(),
+        type: "Video",
+        quantity: "1",
+        format: "",
+        durationSec: "",
+        minLiveValue: "",
+        minLiveUnit: "hours",
+      },
+    ]);
     setDDraftRequired(false);
     setDDraftDue("");
-    setDMinLiveHours("");
-    setRetentionUnits("hours");
-    setRetentionMonths("");
+
     setDTags([]);
     setDHandles(inf.handle ? [sanitizeHandle(inf.handle)] : []);
     setDCaptions("");
@@ -863,41 +899,53 @@ export default function AppliedInfluencersPage() {
 
       const expanded = brand.deliverablesExpanded;
       if (Array.isArray(expanded) && expanded.length) {
-        // types from all deliverables
-        const allTypes = expanded
-          .map((d: any) => d?.type)
-          .filter((t: any) => typeof t === "string" && t.trim());
+        setDeliverables(
+          expanded.map((d: any, index: number) => {
+            const minLiveHours: number =
+              typeof d.minLiveHours === "number" ? d.minLiveHours : 0;
+            let minLiveValue = "";
+            let minLiveUnit: "hours" | "months" = "hours";
 
-        if (allTypes.length) {
-          setDType(allTypes);
-        }
+            if (minLiveHours > 0) {
+              if (minLiveHours % 720 === 0) {
+                minLiveUnit = "months";
+                minLiveValue = String(minLiveHours / 720);
+              } else {
+                minLiveUnit = "hours";
+                minLiveValue = String(minLiveHours);
+              }
+            }
+
+            return {
+              id: `${String(d.type || "row")}-${index}-${d.quantity ?? 1}`,
+              type: String(d.type || "Video"),
+              quantity:
+                d.quantity !== undefined && d.quantity !== null
+                  ? String(d.quantity)
+                  : "1",
+              format: d.format ? String(d.format) : "",
+              durationSec:
+                d.durationSec !== undefined && d.durationSec !== null
+                  ? String(d.durationSec)
+                  : "",
+              minLiveValue,
+              minLiveUnit,
+            };
+          })
+        );
 
         const first = expanded[0];
-
         if (first) {
-          if (first.quantity !== undefined && first.quantity !== null)
-            setDQuantity(String(first.quantity));
-          if (first.format) setDFormat(String(first.format));
-          if (first.durationSec !== undefined && first.durationSec !== null)
-            setDDurationSec(String(first.durationSec));
           if (first.draftRequired !== undefined)
             setDDraftRequired(Boolean(first.draftRequired));
           if (first.draftDueDate) setDDraftDue(toInputDate(first.draftDueDate));
 
-          if (
-            first.minLiveHours !== undefined &&
-            first.minLiveHours !== null &&
-            first.minLiveHours > 0
-          ) {
-            setRetentionUnits("hours");
-            setDMinLiveHours(String(first.minLiveHours));
-            setRetentionMonths("");
-          }
-
           if (Array.isArray(first.tags))
             setDTags(first.tags.map((t: any) => String(t)));
           if (Array.isArray(first.handles))
-            setDHandles(first.handles.map((h: any) => sanitizeHandle(String(h))));
+            setDHandles(
+              first.handles.map((h: any) => sanitizeHandle(String(h)))
+            );
           if (first.captions) setDCaptions(String(first.captions));
           if (Array.isArray(first.links))
             setDLinks(first.links.map((l: any) => String(l)));
@@ -911,17 +959,8 @@ export default function AppliedInfluencersPage() {
             setAllowReadOnlyInsights(first.insightsReadOnly);
         }
       }
-
     }
   };
-
-  // Derived flags
-  const primaryType = dType[0] || "Video";
-  const isVideo = VIDEO_TYPES.has(primaryType);
-  const isImage = IMAGE_TYPES.has(primaryType);
-  const isTextOnly =
-    TEXT_ONLY_TYPES.has(primaryType) || dFormat.startsWith("Text ");
-  const showDuration = isVideo && !isTextOnly;
 
   // toggle-specific support by platform
   const supportsSparkAds = platforms.includes("TikTok");
@@ -983,65 +1022,55 @@ export default function AppliedInfluencersPage() {
     const goLive =
       goLiveStart || goLiveEnd
         ? {
-          start: goLiveStart ? new Date(goLiveStart) : undefined,
-          end: goLiveEnd ? new Date(goLiveEnd) : undefined,
-        }
+            start: goLiveStart ? new Date(goLiveStart) : undefined,
+            end: goLiveEnd ? new Date(goLiveEnd) : undefined,
+          }
         : undefined;
 
     const feeNum = Number(totalFee || "0");
-    const quantityNum = Number(dQuantity || "0");
-    const durationNum = Number(dDurationSec || "0");
     const revisionsNum = Number(revisionsIncluded || "0");
     const usageDurationNum = Number(usageDurationMonths || "0");
 
-    const minLiveHoursNum =
-      retentionUnits === "months"
-        ? (Number(retentionMonths || "0") || 0) * 720
-        : Number(dMinLiveHours || "0") || 0;
-
-    // keep primaryType for validation/UX logic
-    const primaryType = dType[0] || "Video";
+    const isVideoRowType = (type: string, format: string) => {
+      const isTextOnly =
+        TEXT_ONLY_TYPES.has(type) ||
+        (format || "").toLowerCase().startsWith("text ");
+      return VIDEO_TYPES.has(type) && !isTextOnly;
+    };
 
     const deliverablesExpanded =
-      dType.length > 0
-        ? dType.map((type) => ({
-          type,
-          quantity: Number.isFinite(quantityNum) ? quantityNum : 0,
-          format: dFormat,
-          durationSec: Number.isFinite(durationNum) ? durationNum : 0,
-          postingWindow: goLive || { start: undefined, end: undefined },
-          draftRequired: Boolean(dDraftRequired),
-          draftDueDate: dDraftDue || undefined,
-          minLiveHours: minLiveHoursNum,
-          tags,
-          handles,
-          captions: dCaptions,
-          links,
-          disclosures: dDisclosures,
-          whitelistingEnabled: allowWhitelisting,
-          sparkAdsEnabled: allowSparkAds,
-          insightsReadOnly: allowReadOnlyInsights,
-        }))
-        : [
-          {
-            type: primaryType,
-            quantity: Number.isFinite(quantityNum) ? quantityNum : 0,
-            format: dFormat,
-            durationSec: Number.isFinite(durationNum) ? durationNum : 0,
-            postingWindow: goLive || { start: undefined, end: undefined },
-            draftRequired: Boolean(dDraftRequired),
-            draftDueDate: dDraftDue || undefined,
-            minLiveHours: minLiveHoursNum,
-            tags,
-            handles,
-            captions: dCaptions,
-            links,
-            disclosures: dDisclosures,
-            whitelistingEnabled: allowWhitelisting,
-            sparkAdsEnabled: allowSparkAds,
-            insightsReadOnly: allowReadOnlyInsights,
-          },
-        ];
+      deliverables.length > 0
+        ? deliverables.map((row) => {
+            const qtyNum = Number(row.quantity || "0");
+            const durNum = Number(row.durationSec || "0");
+            const isVideoRow = isVideoRowType(row.type, row.format);
+
+            const minLiveHoursNum =
+              row.minLiveUnit === "months"
+                ? (Number(row.minLiveValue || "0") || 0) * 720
+                : Number(row.minLiveValue || "0") || 0;
+
+            return {
+              type: row.type || "Video",
+              quantity: Number.isFinite(qtyNum) ? qtyNum : 0,
+              format: row.format,
+              durationSec:
+                isVideoRow && Number.isFinite(durNum) ? durNum : 0,
+              postingWindow: goLive || { start: undefined, end: undefined },
+              draftRequired: Boolean(dDraftRequired),
+              draftDueDate: dDraftDue || undefined,
+              minLiveHours: minLiveHoursNum,
+              tags,
+              handles,
+              captions: dCaptions,
+              links,
+              disclosures: dDisclosures,
+              whitelistingEnabled: allowWhitelisting,
+              sparkAdsEnabled: allowSparkAds,
+              insightsReadOnly: allowReadOnlyInsights,
+            };
+          })
+        : [];
 
     return {
       campaignTitle,
@@ -1100,8 +1129,7 @@ export default function AppliedInfluencersPage() {
 
     if (!campaignTitle.trim())
       add("campaignTitle", "Campaign title is required.");
-    if (!platforms.length)
-      add("platforms", "Select at least one platform.");
+    if (!platforms.length) add("platforms", "Select at least one platform.");
 
     if (start && start < today)
       add("goLiveStart", "Start date must be today or later.");
@@ -1146,34 +1174,61 @@ export default function AppliedInfluencersPage() {
     if (!parts.length)
       add("milestoneSplit", "Use a percentage split like 50/50 or 100.");
     if (parts.some((p) => p < 0 || p > 100))
-      add(
-        "milestoneSplit",
-        "Each percentage must be between 0 and 100."
-      );
+      add("milestoneSplit", "Each percentage must be between 0 and 100.");
     const sum = parts.reduce((a, b) => a + b, 0);
-    if (sum > 100)
-      add("milestoneSplit", "Split total must be ≤ 100%.");
+    if (sum > 100) add("milestoneSplit", "Split total must be ≤ 100%.");
 
-    const qtyNum = Number(dQuantity || "");
-    if (!dQuantity.trim() || Number.isNaN(qtyNum) || qtyNum < 1)
-      add("dQuantity", "Quantity must be at least 1.");
+    // Deliverables validation
+    if (!deliverables.length) {
+      add("deliverables", "Add at least one deliverable.");
+    } else {
+      const messages: string[] = [];
+      const isVideoRowType = (type: string, format: string) => {
+        const isTextOnly =
+          TEXT_ONLY_TYPES.has(type) ||
+          (format || "").toLowerCase().startsWith("text ");
+        return VIDEO_TYPES.has(type) && !isTextOnly;
+      };
 
-    if (!dType.length)
-      add("dType", "Select at least one deliverable type.");
+      deliverables.forEach((row, idx) => {
+        const idxLabel = `Deliverable #${idx + 1}`;
+        if (!row.type) {
+          messages.push(`${idxLabel}: Type is required.`);
+        }
+        const qtyNum = Number(row.quantity || "");
+        if (!row.quantity.trim() || Number.isNaN(qtyNum) || qtyNum < 1) {
+          messages.push(`${idxLabel}: Quantity must be at least 1.`);
+        }
 
-    const isVideoNow = VIDEO_TYPES.has(primaryType) && !isTextOnly;
-    if (isVideoNow) {
-      const durNum = Number(dDurationSec || "");
-      if (!dDurationSec.trim() || Number.isNaN(durNum) || durNum <= 0)
-        add("dDurationSec", "Duration (sec) must be > 0 for video.");
+        const isVideoRow = isVideoRowType(row.type, row.format);
+        if (isVideoRow) {
+          const durNum = Number(row.durationSec || "");
+          if (!row.durationSec.trim() || Number.isNaN(durNum) || durNum <= 0) {
+            messages.push(
+              `${idxLabel}: Duration (sec) must be > 0 for video type.`
+            );
+          }
+        }
+
+        if (row.minLiveValue) {
+          const liveNum = Number(row.minLiveValue);
+          if (Number.isNaN(liveNum) || liveNum < 0) {
+            messages.push(
+              `${idxLabel}: Minimum Live must be a non-negative number.`
+            );
+          }
+        }
+      });
+
+      if (messages.length) {
+        add("deliverables", messages.join(" "));
+      }
     }
 
     const badLink = dLinks.find((l) => !/^https?:\/\/.+/i.test(l));
     if (badLink) add("dLinks", "All links must be valid URLs (https://).");
 
-    const badHandle = dHandles.find(
-      (h) => !/^@?\w[\w._-]*$/.test(h)
-    );
+    const badHandle = dHandles.find((h) => !/^@?\w[\w._-]*$/.test(h));
     if (badHandle)
       add(
         "dHandles",
@@ -1297,7 +1352,8 @@ export default function AppliedInfluencersPage() {
   const handleViewContract = async (inf?: Influencer) => {
     const target = inf || selectedInf;
     if (!target) return;
-    const meta = metaCache[target.influencerId] ?? (await getLatestContractFor(target));
+    const meta =
+      metaCache[target.influencerId] ?? (await getLatestContractFor(target));
     if (!meta?.contractId)
       return toast({
         icon: "error",
@@ -1478,13 +1534,8 @@ export default function AppliedInfluencersPage() {
     currency,
     milestoneSplit,
     revisionsIncluded,
-    dType,
-    dQuantity,
-    dFormat,
-    dDurationSec,
     dDraftRequired,
     dDraftDue,
-    dMinLiveHours,
     dCaptions,
     dDisclosures,
     requestedEffDate,
@@ -1499,8 +1550,7 @@ export default function AppliedInfluencersPage() {
     usageDurationMonths,
     usageDerivativeEdits,
     usageGeographies.length,
-    retentionUnits,
-    retentionMonths,
+    JSON.stringify(deliverables),
   ]);
 
   const setTagsInvalidate = (items: string[]) => {
@@ -1547,8 +1597,11 @@ export default function AppliedInfluencersPage() {
     const rejected = isRejectedMeta(meta);
     return (
       <span
-        className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${rejected ? "bg-black text-white" : "bg-gray-100 text-gray-800"
-          }`}
+        className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+          rejected
+            ? "bg-black text-white"
+            : "bg-gray-100 text-gray-800"
+        }`}
       >
         {label}
       </span>
@@ -1691,11 +1744,13 @@ export default function AppliedInfluencersPage() {
           <TableRow
             key={inf.influencerId}
             id={`inf-row-${inf.influencerId}`}
-            className={`${idx % 2 === 0 ? "bg-white" : "bg-gray-50"
-              } hover:bg-gray-100/60 focus-within:bg-gray-100/80 transition-colors ${isHighlighted
+            className={`${
+              idx % 2 === 0 ? "bg-white" : "bg-gray-50"
+            } hover:bg-gray-100/60 focus-within:bg-gray-100/80 transition-colors ${
+              isHighlighted
                 ? "bg-[#FFF0D6] !bg-[#FFF0D6] shadow-[0_0_0_2px_rgba(234,88,12,0.9)] outline outline-2 outline-[#EA580C] animate-pulse"
                 : ""
-              }`}
+            }`}
           >
             <TableCell className="font-medium">
               <div className="flex items-center gap-2">
@@ -1808,10 +1863,11 @@ export default function AppliedInfluencersPage() {
           <div
             key={inf.influencerId}
             id={`inf-card-${inf.influencerId}`}
-            className={`relative rounded-xl border p-4 bg-white transition-all duration-300 ${highlightInfId === inf.influencerId
-              ? "border-[#EA580C] bg-[#FFE4C4] shadow-[0_0_0_2px_rgba(234,88,12,0.9),0_18px_45px_rgba(0,0,0,0.35)] animate-pulse scale-[1.02]"
-              : "border-gray-200 hover:shadow-md hover:-translate-y-[1px]"
-              }`}
+            className={`relative rounded-xl border p-4 bg-white transition-all duration-300 ${
+              highlightInfId === inf.influencerId
+                ? "border-[#EA580C] bg-[#FFE4C4] shadow-[0_0_0_2px_rgba(234,88,12,0.9),0_18px_45px_rgba(0,0,0,0.35)] animate-pulse scale-[1.02]"
+                : "border-gray-200 hover:shadow-md hover:-translate-y-[1px]"
+            }`}
           >
             {highlightInfId === inf.influencerId && (
               <span className="absolute -top-2 right-3 rounded-full bg-gradient-to-r from-[#FFA135] to-[#FF7236] px-2 py-0.5 text-[10px] font-semibold text-white shadow-sm">
@@ -1905,7 +1961,7 @@ export default function AppliedInfluencersPage() {
                 setSearchTerm(e.target.value);
                 setPage(1);
               }}
-              className="w-full pl-10 pr-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-black text-sm"
+              className="w-full pl-10 pr-4 py-2 border rounded-lg text-sm border-gray-200 focus:outline-none focus-visible:outline-none focus:border-[#FF8A35] focus-visible:ring-2 focus-visible:ring-[#FF8A35] focus-visible:ring-offset-1 focus-visible:ring-offset-white"
               aria-label="Search influencers"
             />
           </div>
@@ -2059,8 +2115,8 @@ export default function AppliedInfluencersPage() {
             panelMode === "send"
               ? "Send Contract"
               : selectedMeta && isRejectedMeta(selectedMeta)
-                ? "Resend Contract"
-                : "Edit Contract"
+              ? "Resend Contract"
+              : "Edit Contract"
           }
           subtitle={
             selectedInf
@@ -2234,10 +2290,11 @@ export default function AppliedInfluencersPage() {
                       setRequestedEffDate(e.target.value);
                       clearPreview();
                     }}
-                    className={`w-full px-3 py-2.5 border-2 rounded-lg text-sm transition-all duration-200 focus:border-black focus:outline-none ${formErrors.requestedEffDate
-                      ? "border-red-500"
-                      : "border-gray-200"
-                      }`}
+                    className={`w-full px-3 py-2.5 border-2 rounded-lg text-sm transition-all duration-200 focus:outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF8A35] focus-visible:ring-offset-1 focus-visible:ring-offset-white ${
+                      formErrors.requestedEffDate
+                        ? "border-red-500"
+                        : "border-gray-200 focus:border-[#FF8A35]"
+                    }`}
                     data-field-error={!!formErrors.requestedEffDate}
                   />
                   {formErrors.requestedEffDate && (
@@ -2301,10 +2358,11 @@ export default function AppliedInfluencersPage() {
                       setGoLiveStart(e.target.value);
                       clearPreview();
                     }}
-                    className={`w-full px-3 py-2.5 border-2 rounded-lg text-sm transition-all duration-200 focus:border-black focus:outline-none ${formErrors.goLiveStart
-                      ? "border-red-500"
-                      : "border-gray-200"
-                      }`}
+                    className={`w-full px-3 py-2.5 border-2 rounded-lg text-sm transition-all duration-200 focus:outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF8A35] focus-visible:ring-offset-1 focus-visible:ring-offset-white ${
+                      formErrors.goLiveStart
+                        ? "border-red-500"
+                        : "border-gray-200 focus:border-[#FF8A35]"
+                    }`}
                     data-field-error={!!formErrors.goLiveStart}
                   />
                   {formErrors.goLiveStart && (
@@ -2327,10 +2385,11 @@ export default function AppliedInfluencersPage() {
                       setGoLiveEnd(e.target.value);
                       clearPreview();
                     }}
-                    className={`w-full px-3 py-2.5 border-2 rounded-lg text-sm transition-all duration-200 focus:border-black focus:outline-none ${formErrors.goLiveEnd
-                      ? "border-red-500"
-                      : "border-gray-200"
-                      }`}
+                    className={`w-full px-3 py-2.5 border-2 rounded-lg text-sm transition-all duration-200 focus:outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF8A35] focus-visible:ring-offset-1 focus-visible:ring-offset-white ${
+                      formErrors.goLiveEnd
+                        ? "border-red-500"
+                        : "border-gray-200 focus:border-[#FF8A35]"
+                    }`}
                     data-field-error={!!formErrors.goLiveEnd}
                   />
                   {formErrors.goLiveEnd && (
@@ -2343,179 +2402,219 @@ export default function AppliedInfluencersPage() {
             </div>
           </SidebarSection>
 
-          {/* Deliverables */}
+          {/* Deliverables (multi-row, with Format/Min Live/Units per row) */}
           <SidebarSection
             title="Deliverables"
             icon={<HiClipboardList className="w-4 h-4" />}
           >
             <div className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {/* Type (multi-select) */}
-                <div data-field-error={!!formErrors.dType}>
-                  <LabelWithInfo
-                    text="Type (what it is)"
-                    info="Content category, you can select more than one (Schedule E)."
-                  />
-                  <ReactSelect
-                    isMulti
-                    instanceId="dtype-multi"
-                    inputId="dtype-multi-input"
-                    options={[
-                      { value: "Video", label: "Video" },
-                      {
-                        value: "Reel/Short/TikTok",
-                        label: "Reel / Short / TikTok",
-                      },
-                      {
-                        value: "Static Post (Image)",
-                        label: "Static Post (Image)",
-                      },
-                      { value: "Carousel Post", label: "Carousel Post" },
-                      { value: "Story (Single)", label: "Story (Single)" },
-                      { value: "Story Set", label: "Story Set (Multiple)" },
-                      { value: "UGC Video", label: "UGC Video" },
-                      {
-                        value: "YouTube Integration",
-                        label: "YouTube Integration",
-                      },
-                      {
-                        value: "YouTube Dedicated Video",
-                        label: "YouTube Dedicated Video",
-                      },
-                      { value: "Live Stream", label: "Live Stream" },
-                      {
-                        value: "Text (caption only)",
-                        label: "Text (caption only)",
-                      },
-                      {
-                        value: "Custom Deliverable",
-                        label: "Custom Deliverable",
-                      },
-                    ]}
-                    value={dType.map((t) => ({ value: t, label: t }))}
-                    onChange={(vals: any) => {
-                      const next = (vals || []).map((v: any) => v.value);
-                      setDType(next);
-                      clearPreview();
-                    }}
-                    styles={{
-                      control: (base) => ({
-                        ...base,
-                        minHeight: 44,
-                        borderRadius: 8,
-                        borderColor: formErrors.dType
-                          ? "#ef4444"
-                          : base.borderColor,
-                        boxShadow: "none",
-                        "&:hover": {
-                          borderColor: formErrors.dType
-                            ? "#ef4444"
-                            : base.borderColor,
-                        },
-                      }),
-                      valueContainer: (base) => ({
-                        ...base,
-                        padding: "2px 8px",
-                      }),
-                    }}
-                    placeholder="Select content types"
-                  />
-                  {formErrors.dType && (
-                    <div className="text-xs text-red-600 mt-1">
-                      {formErrors.dType}
-                    </div>
-                  )}
+              {formErrors.deliverables && (
+                <div
+                  className="text-xs text-red-600 mb-1"
+                  data-field-error={true}
+                >
+                  {formErrors.deliverables}
                 </div>
+              )}
 
-                {/* Format as text input */}
-                <FloatingLabelInput
-                  id="dFormat"
-                  label="Format (file • aspect • res)"
-                  info="Example: MP4 • 9:16 • 1080×1920"
-                  value={dFormat}
-                  onChange={(e: any) => {
-                    setDFormat(e.target.value);
-                    clearPreview();
-                  }}
-                  error={formErrors.dFormat}
-                  data-field-error={!!formErrors.dFormat}
-                />
-              </div>
+              <div className="space-y-3">
+                {deliverables.map((row, index) => {
+                  const isVideoRow =
+                    VIDEO_TYPES.has(row.type) &&
+                    !TEXT_ONLY_TYPES.has(row.type);
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                {/* Quantity */}
-                <NumberInputTop
-                  id="quantity"
-                  label="Quantity"
-                  info="Number of pieces required."
-                  value={dQuantity}
-                  onChange={(v: string) => {
-                    setDQuantity(v);
-                    clearPreview();
-                  }}
-                  error={formErrors.dQuantity}
-                  data-field-error={!!formErrors.dQuantity}
-                />
-
-                {/* Duration */}
-                {showDuration && (
-                  <NumberInputTop
-                    id="duration"
-                    label="Duration (sec)"
-                    info="For video deliverables only."
-                    value={dDurationSec}
-                    onChange={(v: string) => {
-                      setDDurationSec(v);
-                      clearPreview();
-                    }}
-                    error={formErrors.dDurationSec}
-                    data-field-error={!!formErrors.dDurationSec}
-                  />
-                )}
-
-                {/* Minimum live + units */}
-                <div className="grid grid-cols-2 gap-2">
-                  {retentionUnits === "hours" ? (
-                    <NumberInputTop
-                      id="minlive-hrs"
-                      label="Minimum Live"
-                      value={dMinLiveHours}
-                      onChange={(v: string) => {
-                        setDMinLiveHours(v);
-                        clearPreview();
-                      }}
-                    />
-                  ) : (
-                    <NumberInputTop
-                      id="minlive-months"
-                      label="Minimum Live"
-                      value={retentionMonths}
-                      onChange={(v: string) => {
-                        setRetentionMonths(v);
-                        clearPreview();
-                      }}
-                    />
-                  )}
-
-                  <div className="space-y-1.5">
-                    <label className="text-sm font-medium text-gray-700">
-                      Units
-                    </label>
-                    <select
-                      value={retentionUnits}
-                      onChange={(e) => {
-                        setRetentionUnits(e.target.value as any);
-                        clearPreview();
-                      }}
-                      className="w-full h-[44px] px-3 border-2 rounded-lg text-sm focus:outline-none focus:border-black border-gray-200"
+                  return (
+                    <div
+                      key={row.id}
+                      className="border border-gray-200 rounded-xl p-3 bg-white flex flex-col gap-3"
                     >
-                      <option value="hours">Hours</option>
-                      <option value="months">Months</option>
-                    </select>
-                  </div>
-                </div>
+                      {/* Row header */}
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="text-sm font-semibold text-gray-800">
+                          Deliverable #{index + 1}
+                        </div>
+                        {deliverables.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setDeliverables((prev) =>
+                                prev.filter((d) => d.id !== row.id)
+                              )
+                            }
+                            className="text-xs text-gray-500 hover:text-red-600"
+                          >
+                            Remove
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Type + Quantity + Duration (for video) */}
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                        <div>
+                          <LabelWithInfo
+                            text="Type"
+                            info="Content category for this line item."
+                          />
+                          <ReactSelect
+                            instanceId={`dtype-${row.id}`}
+                            inputId={`dtype-${row.id}-input`}
+                            options={DELIVERABLE_TYPE_OPTIONS}
+                            value={
+                              DELIVERABLE_TYPE_OPTIONS.find(
+                                (o) => o.value === row.type
+                              ) || null
+                            }
+                            onChange={(opt: any) => {
+                              const nextType = opt?.value || "Video";
+                              setDeliverables((prev) =>
+                                prev.map((d) =>
+                                  d.id === row.id
+                                    ? { ...d, type: nextType }
+                                    : d
+                                )
+                              );
+                              clearPreview();
+                            }}
+                            styles={{
+                              control: (base) => ({
+                                ...base,
+                                minHeight: 44,
+                                borderRadius: 8,
+                              }),
+                            }}
+                            placeholder="Select type"
+                          />
+                        </div>
+
+                        <NumberInputTop
+                          id={`quantity-${row.id}`}
+                          label="Quantity"
+                          info="Number of pieces of this type."
+                          value={row.quantity}
+                          onChange={(v: string) => {
+                            setDeliverables((prev) =>
+                              prev.map((d) =>
+                                d.id === row.id
+                                  ? { ...d, quantity: v }
+                                  : d
+                              )
+                            );
+                            clearPreview();
+                          }}
+                        />
+
+                        {isVideoRow && (
+                          <NumberInputTop
+                            id={`duration-${row.id}`}
+                            label="Duration (sec)"
+                            info="Required for video deliverables."
+                            value={row.durationSec}
+                            onChange={(v: string) => {
+                              setDeliverables((prev) =>
+                                prev.map((d) =>
+                                  d.id === row.id
+                                    ? { ...d, durationSec: v }
+                                    : d
+                                )
+                              );
+                              clearPreview();
+                            }}
+                          />
+                        )}
+                      </div>
+
+                      {/* Format per deliverable */}
+                      <FloatingLabelInput
+                        id={`format-${row.id}`}
+                        label="Format (file • aspect • res)"
+                        info="Example: MP4 • 9:16 • 1080×1920"
+                        value={row.format}
+                        onChange={(e: any) => {
+                          const v = e.target.value;
+                          setDeliverables((prev) =>
+                            prev.map((d) =>
+                              d.id === row.id ? { ...d, format: v } : d
+                            )
+                          );
+                          clearPreview();
+                        }}
+                      />
+
+                      {/* Minimum Live + Units per deliverable */}
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                        <NumberInputTop
+                          id={`minlive-${row.id}`}
+                          label="Minimum Live"
+                          info="How long this piece must stay live."
+                          value={row.minLiveValue}
+                          onChange={(v: string) => {
+                            setDeliverables((prev) =>
+                              prev.map((d) =>
+                                d.id === row.id
+                                  ? { ...d, minLiveValue: v }
+                                  : d
+                              )
+                            );
+                            clearPreview();
+                          }}
+                        />
+                        <div className="space-y-1.5 md:col-span-2 md:max-w-xs">
+                          <label className="text-sm font-medium text-gray-700">
+                            Units
+                          </label>
+                          <select
+                            value={row.minLiveUnit}
+                            onChange={(e) => {
+                              const val = e.target.value as
+                                | "hours"
+                                | "months";
+                              setDeliverables((prev) =>
+                                prev.map((d) =>
+                                  d.id === row.id
+                                    ? { ...d, minLiveUnit: val }
+                                    : d
+                                )
+                              );
+                              clearPreview();
+                            }}
+                            className="w-full h-[44px] px-3 border-2 rounded-lg text-sm border-gray-200 focus:outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF8A35] focus-visible:ring-offset-1 focus-visible:ring-offset-white focus:border-[#FF8A35]"
+                          >
+                            <option value="hours">Hours</option>
+                            <option value="months">Months</option>
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
 
+              {/* Add new row */}
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="border-dashed border-gray-300 text-gray-700"
+                onClick={() => {
+                  setDeliverables((prev) => [
+                    ...prev,
+                    {
+                      id: createRowId(),
+                      type: "Video",
+                      quantity: "1",
+                      format: "",
+                      durationSec: "",
+                      minLiveValue: "",
+                      minLiveUnit: "hours",
+                    },
+                  ]);
+                  clearPreview();
+                }}
+              >
+                + Add another deliverable
+              </Button>
+
+              {/* Shared settings across all deliverables */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <Checkbox
                   id="draftRequired"
@@ -2547,10 +2646,13 @@ export default function AppliedInfluencersPage() {
                       clearPreview();
                     }}
                     disabled={!dDraftRequired}
-                    className={`w-full px-3 py-2.5 border-2 rounded-lg text-sm transition-all duration-200 focus:border-black focus:outline-none ${dDraftRequired
-                      ? "border-gray-200"
-                      : "opacity-60 cursor-not-allowed border-gray-200"
-                      } ${formErrors.dDraftDue ? "!border-red-500" : ""}`}
+                    className={`w-full px-3 py-2.5 border-2 rounded-lg text-sm transition-all duration-200 focus:outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF8A35] focus-visible:ring-offset-1 focus-visible:ring-offset-white ${
+                      dDraftRequired
+                        ? formErrors.dDraftDue
+                          ? "border-red-500"
+                          : "border-gray-200 focus:border-[#FF8A35]"
+                        : "opacity-60 cursor-not-allowed border-gray-200"
+                    }`}
                     data-field-error={!!formErrors.dDraftDue}
                   />
                   {formErrors.dDraftDue && (
