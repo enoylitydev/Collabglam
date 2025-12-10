@@ -74,6 +74,7 @@ const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024; // 20MB
 
 const EmailPage: React.FC = () => {
   const [brandId, setBrandId] = useState<string>('');
+  const [brandAliasEmail, setBrandAliasEmail] = useState<string>('');
 
   const [mails, setMails] = useState<Mail[]>([]);
   const [selectedMailId, setSelectedMailId] = useState<string | null>(null);
@@ -110,16 +111,12 @@ const EmailPage: React.FC = () => {
 
   // 1) Determine brandId (from localStorage or env)
   useEffect(() => {
-    let resolved = '';
+    const storedBrandId = window.localStorage.getItem('brandId');
+    const storedAliasEmail = window.localStorage.getItem('brandAliasEmail');
 
-    if (typeof window !== 'undefined') {
-      const stored = window.localStorage.getItem('brandId');
-      resolved = stored || process.env.NEXT_PUBLIC_BRAND_ID || '';
-    } else {
-      resolved = process.env.NEXT_PUBLIC_BRAND_ID || '';
-    }
+    setBrandId(storedBrandId || '');
+    setBrandAliasEmail(storedAliasEmail || '');
 
-    setBrandId(resolved);
   }, []);
 
   // Helper: get influencer display name by id
@@ -706,8 +703,8 @@ const EmailPage: React.FC = () => {
                           type="button"
                           onClick={() => setFilter(f)}
                           className={`px-3 py-1 rounded-full text-xs font-medium transition-all ${isActive
-                              ? 'bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white shadow-sm'
-                              : 'text-gray-600 hover:bg-white hover:text-gray-900'
+                            ? 'bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white shadow-sm'
+                            : 'text-gray-600 hover:bg-white hover:text-gray-900'
                             }`}
                         >
                           {labels[f]}
@@ -769,8 +766,8 @@ const EmailPage: React.FC = () => {
                           type="button"
                           onClick={() => setSelectedMailId(mail.id)}
                           className={`relative w-full text-left px-4 py-3 flex flex-col gap-1 transition-all group ${isActive
-                              ? 'bg-gradient-to-r from-[#FFF1DF] to-[#FFE0D0]'
-                              : 'hover:bg:white'
+                            ? 'bg-gradient-to-r from-[#FFF1DF] to-[#FFE0D0]'
+                            : 'hover:bg:white'
                             }`.replace('hover:bg:white', 'hover:bg-white')}
                         >
                           {isActive && (
@@ -795,8 +792,8 @@ const EmailPage: React.FC = () => {
                             </p>
                             <span
                               className={`text-[10px] px-2 py-0.5 rounded-full border ${isIncoming
-                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-100'
-                                  : 'bg-indigo-50 text-indigo-700 border-indigo-100'
+                                ? 'bg-emerald-50 text-emerald-700 border-emerald-100'
+                                : 'bg-indigo-50 text-indigo-700 border-indigo-100'
                                 }`}
                             >
                               {isIncoming ? 'Incoming' : 'Outgoing'}
@@ -1069,7 +1066,7 @@ const EmailPage: React.FC = () => {
                 </label>
                 <input
                   type="text"
-                  value="Your brand email alias is used automatically. Influencers never see your real email."
+                  value={brandAliasEmail}
                   readOnly
                   className="w-full text-[11px] px-3 py-2 rounded-lg border border-gray-200 bg-gray-50 text-gray-700"
                 />
@@ -1101,7 +1098,6 @@ const EmailPage: React.FC = () => {
                     type="text"
                     value={influencerSearch}
                     onChange={(e) => setInfluencerSearch(e.target.value)}
-                    placeholder="Search creators by name or handle…"
                     className="w-full text-xs px-3 py-2 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#FFA135] focus:border-[#FFA135]"
                   />
                   <div className="max-h-40 overflow-y-auto rounded-lg border border-gray-200 bg-white">
@@ -1139,9 +1135,7 @@ const EmailPage: React.FC = () => {
                                   <input
                                     type="checkbox"
                                     checked={checked}
-                                    onChange={() =>
-                                      toggleInfluencerSelection(inf.id)
-                                    }
+                                    readOnly
                                     className="h-3 w-3"
                                   />
                                   <div className="flex flex-col items-start">
@@ -1177,7 +1171,7 @@ const EmailPage: React.FC = () => {
                   type="text"
                   value={composeSubject}
                   onChange={(e) => setComposeSubject(e.target.value)}
-                  placeholder="Collaboration for your upcoming content"
+                  placeholder='Subject'
                   className="w-full text-xs px-3 py-2 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#FFA135] focus:border-[#FFA135]"
                 />
               </div>
@@ -1190,15 +1184,8 @@ const EmailPage: React.FC = () => {
                 <textarea
                   value={composeBody}
                   onChange={(e) => setComposeBody(e.target.value)}
-                  placeholder={`Hi [Creator Name],
-
-We’re excited about your content and would love to collaborate on an upcoming campaign.
-
-[Add your brief, deliverables, timelines, and budget details here]
-
-Looking forward to hearing from you,
-CollabGlam Brand Team`}
                   rows={8}
+                  placeholder="Write your message here..."
                   className="w-full text-xs px-3 py-2 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#FFA135] focus:border-[#FFA135] resize-none"
                 />
 

@@ -65,9 +65,9 @@ async function listInvitations(
 const prettyDate = (iso: string) =>
   iso
     ? new Date(iso).toLocaleString(undefined, {
-        dateStyle: 'medium',
-        timeStyle: 'short',
-      })
+      dateStyle: 'medium',
+      timeStyle: 'short',
+    })
     : '';
 
 const truncateText = (value: string, max = 60) =>
@@ -75,6 +75,7 @@ const truncateText = (value: string, max = 60) =>
 
 export default function InvitedInfluencersPage() {
   const [brandId, setBrandId] = useState<string | null>(null);
+  const [brandAliasEmail, setBrandAliasEmail] = useState<string>('');
   const [items, setItems] = useState<Invitation[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -100,14 +101,15 @@ export default function InvitedInfluencersPage() {
   useEffect(() => {
     try {
       const storedBrandId =
-        window.localStorage.getItem('brandId') ||
-        window.localStorage.getItem('brand_id');
+        window.localStorage.getItem('brandId')
+      const storedAliasEmail = window.localStorage.getItem('brandAliasEmail');
 
       if (!storedBrandId) {
         setError('Missing brandId in localStorage');
       }
 
       setBrandId(storedBrandId || null);
+      setBrandAliasEmail(storedAliasEmail || '');
     } catch {
       setBrandId(null);
       setError('Unable to read brandId from localStorage');
@@ -133,8 +135,8 @@ export default function InvitedInfluencersPage() {
         console.error(err);
         setError(
           err?.response?.data?.message ||
-            err?.message ||
-            'Failed to load All handles'
+          err?.message ||
+          'Failed to load All handles'
         );
       } finally {
         setLoading(false);
@@ -169,9 +171,8 @@ export default function InvitedInfluencersPage() {
 
       const bodyTemplate = `Hi ${inv.handle},
 
-We’re excited about your content and would love to collaborate${
-        inv.campaignName ? ` on our "${inv.campaignName}" campaign` : ''
-      }.
+We’re excited about your content and would love to collaborate${inv.campaignName ? ` on our "${inv.campaignName}" campaign` : ''
+        }.
 
 [Add your brief, deliverables, timelines, and budget details here]
 
@@ -207,9 +208,8 @@ CollabGlam Brand Team
 
       const bodyTemplate = `Hi ${inv.handle},
 
-We’re excited about your content and would love to collaborate${
-        inv.campaignName ? ` on our "${inv.campaignName}" campaign` : ''
-      }.
+We’re excited about your content and would love to collaborate${inv.campaignName ? ` on our "${inv.campaignName}" campaign` : ''
+        }.
 
 [Add your brief, deliverables, timelines, and budget details here]
 
@@ -340,8 +340,8 @@ CollabGlam Brand Team
       console.error(err);
       setComposeError(
         err?.response?.data?.message ||
-          err?.message ||
-          'Failed to send email'
+        err?.message ||
+        'Failed to send email'
       );
     } finally {
       setIsSending(false);
@@ -517,10 +517,9 @@ CollabGlam Brand Team
                             className={`
                               inline-flex items-center gap-1.5 rounded-full border border-orange-200 px-3 py-1 
                               text-xs font-medium transition-colors
-                              ${
-                                isInvited || isSending
-                                  ? 'bg-orange-50 text-orange-300 cursor-not-allowed opacity-60'
-                                  : 'bg-orange-50 text-orange-700 hover:bg-orange-100 cursor-pointer'
+                              ${isInvited || isSending
+                                ? 'bg-orange-50 text-orange-300 cursor-not-allowed opacity-60'
+                                : 'bg-orange-50 text-orange-700 hover:bg-orange-100 cursor-pointer'
                               }
                             `}
                           >
@@ -585,7 +584,7 @@ CollabGlam Brand Team
                 </label>
                 <input
                   type="text"
-                  value="Your brand email alias is applied automatically via the relay. Creators never see your real email."
+                  value={brandAliasEmail}
                   readOnly
                   className="w-full text-[11px] px-3 py-2 rounded-lg border border-gray-200 bg-gray-50 text-gray-700"
                 />
