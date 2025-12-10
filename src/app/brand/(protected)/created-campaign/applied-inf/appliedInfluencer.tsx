@@ -385,7 +385,7 @@ export default function AppliedInfluencersPage() {
   // Requested Effective Date
   const [requestedEffDate, setRequestedEffDate] = useState<string>("");
   const [requestedEffTz, setRequestedEffTz] =
-    useState<string>("Europe/Amsterdam");
+    useState<string>("America/Los_Angeles");
 
   // currency & timezone options
   const [currencyOptions, setCurrencyOptions] = useState<CurrencyOption[]>([]);
