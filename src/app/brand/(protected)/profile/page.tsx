@@ -92,7 +92,9 @@ const formatDateTime = (iso?: string) => {
 };
 
 const formatUSD = (n: number) =>
-  new Intl.NumberFormat(FIXED_LOCALE, { style: "currency", currency: "USD" }).format(n);
+  new Intl.NumberFormat(FIXED_LOCALE, { style: "currency", currency: "USD" }).format(
+    n
+  );
 
 const titleizeFeatureKey = (k: string) =>
   k.replace(/_/g, " ").replace(/\b\w/g, (m) => m.toUpperCase());
@@ -123,11 +125,14 @@ type BrandData = {
   subscriptionExpired: boolean;
   walletBalance: number;
 
-  // 🔽 added
+  // logo & alias
   logoUrl?: string;
   logoFileId?: string;
   logoFilename?: string;
   brandAliasEmail: string;
+
+  // NEW: point-of-contact name
+  pocName: string;
 };
 
 /* ===================== Utilities ===================== */
@@ -150,20 +155,17 @@ function normalizeBrand(data: any): BrandData {
   const s = data?.subscription ?? {};
   const brand = data?.brand ?? data;
 
-  // 🔥 Build a usable logoUrl from GridFS fields
+  // Build logo URL if needed
   let logoUrl: string | undefined = brand?.logoUrl;
 
   if (!logoUrl) {
     if (brand?.logoFilename) {
-      // Use filename route: GET /file/:filename
       logoUrl = `/file/${encodeURIComponent(brand.logoFilename)}`;
     } else if (brand?.logoFileId) {
-      // Fallback: use id route: GET /file/id/:id
       logoUrl = `/file/id/${brand.logoFileId}`;
     }
   }
 
-  // 🔽 alias email from backend (adjust keys if your API uses different name)
   const brandAliasEmail =
     brand?.brandAliasEmail ??
     brand?.aliasEmail ??
@@ -183,8 +185,11 @@ function normalizeBrand(data: any): BrandData {
     logoUrl,
     logoFileId: brand?.logoFileId ?? "",
     logoFilename: brand?.logoFilename ?? "",
-    // 🔽 include alias in normalized object
     brandAliasEmail,
+
+    // POC name from backend, fallback to brand name
+    pocName: brand?.pocName ?? brand?.name ?? "",
+
     subscription: {
       planName: s?.planName ?? brand?.planName ?? "",
       startedAt: s?.startedAt ?? brand?.startedAt ?? "",
@@ -253,7 +258,7 @@ const filterByCountryName = (option: { data: CountryOption }, raw: string) => {
   );
 };
 
-/* ===================== Dual-OTP Email Editor (shadcn Dialog) ===================== */
+/* ===================== Dual-OTP Email Editor ===================== */
 
 type EmailFlowState = "idle" | "needs" | "codes_sent" | "verifying" | "verified";
 
@@ -276,7 +281,6 @@ const EmailEditorDualOTPRaw = ({
   const [wasVerified, setWasVerified] = useState(false);
   const [oldOtp, setOldOtp] = useState("");
   const [newOtp, setNewOtp] = useState("");
-  // (swal used for messages now)
   const [busy, setBusy] = useState(false);
   const [expiresAt, setExpiresAt] = useState<string | null>(null);
   const [resendIn, setResendIn] = useState(0);
@@ -329,7 +333,11 @@ const EmailEditorDualOTPRaw = ({
       setOpen(true);
       toast("success", "Codes sent", `OTPs sent to ${originalEmail} and ${value}.`);
     } catch (e: any) {
-      await fire({ icon: "error", title: "Failed to send codes", text: e?.message || "Please try again." });
+      await fire({
+        icon: "error",
+        title: "Failed to send codes",
+        text: e?.message || "Please try again.",
+      });
     } finally {
       setBusy(false);
     }
@@ -357,27 +365,39 @@ const EmailEditorDualOTPRaw = ({
       setNewOtp("");
       setWasVerified(true);
       setOpen(false);
-      await fire({ icon: "success", title: "Email updated", text: res?.message || "Email updated successfully." });
+      await fire({
+        icon: "success",
+        title: "Email updated",
+        text: res?.message || "Email updated successfully.",
+      });
     } catch (e: any) {
       setFlow("codes_sent");
       onStateChange("codes_sent");
-      await fire({ icon: "error", title: "Verification failed", text: e?.message || "Please check the codes and try again." });
+      await fire({
+        icon: "error",
+        title: "Verification failed",
+        text: e?.message || "Please check the codes and try again.",
+      });
     } finally {
       setBusy(false);
     }
   }, [brandId, value, oldOtp, newOtp, onVerified, onStateChange]);
 
-  const handleOtp = (setter: (v: string) => void) => (e: React.ChangeEvent<HTMLInputElement>) => {
-    const digits = e.target.value.replace(/\D/g, "").slice(0, 6);
-    setter(digits);
-  };
+  const handleOtp =
+    (setter: (v: string) => void) => (e: React.ChangeEvent<HTMLInputElement>) => {
+      const digits = e.target.value.replace(/\D/g, "").slice(0, 6);
+      setter(digits);
+    };
 
   const emailInputId = useId();
   const oldOtpId = useId();
   const newOtpId = useId();
 
   return (
-    <div className="relative bg-white border border-gray-100 p-6 rounded-xl shadow-sm hover:shadow-md transition-shadow duration-200" aria-busy={busy}>
+    <div
+      className="relative bg-white border border-gray-100 p-6 rounded-xl shadow-sm hover:shadow-md transition-shadow duration-200"
+      aria-busy={busy}
+    >
       <div className="flex items-start gap-4">
         <div className="flex-shrink-0 w-10 h-10 bg-gradient-to-br from-blue-50 to-indigo-100 rounded-lg flex items-center justify-center">
           <HiMail className="text-indigo-600 w-5 h-5" />
@@ -396,15 +416,18 @@ const EmailEditorDualOTPRaw = ({
               placeholder="name@example.com"
               aria-invalid={needs && !validateEmail(value)}
               onKeyDown={(e) => {
-                if (e.key === "Enter" && needs && valueIsValid && (flow === "needs" || flow === "codes_sent")) {
+                if (
+                  e.key === "Enter" &&
+                  needs &&
+                  valueIsValid &&
+                  (flow === "needs" || flow === "codes_sent")
+                ) {
                   requestCodes();
                 }
               }}
             />
 
-            {/* Verified or action row */}
             <div className="mt-2 flex items-center justify-between gap-2 flex-wrap">
-              {/* Left: Badge or Verify button */}
               <div className="min-w-0">
                 {wasVerified && !needs ? (
                   <Badge
@@ -431,7 +454,6 @@ const EmailEditorDualOTPRaw = ({
                 ) : null}
               </div>
 
-              {/* Right: Cancel button pinned to the end */}
               {needs && flow === "needs" && (
                 <button
                   type="button"
@@ -444,7 +466,6 @@ const EmailEditorDualOTPRaw = ({
             </div>
           </div>
 
-          {/* OTP Modal */}
           <Dialog open={open} onOpenChange={setOpen}>
             <DialogContent className="max-w-[95vw] sm:max-w-lg bg-white">
               <DialogHeader>
@@ -453,7 +474,8 @@ const EmailEditorDualOTPRaw = ({
                   Verify your email
                 </DialogTitle>
                 <DialogDescription>
-                  Enter the 6-digit codes sent to <strong className="break-words">{originalEmail}</strong> (current) and{" "}
+                  Enter the 6-digit codes sent to{" "}
+                  <strong className="break-words">{originalEmail}</strong> (current) and{" "}
                   <strong className="break-words">{value}</strong> (new).
                   {expiresAt && (
                     <span className="block mt-1 text-xs text-amber-600">
@@ -562,7 +584,7 @@ export default function BrandProfilePage() {
       container: (base: any) => ({
         ...base,
         width: "100%",
-        minWidth: 0, // allow shrinking in grid
+        minWidth: 0,
       }),
       control: (base: any, state: any) => ({
         ...base,
@@ -587,7 +609,11 @@ export default function BrandProfilePage() {
       }),
       option: (base: any, state: any) => ({
         ...base,
-        backgroundColor: state.isSelected ? "#FED7AA" : state.isFocused ? "#FFF7ED" : "transparent",
+        backgroundColor: state.isSelected
+          ? "#FED7AA"
+          : state.isFocused
+            ? "#FFF7ED"
+            : "transparent",
         color: state.isSelected ? "#9A3412" : "#374151",
         "&:hover": { backgroundColor: "#FFF7ED" },
       }),
@@ -596,7 +622,7 @@ export default function BrandProfilePage() {
     []
   );
 
-  // Initial fetch (mapping fix on first load)
+  // Initial fetch
   useEffect(() => {
     const brandId = typeof window !== "undefined" ? localStorage.getItem("brandId") : null;
     if (!brandId) {
@@ -625,7 +651,6 @@ export default function BrandProfilePage() {
           localStorage.setItem("brandAliasEmail", normalized.brandAliasEmail);
         }
 
-        // Compute options from the fresh list (no stale memo), with fallbacks
         const localCO = buildCountryOptions(countriesList);
         const localKO = buildCallingOptions(countriesList);
 
@@ -654,7 +679,7 @@ export default function BrandProfilePage() {
     };
   }, []);
 
-  // Secondary guard: align selections when brand / countries arrive at different times
+  // Align selections when brand / countries load at different times
   useEffect(() => {
     if (!brand || !countries.length) return;
 
@@ -675,24 +700,39 @@ export default function BrandProfilePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [brand, countries]);
 
-  // keep form.country / callingCode in sync with selections
+  // keep form.country / callingCode synced
   useEffect(() => {
     if (!selectedCountry) return;
     setForm((prev) =>
-      prev ? { ...prev, countryId: selectedCountry.value, country: selectedCountry.country.countryName } : prev
+      prev
+        ? {
+            ...prev,
+            countryId: selectedCountry.value,
+            country: selectedCountry.country.countryName,
+          }
+        : prev
     );
   }, [selectedCountry]);
 
   useEffect(() => {
     if (!selectedCalling) return;
     setForm((prev) =>
-      prev ? { ...prev, callingId: selectedCalling.value, callingCode: selectedCalling.country.callingCode } : prev
+      prev
+        ? {
+            ...prev,
+            callingId: selectedCalling.value,
+            callingCode: selectedCalling.country.callingCode,
+          }
+        : prev
     );
   }, [selectedCalling]);
 
-  const onField = useCallback(<K extends keyof BrandData>(key: K, value: BrandData[K]) => {
-    setForm((prev) => (prev ? { ...prev, [key]: value } : prev));
-  }, []);
+  const onField = useCallback(
+    <K extends keyof BrandData>(key: K, value: BrandData[K]) => {
+      setForm((prev) => (prev ? { ...prev, [key]: value } : prev));
+    },
+    []
+  );
 
   const resetEdits = useCallback(() => {
     if (!brand) return;
@@ -700,16 +740,19 @@ export default function BrandProfilePage() {
     setForm(cl);
     setIsEditing(false);
     setEmailFlow("idle");
-    setSelectedCountry(cl.countryId ? maps.countryById.get(cl.countryId) || null : null);
-    setSelectedCalling(cl.callingId ? maps.callingById.get(cl.callingId) || null : null);
+    setSelectedCountry(
+      cl.countryId ? maps.countryById.get(cl.countryId) || null : null
+    );
+    setSelectedCalling(
+      cl.callingId ? maps.callingById.get(cl.callingId) || null : null
+    );
     toast("info", "Changes discarded");
   }, [brand, maps.countryById, maps.callingById]);
 
   const refetchBrand = useCallback(
     async (id?: string) => {
       const brandId =
-        id ??
-        (typeof window !== "undefined" ? localStorage.getItem("brandId") : null);
+        id ?? (typeof window !== "undefined" ? localStorage.getItem("brandId") : null);
 
       if (!brandId) return;
 
@@ -717,16 +760,13 @@ export default function BrandProfilePage() {
         const brandRes = await get<any>(`/brand?id=${brandId}`);
         const normalized = normalizeBrand(brandRes);
 
-        // Update main state
         setBrand(normalized);
         setForm(deepClone(normalized));
 
-        // 🔽 Update brandAliasEmail in localStorage whenever profile is refreshed
         if (typeof window !== "undefined" && normalized.brandAliasEmail) {
           localStorage.setItem("brandAliasEmail", normalized.brandAliasEmail);
         }
 
-        // Keep selects in sync with refreshed data
         const matchedCountry =
           maps.countryById.get(normalized.countryId) ||
           maps.co.find((o) => o.country.countryName === normalized.country) ||
@@ -746,6 +786,7 @@ export default function BrandProfilePage() {
     },
     [maps.countryById, maps.callingById, maps.co, maps.ko]
   );
+
   const saveProfile = useCallback(async () => {
     if (!form || !brand) return;
 
@@ -767,20 +808,17 @@ export default function BrandProfilePage() {
         countryId: form.countryId || undefined,
         callingId: form.callingId || undefined,
         logoUrl: form.logoUrl || undefined,
+        // NEW: send POC name to backend
+        pocName: form.pocName || undefined,
       };
 
-      // Save changes
       await post<any>("/brand/update", payload);
 
-      // Now refetch the latest brand from the source of truth
       await refetchBrand(form.brandId);
 
       setIsEditing(false);
       setEmailFlow("idle");
       await fire({ icon: "success", title: "Profile saved" });
-
-      // (Optional) If this page also has server components that should re-fetch:
-      // router.refresh();
     } catch (e: any) {
       console.error(e);
       await fire({
@@ -793,8 +831,6 @@ export default function BrandProfilePage() {
     }
   }, [brand, emailFlow, form, refetchBrand]);
 
-
-
   const daysLeft = useMemo(() => {
     if (!brand?.subscription.expiresAt) return null;
     const end = new Date(brand.subscription.expiresAt).getTime();
@@ -803,7 +839,6 @@ export default function BrandProfilePage() {
     return Math.ceil(diff / (1000 * 60 * 60 * 24));
   }, [brand?.subscription.expiresAt]);
 
-  // 2) after ALL hooks, you may early-return
   if (loading) return <Loader />;
   if (error) return <Error message={error} />;
 
@@ -840,7 +875,6 @@ export default function BrandProfilePage() {
         <Card className="mb-8 bg-white border border-gray-200 shadow-sm">
           <CardContent className="p-8">
             <div className="flex flex-col sm:flex-row items-center sm:items-start justify-center sm:justify-start gap-4 sm:gap-6 mb-8 text-center sm:text-left">
-              {/* Icon */}
               <div className="border-1 flex-shrink-0 w-16 h-16 sm:w-20 sm:h-20 bg-gradient-to-r from-[#FFA135] to-[#FF7236] rounded-full flex items-center justify-center mx-auto sm:mx-0 overflow-hidden">
                 {brandLogoUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element
@@ -854,7 +888,6 @@ export default function BrandProfilePage() {
                 )}
               </div>
 
-              {/* Label + Field (stacked on mobile, centered) */}
               <div className="flex-1 min-w-0 w-full max-w-xl mx-auto sm:mx-0">
                 <div className="text-center sm:text-left">
                   <Field
@@ -870,11 +903,22 @@ export default function BrandProfilePage() {
             </div>
 
             {/* Contact Information */}
-            {/* Contact Information */}
             <div className="space-y-6">
               <h3 className="text-lg font-semibold text-gray-900 mb-4">
                 Contact Information
               </h3>
+
+              {/* Row 0: POC Name */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <IconField
+                  icon={HiUser}
+                  label="POC Name"
+                  value={form?.pocName ?? ""}
+                  readValue={brand?.pocName ?? ""}
+                  onChange={(v) => onField("pocName", v as any)}
+                  editing={isEditing}
+                />
+              </div>
 
               {/* Row 1: Email + Phone */}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -884,7 +928,7 @@ export default function BrandProfilePage() {
                     label="Email Address"
                     value=""
                     readValue={brand?.email ?? ""}
-                    onChange={() => { }}
+                    onChange={() => {}}
                     editing={false}
                   />
                 ) : (
@@ -900,7 +944,6 @@ export default function BrandProfilePage() {
                         setForm((f) => (f ? { ...f, email: newEmail } : f));
                         setEmailFlow("verified");
                         if (token) {
-                          // Maintain role-scoped token for brand
                           localStorage.setItem("brand_token", token);
                           localStorage.removeItem("token");
                         }
@@ -942,7 +985,7 @@ export default function BrandProfilePage() {
                     label="Brand Alias Email"
                     value=""
                     readValue={brand?.brandAliasEmail ?? ""}
-                    onChange={() => { }}
+                    onChange={() => {}}
                     editing={false}
                   />
                 </div>
@@ -951,10 +994,10 @@ export default function BrandProfilePage() {
           </CardContent>
         </Card>
 
-        {/* Wallet then Subscription (view mode) */}
+        {/* Wallet + Subscription (view mode only) */}
         {!isEditing && (
           <div className="flex flex-col gap-6 mb-8">
-            {/* Wallet FIRST — always above */}
+            {/* Wallet */}
             <Card className="bg-white border border-gray-200 shadow-sm">
               <CardHeader className="pb-4">
                 <div className="flex items-center gap-3">
@@ -975,7 +1018,7 @@ export default function BrandProfilePage() {
               </CardContent>
             </Card>
 
-            {/* Subscription SECOND — stacked below */}
+            {/* Subscription */}
             <Card className="bg-white border border-gray-200 shadow-sm">
               <CardHeader className="pb-4">
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
@@ -999,7 +1042,6 @@ export default function BrandProfilePage() {
               </CardHeader>
 
               <CardContent className="space-y-5">
-                {/* Plan name + status */}
                 <div className="flex items-center gap-2">
                   <span className="text-2xl font-bold text-gray-900 capitalize">
                     {brand?.subscription.planName || "No Plan"}
@@ -1015,19 +1057,22 @@ export default function BrandProfilePage() {
                   )}
                 </div>
 
-                {/* Dates */}
                 <div className="space-y-1 text-sm text-gray-600">
                   {brand?.subscription.startedAt && (
                     <div className="flex items-center gap-2">
                       <HiCalendar className="w-4 h-4" />
-                      <span>Started: {mounted ? formatDate(brand.subscription.startedAt) : "—"}</span>
+                      <span>
+                        Started:{" "}
+                        {mounted ? formatDate(brand.subscription.startedAt) : "—"}
+                      </span>
                     </div>
                   )}
                   {brand?.subscription.expiresAt && (
                     <div className="flex items-center gap-2">
                       <HiCalendar className="w-4 h-4" />
                       <span>
-                        Expires: {mounted ? formatDate(brand.subscription.expiresAt) : "—"}
+                        Expires:{" "}
+                        {mounted ? formatDate(brand.subscription.expiresAt) : "—"}
                         {mounted && typeof daysLeft === "number" && (
                           <span className="ml-2 text-gray-500">
                             • {daysLeft} day{daysLeft === 1 ? "" : "s"} left
@@ -1038,7 +1083,6 @@ export default function BrandProfilePage() {
                   )}
                 </div>
 
-                {/* Features usage */}
                 <div className="mt-2 space-y-4">
                   {(brand?.subscription.features ?? []).map((f) => {
                     const isManager = f.key === "dedicated_manager_support";
@@ -1046,14 +1090,19 @@ export default function BrandProfilePage() {
                     const limit = Math.max(0, rawLimit);
                     const used = Math.max(0, f.used ?? 0);
                     const unlimited = limit === 0;
-                    const label = isManager ? "Dedicated Manager Support" : titleizeFeatureKey(f.key);
+                    const label = isManager
+                      ? "Dedicated Manager Support"
+                      : titleizeFeatureKey(f.key);
 
-                    // your gradient
-                    const gradientSolid = "bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white";
+                    const gradientSolid =
+                      "bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white";
 
                     if (isManager) {
-                      // Special rendering for dedicated manager support
-                      const status = unlimited ? "Unlimited" : limit >= 1 ? "Available" : "Not included";
+                      const status = unlimited
+                        ? "Unlimited"
+                        : limit >= 1
+                          ? "Available"
+                          : "Not included";
                       const badgeClass = unlimited
                         ? `${gradientSolid} border border-transparent`
                         : limit >= 1
@@ -1064,26 +1113,35 @@ export default function BrandProfilePage() {
                       return (
                         <div key={f.key} className="flex items-center justify-between">
                           <div className="flex items-center gap-2 text-sm">
-                            <Icon className={(unlimited || limit >= 1) ? "w-4 h-4 text-[#FF7236]" : "w-4 h-4 text-gray-400"} />
+                            <Icon
+                              className={
+                                unlimited || limit >= 1
+                                  ? "w-4 h-4 text-[#FF7236]"
+                                  : "w-4 h-4 text-gray-400"
+                              }
+                            />
                             <span className="text-gray-800">{label}</span>
                           </div>
-                          <span className={`text-xs px-2 py-1 rounded-md ${badgeClass}`}>{status}</span>
+                          <span className={`text-xs px-2 py-1 rounded-md ${badgeClass}`}>
+                            {status}
+                          </span>
                         </div>
                       );
                     }
 
-                    // Quota-like features (show bar)
-                    const pct = unlimited ? 100 : limit > 0 ? Math.min(100, Math.round((used / limit) * 100)) : 0;
+                    const pct = unlimited
+                      ? 100
+                      : limit > 0
+                        ? Math.min(100, Math.round((used / limit) * 100))
+                        : 0;
 
-                    // use gradient when unlimited (was blue before)
-                    const barClasses =
-                      unlimited
-                        ? "[&>div]:bg-gradient-to-r [&>div]:from-[#FFA135] [&>div]:to-[#FF7236]"
-                        : used >= limit
-                          ? "[&>div]:bg-red-500"
-                          : pct >= 80
-                            ? "[&>div]:bg-orange-500"
-                            : "[&>div]:bg-emerald-500";
+                    const barClasses = unlimited
+                      ? "[&>div]:bg-gradient-to-r [&>div]:from-[#FFA135] [&>div]:to-[#FF7236]"
+                      : used >= limit
+                        ? "[&>div]:bg-red-500"
+                        : pct >= 80
+                          ? "[&>div]:bg-orange-500"
+                          : "[&>div]:bg-emerald-500";
 
                     return (
                       <div key={f.key} className="group">
@@ -1097,18 +1155,25 @@ export default function BrandProfilePage() {
                         <Progress
                           value={pct}
                           className={`h-2 rounded-full bg-gray-100 ${barClasses}`}
-                          aria-label={`${label} usage: ${used} of ${unlimited ? "unlimited" : limit}`}
+                          aria-label={`${label} usage: ${used} of ${
+                            unlimited ? "unlimited" : limit
+                          }`}
                         />
 
                         <div className="mt-1 flex items-center justify-between text-xs text-gray-500">
-                          <span className="tabular-nums">{unlimited ? "∞" : `${pct}%`}</span>
+                          <span className="tabular-nums">
+                            {unlimited ? "∞" : `${pct}%`}
+                          </span>
                           {unlimited ? (
-                            // gradient pill (was blue)
-                            <span className={`tabular-nums flex items-center gap-1 px-1.5 py-0.5 rounded ${gradientSolid}`}>
+                            <span
+                              className={`tabular-nums flex items-center gap-1 px-1.5 py-0.5 rounded ${gradientSolid}`}
+                            >
                               Unlimited
                             </span>
                           ) : (
-                            <span className="tabular-nums">{Math.max(0, limit - used)} left</span>
+                            <span className="tabular-nums">
+                              {Math.max(0, limit - used)} left
+                            </span>
                           )}
                         </div>
                       </div>
@@ -1116,7 +1181,6 @@ export default function BrandProfilePage() {
                   })}
                 </div>
               </CardContent>
-
             </Card>
           </div>
         )}
@@ -1184,7 +1248,9 @@ function Error({ message }: { message: string }) {
         <div className="w-16 h-16 mx-auto mb-4 bg-red-100 rounded-full flex items-center justify-center">
           <HiX className="w-8 h-8 text-red-600" />
         </div>
-        <h2 className="text-xl font-semibold text-gray-900 mb-2">Error Loading Profile</h2>
+        <h2 className="text-xl font-semibold text-gray-900 mb-2">
+          Error Loading Profile
+        </h2>
         <p className="text-red-600 mb-4">{message}</p>
         <Button
           onClick={() => window.location.reload()}
@@ -1229,7 +1295,11 @@ const Field = React.memo(function Field({
           placeholder={placeholder}
         />
       ) : (
-        <p className={`${large ? "text-2xl font-bold" : "text-lg font-medium"} text-gray-900 break-words`}>
+        <p
+          className={`${
+            large ? "text-2xl font-bold" : "text-lg font-medium"
+          } text-gray-900 break-words`}
+        >
           {readValue || "—"}
         </p>
       )}
@@ -1341,7 +1411,9 @@ const PhoneField = React.memo(function PhoneField({
                   onChange={(opt) => onCallingChange(opt as any)}
                   styles={selectStyles}
                   classNamePrefix="rs"
-                  menuPortalTarget={typeof document !== "undefined" ? document.body : undefined}
+                  menuPortalTarget={
+                    typeof document !== "undefined" ? document.body : undefined
+                  }
                 />
               </div>
               <div className="sm:col-span-2 min-w-0">
@@ -1397,10 +1469,14 @@ const CountryField = React.memo(function CountryField({
               onChange={(opt) => onCountryChange(opt as CountryOption)}
               filterOption={filterByCountryName as any}
               styles={selectStyles}
-              menuPortalTarget={typeof document !== "undefined" ? document.body : undefined}
+              menuPortalTarget={
+                typeof document !== "undefined" ? document.body : undefined
+              }
             />
           ) : (
-            <p className="text-lg font-medium text-gray-900 break-words">{readValue || "—"}</p>
+            <p className="text-lg font-medium text-gray-900 break-words">
+              {readValue || "—"}
+            </p>
           )}
         </div>
       </div>
