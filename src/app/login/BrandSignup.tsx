@@ -99,7 +99,7 @@ export function BrandSignup({
 }) {
   const router = useRouter();
   // NOTE: default to 'details' currently (for testing). Change to 'email' for full flow.
-  const [step, setStep] = useState<Step>('email');
+  const [step, setStep] = useState<Step>('details');
   const [countries, setCountries] = useState<Country[]>([]);
   const [categories, setCategories] = useState<MetaCategory[]>([]);
   const [businessTypes, setBusinessTypes] = useState<MetaBusinessType[]>([]);
@@ -124,7 +124,7 @@ export function BrandSignup({
     callingCodeId: '',
     categoryId: '', // ObjectId of Category
     website: '',
-    instagramHandle: '',
+    pocName: '',          // 👈 NEW
     companySize: '',
     businessType: '', // BusinessType NAME (string)
     referralCode: '',
@@ -198,19 +198,6 @@ export function BrandSignup({
     } catch {
       return false;
     }
-  };
-
-  /** Returns a clean, lowercase handle (no @, no URL, no slashes) */
-  const extractInstagramHandle = (val: string) => {
-    if (!val) return '';
-    let s = val.trim();
-    s = s.replace(/^https?:\/\/(www\.)?instagram\.com\//i, '');
-    s = s.replace(/\?.*$/, '');
-    s = s.split('/')[0];
-    s = s.replace(/^@/, '').toLowerCase();
-    if (!s) return '';
-    if (!/^[a-z0-9._]{1,30}$/.test(s)) return '';
-    return s;
   };
 
   const passwordScore = (pwd: string) => {
@@ -342,6 +329,7 @@ export function BrandSignup({
 
     if (
       !formData.name ||
+      !formData.pocName ||
       !formData.password ||
       !formData.phone ||
       !formData.countryId ||
@@ -352,6 +340,7 @@ export function BrandSignup({
       const firstMissingId = (
         [
           ['brand-name', !formData.name],
+          ['brand-poc-name', !formData.pocName], // 👈 NEW
           ['calling-code', !formData.callingCodeId],
           ['brand-phone', !formData.phone],
           ['country', !formData.countryId],
@@ -359,6 +348,7 @@ export function BrandSignup({
           ['brand-password', !formData.password],
         ] as const
       ).find(([, miss]) => miss)?.[0] as string | undefined;
+
       if (firstMissingId) {
         document.getElementById(firstMissingId)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
       }
@@ -397,8 +387,6 @@ export function BrandSignup({
     setLoading(true);
     setError('');
 
-    const instaHandle = extractInstagramHandle(formData.instagramHandle);
-
     try {
       const fd = new FormData();
 
@@ -409,13 +397,13 @@ export function BrandSignup({
       fd.append('name', formData.name);
       fd.append('phone', phoneDigits);
       fd.append('email', formData.email);
+      fd.append('pocName', formData.pocName.trim());
       fd.append('password', formData.password);
       fd.append('countryId', formData.countryId);
       fd.append('callingId', formData.callingCodeId);
       fd.append('categoryId', formData.categoryId);
 
       if (formData.website) fd.append('website', formData.website);
-      if (instaHandle) fd.append('instagramHandle', instaHandle);
       if (formData.companySize) fd.append('companySize', formData.companySize);
       if (formData.businessType) fd.append('businessType', formData.businessType);
       if (formData.referralCode) fd.append('referralCode', formData.referralCode);
@@ -475,12 +463,10 @@ export function BrandSignup({
     reader.readAsDataURL(file);
   };
 
-  const safeCategories = Array.isArray(categories) ? categories : [];
-  const safeBusinessTypes = Array.isArray(businessTypes) ? businessTypes : [];
-
   const missing = {
     name: showRequiredHints && !formData.name,
     countryId: showRequiredHints && !formData.countryId,
+    pocName: showRequiredHints && !formData.pocName,
     categoryId: showRequiredHints && !formData.categoryId,
     password: showRequiredHints && !formData.password,
     phone: showRequiredHints && !formData.phone,
@@ -564,9 +550,8 @@ export function BrandSignup({
               type="button"
               onClick={sendOTP}
               disabled={resendIn > 0 || loading}
-              className={`sm:ml-auto text-sm underline font-medium transition-colors ${
-                resendIn > 0 || loading ? 'text-gray-400 cursor-not-allowed' : 'text-gray-700 hover:text-gray-900'
-              }`}
+              className={`sm:ml-auto text-sm underline font-medium transition-colors ${resendIn > 0 || loading ? 'text-gray-400 cursor-not-allowed' : 'text-gray-700 hover:text-gray-900'
+                }`}
               aria-live="polite"
             >
               {resendIn > 0 ? `Resend in ${resendIn}s` : 'Resend code'}
@@ -619,7 +604,7 @@ export function BrandSignup({
                   <FloatingLabelInput id="brand-email-display" label="Email" type="email" value={formData.email} disabled />
                 </div>
 
-                {/* Row 2: Brand Alias Email + Website */}
+                {/* Row 2: Brand Alias Email + Point of Contact */}
                 <div className="grid md:grid-cols-2 gap-4">
                   <FloatingLabelInput
                     id="brand-alias-email"
@@ -629,15 +614,18 @@ export function BrandSignup({
                     disabled
                   />
 
-                  <FloatingLabelInput
-                    id="brand-website"
-                    label="Website (Optional)"
-                    type="url"
-                    placeholder="https://example.com"
-                    autoComplete="url"
-                    value={formData.website}
-                    onChange={(e) => setFormData({ ...formData, website: e.target.value })}
-                  />
+                  <div className="space-y-1">
+                    <FloatingLabelInput
+                      id="brand-poc-name"
+                      label="Point of Contact Name"
+                      type="text"
+                      autoComplete="name"
+                      value={formData.pocName}
+                      onChange={(e) => setFormData({ ...formData, pocName: e.target.value })}
+                      required
+                    />
+                    {missing.pocName && <p className="text-xs text-red-600">This field is required</p>}
+                  </div>
                 </div>
 
                 {/* Row 3: Location + Category */}
@@ -720,15 +708,16 @@ export function BrandSignup({
                   </div>
                 </div>
 
-                {/* Row 5: Instagram + Company size */}
+                {/* Row 5: Website + Company size */}
                 <div className="grid md:grid-cols-2 gap-4">
                   <FloatingLabelInput
-                    id="brand-instagram"
-                    label="Instagram Handle (Optional)"
-                    type="text"
-                    placeholder="@brandname or instagram.com/brandname"
-                    value={formData.instagramHandle}
-                    onChange={(e) => setFormData({ ...formData, instagramHandle: e.target.value })}
+                    id="brand-website"
+                    label="Website (Optional)"
+                    type="url"
+                    placeholder="https://example.com"
+                    autoComplete="url"
+                    value={formData.website}
+                    onChange={(e) => setFormData({ ...formData, website: e.target.value })}
                   />
 
                   <Select

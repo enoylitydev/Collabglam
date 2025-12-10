@@ -312,8 +312,8 @@ export default function CampaignFormPage() {
       boxShadow: hasError
         ? "0 0 0 3px rgba(220, 38, 38, 0.1)"
         : state.isFocused
-        ? "0 0 0 3px rgba(255, 161, 53, 0.1)"
-        : "none",
+          ? "0 0 0 3px rgba(255, 161, 53, 0.1)"
+          : "none",
     }),
   });
 
@@ -485,20 +485,44 @@ export default function CampaignFormPage() {
 
   // ── handlers & reset ─────────────────────────────────────
   const handleProductImages = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files) setProductImages(Array.from(e.target.files));
+    const files = e.target.files ? Array.from(e.target.files) : [];
+    if (!files.length) return;
+
+    // ✅ append to existing images instead of replacing
+    setProductImages((prev) => [...prev, ...files]);
+
+    // allow re-selecting the same file again if needed
+    e.target.value = "";
   };
 
   const handleCreativeBriefFiles = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files) setCreativeBriefFiles(Array.from(e.target.files));
+    const files = e.target.files ? Array.from(e.target.files) : [];
+    if (!files.length) return;
+
+    // ✅ append to existing brief files instead of replacing
+    setCreativeBriefFiles((prev) => [...prev, ...files]);
+
+    e.target.value = "";
   };
 
   const removeProductImage = (idx: number) => {
-    setProductImages(productImages.filter((_, i) => i !== idx));
+    setProductImages((prev) => prev.filter((_, i) => i !== idx));
   };
 
   const removeExistingImage = (idx: number) => {
-    setExistingImages(existingImages.filter((_, i) => i !== idx));
+    setExistingImages((prev) => prev.filter((_, i) => i !== idx));
   };
+
+  // NEW: remove newly uploaded brief file
+  const removeCreativeBriefFile = (idx: number) => {
+    setCreativeBriefFiles((prev) => prev.filter((_, i) => i !== idx));
+  };
+
+  // NEW: remove existing brief from list (e.g. when editing)
+  const removeExistingBriefFile = (idx: number) => {
+    setExistingBriefFiles((prev) => prev.filter((_, i) => i !== idx));
+  };
+
 
   const resetForm = () => {
     setProductName("");
@@ -1057,8 +1081,8 @@ export default function CampaignFormPage() {
                       value={
                         selectedCategoryId
                           ? categorySelectOptions.find(
-                              (o) => o.value === String(selectedCategoryId)
-                            ) || null
+                            (o) => o.value === String(selectedCategoryId)
+                          ) || null
                           : null
                       }
                       onChange={(opt) => {
@@ -1089,8 +1113,8 @@ export default function CampaignFormPage() {
                       options={subcategoryOptionsForSelectedCategory}
                       styles={makeSelectStyles(
                         showRequiredHints &&
-                          !!selectedCategoryId &&
-                          selectedSubcategories.length === 0
+                        !!selectedCategoryId &&
+                        selectedSubcategories.length === 0
                       ) as any}
                       value={selectedSubcategories}
                       onChange={(v) => setSelectedSubcategories(v as SubcategoryOption[])}
@@ -1338,30 +1362,37 @@ export default function CampaignFormPage() {
                       </div>
                     </div>
 
-                    {/* Existing PDFs from backend */}
                     {existingBriefFiles.length > 0 && (
                       <div className="mt-4 space-y-2">
                         {existingBriefFiles.map((filename, idx) => (
-                          <a
+                          <div
                             key={`existing-brief-${idx}`}
-                            href={fileUrl(filename)}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="flex items-center justify-between p-3 bg-orange-50 border border-orange-200 rounded-lg hover:bg-orange-100"
+                            className="flex items-center justify-between p-3 bg-orange-50 border border-orange-200 rounded-lg"
                           >
-                            <div className="flex items-center gap-2">
+                            <a
+                              href={fileUrl(filename)}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex items-center gap-2 flex-1 min-w-0 hover:bg-orange-100 rounded-md px-2 py-1 -mx-2 -my-1"
+                            >
                               <HiOutlineCheckCircle className="h-5 w-5 text-orange-600" />
-                              <span className="text-sm font-medium text-gray-700">
+                              <span className="text-sm font-medium text-gray-700 truncate">
                                 {filename}
                               </span>
-                            </div>
-                            <span className="text-xs text-gray-500">Existing</span>
-                          </a>
+                            </a>
+                            <button
+                              type="button"
+                              onClick={() => removeExistingBriefFile(idx)}
+                              className="ml-3 text-red-500 hover:text-red-700"
+                              aria-label="Remove document"
+                            >
+                              <HiOutlineX className="h-4 w-4" />
+                            </button>
+                          </div>
                         ))}
                       </div>
                     )}
 
-                    {/* Newly selected files */}
                     {creativeBriefFiles.length > 0 && (
                       <div className="mt-4 space-y-2">
                         {creativeBriefFiles.map((file, idx) => (
@@ -1369,15 +1400,23 @@ export default function CampaignFormPage() {
                             key={idx}
                             className="flex items-center justify-between p-3 bg-orange-50 border border-orange-200 rounded-lg"
                           >
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2 flex-1 min-w-0">
                               <HiOutlineCheckCircle className="h-5 w-5 text-orange-600" />
-                              <span className="text-sm font-medium text-gray-700">
+                              <span className="text-sm font-medium text-gray-700 truncate">
                                 {file.name}
                               </span>
                             </div>
-                            <span className="text-xs text-gray-500">
+                            <span className="text-xs text-gray-500 mr-3">
                               {fileSizeKB(file.size)}
                             </span>
+                            <button
+                              type="button"
+                              onClick={() => removeCreativeBriefFile(idx)}
+                              className="text-red-500 hover:text-red-700"
+                              aria-label="Remove document"
+                            >
+                              <HiOutlineX className="h-4 w-4" />
+                            </button>
                           </div>
                         ))}
                       </div>
@@ -1494,10 +1533,9 @@ export default function CampaignFormPage() {
               text-white font-semibold text-base
               px-8 py-3 rounded-lg shadow-lg
               transition-all duration-200
-              ${
-                isSubmitting
-                  ? "opacity-50 cursor-not-allowed"
-                  : "hover:scale-105 hover:shadow-xl active:scale-95"
+              ${isSubmitting
+                ? "opacity-50 cursor-not-allowed"
+                : "hover:scale-105 hover:shadow-xl active:scale-95"
               }
             `}
           >
@@ -1736,8 +1774,8 @@ export default function CampaignFormPage() {
               {isSubmitting
                 ? "Submitting..."
                 : isEditMode
-                ? "Confirm Update"
-                : "Create Campaign"}
+                  ? "Confirm Update"
+                  : "Create Campaign"}
             </Button>
           </DialogFooter>
         </DialogContent>
