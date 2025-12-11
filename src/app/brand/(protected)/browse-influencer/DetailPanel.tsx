@@ -40,52 +40,52 @@ interface DetailPanelProps {
 /** /email/status response shape */
 type EmailStatusResponse =
   | {
-    status: 0 | 1;
-    email?: string;
-    handle?: string;
-    platform?: Platform;
-  }
+      status: 0 | 1;
+      email?: string;
+      handle?: string;
+      platform?: Platform;
+    }
   | { status: 'error'; message?: string };
 
 /** /emails/invitation response shape */
 type InvitationResponse =
   | {
-    status: 'success';
-    message: string;
-    isExistingInfluencer: true;
-    influencerId: string;
-    influencerName: string;
-    brandName: string;
-    emailSent: boolean;
-    emailMeta?: {
-      recipientEmail: string;
-      threadId: string;
-      messageId: string;
-      subject: string;
-      campaignId: string | null;
-    };
-    // no roomId here anymore – no chat room creation
-  }
+      status: 'success';
+      message: string;
+      isExistingInfluencer: true;
+      influencerId: string;
+      influencerName: string;
+      brandName: string;
+      emailSent: boolean;
+      emailMeta?: {
+        recipientEmail: string;
+        threadId: string;
+        messageId: string;
+        subject: string;
+        campaignId: string | null;
+      };
+      // no roomId here anymore – no chat room creation
+    }
   | {
-    status: 'success';
-    message: string;
-    isExistingInfluencer: false;
-    brandName: string;
-    invitationId: string; // still useful if you want to open /brand/email
-    emailSent: boolean;
-    emailMeta?: {
-      recipientEmail: string;
-      threadId: string;
-      messageId: string;
-      subject: string;
-      campaignId: string | null;
-    };
-    isNewInvitation?: boolean;
-  }
+      status: 'success';
+      message: string;
+      isExistingInfluencer: false;
+      brandName: string;
+      invitationId: string; // still useful if you want to open /brand/email
+      emailSent: boolean;
+      emailMeta?: {
+        recipientEmail: string;
+        threadId: string;
+        messageId: string;
+        subject: string;
+        campaignId: string | null;
+      };
+      isNewInvitation?: boolean;
+    }
   | {
-    status: 'error';
-    message: string;
-  };
+      status: 'error';
+      message: string;
+    };
 
 /** /admin/checkstatus response shape */
 type AdminCheckStatusResponse = {
@@ -437,36 +437,29 @@ export const DetailPanel = React.memo<DetailPanelProps>(
           return;
         }
 
-        // 4) Success → just show a success toast (NO room / chat redirect)
-        // resp.isExistingInfluencer tells you if they already have an account,
-        // but in both cases we just confirm that the email was sent.
-        await Swal.fire(
-          'Email sent',
-          resp.message || 'We’ve emailed this creator.',
-          'success'
-        );
+        // 4) Success → friendly, high-level messages only
+        const successTitle = resp.isExistingInfluencer
+          ? 'Message sent'
+          : 'Invitation sent';
 
-        // If you still want to redirect for non-existing influencers
-        // to your email composer, you can optionally do:
-        //
-        // if (!resp.isExistingInfluencer && resp.invitationId) {
-        //   router.push(`/brand/email?invitationId=${resp.invitationId}`);
-        // }
+        const successText = resp.isExistingInfluencer
+          ? 'We’ve emailed this creator. They can reply directly and continue the conversation with your brand.'
+          : 'We’ve sent your invitation to this creator. They’ll see it and can reply soon if they’re interested.';
 
+        await Swal.fire(successTitle, successText, 'success');
       } catch (err: any) {
         console.error(err);
         await Swal.fire(
           'Error',
           err?.response?.data?.message ||
-          err?.message ||
-          'Failed to send invitation email. Please try again.',
+            err?.message ||
+            'Failed to send invitation email. Please try again.',
           'error'
         );
       } finally {
         setSendingInvite(false);
       }
     };
-
 
     /* ------------------------------------------------------------------ */
     /*                Send Invitation (no email anywhere)                 */
@@ -541,64 +534,54 @@ export const DetailPanel = React.memo<DetailPanelProps>(
           post<InvitationCreateResp>('/newinvitations/create', invitationPayload),
         ]);
 
-        let missingMessage: string | null = null;
-        let invitationMessage: string | null = null;
-        let hasError = false;
-
-        // Handle /missing/create outcome
+        // Log /missing/create outcome but don't surface "Missing" to the brand
         if (missingResult.status === 'fulfilled') {
-          const resp = missingResult.value;
-          if (resp?.status === 'exists') {
-            missingMessage =
-              resp.message || 'Missing request already present for this handle.';
-          } else if (resp?.status === 'saved') {
-            missingMessage =
-              resp.message || 'Missing request recorded for this creator.';
-          } else {
-            missingMessage = 'Missing/create call completed.';
-          }
+          console.log('Missing/create result', missingResult.value);
         } else {
-          hasError = true;
-          const err = missingResult.reason as any;
-          missingMessage = `Missing/create failed: ${err?.response?.data?.message || err?.message || 'Unknown error'
-            }`;
+          console.error('Missing/create failed', missingResult.reason);
         }
 
-        // Handle /invitation/create outcome
+        // Handle /invitation/create outcome in a user-friendly way
+        let invitationStatus: InvitationCreateResp['status'] | 'error' = 'error';
+
         if (invitationResult.status === 'fulfilled') {
           const resp = invitationResult.value;
-          if (resp?.status === 'exists') {
-            invitationMessage =
-              resp.message ||
-              'Invitation already exists for this brand + handle + platform.';
-          } else if (resp?.status === 'saved') {
-            invitationMessage =
-              resp.message || 'Invitation created for this creator.';
+          if (resp?.status === 'saved' || resp?.status === 'exists') {
+            invitationStatus = resp.status;
           } else {
-            invitationMessage = 'Invitation/create call completed.';
+            invitationStatus = 'error';
           }
         } else {
-          hasError = true;
-          const err = invitationResult.reason as any;
-          invitationMessage = `Invitation/create failed: ${err?.response?.data?.message || err?.message || 'Unknown error'
-            }`;
+          console.error('Invitation/create failed', invitationResult.reason);
+          invitationStatus = 'error';
         }
 
-        const title = hasError ? 'Saved with issues' : 'Invitation recorded';
-        const text = [missingMessage, invitationMessage]
-          .filter(Boolean)
-          .join('\n');
+        if (invitationStatus === 'error') {
+          await Swal.fire(
+            'Something went wrong',
+            'We couldn’t send the invitation. Please try again in a moment.',
+            'error'
+          );
+          return;
+        }
 
-        const result = await Swal.fire(
-          title,
-          text,
-          hasError ? 'warning' : 'success'
-        );
+        if (invitationStatus === 'saved') {
+          await Swal.fire(
+            'Invitation sent',
+            'We’ve sent an invitation to this creator. They’ll see it and can reply soon.',
+            'success'
+          );
+        } else {
+          // status === 'exists'
+          await Swal.fire(
+            'Already invited',
+            'You’ve already sent an invitation to this creator. They’ll be able to reply once they see it.',
+            'info'
+          );
+        }
 
         // After clicking OK (or closing), redirect to brand/invited
-        if (result.isConfirmed || result.isDismissed) {
-          router.push('/brand/invited');
-        }
+        router.push('/brand/invited');
       } catch (err: any) {
         const msg =
           err?.response?.data?.message ||
@@ -669,8 +652,7 @@ export const DetailPanel = React.memo<DetailPanelProps>(
                       className="inline-flex items-center gap-1 rounded-xl border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-60"
                     >
                       <BarChart3
-                        className={`h-3 w-3 ${refreshing ? 'animate-spin' : ''
-                          }`}
+                        className={`h-3 w-3 ${refreshing ? 'animate-spin' : ''}`}
                       />
                       {refreshing ? 'Refreshing…' : 'Refresh data'}
                     </button>
@@ -685,9 +667,10 @@ export const DetailPanel = React.memo<DetailPanelProps>(
                       disabled={!canAct}
                       title={ctaTitle}
                       className={`inline-flex items-center gap-2 rounded-xl px-3 py-1.5 text-sm font-medium text-white transition-opacity shadow-sm
-                        ${canAct
-                          ? 'bg-gradient-to-r from-[#FFA135] to-[#FF7236] hover:opacity-90'
-                          : 'bg-gray-300 cursor-not-allowed opacity-70'
+                        ${
+                          canAct
+                            ? 'bg-gradient-to-r from-[#FFA135] to-[#FF7236] hover:opacity-90'
+                            : 'bg-gray-300 cursor-not-allowed opacity-70'
                         }`}
                     >
                       {sendingInvite ? (
@@ -708,9 +691,10 @@ export const DetailPanel = React.memo<DetailPanelProps>(
                       disabled={!canAct}
                       title={ctaTitle}
                       className={`inline-flex items-center gap-2 rounded-xl px-3 py-1.5 text-sm font-medium text-white transition-opacity shadow-sm
-                        ${canAct
-                          ? 'bg-gradient-to-r from-[#FFA135] to-[#FF7236] hover:opacity-90'
-                          : 'bg-gray-300 cursor-not-allowed opacity-70'
+                        ${
+                          canAct
+                            ? 'bg-gradient-to-r from-[#FFA135] to-[#FF7236] hover:opacity-90'
+                            : 'bg-gray-300 cursor-not-allowed opacity-70'
                         }`}
                     >
                       {sendingInvite ? (
@@ -721,7 +705,7 @@ export const DetailPanel = React.memo<DetailPanelProps>(
                       ) : (
                         <>
                           <Send className="h-4 w-4" />
-                          Request Contact
+                          Send Invitation
                         </>
                       )}
                     </button>
