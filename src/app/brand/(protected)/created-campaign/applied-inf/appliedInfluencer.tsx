@@ -3056,16 +3056,6 @@ export default function AppliedInfluencersPage() {
           {/* Footer Buttons */}
           <div className="sticky bottom-0 -mx-6 -mb-6 bg-white/95 backdrop-blur border-t border-gray-200 p-6 flex flex-wrap justify-end gap-3">
             <Button
-              variant="outline"
-              onClick={closeSidebar}
-              className="px-6 text-black"
-              disabled={
-                isPreviewLoading || isSendLoading || isUpdateLoading
-              }
-            >
-              Close
-            </Button>
-            <Button
               onClick={handleGeneratePreview}
               className="px-6 border-2 border-black text-black bg-white hover:bg-gray-50 disabled:opacity-60"
               title="Generate a PDF preview on the left"

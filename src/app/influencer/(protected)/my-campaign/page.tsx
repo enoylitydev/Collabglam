@@ -1204,37 +1204,6 @@ function InfluencerContractModal({
                     <Button onClick={acceptOrSave} disabled={isWorking || !liteLoaded} className="bg-emerald-600 hover:bg-emerald-700 text-white" title={!liteLoaded ? "Loading your profile…" : ""}>
                       {influencerConfirmed ? "Save Changes" : "Accept & Save"}
                     </Button>
-                    <Button onClick={() => generatePreview()} disabled={isWorking} variant="outline">
-                      View PDF
-                    </Button>
-                    <Button
-                      onClick={openSignature}
-                      disabled={
-                        isWorking ||
-                        isLocked ||
-                        !influencerConfirmed ||
-                        !brandConfirmed ||
-                        meta?.flags?.canSignInfluencer === false
-                      }
-                      className={
-                        (!influencerConfirmed || !brandConfirmed || isLocked)
-                          ? "bg-gray-300 text-gray-600 cursor-not-allowed"
-                          : "bg-indigo-600 hover:bg-indigo-700 text-white"
-                      }
-                      title={
-                        !influencerConfirmed
-                          ? "Accept the contract first"
-                          : !brandConfirmed
-                            ? "Brand must confirm before signing"
-                            : isLocked
-                              ? "Contract is locked"
-                              : meta?.flags?.canSignInfluencer === false
-                                ? "Signing disabled"
-                                : ""
-                      }
-                    >
-                      Sign
-                    </Button>
                     <Button variant="outline" onClick={() => setMode("view")}>Switch to View</Button>
                   </div>
                 </div>
