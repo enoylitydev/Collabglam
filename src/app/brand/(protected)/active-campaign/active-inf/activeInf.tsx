@@ -1045,7 +1045,7 @@ export default function ActiveInfluencersPage() {
                           ?
                         </button>
                       </TooltipTrigger>
-                      <TooltipContent className="max-w-xs text-xs">
+                      <TooltipContent className="max-w-xs text-xs bg-gray-800 text-white">
                         Razorpay charges a 2% payment processing fee when you add milestone
                         funds. This 2% is added on top of the milestone amount you enter.
                       </TooltipContent>
