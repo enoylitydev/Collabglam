@@ -49,7 +49,64 @@ import dynamic from "next/dynamic";
 const GRADIENT_FROM = "#FFA135";
 const GRADIENT_TO = "#FF7236";
 
+const MILESTONE_SPLIT_PRESETS = [
+  { value: "100", label: "100% on completion" },
+  { value: "50/50", label: "50% upfront / 50% on completion" },
+  { value: "30/70", label: "30% on signing / 70% on completion" },
+  { value: "40/30/30", label: "40% / 30% / 30%" },
+  { value: "custom", label: "Custom split…" },
+] as const;
+
 const ReactSelect = dynamic(() => import("react-select"), { ssr: false });
+
+/**
+ * Shared ReactSelect styles so all selects visually align with our 44px inputs.
+ */
+const buildReactSelectStyles = (opts?: { hasError?: boolean }) => {
+  const hasError = opts?.hasError;
+  return {
+    control: (base: any, state: any) => ({
+      ...base,
+      minHeight: 44,
+      borderRadius: 8,
+      borderWidth: 2,
+      borderColor: hasError
+        ? "#ef4444"
+        : state.isFocused
+          ? "#FF8A35"
+          : "#e5e7eb",
+      boxShadow: state.isFocused
+        ? "0 0 0 1px #FF8A35, 0 0 0 3px rgba(255,138,53,0.35)"
+        : "none",
+      "&:hover": {
+        borderColor: hasError
+          ? "#ef4444"
+          : state.isFocused
+            ? "#FF8A35"
+            : "#e5e7eb",
+      },
+    }),
+    valueContainer: (base: any) => ({
+      ...base,
+      padding: "0 12px",
+    }),
+    indicatorsContainer: (base: any) => ({
+      ...base,
+      minHeight: 44,
+    }),
+    input: (base: any) => ({
+      ...base,
+      margin: 0,
+      padding: 0,
+    }),
+    multiValue: (base: any) => ({
+      ...base,
+      borderRadius: 9999,
+      paddingLeft: 4,
+      paddingRight: 4,
+    }),
+  };
+};
 
 /* ===============================================================
    Types
@@ -97,7 +154,7 @@ interface AuditEvent {
   byUserId?: string;
   role?: string;
   type: string;
-  details?: { reason?: string; [k: string]: any };
+  details?: { reason?: string;[k: string]: any };
   at?: string;
 }
 
@@ -105,14 +162,14 @@ interface ContractMeta {
   contractId: string;
   campaignId: string;
   status:
-    | "draft"
-    | "sent"
-    | "viewed"
-    | "negotiation"
-    | "finalize"
-    | "signing"
-    | "rejected"
-    | "locked";
+  | "draft"
+  | "sent"
+  | "viewed"
+  | "negotiation"
+  | "finalize"
+  | "signing"
+  | "rejected"
+  | "locked";
   lastSentAt?: string;
   lockedAt?: string | null;
   confirmations?: { brand?: PartyConfirm; influencer?: PartyConfirm };
@@ -143,6 +200,20 @@ interface DeliverableRow {
   durationSec: string;
   minLiveValue: string;
   minLiveUnit: "hours" | "months";
+
+  // per-deliverable settings
+  draftRequired: boolean;
+  draftDue: string; // yyyy-mm-dd
+  captions: string;
+  disclosures: string;
+  tags: string[];
+  links: string[];
+  handles: string[];
+
+  // NEW: per-deliverable usage toggles
+  whitelistingEnabled: boolean;
+  sparkAdsEnabled: boolean;
+  insightsReadOnly: boolean;
 }
 
 /* ===============================================================
@@ -381,6 +452,13 @@ export default function AppliedInfluencersPage() {
   const [milestoneSplit, setMilestoneSplit] = useState("50/50");
   const [revisionsIncluded, setRevisionsIncluded] = useState<string>("1");
 
+  const milestonePreset = useMemo(() => {
+    const match = MILESTONE_SPLIT_PRESETS.find(
+      (p) => p.value === milestoneSplit
+    );
+    return match ? match.value : "custom";
+  }, [milestoneSplit]);
+
   // Deliverables list (per row)
   const [deliverables, setDeliverables] = useState<DeliverableRow[]>([
     {
@@ -391,19 +469,18 @@ export default function AppliedInfluencersPage() {
       durationSec: "",
       minLiveValue: "",
       minLiveUnit: "hours",
+      draftRequired: false,
+      draftDue: "",
+      captions: "",
+      disclosures: "",
+      tags: [],
+      links: [],
+      handles: [],
+      whitelistingEnabled: false,
+      sparkAdsEnabled: false,
+      insightsReadOnly: false,
     },
   ]);
-  const [dDraftRequired, setDDraftRequired] = useState(false);
-  const [dDraftDue, setDDraftDue] = useState<string>("");
-
-  const [dTags, setDTags] = useState<string[]>([]);
-  const [dHandles, setDHandles] = useState<string[]>([]);
-  const [dCaptions, setDCaptions] = useState("");
-  const [dLinks, setDLinks] = useState<string[]>([]);
-  const [dDisclosures, setDDisclosures] = useState("");
-  const [allowWhitelisting, setAllowWhitelisting] = useState(false);
-  const [allowSparkAds, setAllowSparkAds] = useState(false);
-  const [allowReadOnlyInsights, setAllowReadOnlyInsights] = useState(false);
 
   // Usage Bundle
   const [usageType, setUsageType] = useState<string>("Organic");
@@ -484,6 +561,26 @@ export default function AppliedInfluencersPage() {
 
   const parseDateOnly = (s?: string) => (s ? new Date(s + "T00:00:00") : null);
 
+  const formatDateLong = (s?: string) => {
+    if (!s) return "";
+    const d = new Date(s);
+    if (Number.isNaN(d.getTime())) return "";
+    return d.toLocaleDateString(undefined, {
+      month: "long",
+      day: "numeric",
+      year: "numeric",
+    });
+  };
+
+  const formatPostingWindowLabel = (start?: string, end?: string) => {
+    const s = formatDateLong(start);
+    const e = formatDateLong(end);
+    if (s && e) return `${s} – ${e}`;
+    if (s) return `From ${s}`;
+    if (e) return `Until ${e}`;
+    return "Not set";
+  };
+
   const todayStr = toInputDate(new Date());
   const startMin = todayStr;
   const endMin = goLiveStart || todayStr;
@@ -548,16 +645,29 @@ export default function AppliedInfluencersPage() {
 
   /* ---------------- Keyboard shortcuts ---------------- */
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "/") {
-        e.preventDefault();
-        searchInputRef.current?.focus();
-      }
-      if (e.key === "Escape" && sidebarOpen) closeSidebar();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [sidebarOpen]);
+  const onKey = (e: KeyboardEvent) => {
+    const target = e.target as HTMLElement | null;
+    const tag = target?.tagName;
+    const isEditable =
+      target?.isContentEditable ||
+      tag === "INPUT" ||
+      tag === "TEXTAREA" ||
+      tag === "SELECT";
+
+    // Don't hijack / when user is typing in a field
+    if (isEditable) return;
+
+    if (e.key === "/") {
+      e.preventDefault();
+      searchInputRef.current?.focus();
+    }
+
+    if (e.key === "Escape" && sidebarOpen) closeSidebar();
+  };
+
+  window.addEventListener("keydown", onKey);
+  return () => window.removeEventListener("keydown", onKey);
+}, [sidebarOpen]);
 
   /* ---------------- Currency & Timezone lists ---------------- */
   useEffect(() => {
@@ -682,8 +792,8 @@ export default function AppliedInfluencersPage() {
       } catch (e: any) {
         setError(
           e?.response?.data?.message ||
-            e?.message ||
-            "Failed to load applicants."
+          e?.message ||
+          "Failed to load applicants."
         );
       } finally {
         setLoading(false);
@@ -742,8 +852,8 @@ export default function AppliedInfluencersPage() {
       return filtered.length
         ? filtered[0]
         : (list as ContractMeta[]).length
-        ? (list as ContractMeta[])[0]
-        : null;
+          ? (list as ContractMeta[])[0]
+          : null;
     } catch (e: any) {
       toast({
         icon: "error",
@@ -821,7 +931,7 @@ export default function AppliedInfluencersPage() {
     setMilestoneSplit("50/50");
     setRevisionsIncluded("1");
 
-    // Reset deliverables
+    // default single deliverable row
     setDeliverables([
       {
         id: createRowId(),
@@ -831,20 +941,18 @@ export default function AppliedInfluencersPage() {
         durationSec: "",
         minLiveValue: "",
         minLiveUnit: "hours",
+        draftRequired: false,
+        draftDue: "",
+        captions: "",
+        disclosures: "",
+        tags: [],
+        links: [],
+        handles: inf.handle ? [sanitizeHandle(inf.handle)] : [],
+        whitelistingEnabled: false,
+        sparkAdsEnabled: false,
+        insightsReadOnly: false,
       },
     ]);
-    setDDraftRequired(false);
-    setDDraftDue("");
-
-    setDTags([]);
-    setDHandles(inf.handle ? [sanitizeHandle(inf.handle)] : []);
-    setDCaptions("");
-    setDLinks([]);
-    setDDisclosures("");
-
-    setAllowWhitelisting(false);
-    setAllowSparkAds(false);
-    setAllowReadOnlyInsights(false);
 
     setUsageType("Organic");
     setUsageDurationMonths("12");
@@ -899,83 +1007,91 @@ export default function AppliedInfluencersPage() {
 
       const expanded = brand.deliverablesExpanded;
       if (Array.isArray(expanded) && expanded.length) {
-        setDeliverables(
-          expanded.map((d: any, index: number) => {
-            const minLiveHours: number =
-              typeof d.minLiveHours === "number" ? d.minLiveHours : 0;
-            let minLiveValue = "";
-            let minLiveUnit: "hours" | "months" = "hours";
+        const mapped: DeliverableRow[] = expanded.map((d: any, index: number) => {
+          const minLiveHours: number =
+            typeof d.minLiveHours === "number" ? d.minLiveHours : 0;
+          let minLiveValue = "";
+          let minLiveUnit: "hours" | "months" = "hours";
 
-            if (minLiveHours > 0) {
-              if (minLiveHours % 720 === 0) {
-                minLiveUnit = "months";
-                minLiveValue = String(minLiveHours / 720);
-              } else {
-                minLiveUnit = "hours";
-                minLiveValue = String(minLiveHours);
-              }
+          if (minLiveHours > 0) {
+            if (minLiveHours % 720 === 0) {
+              minLiveUnit = "months";
+              minLiveValue = String(minLiveHours / 720);
+            } else {
+              minLiveUnit = "hours";
+              minLiveValue = String(minLiveHours);
             }
+          }
 
-            return {
-              id: `${String(d.type || "row")}-${index}-${d.quantity ?? 1}`,
-              type: String(d.type || "Video"),
-              quantity:
-                d.quantity !== undefined && d.quantity !== null
-                  ? String(d.quantity)
-                  : "1",
-              format: d.format ? String(d.format) : "",
-              durationSec:
-                d.durationSec !== undefined && d.durationSec !== null
-                  ? String(d.durationSec)
-                  : "",
-              minLiveValue,
-              minLiveUnit,
-            };
-          })
-        );
+          return {
+            id: `${String(d.type || "row")}-${index}-${d.quantity ?? 1}`,
+            type: String(d.type || "Video"),
+            quantity:
+              d.quantity !== undefined && d.quantity !== null
+                ? String(d.quantity)
+                : "1",
+            format: d.format ? String(d.format) : "",
+            durationSec:
+              d.durationSec !== undefined && d.durationSec !== null
+                ? String(d.durationSec)
+                : "",
+            minLiveValue,
+            minLiveUnit,
+            draftRequired: Boolean(d.draftRequired),
+            draftDue: d.draftDueDate ? toInputDate(d.draftDueDate) : "",
+            captions: d.captions ? String(d.captions) : "",
+            disclosures:
+              typeof d.disclosures === "string" ? d.disclosures : "",
+            tags: Array.isArray(d.tags)
+              ? d.tags.map((t: any) => String(t))
+              : [],
+            links: Array.isArray(d.links)
+              ? d.links.map((l: any) => String(l))
+              : [],
+            handles: Array.isArray(d.handles)
+              ? d.handles.map((h: any) => sanitizeHandle(String(h)))
+              : inf.handle
+                ? [sanitizeHandle(inf.handle)]
+                : [],
+            whitelistingEnabled:
+              typeof d.whitelistingEnabled === "boolean"
+                ? d.whitelistingEnabled
+                : false,
+            sparkAdsEnabled:
+              typeof d.sparkAdsEnabled === "boolean"
+                ? d.sparkAdsEnabled
+                : false,
+            insightsReadOnly:
+              typeof d.insightsReadOnly === "boolean"
+                ? d.insightsReadOnly
+                : false,
+          };
+        });
 
-        const first = expanded[0];
-        if (first) {
-          if (first.draftRequired !== undefined)
-            setDDraftRequired(Boolean(first.draftRequired));
-          if (first.draftDueDate) setDDraftDue(toInputDate(first.draftDueDate));
-
-          if (Array.isArray(first.tags))
-            setDTags(first.tags.map((t: any) => String(t)));
-          if (Array.isArray(first.handles))
-            setDHandles(
-              first.handles.map((h: any) => sanitizeHandle(String(h)))
-            );
-          if (first.captions) setDCaptions(String(first.captions));
-          if (Array.isArray(first.links))
-            setDLinks(first.links.map((l: any) => String(l)));
-          if (typeof first.disclosures === "string")
-            setDDisclosures(first.disclosures);
-          if (typeof first.whitelistingEnabled === "boolean")
-            setAllowWhitelisting(first.whitelistingEnabled);
-          if (typeof first.sparkAdsEnabled === "boolean")
-            setAllowSparkAds(first.sparkAdsEnabled);
-          if (typeof first.insightsReadOnly === "boolean")
-            setAllowReadOnlyInsights(first.insightsReadOnly);
-        }
+        setDeliverables(mapped);
       }
     }
   };
 
-  // toggle-specific support by platform
+  // toggle-specific support by platform (row-level uses this as proxy)
   const supportsSparkAds = platforms.includes("TikTok");
   const supportsWhitelisting =
     platforms.includes("Instagram") || platforms.includes("TikTok");
 
+  // If a platform no longer supports a toggle, force it off on all rows
   useEffect(() => {
-    if (!supportsSparkAds) setAllowSparkAds(false);
-    if (!supportsWhitelisting) setAllowWhitelisting(false);
+    if (!supportsSparkAds || !supportsWhitelisting) {
+      setDeliverables((prev) =>
+        prev.map((row) => ({
+          ...row,
+          sparkAdsEnabled: supportsSparkAds ? row.sparkAdsEnabled : false,
+          whitelistingEnabled: supportsWhitelisting
+            ? row.whitelistingEnabled
+            : false,
+        }))
+      );
+    }
   }, [supportsSparkAds, supportsWhitelisting]);
-
-  // Draft due enabled only if required
-  useEffect(() => {
-    if (!dDraftRequired) setDDraftDue("");
-  }, [dDraftRequired]);
 
   const updateBtnLabel =
     selectedMeta && isRejectedMeta(selectedMeta)
@@ -1015,16 +1131,12 @@ export default function AppliedInfluencersPage() {
 
   /* ---------------- Build payload ---------------- */
   const buildBrandPayload = () => {
-    const handles = dHandles.map(sanitizeHandle).filter(Boolean);
-    const links = dLinks.filter((l) => /^https?:\/\/.+/i.test(l));
-    const tags = dTags.map((t) => (t.startsWith("#") ? t : `#${t}`));
-
     const goLive =
       goLiveStart || goLiveEnd
         ? {
-            start: goLiveStart ? new Date(goLiveStart) : undefined,
-            end: goLiveEnd ? new Date(goLiveEnd) : undefined,
-          }
+          start: goLiveStart ? new Date(goLiveStart) : undefined,
+          end: goLiveEnd ? new Date(goLiveEnd) : undefined,
+        }
         : undefined;
 
     const feeNum = Number(totalFee || "0");
@@ -1041,35 +1153,45 @@ export default function AppliedInfluencersPage() {
     const deliverablesExpanded =
       deliverables.length > 0
         ? deliverables.map((row) => {
-            const qtyNum = Number(row.quantity || "0");
-            const durNum = Number(row.durationSec || "0");
-            const isVideoRow = isVideoRowType(row.type, row.format);
+          const qtyNum = Number(row.quantity || "0");
+          const durNum = Number(row.durationSec || "0");
+          const isVideoRow = isVideoRowType(row.type, row.format);
 
-            const minLiveHoursNum =
-              row.minLiveUnit === "months"
-                ? (Number(row.minLiveValue || "0") || 0) * 720
-                : Number(row.minLiveValue || "0") || 0;
+          const minLiveHoursNum =
+            row.minLiveUnit === "months"
+              ? (Number(row.minLiveValue || "0") || 0) * 720
+              : Number(row.minLiveValue || "0") || 0;
 
-            return {
-              type: row.type || "Video",
-              quantity: Number.isFinite(qtyNum) ? qtyNum : 0,
-              format: row.format,
-              durationSec:
-                isVideoRow && Number.isFinite(durNum) ? durNum : 0,
-              postingWindow: goLive || { start: undefined, end: undefined },
-              draftRequired: Boolean(dDraftRequired),
-              draftDueDate: dDraftDue || undefined,
-              minLiveHours: minLiveHoursNum,
-              tags,
-              handles,
-              captions: dCaptions,
-              links,
-              disclosures: dDisclosures,
-              whitelistingEnabled: allowWhitelisting,
-              sparkAdsEnabled: allowSparkAds,
-              insightsReadOnly: allowReadOnlyInsights,
-            };
-          })
+          const rowTags = (row.tags || []).map((t) =>
+            t.startsWith("#") ? t : `#${t}`
+          );
+          const rowLinks = (row.links || []).filter((l) =>
+            /^https?:\/\/.+/i.test(l)
+          );
+          const rowHandles = (row.handles || [])
+            .map(sanitizeHandle)
+            .filter(Boolean);
+
+          return {
+            type: row.type || "Video",
+            quantity: Number.isFinite(qtyNum) ? qtyNum : 0,
+            format: row.format,
+            durationSec:
+              isVideoRow && Number.isFinite(durNum) ? durNum : 0,
+            postingWindow: goLive || { start: undefined, end: undefined },
+            draftRequired: Boolean(row.draftRequired),
+            draftDueDate: row.draftDue || undefined,
+            minLiveHours: minLiveHoursNum,
+            tags: rowTags,
+            handles: rowHandles,
+            captions: row.captions,
+            links: rowLinks,
+            disclosures: row.disclosures,
+            whitelistingEnabled: row.whitelistingEnabled,
+            sparkAdsEnabled: row.sparkAdsEnabled,
+            insightsReadOnly: row.insightsReadOnly,
+          };
+        })
         : [];
 
     return {
@@ -1149,22 +1271,6 @@ export default function AppliedInfluencersPage() {
         );
     }
 
-    if (dDraftRequired && !dDraftDue)
-      add(
-        "dDraftDue",
-        "Draft due date is required when a draft is required."
-      );
-    if (dDraftDue) {
-      const draft = parseDateOnly(dDraftDue)!;
-      if (draft < today)
-        add("dDraftDue", "Draft due cannot be before today.");
-      if (start && draft > start)
-        add(
-          "dDraftDue",
-          "Draft due must be on/before Posting Window Start."
-        );
-    }
-
     const feeNum = Number(totalFee || "");
     if (!totalFee.trim() || Number.isNaN(feeNum) || feeNum < 0)
       add("totalFee", "Enter a valid non-negative fee.");
@@ -1192,14 +1298,19 @@ export default function AppliedInfluencersPage() {
 
       deliverables.forEach((row, idx) => {
         const idxLabel = `Deliverable #${idx + 1}`;
+
+        // Type
         if (!row.type) {
           messages.push(`${idxLabel}: Type is required.`);
         }
+
+        // Quantity
         const qtyNum = Number(row.quantity || "");
         if (!row.quantity.trim() || Number.isNaN(qtyNum) || qtyNum < 1) {
           messages.push(`${idxLabel}: Quantity must be at least 1.`);
         }
 
+        // Duration (for video)
         const isVideoRow = isVideoRowType(row.type, row.format);
         if (isVideoRow) {
           const durNum = Number(row.durationSec || "");
@@ -1210,6 +1321,7 @@ export default function AppliedInfluencersPage() {
           }
         }
 
+        // Minimum Live
         if (row.minLiveValue) {
           const liveNum = Number(row.minLiveValue);
           if (Number.isNaN(liveNum) || liveNum < 0) {
@@ -1218,22 +1330,52 @@ export default function AppliedInfluencersPage() {
             );
           }
         }
+
+        // Draft per deliverable
+        if (row.draftRequired && !row.draftDue) {
+          messages.push(
+            `${idxLabel}: Draft due date is required when a draft is required.`
+          );
+        }
+        if (row.draftDue) {
+          const draft = parseDateOnly(row.draftDue)!;
+          if (draft < today) {
+            messages.push(
+              `${idxLabel}: Draft due cannot be before today.`
+            );
+          }
+          if (start && draft > start) {
+            messages.push(
+              `${idxLabel}: Draft due must be on/before Posting Window Start.`
+            );
+          }
+        }
+
+        // Links per deliverable
+        const badLink = (row.links || []).find(
+          (l) => !/^https?:\/\/.+/i.test(l)
+        );
+        if (badLink) {
+          messages.push(
+            `${idxLabel}: All links must be valid URLs (https://).`
+          );
+        }
+
+        // Handles per deliverable
+        const badHandle = (row.handles || []).find(
+          (h) => !/^@?\w[\w._-]*$/.test(h)
+        );
+        if (badHandle) {
+          messages.push(
+            `${idxLabel}: Handles should be like @username (letters, numbers, . _ -).`
+          );
+        }
       });
 
       if (messages.length) {
         add("deliverables", messages.join(" "));
       }
     }
-
-    const badLink = dLinks.find((l) => !/^https?:\/\/.+/i.test(l));
-    if (badLink) add("dLinks", "All links must be valid URLs (https://).");
-
-    const badHandle = dHandles.find((h) => !/^@?\w[\w._-]*$/.test(h));
-    if (badHandle)
-      add(
-        "dHandles",
-        "Handles should be like @username (letters, numbers, . _ -)."
-      );
 
     if (!usageType) add("usageType", "Choose a license type.");
     const usageDurNum = Number(usageDurationMonths || "");
@@ -1488,11 +1630,23 @@ export default function AppliedInfluencersPage() {
         title: "No Contract",
         text: "Send contract first.",
       });
+
+    // 🔒 Extra safety: don't allow accept unless influencer confirmed
+    const iConfirmed = !!meta.confirmations?.influencer?.confirmed;
+    if (!iConfirmed) {
+      return toast({
+        icon: "info",
+        title: "Awaiting influencer",
+        text: "Influencer must confirm the contract before you can accept.",
+      });
+    }
+
     const ok = await askConfirm(
       "Confirm as Brand?",
       "Once confirmed, your next step is to sign."
     );
     if (!ok) return;
+
     try {
       await post("/contract/brand/confirm", { contractId: meta.contractId });
       toast({ icon: "success", title: "Brand Accepted" });
@@ -1509,6 +1663,7 @@ export default function AppliedInfluencersPage() {
       });
     }
   };
+
 
   const openSignModal = (meta: ContractMeta | null) => {
     if (!meta?.contractId)
@@ -1534,37 +1689,14 @@ export default function AppliedInfluencersPage() {
     currency,
     milestoneSplit,
     revisionsIncluded,
-    dDraftRequired,
-    dDraftDue,
-    dCaptions,
-    dDisclosures,
     requestedEffDate,
     requestedEffTz,
-    allowWhitelisting,
-    allowSparkAds,
-    allowReadOnlyInsights,
-    dTags.length,
-    dLinks.length,
-    dHandles.length,
     usageType,
     usageDurationMonths,
     usageDerivativeEdits,
     usageGeographies.length,
     JSON.stringify(deliverables),
   ]);
-
-  const setTagsInvalidate = (items: string[]) => {
-    setDTags(items);
-    clearPreview();
-  };
-  const setLinksInvalidate = (items: string[]) => {
-    setDLinks(items);
-    clearPreview();
-  };
-  const setHandlesInvalidate = (items: string[]) => {
-    setDHandles(items.map(sanitizeHandle));
-    clearPreview();
-  };
 
   /* ---------------- Status per-row ---------------- */
   const prettyStatus = (
@@ -1597,11 +1729,10 @@ export default function AppliedInfluencersPage() {
     const rejected = isRejectedMeta(meta);
     return (
       <span
-        className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-          rejected
+        className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${rejected
             ? "bg-black text-white"
             : "bg-gray-100 text-gray-800"
-        }`}
+          }`}
       >
         {label}
       </span>
@@ -1678,17 +1809,6 @@ export default function AppliedInfluencersPage() {
         </ActionButton>
       )}
 
-      {hasContract && !rejected && !iConfirmed && !locked && !bConfirmed && (
-        <ActionButton
-          icon={HiCheck}
-          title="Brand Accept"
-          variant="outline"
-          onClick={() => handleBrandAccept(inf)}
-        >
-          Brand Accept
-        </ActionButton>
-      )}
-
       {hasContract && iConfirmed && !bConfirmed && !locked && (
         <>
           <ActionButton
@@ -1744,13 +1864,11 @@ export default function AppliedInfluencersPage() {
           <TableRow
             key={inf.influencerId}
             id={`inf-row-${inf.influencerId}`}
-            className={`${
-              idx % 2 === 0 ? "bg-white" : "bg-gray-50"
-            } hover:bg-gray-100/60 focus-within:bg-gray-100/80 transition-colors ${
-              isHighlighted
+            className={`${idx % 2 === 0 ? "bg-white" : "bg-gray-50"
+              } hover:bg-gray-100/60 focus-within:bg-gray-100/80 transition-colors ${isHighlighted
                 ? "bg-[#FFF0D6] !bg-[#FFF0D6] shadow-[0_0_0_2px_rgba(234,88,12,0.9)] outline outline-2 outline-[#EA580C] animate-pulse"
                 : ""
-            }`}
+              }`}
           >
             <TableCell className="font-medium">
               <div className="flex items-center gap-2">
@@ -1863,11 +1981,10 @@ export default function AppliedInfluencersPage() {
           <div
             key={inf.influencerId}
             id={`inf-card-${inf.influencerId}`}
-            className={`relative rounded-xl border p-4 bg-white transition-all duration-300 ${
-              highlightInfId === inf.influencerId
+            className={`relative rounded-xl border p-4 bg-white transition-all duration-300 ${highlightInfId === inf.influencerId
                 ? "border-[#EA580C] bg-[#FFE4C4] shadow-[0_0_0_2px_rgba(234,88,12,0.9),0_18px_45px_rgba(0,0,0,0.35)] animate-pulse scale-[1.02]"
                 : "border-gray-200 hover:shadow-md hover:-translate-y-[1px]"
-            }`}
+              }`}
           >
             {highlightInfId === inf.influencerId && (
               <span className="absolute -top-2 right-3 rounded-full bg-gradient-to-r from-[#FFA135] to-[#FF7236] px-2 py-0.5 text-[10px] font-semibold text-white shadow-sm">
@@ -1961,7 +2078,7 @@ export default function AppliedInfluencersPage() {
                 setSearchTerm(e.target.value);
                 setPage(1);
               }}
-              className="w-full pl-10 pr-4 py-2 border rounded-lg text-sm border-gray-200 focus:outline-none focus-visible:outline-none focus:border-[#FF8A35] focus-visible:ring-2 focus-visible:ring-[#FF8A35] focus-visible:ring-offset-1 focus-visible:ring-offset-white"
+              className="w-full h-[44px] pl-10 pr-4 border-2 rounded-lg text-sm border-gray-200 focus:outline-none focus-visible:outline-none focus:border-[#FF8A35] focus-visible:ring-2 focus-visible:ring-[#FF8A35] focus-visible:ring-offset-1 focus-visible:ring-offset-white"
               aria-label="Search influencers"
             />
           </div>
@@ -2115,8 +2232,8 @@ export default function AppliedInfluencersPage() {
             panelMode === "send"
               ? "Send Contract"
               : selectedMeta && isRejectedMeta(selectedMeta)
-              ? "Resend Contract"
-              : "Edit Contract"
+                ? "Resend Contract"
+                : "Edit Contract"
           }
           subtitle={
             selectedInf
@@ -2124,6 +2241,7 @@ export default function AppliedInfluencersPage() {
               : campaignTitle || "Agreement"
           }
           previewUrl={pdfUrl}
+          onClosePreview={clearPreview}
         >
           {/* Campaign Details */}
           <SidebarSection
@@ -2207,33 +2325,9 @@ export default function AppliedInfluencersPage() {
                       clearPreview();
                     }}
                     placeholder="Select currency"
-                    styles={{
-                      control: (base, state) => ({
-                        ...base,
-                        minHeight: 44,
-                        height: 44,
-                        borderRadius: 8,
-                        borderColor: formErrors.currency
-                          ? "#ef4444"
-                          : base.borderColor,
-                        boxShadow: "none",
-                        "&:hover": {
-                          borderColor: formErrors.currency
-                            ? "#ef4444"
-                            : base.borderColor,
-                        },
-                      }),
-                      valueContainer: (base) => ({
-                        ...base,
-                        height: 44,
-                        padding: "0 12px",
-                      }),
-                      indicatorsContainer: (base) => ({
-                        ...base,
-                        height: 44,
-                      }),
-                      input: (base) => ({ ...base, margin: 0, padding: 0 }),
-                    }}
+                    styles={buildReactSelectStyles({
+                      hasError: !!formErrors.currency,
+                    })}
                   />
                   {formErrors.currency && (
                     <div
@@ -2247,20 +2341,59 @@ export default function AppliedInfluencersPage() {
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <FloatingLabelInput
-                  id="milestoneSplit"
-                  label="Milestone Split (%)"
-                  info="Percentages like 50/50 or 40/30/30. Total must be ≤ 100%."
-                  value={milestoneSplit}
-                  onChange={(e: any) => {
-                    setMilestoneSplit(e.target.value);
-                    clearPreview();
-                  }}
-                  error={formErrors.milestoneSplit}
-                  inputMode="numeric"
-                  placeholder="50/50"
+                {/* Milestone Split with dropdown */}
+                <div
+                  className="space-y-1.5"
                   data-field-error={!!formErrors.milestoneSplit}
-                />
+                >
+                  <LabelWithInfo
+                    text="Milestone Split (%)"
+                    info="Percentages like 50/50 or 40/30/30. Total must be ≤ 100%."
+                  />
+                  <div className="flex flex-col gap-2">
+                    <select
+                      value={milestonePreset}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val === "custom") {
+                          setMilestoneSplit("");
+                          clearPreview();
+                          return;
+                        }
+                        setMilestoneSplit(val);
+                        clearPreview();
+                      }}
+                      className="w-full h-[44px] px-3 border-2 rounded-lg text-sm border-gray-200 focus:outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF8A35] focus-visible:ring-offset-1 focus-visible:ring-offset-white"
+                    >
+                      {MILESTONE_SPLIT_PRESETS.map((opt) => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </option>
+                      ))}
+                    </select>
+
+                    {milestonePreset === "custom" && (
+                      <input
+                        id="milestoneSplitCustom"
+                        type="text"
+                        value={milestoneSplit}
+                        onChange={(e) => {
+                          setMilestoneSplit(e.target.value);
+                          clearPreview();
+                        }}
+                        placeholder="e.g. 50/50 or 40/30/30"
+                        className="w-full h-[44px] px-3 border-2 rounded-lg text-sm border-gray-200 focus:outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF8A35] focus-visible:ring-offset-1 focus-visible:ring-offset-white"
+                      />
+                    )}
+                  </div>
+                  {formErrors.milestoneSplit && (
+                    <div className="text-xs text-red-600 mt-1">
+                      {formErrors.milestoneSplit}
+                    </div>
+                  )}
+                </div>
+
+                {/* Revisions Included */}
                 <NumberInput
                   id="revisionsIncluded"
                   label="Revisions Included"
@@ -2290,11 +2423,10 @@ export default function AppliedInfluencersPage() {
                       setRequestedEffDate(e.target.value);
                       clearPreview();
                     }}
-                    className={`w-full px-3 py-2.5 border-2 rounded-lg text-sm transition-all duration-200 focus:outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF8A35] focus-visible:ring-offset-1 focus-visible:ring-offset-white ${
-                      formErrors.requestedEffDate
+                    className={`w-full h-[44px] px-3 border-2 rounded-lg text-sm transition-all duration-200 focus:outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF8A35] focus-visible:ring-offset-1 focus-visible:ring-offset-white ${formErrors.requestedEffDate
                         ? "border-red-500"
                         : "border-gray-200 focus:border-[#FF8A35]"
-                    }`}
+                      }`}
                     data-field-error={!!formErrors.requestedEffDate}
                   />
                   {formErrors.requestedEffDate && (
@@ -2323,13 +2455,7 @@ export default function AppliedInfluencersPage() {
                       clearPreview();
                     }}
                     placeholder="Select timezone"
-                    styles={{
-                      control: (base) => ({
-                        ...base,
-                        minHeight: "44px",
-                        borderRadius: 8,
-                      }),
-                    }}
+                    styles={buildReactSelectStyles()}
                   />
                 </div>
               </div>
@@ -2358,11 +2484,10 @@ export default function AppliedInfluencersPage() {
                       setGoLiveStart(e.target.value);
                       clearPreview();
                     }}
-                    className={`w-full px-3 py-2.5 border-2 rounded-lg text-sm transition-all duration-200 focus:outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF8A35] focus-visible:ring-offset-1 focus-visible:ring-offset-white ${
-                      formErrors.goLiveStart
+                    className={`w-full h-[44px] px-3 border-2 rounded-lg text-sm transition-all duration-200 focus:outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF8A35] focus-visible:ring-offset-1 focus-visible:ring-offset-white ${formErrors.goLiveStart
                         ? "border-red-500"
                         : "border-gray-200 focus:border-[#FF8A35]"
-                    }`}
+                      }`}
                     data-field-error={!!formErrors.goLiveStart}
                   />
                   {formErrors.goLiveStart && (
@@ -2385,11 +2510,10 @@ export default function AppliedInfluencersPage() {
                       setGoLiveEnd(e.target.value);
                       clearPreview();
                     }}
-                    className={`w-full px-3 py-2.5 border-2 rounded-lg text-sm transition-all duration-200 focus:outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF8A35] focus-visible:ring-offset-1 focus-visible:ring-offset-white ${
-                      formErrors.goLiveEnd
+                    className={`w-full h-[44px] px-3 border-2 rounded-lg text-sm transition-all duration-200 focus:outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF8A35] focus-visible:ring-offset-1 focus-visible:ring-offset-white ${formErrors.goLiveEnd
                         ? "border-red-500"
                         : "border-gray-200 focus:border-[#FF8A35]"
-                    }`}
+                      }`}
                     data-field-error={!!formErrors.goLiveEnd}
                   />
                   {formErrors.goLiveEnd && (
@@ -2402,7 +2526,7 @@ export default function AppliedInfluencersPage() {
             </div>
           </SidebarSection>
 
-          {/* Deliverables (multi-row, with Format/Min Live/Units per row) */}
+          {/* Deliverables (multi-row, everything per row) */}
           <SidebarSection
             title="Deliverables"
             icon={<HiClipboardList className="w-4 h-4" />}
@@ -2475,13 +2599,7 @@ export default function AppliedInfluencersPage() {
                               );
                               clearPreview();
                             }}
-                            styles={{
-                              control: (base) => ({
-                                ...base,
-                                minHeight: 44,
-                                borderRadius: 8,
-                              }),
-                            }}
+                            styles={buildReactSelectStyles()}
                             placeholder="Select type"
                           />
                         </div>
@@ -2584,6 +2702,244 @@ export default function AppliedInfluencersPage() {
                           </select>
                         </div>
                       </div>
+
+                      {/* Draft Required + Draft Due per deliverable */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <Checkbox
+                          id={`draftRequired-${row.id}`}
+                          label={
+                            <>
+                              Draft Required{" "}
+                              <InfoTip text="If enabled, a draft must be submitted before posting (Section 4b)." />
+                            </>
+                          }
+                          checked={row.draftRequired}
+                          onChange={(v: boolean) => {
+                            setDeliverables((prev) =>
+                              prev.map((d) =>
+                                d.id === row.id
+                                  ? {
+                                    ...d,
+                                    draftRequired: v,
+                                    draftDue: v ? d.draftDue : "",
+                                  }
+                                  : d
+                              )
+                            );
+                            clearPreview();
+                          }}
+                        />
+                        <div>
+                          <LabelWithInfo
+                            text="Draft Due (if required)"
+                            info="Date the draft must be submitted for review."
+                          />
+                          <input
+                            id={`draftDue-${row.id}`}
+                            type="date"
+                            value={row.draftDue}
+                            min={draftMin}
+                            max={draftMax || undefined}
+                            onChange={(e) => {
+                              const v = e.target.value;
+                              setDeliverables((prev) =>
+                                prev.map((d) =>
+                                  d.id === row.id
+                                    ? { ...d, draftDue: v }
+                                    : d
+                                )
+                              );
+                              clearPreview();
+                            }}
+                            disabled={!row.draftRequired}
+                            className={`w-full h-[44px] px-3 border-2 rounded-lg text-sm transition-all duration-200 focus:outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF8A35] focus-visible:ring-offset-1 focus-visible:ring-offset-white ${row.draftRequired
+                                ? "border-gray-200 focus:border-[#FF8A35]"
+                                : "opacity-60 cursor-not-allowed border-gray-200"
+                              }`}
+                          />
+                        </div>
+                      </div>
+
+                      {/* Usage & Access per deliverable */}
+                      <div className="space-y-2 rounded-lg bg-gray-50 border border-gray-200 px-3 py-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-semibold text-gray-700">
+                            Usage &amp; Access for this deliverable
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                          {supportsWhitelisting && (
+                            <Checkbox
+                              id={`whitelist-${row.id}`}
+                              label={
+                                <>
+                                  Enable Whitelisting Access{" "}
+                                  <InfoTip text="Allow the brand to run ads from the creator handle for this deliverable." />
+                                </>
+                              }
+                              checked={row.whitelistingEnabled}
+                              onChange={(v: boolean) => {
+                                setDeliverables((prev) =>
+                                  prev.map((d) =>
+                                    d.id === row.id
+                                      ? { ...d, whitelistingEnabled: v }
+                                      : d
+                                  )
+                                );
+                                clearPreview();
+                              }}
+                            />
+                          )}
+                          {supportsSparkAds && (
+                            <Checkbox
+                              id={`sparkads-${row.id}`}
+                              label={
+                                <>
+                                  Enable Spark Ads / Boosting{" "}
+                                  <InfoTip text="Allow boosting or Spark Ads for this TikTok asset." />
+                                </>
+                              }
+                              checked={row.sparkAdsEnabled}
+                              onChange={(v: boolean) => {
+                                setDeliverables((prev) =>
+                                  prev.map((d) =>
+                                    d.id === row.id
+                                      ? { ...d, sparkAdsEnabled: v }
+                                      : d
+                                  )
+                                );
+                                clearPreview();
+                              }}
+                            />
+                          )}
+                          <Checkbox
+                            id={`insights-${row.id}`}
+                            label={
+                              <>
+                                Grant Read-only Insights{" "}
+                                <InfoTip text="Permit read-only analytics access for this specific deliverable." />
+                              </>
+                            }
+                            checked={row.insightsReadOnly}
+                            onChange={(v: boolean) => {
+                              setDeliverables((prev) =>
+                                prev.map((d) =>
+                                  d.id === row.id
+                                    ? { ...d, insightsReadOnly: v }
+                                    : d
+                                )
+                              );
+                              clearPreview();
+                            }}
+                          />
+                        </div>
+                      </div>
+
+                      {/* Captions / Disclosures per deliverable */}
+                      <TextArea
+                        id={`captions-${row.id}`}
+                        label={
+                          <LabelWithInfo
+                            text="Captions / Notes"
+                            info="Guidelines, messaging, and creative notes."
+                          />
+                        }
+                        value={row.captions}
+                        onChange={(e: any) => {
+                          const v = e.target.value;
+                          setDeliverables((prev) =>
+                            prev.map((d) =>
+                              d.id === row.id ? { ...d, captions: v } : d
+                            )
+                          );
+                          clearPreview();
+                        }}
+                        rows={3}
+                        placeholder="Hashtags, call-outs, shot list…"
+                      />
+
+                      <TextArea
+                        id={`disclosures-${row.id}`}
+                        label={
+                          <LabelWithInfo
+                            text="Disclosures (e.g., #ad)"
+                            info="Required compliance labels (Schedule B)."
+                          />
+                        }
+                        value={row.disclosures}
+                        onChange={(e: any) => {
+                          const v = e.target.value;
+                          setDeliverables((prev) =>
+                            prev.map((d) =>
+                              d.id === row.id
+                                ? { ...d, disclosures: v }
+                                : d
+                            )
+                          );
+                          clearPreview();
+                        }}
+                        rows={2}
+                        placeholder="Clear & conspicuous material-connection labels"
+                      />
+
+                      {/* Tags / Links / Handles per deliverable */}
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <ChipInput
+                          label={
+                            <LabelWithInfo
+                              text="Tags"
+                              info="Required hashtags to include."
+                            />
+                          }
+                          items={row.tags}
+                          setItems={(items: string[]) => {
+                            setDeliverables((prev) =>
+                              prev.map((d) =>
+                                d.id === row.id ? { ...d, tags: items } : d
+                              )
+                            );
+                            clearPreview();
+                          }}
+                          placeholder="#tag"
+                        />
+                        <ChipInput
+                          label={
+                            <LabelWithInfo
+                              text="Links"
+                              info="Campaign or tracking links (https://)."
+                            />
+                          }
+                          items={row.links}
+                          setItems={(items: string[]) => {
+                            setDeliverables((prev) =>
+                              prev.map((d) =>
+                                d.id === row.id ? { ...d, links: items } : d
+                              )
+                            );
+                            clearPreview();
+                          }}
+                          placeholder="https://"
+                          validator={(s: string) => /^https?:\/\/.+/i.test(s)}
+                        />
+                        <ChipInput
+                          label={
+                            <LabelWithInfo
+                              text="Handles"
+                              info="Brand or partner handles to tag."
+                            />
+                          }
+                          items={row.handles}
+                          setItems={(items: string[]) => {
+                            setDeliverables((prev) =>
+                              prev.map((d) =>
+                                d.id === row.id ? { ...d, handles: items } : d
+                              )
+                            );
+                            clearPreview();
+                          }}
+                          placeholder="@brand"
+                        />
+                      </div>
                     </div>
                   );
                 })}
@@ -2606,6 +2962,16 @@ export default function AppliedInfluencersPage() {
                       durationSec: "",
                       minLiveValue: "",
                       minLiveUnit: "hours",
+                      draftRequired: false,
+                      draftDue: "",
+                      captions: "",
+                      disclosures: "",
+                      tags: [],
+                      links: [],
+                      handles: [],
+                      whitelistingEnabled: false,
+                      sparkAdsEnabled: false,
+                      insightsReadOnly: false,
                     },
                   ]);
                   clearPreview();
@@ -2613,168 +2979,6 @@ export default function AppliedInfluencersPage() {
               >
                 + Add another deliverable
               </Button>
-
-              {/* Shared settings across all deliverables */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <Checkbox
-                  id="draftRequired"
-                  label={
-                    <>
-                      Draft Required{" "}
-                      <InfoTip text="If enabled, a draft must be submitted before posting (Section 4b)." />
-                    </>
-                  }
-                  checked={dDraftRequired}
-                  onChange={(v: boolean) => {
-                    setDDraftRequired(v);
-                    clearPreview();
-                  }}
-                />
-                <div>
-                  <LabelWithInfo
-                    text="Draft Due (if required)"
-                    info="Date the draft must be submitted for review."
-                  />
-                  <input
-                    id="draftDue"
-                    type="date"
-                    value={dDraftDue}
-                    min={draftMin}
-                    max={draftMax || undefined}
-                    onChange={(e) => {
-                      setDDraftDue(e.target.value);
-                      clearPreview();
-                    }}
-                    disabled={!dDraftRequired}
-                    className={`w-full px-3 py-2.5 border-2 rounded-lg text-sm transition-all duration-200 focus:outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF8A35] focus-visible:ring-offset-1 focus-visible:ring-offset-white ${
-                      dDraftRequired
-                        ? formErrors.dDraftDue
-                          ? "border-red-500"
-                          : "border-gray-200 focus:border-[#FF8A35]"
-                        : "opacity-60 cursor-not-allowed border-gray-200"
-                    }`}
-                    data-field-error={!!formErrors.dDraftDue}
-                  />
-                  {formErrors.dDraftDue && (
-                    <div className="text-xs text-red-600 mt-1">
-                      {formErrors.dDraftDue}
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              <TextArea
-                id="captions"
-                label={
-                  <LabelWithInfo
-                    text="Captions / Notes"
-                    info="Guidelines, messaging, and creative notes."
-                  />
-                }
-                value={dCaptions}
-                onChange={(e: any) => {
-                  setDCaptions(e.target.value);
-                  clearPreview();
-                }}
-                rows={3}
-                placeholder="Hashtags, call-outs, shot list…"
-              />
-
-              <TextArea
-                id="disclosures"
-                label={
-                  <LabelWithInfo
-                    text="Disclosures (e.g., #ad)"
-                    info="Required compliance labels (Schedule B)."
-                  />
-                }
-                value={dDisclosures}
-                onChange={(e: any) => {
-                  setDDisclosures(e.target.value);
-                  clearPreview();
-                }}
-                rows={2}
-                placeholder="Clear & conspicuous material-connection labels"
-              />
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <ChipInput
-                  label={
-                    <LabelWithInfo
-                      text="Tags"
-                      info="Required hashtags to include."
-                    />
-                  }
-                  items={dTags}
-                  setItems={setTagsInvalidate}
-                  placeholder="#tag"
-                />
-                <ChipInput
-                  label={
-                    <LabelWithInfo
-                      text="Links"
-                      info="Campaign or tracking links (https://)."
-                    />
-                  }
-                  items={dLinks}
-                  setItems={setLinksInvalidate}
-                  placeholder="https://"
-                  validator={(s: any) => /^https?:\/\/.+/i.test(s)}
-                  error={formErrors.dLinks}
-                />
-                <ChipInput
-                  label={
-                    <LabelWithInfo
-                      text="Handles"
-                      info="Brand or partner handles to tag."
-                    />
-                  }
-                  items={dHandles}
-                  setItems={setHandlesInvalidate}
-                  placeholder="@brand"
-                  error={formErrors.dHandles}
-                />
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                {supportsWhitelisting && (
-                  <Checkbox
-                    id="whitelist"
-                    label={
-                      <>
-                        Enable Whitelisting Access{" "}
-                        <InfoTip text="Allow brand to run ads from influencer handle (Schedule A, 12)." />
-                      </>
-                    }
-                    checked={allowWhitelisting}
-                    onChange={setAllowWhitelisting}
-                  />
-                )}
-                {supportsSparkAds && (
-                  <Checkbox
-                    id="sparkads"
-                    label={
-                      <>
-                        Enable Spark Ads / Boosting{" "}
-                        <InfoTip text="Allow boosting on TikTok (Schedule A, 12)." />
-                      </>
-                    }
-                    checked={allowSparkAds}
-                    onChange={setAllowSparkAds}
-                  />
-                )}
-                <Checkbox
-                  id="insightsread"
-                  label={
-                    <>
-                      Grant Read-only Insights{" "}
-                      <InfoTip text="Permit analytics access for verification (Schedule L)." />
-                    </>
-                  }
-                  checked={allowReadOnlyInsights}
-                  onChange={setAllowReadOnlyInsights}
-                />
-              </div>
             </div>
           </SidebarSection>
 
@@ -2831,13 +3035,7 @@ export default function AppliedInfluencersPage() {
                     clearPreview();
                   }}
                   placeholder="Select territories"
-                  styles={{
-                    control: (base) => ({
-                      ...base,
-                      minHeight: "44px",
-                      borderRadius: 8,
-                    }),
-                  }}
+                  styles={buildReactSelectStyles()}
                 />
               </div>
 
@@ -3022,18 +3220,16 @@ export function FloatingLabelInput({
         onChange={onChange}
         onFocus={() => setFocused(true)}
         onBlur={() => setFocused(false)}
-        className={`w-full px-4 pt-6 pb-2 border-2 rounded-lg text-sm transition-all duration-200 focus:outline-none peer ${error
-          ? "border-red-500 focus:border-red-500"
-          : "border-gray-200 focus:border-black"
-          }`}
+        className={`w-full h-[60px] px-4 pt-5 pb-1.5 border-2 rounded-lg text-sm transition-all duration-200 focus:outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF8A35] focus-visible:ring-offset-1 focus-visible:ring-offset-white ${error ? "border-red-500" : "border-gray-200 focus:border-[#FF8A35]"
+          } peer`}
         placeholder=" "
         {...props}
       />
       <label
         htmlFor={id}
         className={`absolute left-4 transition-all duration-200 pointer-events-none inline-flex items-center gap-1 ${focused || hasValue
-          ? "top-2 text-[11px] text-black font-medium"
-          : "top-1/2 -translate-y-1/2 text-sm text-gray-500"
+            ? "top-1.5 text-[11px] text-black font-medium"
+            : "top-1/2 -translate-y-1/2 text-sm text-gray-500"
           }`}
       >
         <span>{label}</span>
@@ -3075,8 +3271,11 @@ export function Select({
         value={value}
         onChange={onChange}
         disabled={disabled}
-        className={`w-full px-3 py-2.5 border-2 rounded-lg text-sm focus:outline-none ${disabled ? "opacity-60 cursor-not-allowed" : ""
-          } ${error ? "border-red-500" : "focus:border-black border-gray-200"
+        className={`w-full h-[44px] px-3 border-2 rounded-lg text-sm focus:outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF8A35] focus-visible:ring-offset-1 focus-visible:ring-offset-white ${disabled
+            ? "opacity-60 cursor-not-allowed border-gray-200"
+            : error
+              ? "border-red-500"
+              : "border-gray-200 focus:border-[#FF8A35]"
           }`}
       >
         {flat.map((o) => (
@@ -3133,15 +3332,13 @@ export function NumberInput({
         inputMode="decimal"
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className={`w-full px-4 pt-6 pb-2 border-2 rounded-lg text-sm transition-all duration-200 focus:outline-none ${error
-          ? "border-red-500 focus:border-red-500"
-          : "border-gray-200 focus:border-black"
+        className={`w-full h-[60px] px-4 pt-5 pb-1.5 border-2 rounded-lg text-sm transition-all duration-200 focus:outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF8A35] focus-visible:ring-offset-1 focus-visible:ring-offset-white ${error ? "border-red-500" : "border-gray-200 focus:border-[#FF8A35]"
           }`}
         {...props}
       />
       <label
         htmlFor={id}
-        className="absolute left-4 top-2 text-[11px] text-black font-medium pointer-events-none inline-flex items-center gap-1"
+        className="absolute left-4 top-1.5 text-[11px] text-black font-medium pointer-events-none inline-flex items-center gap-1"
       >
         <span>{label}</span>
         {info ? (
@@ -3170,7 +3367,7 @@ export function NumberInputTop({
     <div className="space-y-1.5" data-field-error={!!error}>
       <label
         htmlFor={id}
-        className="text-sm font-medium text-gray-700 inline-flex items-center gap-1"
+        className="text-sm font-medium text-gray-700 inline-flex items-center gap-1 mb-1.5"
       >
         <span>{label}</span>
         {info ? <InfoTip text={String(info)} /> : null}
@@ -3181,7 +3378,7 @@ export function NumberInputTop({
         inputMode="decimal"
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className={`w-full h-[44px] px-3 border-2 rounded-lg text-sm focus:outline-none focus:border-black ${error ? "border-red-500" : "border-gray-200"
+        className={`w-full h-[44px] px-3 border-2 rounded-lg text-sm transition-all duration-200 focus:outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF8A35] focus-visible:ring-offset-1 focus-visible:ring-offset-white ${error ? "border-red-500" : "border-gray-200 focus:border-[#FF8A35]"
           }`}
         {...props}
       />
@@ -3202,7 +3399,7 @@ export function Checkbox({
   return (
     <label
       htmlFor={id}
-      className={`flex items-center gap-2 ${disabled ? "opacity-60 cursor-not-allowed" : ""
+      className={`flex items-center gap-2 text-sm ${disabled ? "opacity-60 cursor-not-allowed" : ""
         }`}
     >
       <input
@@ -3213,9 +3410,9 @@ export function Checkbox({
           onChange(e.target.checked)
         }
         disabled={disabled}
-        className="h-4 w-4"
+        className="h-4 w-4 rounded border-gray-300"
       />
-      <span className="text-sm text-gray-700">{label}</span>
+      <span className="text-gray-700">{label}</span>
     </label>
   );
 }
@@ -3280,44 +3477,56 @@ export function ChipInput({
   error,
 }: any) {
   const [val, setVal] = useState("");
+
   const add = () => {
     if (disabled) return;
     const v = val.trim();
     if (!v) return;
+
     const parts = v
       .split(/[,\n]/)
       .map((s) => s.trim())
       .filter(Boolean);
+
     const validParts = validator ? parts.filter((p) => validator(p)) : parts;
     if (!validParts.length) return;
+
+    // items is the controlled prop from parent
     setItems([...(items as string[]), ...validParts]);
     setVal("");
   };
+
   const remove = (ix: number) => {
     if (disabled) return;
     setItems((items as string[]).filter((_: any, i: any) => i !== ix));
   };
+
   return (
     <div className="space-y-1.5" data-field-error={!!error}>
       <div className="flex items-center justify-between">
-        <div className="text-sm font-medium text-gray-700">
-          {label}
-        </div>
-        {error && (
-          <div className="text-xs text-red-600">{error}</div>
-        )}
+        <div className="text-sm font-medium text-gray-700">{label}</div>
+        {error && <div className="text-xs text-red-600">{error}</div>}
       </div>
+
       <div
-        className={`flex flex-wrap gap-2 rounded-lg border-2 p-2 ${disabled ? "opacity-60 cursor-not-allowed" : ""
-          } ${error ? "border-red-500" : "border-gray-200"}`}
+        className={`
+          flex items-start gap-2 rounded-lg border-2 p-2
+          ${disabled ? "opacity-60 cursor-not-allowed" : ""}
+          ${error ? "border-red-500" : "border-gray-200"}
+        `}
       >
-        <div className="flex flex-wrap gap-2">
+        {/* Chips + input share this flex area */}
+        <div className="flex flex-wrap gap-2 flex-1 min-w-0">
           {items.map((t: string, i: number) => (
             <span
               key={`${t}-${i}`}
-              className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-gray-100 text-xs"
+              className="group inline-flex max-w-full items-center gap-1 rounded bg-gray-100 px-2 py-0.5 text-xs"
+              title={t}
             >
-              {t}
+              {/* text wraps / truncates nicely even for huge links */}
+              <span className="block max-w-[180px] sm:max-w-[260px] break-all">
+                {t}
+              </span>
               <button
                 type="button"
                 onClick={() => remove(i)}
@@ -3329,24 +3538,31 @@ export function ChipInput({
               </button>
             </span>
           ))}
+
+          {/* Input grows but doesn't disappear */}
+          <input
+            value={val}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+              setVal(e.target.value)
+            }
+            onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                add();
+              }
+            }}
+            placeholder={placeholder}
+            disabled={disabled}
+            className="flex-[1_1_120px] min-w-[80px] border-0 outline-none text-sm bg-transparent"
+          />
         </div>
-        <input
-          value={val}
-          onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-            setVal(e.target.value)
-          }
-          onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) =>
-            e.key === "Enter" ? (e.preventDefault(), add()) : undefined
-          }
-          placeholder={placeholder}
-          disabled={disabled}
-          className="flex-1 min-w-[120px] border-0 outline-none text-sm bg-transparent"
-        />
+
+        {/* Add button pinned on the right */}
         <button
           type="button"
           onClick={add}
           disabled={disabled}
-          className="px-2 py-1 text-xs border rounded"
+          className="px-2 py-1 text-xs border rounded whitespace-nowrap disabled:opacity-60"
         >
           Add
         </button>
@@ -3380,11 +3596,11 @@ export function TextArea({
         rows={rows}
         placeholder={placeholder}
         disabled={disabled}
-        className={`w-full px-3 py-2.5 border-2 rounded-lg text-sm focus:outline-none ${disabled
-          ? "opacity-60 cursor-not-allowed"
-          : error
-            ? "border-red-500"
-            : "focus:border-black border-gray-200"
+        className={`w-full px-3 py-2.5 border-2 rounded-lg text-sm focus:outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF8A35] focus-visible:ring-offset-1 focus-visible:ring-offset-white ${disabled
+            ? "opacity-60 cursor-not-allowed border-gray-200"
+            : error
+              ? "border-red-500"
+              : "border-gray-200 focus:border-[#FF8A35]"
           }`}
       />
       {error && (
@@ -3401,6 +3617,7 @@ function ContractSidebar({
   title = "Initiate Contract",
   subtitle = "New Agreement",
   previewUrl,
+  onClosePreview,
 }: any) {
   return (
     <div
@@ -3463,14 +3680,31 @@ function ContractSidebar({
         </div>
         <div className="flex h-[calc(100%-9rem)]">
           {previewUrl ? (
-            <div className="w-full sm:w-1/2 p-6 overflow-auto border-r border-gray-100">
-              <iframe
-                src={previewUrl}
-                width="100%"
-                height="100%"
-                className="border-0"
-                title="Contract PDF"
-              />
+            <div className="w-full sm:w-1/2 p-6 border-r border-gray-100 flex flex-col">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2 text-sm font-semibold text-gray-700">
+                  <HiEye className="w-4 h-4" />
+                  <span>Preview</span>
+                </div>
+                {onClosePreview && (
+                  <button
+                    type="button"
+                    onClick={onClosePreview}
+                    className="text-xs px-3 py-1 rounded-full border border-gray-300 text-gray-700 hover:bg-gray-100"
+                  >
+                    Close preview
+                  </button>
+                )}
+              </div>
+              <div className="flex-1 overflow-auto rounded-lg border border-gray-200 bg-gray-50">
+                <iframe
+                  src={previewUrl}
+                  width="100%"
+                  height="100%"
+                  className="border-0"
+                  title="Contract PDF"
+                />
+              </div>
             </div>
           ) : (
             <div className="hidden sm:flex w-1/2 p-6 items-center justify-center text-gray-400 select-none">
@@ -3482,6 +3716,7 @@ function ContractSidebar({
               </div>
             </div>
           )}
+
           <div
             className={`${previewUrl ? "w-full sm:w-1/2" : "w-full"
               } h-full px-6 space-y-5 overflow-auto`}

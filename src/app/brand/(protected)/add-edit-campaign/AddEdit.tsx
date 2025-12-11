@@ -79,6 +79,8 @@ type SimpleOption = { value: string; label: string };
 // ── helpers ─────────────────────────────────────────────────
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") || "";
+const makeFileKey = (f: File) => `${f.name}__${f.size}__${f.lastModified}`;
+const MAX_COUNTRIES = 5;
 
 const fileUrl = (v?: string) => {
   if (!v) return "";
@@ -323,7 +325,7 @@ export default function CampaignFormPage() {
     [existingImages]
   );
 
-  // ── toast helper ─────────────────────────────────────────
+  // ── SweetAlert2 Toast helper (brand-styled) ──────────────
   const toast = (opts: {
     icon: "success" | "error" | "warning" | "info";
     title: string;
@@ -331,16 +333,19 @@ export default function CampaignFormPage() {
   }) =>
     Swal.fire({
       ...opts,
+      toast: true,
+      position: "top-end",
       showConfirmButton: false,
-      timer: 1200,
+      timer: 2200,
       timerProgressBar: true,
-      background: "white",
+      background: "#020617",
+      color: "#F9FAFB",
       customClass: {
-        icon: `
-          bg-gradient-to-r from-[#FFA135] to-[#FF7236]
-          bg-clip-text text-transparent
-        `,
-        popup: "rounded-lg border border-gray-200",
+        popup:
+          "rounded-xl border border-slate-700 bg-slate-900/95 shadow-lg backdrop-blur",
+        title: "text-sm font-semibold",
+        htmlContainer: "text-xs text-slate-200",
+        icon: "border-none",
       },
     });
 
@@ -473,7 +478,7 @@ export default function CampaignFormPage() {
 
         toast({
           icon: "info",
-          title: "Draft Loaded",
+          title: "Draft loaded",
           text: "We restored your last saved campaign draft.",
         });
       })
@@ -484,12 +489,53 @@ export default function CampaignFormPage() {
   }, [isEditMode, draftLoaded, countries, categories]);
 
   // ── handlers & reset ─────────────────────────────────────
+
+  const handleCountriesChange = (value: readonly CountryOption[] | null) => {
+    const v = value ? [...value] : [];
+
+    if (v.length <= MAX_COUNTRIES) {
+      setSelectedCountries(v as CountryOption[]);
+    } else {
+      toast({
+        icon: "warning",
+        title: `Maximum ${MAX_COUNTRIES} countries`,
+        text: `You can select up to ${MAX_COUNTRIES} target countries.`,
+      });
+    }
+  };
+
   const handleProductImages = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files ? Array.from(e.target.files) : [];
     if (!files.length) return;
 
-    // ✅ append to existing images instead of replacing
-    setProductImages((prev) => [...prev, ...files]);
+    setProductImages((prev) => {
+      const existingKeys = new Set(prev.map(makeFileKey));
+      const uniqueNew: File[] = [];
+      let duplicatesCount = 0;
+
+      for (const f of files) {
+        const key = makeFileKey(f);
+        if (existingKeys.has(key)) {
+          duplicatesCount++;
+          continue;
+        }
+        existingKeys.add(key);
+        uniqueNew.push(f);
+      }
+
+      if (duplicatesCount > 0) {
+        toast({
+          icon: "info",
+          title: "Duplicate image skipped",
+          text:
+            duplicatesCount === 1
+              ? "One duplicate image was ignored."
+              : `${duplicatesCount} duplicate images were ignored.`,
+        });
+      }
+
+      return [...prev, ...uniqueNew];
+    });
 
     // allow re-selecting the same file again if needed
     e.target.value = "";
@@ -523,7 +569,6 @@ export default function CampaignFormPage() {
     setExistingBriefFiles((prev) => prev.filter((_, i) => i !== idx));
   };
 
-
   const resetForm = () => {
     setProductName("");
     setDescription("");
@@ -552,6 +597,58 @@ export default function CampaignFormPage() {
   const fmtMoney = (n: number | "") =>
     n === "" ? "—" : `$${Number(n).toLocaleString()}`;
   const fileSizeKB = (b: number) => `${(b / 1024).toFixed(1)} KB`;
+
+  // SweetAlert2 confirm dialogs for Back & Reset
+  const handleBackClick = async () => {
+    const result = await Swal.fire({
+      icon: "warning",
+      title: "Leave this page?",
+      text: "Any unsaved changes in this campaign form will be lost.",
+      showCancelButton: true,
+      confirmButtonText: "Leave page",
+      cancelButtonText: "Stay",
+      confirmButtonColor: "#F97316",
+      cancelButtonColor: "#6B7280",
+      customClass: {
+        popup: "rounded-xl border border-gray-200",
+        confirmButton:
+          "bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white px-4 py-2 rounded-lg",
+        cancelButton: "px-4 py-2 rounded-lg",
+      },
+    });
+
+    if (result.isConfirmed) {
+      router.back();
+    }
+  };
+
+  const handleResetClick = async () => {
+    const result = await Swal.fire({
+      icon: "warning",
+      title: "Reset all fields?",
+      text: "This will clear everything you have entered in this campaign form.",
+      showCancelButton: true,
+      confirmButtonText: "Yes, reset",
+      cancelButtonText: "Cancel",
+      confirmButtonColor: "#F97316",
+      cancelButtonColor: "#6B7280",
+      customClass: {
+        popup: "rounded-xl border border-gray-200",
+        confirmButton:
+          "bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white px-4 py-2 rounded-lg",
+        cancelButton: "px-4 py-2 rounded-lg",
+      },
+    });
+
+    if (result.isConfirmed) {
+      resetForm();
+      toast({
+        icon: "info",
+        title: "Form reset",
+        text: "All fields have been cleared.",
+      });
+    }
+  };
 
   // ── save draft (backend only, using _id logic) ───────────
   const handleSaveDraft = async () => {
@@ -675,7 +772,7 @@ export default function CampaignFormPage() {
 
       toast({
         icon: "success",
-        title: "Draft Saved",
+        title: "Draft saved",
         text: "Your campaign draft is stored safely.",
       });
     } catch (err: any) {
@@ -722,6 +819,13 @@ export default function CampaignFormPage() {
     ) {
       setShowRequiredHints(true);
       setIsPreviewOpen(false);
+
+      toast({
+        icon: "warning",
+        title: "Please complete all required fields",
+        text: "Fields marked with * must be filled before submitting your campaign.",
+      });
+
       return;
     }
 
@@ -729,7 +833,7 @@ export default function CampaignFormPage() {
       setIsPreviewOpen(false);
       return toast({
         icon: "error",
-        title: "Invalid Age Range",
+        title: "Invalid age range",
         text: "Min Age must be less than Max Age.",
       });
     }
@@ -738,7 +842,7 @@ export default function CampaignFormPage() {
       setIsPreviewOpen(false);
       return toast({
         icon: "error",
-        title: "Invalid Dates",
+        title: "Invalid dates",
         text: "Start Date must be on or before End Date.",
       });
     }
@@ -790,10 +894,18 @@ export default function CampaignFormPage() {
 
       if (isEditMode && campaignId) {
         await post(`/campaign/update?id=${campaignId}`, formData);
-        toast({ icon: "success", title: "Campaign Updated" });
+        toast({
+          icon: "success",
+          title: "Campaign updated",
+          text: "Your changes have been saved successfully.",
+        });
       } else {
         await post("/campaign/create", formData);
-        toast({ icon: "success", title: "Campaign Created" });
+        toast({
+          icon: "success",
+          title: "Campaign created",
+          text: "Your campaign is live and ready to go.",
+        });
       }
 
       setIsPreviewOpen(false);
@@ -1057,7 +1169,9 @@ export default function CampaignFormPage() {
                     options={countryOptions}
                     styles={selectStyles as any}
                     value={selectedCountries}
-                    onChange={(v) => setSelectedCountries(v as CountryOption[])}
+                    onChange={(v, _meta) =>
+                      handleCountriesChange(v as readonly CountryOption[] | null)
+                    }
                     placeholder="Select countries..."
                     filterOption={filterByCountryName}
                   />
@@ -1488,7 +1602,7 @@ export default function CampaignFormPage() {
           <div className="flex flex-wrap gap-2 sm:gap-3">
             <Button
               variant="outline"
-              onClick={() => router.back()}
+              onClick={handleBackClick}
               disabled={isSubmitting}
               size="lg"
             >
@@ -1496,7 +1610,7 @@ export default function CampaignFormPage() {
             </Button>
             <Button
               variant="outline"
-              onClick={resetForm}
+              onClick={handleResetClick}
               disabled={isSubmitting}
               size="lg"
             >
