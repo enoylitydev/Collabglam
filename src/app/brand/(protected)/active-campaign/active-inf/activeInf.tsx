@@ -26,6 +26,12 @@ import {
   HiSearch,
 } from "react-icons/hi";
 import MilestoneHistoryCard from "@/components/common/milestoneCard";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 const TABLE_GRADIENT_FROM = "#FFA135";
 const TABLE_GRADIENT_TO = "#FF7236";
@@ -143,10 +149,10 @@ const toRow = (doc: RawInfluencer): InfluencerRow => {
       doc.primaryPlatform === "instagram"
         ? "Instagram"
         : doc.primaryPlatform === "youtube"
-        ? "YouTube"
-        : doc.primaryPlatform === "tiktok"
-        ? "TikTok"
-        : doc.primaryPlatform || undefined,
+          ? "YouTube"
+          : doc.primaryPlatform === "tiktok"
+            ? "TikTok"
+            : doc.primaryPlatform || undefined,
     categoryNames,
     followers,
     updatedAt: doc.updatedAt ?? null,
@@ -567,9 +573,8 @@ export default function ActiveInfluencersPage() {
       const baseRow = (
         <TableRow
           key={rowKey}
-          className={`${
-            idx % 2 === 0 ? "bg-white" : "bg-gray-50"
-          } transition-colors`}
+          className={`${idx % 2 === 0 ? "bg-white" : "bg-gray-50"
+            } transition-colors`}
           onMouseEnter={(e) =>
             (e.currentTarget.style.backgroundImage = hoverGradient)
           }
@@ -674,8 +679,8 @@ export default function ActiveInfluencersPage() {
                 !inf.influencerId
                   ? "Missing influencerId"
                   : isBudgetLocked
-                  ? "Campaign budget already fully allocated in milestones"
-                  : "Add milestone"
+                    ? "Campaign budget already fully allocated in milestones"
+                    : "Add milestone"
               }
             >
               Add Milestone
@@ -759,9 +764,9 @@ export default function ActiveInfluencersPage() {
               <strong>
                 {remainingBudget != null
                   ? remainingBudget.toLocaleString(undefined, {
-                      style: "currency",
-                      currency: "USD",
-                    })
+                    style: "currency",
+                    currency: "USD",
+                  })
                   : "—"}
               </strong>
             </p>
@@ -959,9 +964,9 @@ export default function ActiveInfluencersPage() {
                   <strong>
                     {remainingBudget != null
                       ? remainingBudget.toLocaleString(undefined, {
-                          style: "currency",
-                          currency: "USD",
-                        })
+                        style: "currency",
+                        currency: "USD",
+                      })
                       : "—"}
                   </strong>
                 </p>
@@ -1016,16 +1021,39 @@ export default function ActiveInfluencersPage() {
                     setMilestoneForm((f) => ({ ...f, title: e.target.value }))
                   }
                 />
-                <FloatingLabelInput
-                  id="milestoneAmount"
-                  label="Amount"
-                  value={milestoneForm.amount}
-                  onChange={(e) =>
-                    setMilestoneForm((f) => ({ ...f, amount: e.target.value }))
-                  }
-                  type="number"
-                />
+
+                {/* Amount + Razorpay tooltip */}
+                <div className="relative">
+                  <FloatingLabelInput
+                    id="milestoneAmount"
+                    label="Amount"
+                    value={milestoneForm.amount}
+                    onChange={(e) =>
+                      setMilestoneForm((f) => ({ ...f, amount: e.target.value }))
+                    }
+                    type="number"
+                  />
+
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          type="button"
+                          className="absolute right-3 top-2 inline-flex h-5 w-5 items-center justify-center rounded-full bg-gray-200 text-[11px] font-semibold text-gray-700 cursor-help"
+                          aria-label="Razorpay fee info"
+                        >
+                          ?
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent className="max-w-xs text-xs">
+                        Razorpay charges a 2% payment processing fee when you add milestone
+                        funds. This 2% is added on top of the milestone amount you enter.
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </div>
               </div>
+
               <FloatingLabelInput
                 id="milestoneDesc"
                 label="Milestone Description"
@@ -1062,10 +1090,10 @@ export default function ActiveInfluencersPage() {
                   {isBudgetLocked
                     ? "Budget Reached"
                     : isSavingMilestone
-                    ? "Processing..."
-                    : amountNum > 0
-                    ? `Pay ${totalWithFee.toFixed(2)} (incl. fee)`
-                    : "Add Milestone"}
+                      ? "Processing..."
+                      : amountNum > 0
+                        ? `Pay ${totalWithFee.toFixed(2)} (incl. fee)`
+                        : "Add Milestone"}
                 </Button>
               </div>
             </div>
