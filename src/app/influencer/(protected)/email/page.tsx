@@ -104,8 +104,7 @@ const InfluencerEmailPage: React.FC = () => {
           const influencerAliasForDisplay: string =
             thread.influencerDisplayAlias ||
             thread.influencerAliasEmail ||
-            `influencer@${
-              process.env.NEXT_PUBLIC_EMAIL_RELAY_DOMAIN || 'collabglam.cloud'
+            `influencer@${process.env.NEXT_PUBLIC_EMAIL_RELAY_DOMAIN || 'collabglam.cloud'
             }`;
 
           let messages: any[] = [];
@@ -427,11 +426,10 @@ const InfluencerEmailPage: React.FC = () => {
                         key={f}
                         type="button"
                         onClick={() => setFilter(f)}
-                        className={`px-3 py-1 rounded-full text-xs font-medium transition-all ${
-                          isActive
+                        className={`px-3 py-1 rounded-full text-xs font-medium transition-all ${isActive
                             ? 'bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white shadow-sm'
                             : 'text-gray-600 hover:bg-white'
-                        }`}
+                          }`}
                       >
                         {labels[f]}
                       </button>
@@ -485,11 +483,10 @@ const InfluencerEmailPage: React.FC = () => {
                         <button
                           type="button"
                           onClick={() => setSelectedMailId(mail.id)}
-                          className={`w-full text-left px-4 py-3 flex flex-col gap-1 transition-all ${
-                            isActive
+                          className={`w-full text-left px-4 py-3 flex flex-col gap-1 transition-all ${isActive
                               ? 'bg-gradient-to-r from-[#FFF1DF] to-[#FFE0D0]'
                               : 'hover:bg-gray-50'
-                          }`}
+                            }`}
                         >
                           <div className="flex items-center justify-between gap-2">
                             <div className="flex items-center gap-2">
@@ -509,11 +506,10 @@ const InfluencerEmailPage: React.FC = () => {
                               {isIncoming ? mail.from : mail.to}
                             </p>
                             <span
-                              className={`text-[10px] px-2 py-0.5 rounded-full border ${
-                                isIncoming
+                              className={`text-[10px] px-2 py-0.5 rounded-full border ${isIncoming
                                   ? 'bg-emerald-50 text-emerald-700 border-emerald-100'
                                   : 'bg-indigo-50 text-indigo-700 border-indigo-100'
-                              }`}
+                                }`}
                             >
                               {isIncoming ? 'From brand' : 'You replied'}
                             </span>
@@ -596,17 +592,16 @@ const InfluencerEmailPage: React.FC = () => {
                 </div>
 
                 {selectedMail?.campaignLink && (
-  <div className="px-5 pt-4">
-    <a
-      href={selectedMail.campaignLink}
-      className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-xs font-semibold
+                  <div className="px-5 pt-4">
+                    <a
+                      href={selectedMail.campaignLink}
+                      className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-xs font-semibold
                  bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-800 shadow-sm hover:shadow-md"
-    >
-      View Campaign
-    </a>
-  </div>
-)}
-
+                    >
+                      View Campaign
+                    </a>
+                  </div>
+                )}
 
                 <div className="flex-1 overflow-y-auto px-5 py-5">
                   <div className="bg-gray-50/70 border border-gray-100 rounded-2xl px-4 py-4 text-sm text-gray-800 whitespace-pre-line leading-relaxed shadow-sm">
