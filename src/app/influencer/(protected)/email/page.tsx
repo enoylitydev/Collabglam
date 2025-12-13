@@ -23,7 +23,9 @@ interface Mail {
   influencerId: string;
   brandId: string;
   createdAt: string;
+  campaignLink?: string | null;
 }
+
 
 type FilterType = 'all' | 'incoming' | 'outgoing';
 
@@ -175,6 +177,7 @@ const InfluencerEmailPage: React.FC = () => {
               influencerId: influencerIdForMail,
               brandId,
               createdAt: msg.createdAt,
+              campaignLink: msg.campaignLink || null,
             };
 
             allMails.push(mail);
@@ -591,6 +594,19 @@ const InfluencerEmailPage: React.FC = () => {
                     {/* No Forward / Compose on influencer side */}
                   </div>
                 </div>
+
+                {selectedMail?.campaignLink && (
+  <div className="px-5 pt-4">
+    <a
+      href={selectedMail.campaignLink}
+      className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-xs font-semibold
+                 bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-800 shadow-sm hover:shadow-md"
+    >
+      View Campaign
+    </a>
+  </div>
+)}
+
 
                 <div className="flex-1 overflow-y-auto px-5 py-5">
                   <div className="bg-gray-50/70 border border-gray-100 rounded-2xl px-4 py-4 text-sm text-gray-800 whitespace-pre-line leading-relaxed shadow-sm">
