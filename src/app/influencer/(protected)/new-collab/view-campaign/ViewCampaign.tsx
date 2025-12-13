@@ -73,6 +73,7 @@ export default function ViewCampaignPage() {
   // ===== Image preview modal =====
   const [isPreviewOpen, setPreviewOpen] = useState(false);
   const [previewIndex, setPreviewIndex] = useState(0);
+  const [isApplying, setIsApplying] = useState(false);
 
   // ===== Inline PDF preview =====
   const [pdfPreview, setPdfPreview] = useState<{ name: string; url: string } | null>(null);
@@ -103,8 +104,10 @@ export default function ViewCampaignPage() {
     })();
   }, [id]);
 
-  // Apply to campaign
   const handleApply = useCallback(async () => {
+    if (isApplying) return; // prevent double clicks
+    if (campaign?.hasApplied === 1) return;
+
     const influencerId = localStorage.getItem("influencerId");
 
     if (!influencerId) {
@@ -118,6 +121,7 @@ export default function ViewCampaignPage() {
       });
     }
 
+    setIsApplying(true);
     try {
       const result = await post<{ success: boolean; message: string }>("/apply/campaign", {
         campaignId: campaign?.campaignsId,
@@ -133,7 +137,8 @@ export default function ViewCampaignPage() {
           timer: 1500,
           timerProgressBar: true,
         });
-        // refresh state
+
+        // refresh state (this will flip hasApplied to 1 and swap button -> Applied)
         const refreshed = await post<CampaignData>("/campaign/checkApplied", {
           campaignId: campaign?.campaignsId || id,
           influencerId,
@@ -155,8 +160,10 @@ export default function ViewCampaignPage() {
         timer: 1800,
         timerProgressBar: true,
       });
+    } finally {
+      setIsApplying(false);
     }
-  }, [campaign?.campaignsId, id]);
+  }, [isApplying, campaign?.hasApplied, campaign?.campaignsId, id]);
 
   // Resolve file URLs through your helper
   const imageUrls = useMemo(() => resolveFileList(campaign?.images ?? []).filter(Boolean), [campaign?.images]);
@@ -305,16 +312,21 @@ export default function ViewCampaignPage() {
               className={`inline-block px-4 py-2 rounded-md text-gray-900 font-semibold ${INFLUENCER_GRADIENT}`}
               title="You've already applied to this campaign"
             >
-              Already Applied
+              Applied
             </span>
           ) : (
             <Button
               size="sm"
               onClick={handleApply}
-              className={`text-gray-900 font-semibold shadow-none ${INFLUENCER_GRADIENT} ${INFLUENCER_GRADIENT_HOVER}`}
+              disabled={isApplying}
+              className={`text-gray-900 font-semibold shadow-none ${INFLUENCER_GRADIENT} ${INFLUENCER_GRADIENT_HOVER} ${isApplying ? "opacity-70 cursor-not-allowed" : ""
+                }`}
               title="Apply to this campaign"
             >
-              Apply for Work
+              {isApplying && (
+                <span className="mr-2 inline-block h-4 w-4 animate-spin rounded-full border-2 border-gray-900 border-t-transparent" />
+              )}
+              {isApplying ? "Applying…" : "Apply for Work"}
             </Button>
           )}
         </div>
@@ -634,9 +646,8 @@ export default function ViewCampaignPage() {
                 <button
                   key={src + idx}
                   onClick={() => setPreviewIndex(idx)}
-                  className={`h-16 w-16 flex-shrink-0 overflow-hidden rounded-md border ${
-                    idx === previewIndex ? "ring-2 ring-yellow-500 border-transparent" : "border-gray-200"
-                  }`}
+                  className={`h-16 w-16 flex-shrink-0 overflow-hidden rounded-md border ${idx === previewIndex ? "ring-2 ring-yellow-500 border-transparent" : "border-gray-200"
+                    }`}
                   aria-label={`Open image ${idx + 1}`}
                 >
                   <img src={src} alt={`thumb-${idx + 1}`} className="h-full w-full object-cover" />

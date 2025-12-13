@@ -808,7 +808,7 @@ const ErrorState: React.FC<{ error: string }> = ({ error }) => (
   <div className="mb-6 rounded-xl border border-red-200 bg-red-50 p-4 text-red-700 text-sm flex items-start gap-2">
     <AlertCircle className="h-5 w-5 mt-0.5" />
     <div>
-      <div className="font-semibold">Request failed</div>
+      <div className="font-semibold">Limit Reached</div>
       <div>{error}</div>
     </div>
   </div>

@@ -33,7 +33,6 @@ import {
   HiPaperAirplane,
   HiCheck,
   HiInformationCircle,
-  HiChatAlt2,
 } from "react-icons/hi";
 import {
   Tooltip,
@@ -59,9 +58,24 @@ const MILESTONE_SPLIT_PRESETS = [
 
 const ReactSelect = dynamic(() => import("react-select"), { ssr: false });
 
-/**
- * Shared ReactSelect styles so all selects visually align with our 44px inputs.
- */
+// ✅ Canonical contract statuses (match backend constants/contract.js)
+export const CONTRACT_STATUS = {
+  DRAFT: "DRAFT",
+  BRAND_SENT_DRAFT: "BRAND_SENT_DRAFT",
+  BRAND_EDITED: "BRAND_EDITED",
+  INFLUENCER_EDITED: "INFLUENCER_EDITED",
+  BRAND_ACCEPTED: "BRAND_ACCEPTED",
+  INFLUENCER_ACCEPTED: "INFLUENCER_ACCEPTED",
+  READY_TO_SIGN: "READY_TO_SIGN",
+  CONTRACT_SIGNED: "CONTRACT_SIGNED",
+  MILESTONES_CREATED: "MILESTONES_CREATED",
+  REJECTED: "REJECTED",
+  SUPERSEDED: "SUPERSEDED",
+} as const;
+
+export type ContractStatus =
+  (typeof CONTRACT_STATUS)[keyof typeof CONTRACT_STATUS];
+
 const buildReactSelectStyles = (opts?: { hasError?: boolean }) => {
   const hasError = opts?.hasError;
   return {
@@ -161,23 +175,19 @@ interface AuditEvent {
 interface ContractMeta {
   contractId: string;
   campaignId: string;
-  status:
-  | "draft"
-  | "sent"
-  | "viewed"
-  | "negotiation"
-  | "finalize"
-  | "signing"
-  | "rejected"
-  | "locked";
+
+  status: ContractStatus | string;
+
   lastSentAt?: string;
   lockedAt?: string | null;
+
   confirmations?: { brand?: PartyConfirm; influencer?: PartyConfirm };
   signatures?: {
     brand?: PartySign;
     influencer?: PartySign;
     collabglam?: PartySign;
   };
+
   resendIteration?: number;
   audit?: AuditEvent[];
   flags?: Record<string, any>;
@@ -268,13 +278,43 @@ const buildHandleUrl = (platform?: string | null, handle?: string | null) => {
   }
 };
 
-const isRejectedMeta = (meta?: ContractMeta | null) =>
-  !!(
-    meta &&
-    (meta.status === "rejected" ||
-      meta.flags?.isRejected ||
-      meta.statusFlags?.isRejected)
+const isRejectedMeta = (meta?: any) => {
+  if (!meta) return false;
+  const s = String(meta.status || "").toUpperCase();
+  return (
+    s === CONTRACT_STATUS.REJECTED ||
+    meta.isRejected === 1 ||
+    meta.flags?.isRejected ||
+    meta.statusFlags?.isRejected
   );
+};
+
+const isAwaitingCollabglam = (meta?: ContractMeta | null) => {
+  const s = String(meta?.status || "");
+  return (
+    s === CONTRACT_STATUS.READY_TO_SIGN &&
+    !!meta?.signatures?.brand?.signed &&
+    !!meta?.signatures?.influencer?.signed &&
+    !meta?.signatures?.collabglam?.signed
+  );
+};
+
+const signingStatusLabel = (meta?: ContractMeta | null) => {
+  if (!meta) return null;
+  const s = String(meta.status || "");
+  if (s !== CONTRACT_STATUS.READY_TO_SIGN) return null;
+
+  const b = !!meta.signatures?.brand?.signed;
+  const i = !!meta.signatures?.influencer?.signed;
+  const c = !!meta.signatures?.collabglam?.signed;
+
+  if (b && i && !c) return "Awaiting CollabGlam signature";
+  if (b && !i) return "Awaiting influencer signature";
+  if (!b && i) return "Awaiting brand signature";
+  if (!b && !i) return "Ready to sign";
+  if (b && i && c) return "Signed";
+  return null;
+};
 
 const getRejectReasonFromMeta = (meta: ContractMeta | null): string | null => {
   if (!meta) return null;
@@ -334,6 +374,44 @@ const sanitizeHandle = (h: string) => {
 };
 
 const createRowId = () => Math.random().toString(36).slice(2);
+
+const isLockedStatus = (status?: string | null) =>
+  status === CONTRACT_STATUS.CONTRACT_SIGNED ||
+  status === CONTRACT_STATUS.MILESTONES_CREATED;
+
+const isEditableStatus = (status?: string | null) =>
+  status === CONTRACT_STATUS.BRAND_SENT_DRAFT ||
+  status === CONTRACT_STATUS.BRAND_EDITED ||
+  status === CONTRACT_STATUS.INFLUENCER_EDITED;
+
+const needsBrandAcceptance = (status?: string | null) =>
+  status === CONTRACT_STATUS.INFLUENCER_ACCEPTED;
+
+const canSignNow = (status?: string | null) =>
+  status === CONTRACT_STATUS.READY_TO_SIGN;
+
+const statusLabel = (status?: string | null) => {
+  switch (status) {
+    case CONTRACT_STATUS.BRAND_SENT_DRAFT:
+      return "Draft sent to influencer";
+    case CONTRACT_STATUS.BRAND_EDITED:
+      return "Brand edited (awaiting influencer)";
+    case CONTRACT_STATUS.INFLUENCER_EDITED:
+      return "Influencer requested changes";
+    case CONTRACT_STATUS.INFLUENCER_ACCEPTED:
+      return "Influencer accepted";
+    case CONTRACT_STATUS.BRAND_ACCEPTED:
+      return "Brand accepted";
+    case CONTRACT_STATUS.READY_TO_SIGN:
+      return "Ready to sign";
+    case CONTRACT_STATUS.CONTRACT_SIGNED:
+      return "Signed";
+    case CONTRACT_STATUS.MILESTONES_CREATED:
+      return "Milestones created";
+    default:
+      return status ? String(status) : "—";
+  }
+};
 
 /* ===============================================================
    FDD-driven helpers
@@ -572,15 +650,6 @@ export default function AppliedInfluencersPage() {
     });
   };
 
-  const formatPostingWindowLabel = (start?: string, end?: string) => {
-    const s = formatDateLong(start);
-    const e = formatDateLong(end);
-    if (s && e) return `${s} – ${e}`;
-    if (s) return `From ${s}`;
-    if (e) return `Until ${e}`;
-    return "Not set";
-  };
-
   const todayStr = toInputDate(new Date());
   const startMin = todayStr;
   const endMin = goLiveStart || todayStr;
@@ -645,29 +714,29 @@ export default function AppliedInfluencersPage() {
 
   /* ---------------- Keyboard shortcuts ---------------- */
   useEffect(() => {
-  const onKey = (e: KeyboardEvent) => {
-    const target = e.target as HTMLElement | null;
-    const tag = target?.tagName;
-    const isEditable =
-      target?.isContentEditable ||
-      tag === "INPUT" ||
-      tag === "TEXTAREA" ||
-      tag === "SELECT";
+    const onKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      const tag = target?.tagName;
+      const isEditable =
+        target?.isContentEditable ||
+        tag === "INPUT" ||
+        tag === "TEXTAREA" ||
+        tag === "SELECT";
 
-    // Don't hijack / when user is typing in a field
-    if (isEditable) return;
+      // Don't hijack / when user is typing in a field
+      if (isEditable) return;
 
-    if (e.key === "/") {
-      e.preventDefault();
-      searchInputRef.current?.focus();
-    }
+      if (e.key === "/") {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+      }
 
-    if (e.key === "Escape" && sidebarOpen) closeSidebar();
-  };
+      if (e.key === "Escape" && sidebarOpen) closeSidebar();
+    };
 
-  window.addEventListener("keydown", onKey);
-  return () => window.removeEventListener("keydown", onKey);
-}, [sidebarOpen]);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [sidebarOpen]);
 
   /* ---------------- Currency & Timezone lists ---------------- */
   useEffect(() => {
@@ -905,7 +974,7 @@ export default function AppliedInfluencersPage() {
   const prefillFormFor = (inf: Influencer, meta?: ContractMeta | null) => {
     clearErrors();
 
-    setCampaignTitle((prev) => prev || inf?.name || "");
+    setCampaignTitle((prev) => prev || "");
     setPlatforms(
       inf?.primaryPlatform ? [mapPlatformToApi(inf.primaryPlatform) as string] : []
     );
@@ -959,7 +1028,8 @@ export default function AppliedInfluencersPage() {
     setUsageGeographies(["Worldwide"]);
     setUsageDerivativeEdits(false);
 
-    const startDefault = goLiveStart || toInputDate(new Date());
+    const start = serverTimeline?.startDate ? toInputDate(serverTimeline.startDate) : "";
+    const startDefault = start || toInputDate(new Date());
     setRequestedEffDate(startDefault);
     setRequestedEffTz("Europe/Amsterdam");
 
@@ -1131,11 +1201,13 @@ export default function AppliedInfluencersPage() {
 
   /* ---------------- Build payload ---------------- */
   const buildBrandPayload = () => {
+    const toLocalMidnight = (d: string) => new Date(d + "T00:00:00");
+
     const goLive =
       goLiveStart || goLiveEnd
         ? {
-          start: goLiveStart ? new Date(goLiveStart) : undefined,
-          end: goLiveEnd ? new Date(goLiveEnd) : undefined,
+          start: goLiveStart ? toLocalMidnight(goLiveStart) : undefined,
+          end: goLiveEnd ? toLocalMidnight(goLiveEnd) : undefined,
         }
         : undefined;
 
@@ -1435,6 +1507,26 @@ export default function AppliedInfluencersPage() {
           return;
         }
 
+        if (panelMode === "edit" && isRejectedMeta(selectedMeta)) {
+          const brandUpdates = buildBrandPayload();
+
+          const res = await api.post(
+            "/contract/resend",
+            {
+              contractId: selectedMeta.contractId,
+              brandUpdates,
+              requestedEffectiveDate: requestedEffDate,
+              requestedEffectiveDateTimezone: requestedEffTz,
+              preview: true,
+            },
+            { responseType: "blob" }
+          );
+
+          clearPreview();
+          setPdfUrl(URL.createObjectURL(res.data));
+          return;
+        }
+
         const brandUpdates = buildBrandPayload();
 
         await post("/contract/brand/update", {
@@ -1571,49 +1663,40 @@ export default function AppliedInfluencersPage() {
 
   const handleEditContract = async () => {
     if (!selectedMeta?.contractId) return;
-    if (!pdfUrl) {
-      toast({
-        icon: "info",
-        title: "Preview required",
-        text: "Generate preview before updating.",
-      });
-      return;
-    }
+    if (!pdfUrl) return toast({ icon: "info", title: "Preview required" });
     if (!validateForPreview()) return;
 
     setIsUpdateLoading(true);
     try {
       const brandUpdates = buildBrandPayload();
-      await post("/contract/brand/update", {
-        contractId: selectedMeta.contractId,
-        brandId: localStorage.getItem("brandId"),
-        type: 0,
-        brandUpdates,
-        ...(requestedEffDate && {
-          requestedEffectiveDate: requestedEffDate,
-        }),
-        ...(requestedEffTz && {
-          requestedEffectiveDateTimezone: requestedEffTz,
-        }),
-      });
 
-      toast({
-        icon: "success",
-        title: "Updated",
-        text: "Contract updated (new version sent).",
-      });
+      if (isRejectedMeta(selectedMeta)) {
+        await post("/contract/resend", {
+          contractId: selectedMeta.contractId,
+          brandUpdates,
+          requestedEffectiveDate: requestedEffDate,
+          requestedEffectiveDateTimezone: requestedEffTz,
+        });
+
+        toast({ icon: "success", title: "Resent!", text: "New contract sent to influencer." });
+      } else {
+        await post("/contract/brand/update", {
+          contractId: selectedMeta.contractId,
+          brandId: localStorage.getItem("brandId"),
+          type: 0,
+          brandUpdates,
+          requestedEffectiveDate: requestedEffDate,
+          requestedEffectiveDateTimezone: requestedEffTz,
+        });
+
+        toast({ icon: "success", title: "Updated", text: "Contract updated (new version sent)." });
+      }
+
       closeSidebar();
       fetchApplicants();
       loadMetaCache(influencers);
     } catch (e: any) {
-      toast({
-        icon: "error",
-        title: "Update failed",
-        text:
-          e?.response?.data?.message ||
-          e?.message ||
-          "Could not update contract.",
-      });
+      toast({ icon: "error", title: "Action failed", text: e?.response?.data?.message || e?.message || "Failed." });
     } finally {
       setIsUpdateLoading(false);
     }
@@ -1631,13 +1714,16 @@ export default function AppliedInfluencersPage() {
         text: "Send contract first.",
       });
 
-    // 🔒 Extra safety: don't allow accept unless influencer confirmed
-    const iConfirmed = !!meta.confirmations?.influencer?.confirmed;
-    if (!iConfirmed) {
+    const statusStr = meta?.status ? String(meta.status) : "";
+    const influencerAccepted =
+      statusStr === CONTRACT_STATUS.INFLUENCER_ACCEPTED ||
+      !!meta.confirmations?.influencer?.confirmed; // fallback if some old docs still use confirmations
+
+    if (!influencerAccepted) {
       return toast({
         icon: "info",
         title: "Awaiting influencer",
-        text: "Influencer must confirm the contract before you can accept.",
+        text: "Influencer must accept before you can accept.",
       });
     }
 
@@ -1698,24 +1784,19 @@ export default function AppliedInfluencersPage() {
     JSON.stringify(deliverables),
   ]);
 
-  /* ---------------- Status per-row ---------------- */
   const prettyStatus = (
     meta: ContractMeta | null,
     hasContract: boolean,
     fallbackApplied = false
   ) => {
     if (!hasContract) return fallbackApplied ? "Applied" : "—";
-    const iConfirmed = !!meta?.confirmations?.influencer?.confirmed;
-    const bConfirmed = !!meta?.confirmations?.brand?.confirmed;
-    const bSigned = !!meta?.signatures?.brand?.signed;
-    const locked = meta?.status === "locked";
     if (isRejectedMeta(meta)) return "Rejected";
-    if (!iConfirmed) return "Waiting for influencer to confirm";
-    if (iConfirmed && !bConfirmed) return "Influencer confirmed";
-    if (bConfirmed && !bSigned && !locked)
-      return "Brand accepted (awaiting signature)";
-    if (bSigned && !locked) return "Brand signed";
-    return meta?.status === "locked" ? "Locked" : meta?.status || "—";
+
+    const signingLabel = signingStatusLabel(meta);
+    if (signingLabel) return signingLabel;
+
+    const s = meta?.status ? String(meta.status) : "";
+    return statusLabel(s);
   };
 
   const StatusBadge = ({
@@ -1730,8 +1811,8 @@ export default function AppliedInfluencersPage() {
     return (
       <span
         className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${rejected
-            ? "bg-black text-white"
-            : "bg-gray-100 text-gray-800"
+          ? "bg-black text-white"
+          : "bg-gray-100 text-gray-800"
           }`}
       >
         {label}
@@ -1739,78 +1820,72 @@ export default function AppliedInfluencersPage() {
     );
   };
 
-  const RowActions = ({
-    inf,
-    meta,
-    hasContract,
-    rejected,
-    iConfirmed,
-    bConfirmed,
-    bSigned,
-    locked,
-    nowrap = false,
-  }: any) => (
-    <div
-      className={[
-        "items-center gap-2 md:gap-2 lg:gap-2",
-        "whitespace-nowrap",
-        nowrap ? "inline-flex flex-nowrap" : "flex flex-wrap justify-center",
-      ].join(" ")}
-    >
-      {/* <ActionButton
-        icon={HiChatAlt2}
-        title="View Messages"
-        variant="outline"
-        onClick={() => handleViewMessage(inf)}
+  const RowActions = ({ inf, meta, hasContract, rejected, nowrap = false }: any) => {
+    const statusStr = meta?.status ? String(meta.status) : "";
+    const locked = isLockedStatus(statusStr);
+    const editable = isEditableStatus(statusStr);
+    const brandNeedsAccept = needsBrandAcceptance(statusStr);
+    const signAllowed = canSignNow(statusStr);
+    const brandSigned = !!meta?.signatures?.brand?.signed;
+    const influencerSigned = !!meta?.signatures?.influencer?.signed;
+    const collabglamSigned = !!meta?.signatures?.collabglam?.signed;
+
+    const awaitingCG = isAwaitingCollabglam(meta);
+
+    return (
+      <div
+        className={[
+          "items-center gap-2 md:gap-2 lg:gap-2",
+          "whitespace-nowrap",
+          nowrap ? "inline-flex flex-nowrap" : "flex flex-wrap justify-center",
+        ].join(" ")}
       >
-        Send Messages
-      </ActionButton> */}
-
-      <ActionButton
-        title="View Influencer"
-        variant="outline"
-        onClick={() =>
-          router.push(`/brand/influencers?id=${inf.influencerId}`)
-        }
-      >
-        View Influencer
-      </ActionButton>
-
-      {!hasContract && !rejected && (
         <ActionButton
-          icon={HiPaperAirplane}
-          title="Send contract"
-          variant="grad"
-          onClick={() => openSidebar(inf, "send")}
+          title="View Influencer"
+          variant="outline"
+          onClick={() => router.push(`/brand/influencers?id=${inf.influencerId}`)}
         >
-          Send Contract
+          View Influencer
         </ActionButton>
-      )}
 
-      {hasContract && rejected && !locked && !wasResent(meta) && (
-        <ActionButton
-          title="Resend contract"
-          variant="grad"
-          onClick={() => openSidebar(inf, "edit")}
-        >
-          Resend Contract
-        </ActionButton>
-      )}
+        {/* No contract yet */}
+        {!hasContract && !rejected && (
+          <ActionButton
+            icon={HiPaperAirplane}
+            title="Send contract"
+            variant="grad"
+            onClick={() => openSidebar(inf, "send")}
+          >
+            Send Contract
+          </ActionButton>
+        )}
 
-      {hasContract && (
-        <ActionButton
-          icon={HiEye}
-          title="View contract"
-          variant="grad"
-          disabled={metaCacheLoading && !meta}
-          onClick={() => handleViewContract(inf)}
-        >
-          View Contract
-        </ActionButton>
-      )}
+        {/* Rejected → allow resend (still controlled by your resend logic) */}
+        {hasContract && rejected && !locked && (
+          <ActionButton
+            title="Resend contract"
+            variant="grad"
+            onClick={() => openSidebar(inf, "edit")}
+          >
+            Resend Contract
+          </ActionButton>
+        )}
 
-      {hasContract && iConfirmed && !bConfirmed && !locked && (
-        <>
+        {/* Always allow viewing if exists */}
+        {hasContract && (
+          <ActionButton
+            icon={HiEye}
+            title="View contract"
+            variant="grad"
+            disabled={metaCacheLoading && !meta}
+            onClick={() => handleViewContract(inf)}
+          >
+            View Contract
+          </ActionButton>
+        )}
+
+        {/* Editable window (pre-accept / change-request) */}
+        {hasContract && !rejected && !locked && editable && (
           <ActionButton
             title="Edit contract"
             variant="grad"
@@ -1818,6 +1893,10 @@ export default function AppliedInfluencersPage() {
           >
             Edit Contract
           </ActionButton>
+        )}
+
+        {/* Influencer accepted → brand accepts */}
+        {hasContract && !rejected && !locked && brandNeedsAccept && (
           <ActionButton
             icon={HiCheck}
             title="Brand Accept"
@@ -1826,20 +1905,22 @@ export default function AppliedInfluencersPage() {
           >
             Brand Accept
           </ActionButton>
-        </>
-      )}
+        )}
 
-      {hasContract && bConfirmed && !bSigned && !locked && (
-        <ActionButton
-          title="Sign as Brand"
-          variant="grad"
-          onClick={() => openSignModal(meta)}
-        >
-          Sign as Brand
-        </ActionButton>
-      )}
-    </div>
-  );
+        {/* Both accepted → sign */}
+        {hasContract && !rejected && !locked && signAllowed && !brandSigned && (
+          <ActionButton
+            title="Sign as Brand"
+            variant="grad"
+            onClick={() => openSignModal(meta)}
+          >
+            Sign as Brand
+          </ActionButton>
+        )}
+      </div>
+    );
+  };
+
 
   /* ---------------- Rows rendering ---------------- */
   const rows = useMemo(
@@ -1855,8 +1936,12 @@ export default function AppliedInfluencersPage() {
         const iConfirmed = !!meta?.confirmations?.influencer?.confirmed;
         const bConfirmed = !!meta?.confirmations?.brand?.confirmed;
         const bSigned = !!meta?.signatures?.brand?.signed;
-        const locked = meta ? meta.status === "locked" : false;
+        const locked = isLockedStatus(meta?.status ? String(meta.status) : null);
         const rejected = isRejectedMeta(meta);
+        const statusStr = meta?.status ? String(meta.status) : "";
+        const editable = isEditableStatus(statusStr);
+        const brandNeedsAccept = needsBrandAcceptance(statusStr);
+        const signAllowed = canSignNow(statusStr);
 
         const isHighlighted = highlightInfId === inf.influencerId;
 
@@ -1973,17 +2058,23 @@ export default function AppliedInfluencersPage() {
         const iConfirmed = !!meta?.confirmations?.influencer?.confirmed;
         const bConfirmed = !!meta?.confirmations?.brand?.confirmed;
         const bSigned = !!meta?.signatures?.brand?.signed;
-        const locked = meta ? meta.status === "locked" : false;
+        const locked = isLockedStatus(meta?.status ? String(meta.status) : null);
         const rejected = isRejectedMeta(meta);
         const href = buildHandleUrl(inf.primaryPlatform, inf.handle);
+
+        const statusStr = meta?.status ? String(meta.status) : "";
+        const editable = isEditableStatus(statusStr);
+        const brandNeedsAccept = needsBrandAcceptance(statusStr);
+        const signAllowed = canSignNow(statusStr);
+
 
         return (
           <div
             key={inf.influencerId}
             id={`inf-card-${inf.influencerId}`}
             className={`relative rounded-xl border p-4 bg-white transition-all duration-300 ${highlightInfId === inf.influencerId
-                ? "border-[#EA580C] bg-[#FFE4C4] shadow-[0_0_0_2px_rgba(234,88,12,0.9),0_18px_45px_rgba(0,0,0,0.35)] animate-pulse scale-[1.02]"
-                : "border-gray-200 hover:shadow-md hover:-translate-y-[1px]"
+              ? "border-[#EA580C] bg-[#FFE4C4] shadow-[0_0_0_2px_rgba(234,88,12,0.9),0_18px_45px_rgba(0,0,0,0.35)] animate-pulse scale-[1.02]"
+              : "border-gray-200 hover:shadow-md hover:-translate-y-[1px]"
               }`}
           >
             {highlightInfId === inf.influencerId && (
@@ -2047,7 +2138,7 @@ export default function AppliedInfluencersPage() {
   return (
     <TooltipProvider delayDuration={150}>
       <div className="min-h-screen p-4 md:p-8 space-y-6 md:space-y-8 max-w-7xl mx-auto">
-        <header className="flex items-center justify-between p-2 md:p-4 rounded-md sticky top-0 backdrop-blur supports-[backdrop-filter]:bg-white/70 bg-white/90 border-b border-gray-100 z-20">
+        <header className="flex items-center justify-between p-2 md:p-4 rounded-md sticky top-0 backdrop-blur supports-[backdrop-filter]:bg-white/70 bg-white/90 border-b border-gray-100">
           <h1 className="text-xl md:text-3xl font-bold truncate">
             Campaign: {campaignTitle || "Unknown Campaign"}
           </h1>
@@ -2424,8 +2515,8 @@ export default function AppliedInfluencersPage() {
                       clearPreview();
                     }}
                     className={`w-full h-[44px] px-3 border-2 rounded-lg text-sm transition-all duration-200 focus:outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF8A35] focus-visible:ring-offset-1 focus-visible:ring-offset-white ${formErrors.requestedEffDate
-                        ? "border-red-500"
-                        : "border-gray-200 focus:border-[#FF8A35]"
+                      ? "border-red-500"
+                      : "border-gray-200 focus:border-[#FF8A35]"
                       }`}
                     data-field-error={!!formErrors.requestedEffDate}
                   />
@@ -2485,8 +2576,8 @@ export default function AppliedInfluencersPage() {
                       clearPreview();
                     }}
                     className={`w-full h-[44px] px-3 border-2 rounded-lg text-sm transition-all duration-200 focus:outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF8A35] focus-visible:ring-offset-1 focus-visible:ring-offset-white ${formErrors.goLiveStart
-                        ? "border-red-500"
-                        : "border-gray-200 focus:border-[#FF8A35]"
+                      ? "border-red-500"
+                      : "border-gray-200 focus:border-[#FF8A35]"
                       }`}
                     data-field-error={!!formErrors.goLiveStart}
                   />
@@ -2511,8 +2602,8 @@ export default function AppliedInfluencersPage() {
                       clearPreview();
                     }}
                     className={`w-full h-[44px] px-3 border-2 rounded-lg text-sm transition-all duration-200 focus:outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF8A35] focus-visible:ring-offset-1 focus-visible:ring-offset-white ${formErrors.goLiveEnd
-                        ? "border-red-500"
-                        : "border-gray-200 focus:border-[#FF8A35]"
+                      ? "border-red-500"
+                      : "border-gray-200 focus:border-[#FF8A35]"
                       }`}
                     data-field-error={!!formErrors.goLiveEnd}
                   />
@@ -2753,8 +2844,8 @@ export default function AppliedInfluencersPage() {
                             }}
                             disabled={!row.draftRequired}
                             className={`w-full h-[44px] px-3 border-2 rounded-lg text-sm transition-all duration-200 focus:outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF8A35] focus-visible:ring-offset-1 focus-visible:ring-offset-white ${row.draftRequired
-                                ? "border-gray-200 focus:border-[#FF8A35]"
-                                : "opacity-60 cursor-not-allowed border-gray-200"
+                              ? "border-gray-200 focus:border-[#FF8A35]"
+                              : "opacity-60 cursor-not-allowed border-gray-200"
                               }`}
                           />
                         </div>
@@ -3218,8 +3309,8 @@ export function FloatingLabelInput({
       <label
         htmlFor={id}
         className={`absolute left-4 transition-all duration-200 pointer-events-none inline-flex items-center gap-1 ${focused || hasValue
-            ? "top-1.5 text-[11px] text-black font-medium"
-            : "top-1/2 -translate-y-1/2 text-sm text-gray-500"
+          ? "top-1.5 text-[11px] text-black font-medium"
+          : "top-1/2 -translate-y-1/2 text-sm text-gray-500"
           }`}
       >
         <span>{label}</span>
@@ -3262,10 +3353,10 @@ export function Select({
         onChange={onChange}
         disabled={disabled}
         className={`w-full h-[44px] px-3 border-2 rounded-lg text-sm focus:outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF8A35] focus-visible:ring-offset-1 focus-visible:ring-offset-white ${disabled
-            ? "opacity-60 cursor-not-allowed border-gray-200"
-            : error
-              ? "border-red-500"
-              : "border-gray-200 focus:border-[#FF8A35]"
+          ? "opacity-60 cursor-not-allowed border-gray-200"
+          : error
+            ? "border-red-500"
+            : "border-gray-200 focus:border-[#FF8A35]"
           }`}
       >
         {flat.map((o) => (
@@ -3587,10 +3678,10 @@ export function TextArea({
         placeholder={placeholder}
         disabled={disabled}
         className={`w-full px-3 py-2.5 border-2 rounded-lg text-sm focus:outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF8A35] focus-visible:ring-offset-1 focus-visible:ring-offset-white ${disabled
-            ? "opacity-60 cursor-not-allowed border-gray-200"
-            : error
-              ? "border-red-500"
-              : "border-gray-200 focus:border-[#FF8A35]"
+          ? "opacity-60 cursor-not-allowed border-gray-200"
+          : error
+            ? "border-red-500"
+            : "border-gray-200 focus:border-[#FF8A35]"
           }`}
       />
       {error && (

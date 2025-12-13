@@ -1,17 +1,5 @@
 "use client";
 
-/**
- * =============================================================================
- * Influencer MyCampaigns — UPDATED w/ Selection Tabs
- * -----------------------------------------------------------------------------
- * New logic requested:
- * - Segmented selection buttons for: Active, Contracted, Applied, and All.
- * - Counts appear on each tab.
- * - Switching tabs shows only the relevant table(s). "All" shows all sections.
- * - Existing finalization/signing edit-hiding logic preserved.
- * -----------------------------------------------------------------------------
- */
-
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -179,20 +167,76 @@ const toServerInfluencer = (sp: LocalInfluencer): ServerInfluencer => ({
   },
 });
 
-/* ───────────────────────────── Contract Meta (shared) ─────────────────────── */
-export type PartyConfirm = { confirmed?: boolean };
+export type PartyConfirm = { confirmed?: boolean; byUserId?: string; at?: string };
 export type PartySign = { signed?: boolean; byUserId?: string; name?: string; email?: string; at?: string };
+
 export type ContractMeta = {
-  status?: string; // draft | sent | viewed | negotiation | finalize | signing | rejected | locked
+  status?: ContractStatus | string;
+
   confirmations?: { brand?: PartyConfirm; influencer?: PartyConfirm };
-  signatures?: { brand?: PartySign; influencer?: PartySign };
+  acceptances?: any; // optional, if you ever want to use it
+  signatures?: { brand?: PartySign; influencer?: PartySign; collabglam?: PartySign };
+
   lockedAt?: string | null;
+  editsLockedAt?: string | null;
+
+  awaitingRole?: "brand" | "influencer" | null | string;
+  version?: number;
+
   campaignId?: string;
   contractId?: string;
-  flags?: any;
-  statusFlags?: any;
-  isResendChild?: boolean;
+
   supersededBy?: string | null;
+  resendOf?: string | null;
+  resendIteration?: number;
+};
+
+// ───────────────────────── Contract Status (frontend mirror) ─────────────────────────
+// Keep these EXACTLY matching backend constants/strings.
+export const CONTRACT_STATUS = {
+  BRAND_SENT_DRAFT: "BRAND_SENT_DRAFT",
+  INFLUENCER_ACCEPTED: "INFLUENCER_ACCEPTED",
+  BRAND_ACCEPTED: "BRAND_ACCEPTED",
+  READY_TO_SIGN: "READY_TO_SIGN",
+  CONTRACT_SIGNED: "CONTRACT_SIGNED",
+  MILESTONES_CREATED: "MILESTONES_CREATED",
+  BRAND_EDITED: "BRAND_EDITED",
+  INFLUENCER_EDITED: "INFLUENCER_EDITED",
+  REJECTED: "REJECTED",
+  SUPERSEDED: "SUPERSEDED",
+} as const;
+
+export type ContractStatus = (typeof CONTRACT_STATUS)[keyof typeof CONTRACT_STATUS];
+
+const normStatus = (s?: string) => String(s || "").trim().toUpperCase();
+
+const signingStatusLabel = (meta?: ContractMeta | null) => {
+  if (!meta) return null;
+
+  const st = normStatus(meta.status);
+  const isSigningPhase = st === CONTRACT_STATUS.READY_TO_SIGN || !!meta.editsLockedAt;
+  if (!isSigningPhase) return null;
+
+  const b = !!meta.signatures?.brand?.signed;
+  const i = !!meta.signatures?.influencer?.signed;
+  const c = !!meta.signatures?.collabglam?.signed;
+
+  // if UI ever sees "all signed" before backend flips status to CONTRACT_SIGNED
+  if (b && i && c) return "Signed";
+
+  // Prefer backend "awaitingRole" when present (single source of truth)
+  const awaiting = String(meta.awaitingRole || "").toLowerCase();
+  if (awaiting === "brand") return "Awaiting brand signature";
+  if (awaiting === "influencer") return "Awaiting influencer signature";
+  if (awaiting === "collabglam") return "Awaiting CollabGlam signature";
+
+  // Fallback inference (for older records that don't have awaitingRole)
+  if (!b && !i) return "Ready to sign";
+  if (b && !i) return "Awaiting influencer signature";
+  if (!b && i) return "Awaiting brand signature";
+  if (b && i && !c) return "Awaiting CollabGlam signature";
+
+  return null;
 };
 
 /* ─────────────────────────── Small form components ────────────────────────── */
@@ -280,15 +324,17 @@ function apiMessage(e: any, fallback = "Something went wrong") {
   const status = e?.response?.status;
   const msg = e?.response?.data?.message || e?.message;
 
-  // Prefer server’s explicit guardrail messages if present
   const known = [
-    "Contract is locked",
-    "Influencer must confirm before this action",
-    "Brand must confirm before this action",
-    "Contract is finalized; no further edits allowed",
-    "All parties have signed; no further edits are allowed",
+    "Contract is locked and cannot be edited",
+    "Contract is locked for signing; edits are disabled",
+    "Influencer must accept the current version first",
+    "Brand must accept the current version first",
+    "Both parties must accept the current version before signing",
+    "Contract is not ready to sign yet",
     "Contract not found",
+    "Signature image must be ≤ 50 KB.",
   ];
+
   if (msg && known.some((k) => String(msg).includes(k))) return msg;
 
   if (status === 400) return msg || "Bad request.";
@@ -634,29 +680,38 @@ function InfluencerContractModal({
   const [meta, setMeta] = useState<ContractMeta | null>(null);
   const [showTax, setShowTax] = useState(false);
 
-  const influencerConfirmed = !!(
-    meta?.confirmations?.influencer?.confirmed || meta?.flags?.isInfluencerConfirm
-  );
+  const st = normStatus(meta?.status);
 
-  const brandConfirmed = !!(
-    meta?.confirmations?.brand?.confirmed || meta?.flags?.isBrandConfirm
-  );
+  const influencerConfirmed = !!meta?.confirmations?.influencer?.confirmed;
+  const brandConfirmed = !!meta?.confirmations?.brand?.confirmed;
 
-  const isLocked = !!meta?.lockedAt || meta?.status === "locked" || !!meta?.flags?.isLocked;
-  const anyoneSigned = !!(meta?.signatures?.brand?.signed || meta?.signatures?.influencer?.signed);
-  const isFinalizedPhase = ["finalize", "signing"].includes(String(meta?.status || "").toLowerCase());
+  const brandSigned = !!meta?.signatures?.brand?.signed;
+  const influencerSigned = !!meta?.signatures?.influencer?.signed;
+  const anyoneSigned = brandSigned || influencerSigned || !!meta?.signatures?.collabglam?.signed;
 
-  // NEW: Editing is disabled when locked/finalized or if ANYONE signed
+  const isReadyToSign = st === CONTRACT_STATUS.READY_TO_SIGN || !!meta?.editsLockedAt;
+  const isLocked =
+    !!meta?.lockedAt ||
+    st === CONTRACT_STATUS.CONTRACT_SIGNED ||
+    st === CONTRACT_STATUS.MILESTONES_CREATED;
+
+  const isRejected = st === CONTRACT_STATUS.REJECTED;
+  const isSuperseded = st === CONTRACT_STATUS.SUPERSEDED;
+
+  const canSign =
+    !isLocked &&
+    isReadyToSign &&
+    influencerConfirmed &&
+    brandConfirmed &&
+    !influencerSigned;
+
   const canEdit = useMemo(() => {
     if (readOnly) return false;
-    if (isLocked) return false;
+    if (isLocked || isReadyToSign) return false;
+    if (isRejected || isSuperseded) return false;
     if (anyoneSigned) return false;
-    if (isFinalizedPhase) return false;
-    if (!influencerConfirmed) return true; // allow before acceptance
-    if (meta?.flags?.canEditInfluencerFields === false) return false;
-    if (readOnly || isLocked || anyoneSigned || isFinalizedPhase) return false;
     return true;
-  }, [readOnly, isLocked, anyoneSigned, isFinalizedPhase, influencerConfirmed, meta?.flags?.canEditInfluencerFields]);
+  }, [readOnly, isLocked, isReadyToSign, isRejected, isSuperseded, anyoneSigned]);
 
   const [mode, setMode] = useState<"view" | "edit">(initialMode);
 
@@ -760,11 +815,14 @@ function InfluencerContractModal({
           confirmations: c.confirmations || {},
           signatures: c.signatures || {},
           lockedAt: c.lockedAt,
+          editsLockedAt: c.editsLockedAt,
+          awaitingRole: c.awaitingRole,
+          version: c.version,
           campaignId: c.campaignId,
           contractId: c.contractId,
-          flags: c.flags || c.statusFlags || {},
-          isResendChild: !!(c.flags?.isResendChild || c.statusFlags?.isResendChild),
           supersededBy: c.supersededBy,
+          resendOf: c.resendOf || null,
+          resendIteration: c.resendIteration,
         });
 
         // Prefill on edit open ONLY
@@ -884,16 +942,17 @@ function InfluencerContractModal({
 
   const openSignature = () => {
     if (isLocked) return;
+
+    if (!isReadyToSign) {
+      toast({ icon: "error", title: "Not ready to sign", text: "Waiting for both parties to accept the current version." });
+      return;
+    }
     if (!influencerConfirmed) {
-      toast({ icon: "error", title: "Confirm first", text: "Please accept the contract before signing." });
+      toast({ icon: "error", title: "Accept first", text: "Please accept the contract before signing." });
       return;
     }
     if (!brandConfirmed) {
-      toast({ icon: "error", title: "Brand confirmation pending", text: "Brand must confirm before signing can start." });
-      return;
-    }
-    if (meta?.flags?.canSignInfluencer === false) {
-      toast({ icon: "error", title: "Signing disabled", text: "You cannot sign this contract at the moment." });
+      toast({ icon: "error", title: "Brand acceptance pending", text: "Brand must accept before signing can start." });
       return;
     }
     setShowSignModal(true);
@@ -979,8 +1038,10 @@ function InfluencerContractModal({
               Status: {String(meta.status).toUpperCase()}
             </span>
           )}
-          {meta?.flags?.isResendChild && (
-            <span className="px-2 py-1 rounded-full border bg-blue-50 border-blue-200 text-blue-700">Resent</span>
+          {(!!meta?.resendOf || (meta?.resendIteration ?? 0) > 0) && (
+            <span className="px-2 py-1 rounded-full border bg-blue-50 border-blue-200 text-blue-700">
+              Resent
+            </span>
           )}
           <span className="px-2 py-1 rounded-full border bg-gray-50 border-gray-200 text-gray-700">You: {influencerConfirmed ? "Accepted" : "Pending"}</span>
           <span className="px-2 py-1 rounded-full border bg-gray-50 border-gray-200 text-gray-700">You Signed: {meta?.signatures?.influencer?.signed ? "Yes" : "No"}</span>
@@ -1204,7 +1265,6 @@ function InfluencerContractModal({
                     <Button onClick={acceptOrSave} disabled={isWorking || !liteLoaded} className="bg-emerald-600 hover:bg-emerald-700 text-white" title={!liteLoaded ? "Loading your profile…" : ""}>
                       {influencerConfirmed ? "Save Changes" : "Accept & Save"}
                     </Button>
-                    <Button variant="outline" onClick={() => setMode("view")}>Switch to View</Button>
                   </div>
                 </div>
               </div>
@@ -1292,7 +1352,13 @@ function CampaignTable({ data, loading, error, emptyMessage, page, totalPages, o
   onOpenEditor: (c: Campaign, viewOnly: boolean, startMode?: "view" | "edit") => void;
   onRefreshAll: () => void;
   metaCache: Record<string, ContractMeta | null>;
-  onSignDirect: (opts: { contractId: string; influencerConfirmed: boolean; isLocked: boolean; brandConfirmed: boolean; }) => void;
+  onSignDirect: (opts: {
+    contractId: string;
+    influencerConfirmed: boolean;
+    brandConfirmed: boolean;
+    isLocked: boolean;
+    isReadyToSign: boolean;
+  }) => void;
 }) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const influencerId = typeof window !== "undefined" ? localStorage.getItem("influencerId") : null;
@@ -1332,20 +1398,37 @@ function CampaignTable({ data, loading, error, emptyMessage, page, totalPages, o
   const DataRows = () => (
     <tbody>
       {data.map((c, idx) => {
-        const accepted = c.isAccepted === 1;
-        const isExpanded = expandedId === c.id;
         const meta = metaCache[c.id] || null;
-        const influencerConfirmed = !!(meta?.confirmations?.influencer?.confirmed || meta?.flags?.isInfluencerConfirm);
-        const isLocked = !!meta?.lockedAt || meta?.status === "locked" || !!meta?.flags?.isLocked;
+        const st = normStatus(meta?.status);
+
+        const signLabel = signingStatusLabel(meta);
+
+        const effectiveContractId = meta?.contractId || c.contractId;
+        const hasContract = !!effectiveContractId;
+
+        const influencerConfirmed = !!meta?.confirmations?.influencer?.confirmed;
+        const brandConfirmed = !!meta?.confirmations?.brand?.confirmed;
+
         const brandSigned = !!meta?.signatures?.brand?.signed;
         const influencerSigned = !!meta?.signatures?.influencer?.signed;
-        const isFinalizedPhase = ["finalize", "signing"].includes(String(meta?.status || "").toLowerCase());
-        const anyoneSigned = brandSigned || influencerSigned;
-        const effectiveContractId = meta?.contractId || c.contractId;
-        const brandConfirmed = !!(meta?.confirmations?.brand?.confirmed || meta?.flags?.isBrandConfirm);
 
-        // Edit button visibility (table level)
-        const canShowEdit = !isLocked && !anyoneSigned && !isFinalizedPhase;
+        const isReadyToSign = st === CONTRACT_STATUS.READY_TO_SIGN || !!meta?.editsLockedAt;
+        const isLocked =
+          !!meta?.lockedAt ||
+          st === CONTRACT_STATUS.CONTRACT_SIGNED ||
+          st === CONTRACT_STATUS.MILESTONES_CREATED;
+
+        const isRejected = st === CONTRACT_STATUS.REJECTED;
+        const isSuperseded = st === CONTRACT_STATUS.SUPERSEDED;
+
+        const canEditRow = hasContract && !isLocked && !isReadyToSign && !isRejected && !isSuperseded;
+        const needsAccept = hasContract && !influencerConfirmed && canEditRow; // action needed
+        const canSign =
+          hasContract && !isLocked && isReadyToSign && influencerConfirmed && brandConfirmed && !influencerSigned;
+
+        const canReject = hasContract && !isLocked && !isRejected && !isSuperseded; // (until fully signed/locked)
+
+        const isExpanded = expandedId === c.id;
 
         return (
           <React.Fragment key={c.id}>
@@ -1360,30 +1443,60 @@ function CampaignTable({ data, loading, error, emptyMessage, page, totalPages, o
                 {formatDate(c.timeline.startDate)} – {formatDate(c.timeline.endDate)}
               </td>
               <td className="px-6 py-4 text-center">
-                {c.hasApplied === 1 && !accepted && !c.isContracted ? (
-                  <Badge className="bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-800 shadow-none">Brand Reviewing</Badge>
-                ) : c.isContracted === 1 && !accepted ? (
-                  <Badge className="bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-800 shadow-none">Contract Sent</Badge>
+                {!hasContract ? (
+                  <Badge className="bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-800 shadow-none">
+                    {c.hasApplied === 1 ? "Brand Reviewing" : "Active"}
+                  </Badge>
                 ) : (
-                  <Badge className="bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-800 shadow-none">Accepted</Badge>
+                  <Badge className="bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-800 shadow-none">
+                    {signLabel ??
+                      (st === CONTRACT_STATUS.BRAND_SENT_DRAFT ? "Awaiting Your Acceptance" :
+                        st === CONTRACT_STATUS.BRAND_EDITED ? "Updated by Brand (Review)" :
+                          st === CONTRACT_STATUS.INFLUENCER_ACCEPTED ? "Awaiting Brand Acceptance" :
+                            st === CONTRACT_STATUS.INFLUENCER_EDITED ? "Sent to Brand (Pending)" :
+                              st === CONTRACT_STATUS.READY_TO_SIGN ? "Ready to Sign" :
+                                st === CONTRACT_STATUS.CONTRACT_SIGNED ? "Contract Signed" :
+                                  st === CONTRACT_STATUS.MILESTONES_CREATED ? "Milestones Created" :
+                                    st === CONTRACT_STATUS.REJECTED ? "Rejected" :
+                                      st === CONTRACT_STATUS.SUPERSEDED ? "Superseded" :
+                                        (meta?.status ? String(meta.status) : "Contract"))}
+                  </Badge>
                 )}
               </td>
               <td className="px-6 py-4 flex justify-center gap-2 whitespace-nowrap">
-                {c.isContracted === 1 && !accepted ? (
+                {!hasContract ? (
+                  <Button
+                    variant="outline"
+                    className="bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-900"
+                    onClick={() => (window.location.href = `/influencer/my-campaign/view-campaign?id=${c.id}`)}
+                  >
+                    View Campaign
+                  </Button>
+                ) : (
                   <>
-                    {/* Accept & Edit is hidden if finalized/locked/anyone signed */}
-                    {canShowEdit && (
+                    {needsAccept && (
                       <Button
                         variant="outline"
                         className="bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-900"
-                        onClick={() => onOpenEditor(c, false, "edit")}
-                        title="Fill details to accept"
+                        onClick={() => onOpenEditor({ ...c, contractId: effectiveContractId }, false, "edit")}
+                        title="Review details and accept"
                       >
-                        Accept & Edit
+                        Review & Accept
                       </Button>
                     )}
 
-                    {brandSigned && !influencerSigned && (
+                    {!needsAccept && canEditRow && (
+                      <Button
+                        variant="outline"
+                        className="bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-900"
+                        onClick={() => onOpenEditor({ ...c, contractId: effectiveContractId }, false, "edit")}
+                        title="Edit your details"
+                      >
+                        Edit Details
+                      </Button>
+                    )}
+
+                    {canSign && (
                       <Button
                         className="bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-900"
                         onClick={() =>
@@ -1392,15 +1505,9 @@ function CampaignTable({ data, loading, error, emptyMessage, page, totalPages, o
                             influencerConfirmed,
                             brandConfirmed,
                             isLocked,
+                            isReadyToSign,
                           })
                         }
-                        title={
-                          !influencerConfirmed
-                            ? "Accept first to sign"
-                            : !brandConfirmed
-                              ? "Brand must confirm before signing"
-                              : "Sign as Influencer"
-                        }
                       >
                         Sign as Influencer
                       </Button>
@@ -1408,58 +1515,15 @@ function CampaignTable({ data, loading, error, emptyMessage, page, totalPages, o
 
                     <Button
                       variant="outline"
-                      onClick={() => onOpenEditor(c, !canShowEdit, "view")}
+                      onClick={() => onOpenEditor({ ...c, contractId: effectiveContractId }, true, "view")}
                       className="bg-white"
                       title="View contract"
                     >
                       View Contract
                     </Button>
 
-                    <RejectButton contractId={effectiveContractId} onDone={onRefreshAll} />
+                    {canReject && <RejectButton contractId={effectiveContractId} onDone={onRefreshAll} />}
                   </>
-                ) : accepted ? (
-                  <>
-                    {/* Hide Edit Contract when finalized/locked/anyone signed */}
-                    {canShowEdit && (
-                      <Button
-                        variant="outline"
-                        className="bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-900"
-                        onClick={() => onOpenEditor(c, false, "edit")}
-                        title="Edit your details"
-                      >
-                        Edit Contract
-                      </Button>
-                    )}
-
-                    {/* If brand signed and influencer hasn't, show Sign action here */}
-                    {brandSigned && !influencerSigned && (
-                      <Button
-                        className="bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-900"
-                        onClick={() => onSignDirect({ contractId: effectiveContractId, influencerConfirmed, isLocked, brandConfirmed })}
-                        title={influencerConfirmed ? "Sign as Influencer" : "Accept first to sign"}
-                      >
-                        Sign as Influencer
-                      </Button>
-                    )}
-
-                    <Button
-                      variant="outline"
-                      onClick={() => onOpenEditor(c, !canShowEdit, "view")}
-                      className="bg-white"
-                      title="View contract"
-                    >
-                      View Contract
-                    </Button>
-
-                  </>
-                ) : (
-                  <Button
-                    variant="outline"
-                    className="bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-900"
-                    onClick={() => (window.location.href = `/influencer/my-campaign/view-campaign?id=${c.id}`)}
-                  >
-                    View Campaign
-                  </Button>
                 )}
 
                 {showMilestones && (
@@ -1472,6 +1536,7 @@ function CampaignTable({ data, loading, error, emptyMessage, page, totalPages, o
                   </button>
                 )}
               </td>
+
             </tr>
 
             {isExpanded && (
@@ -1678,11 +1743,14 @@ export default function MyCampaignsPage() {
               confirmations: m.confirmations || {},
               signatures: m.signatures || {},
               lockedAt: m.lockedAt,
+              editsLockedAt: m.editsLockedAt,
+              awaitingRole: m.awaitingRole,
+              version: m.version,
               campaignId: m.campaignId,
               contractId: m.contractId,
-              flags: m.flags || m.statusFlags || {},
-              isResendChild: !!(m.flags?.isResendChild || m.statusFlags?.isResendChild),
               supersededBy: m.supersededBy,
+              resendOf: m.resendOf || null,
+              resendIteration: m.resendIteration,
             } as ContractMeta) : null,
           };
         } catch {
@@ -1744,21 +1812,29 @@ export default function MyCampaignsPage() {
     influencerConfirmed,
     brandConfirmed,
     isLocked,
+    isReadyToSign,
   }: {
     contractId: string;
     influencerConfirmed: boolean;
     brandConfirmed: boolean;
     isLocked: boolean;
+    isReadyToSign: boolean;
   }) => {
     if (isLocked) return;
+
+    if (!isReadyToSign) {
+      toast({ icon: "error", title: "Not ready to sign", text: "Waiting for both parties to accept the current version." });
+      return;
+    }
     if (!influencerConfirmed) {
-      toast({ icon: "error", title: "Confirm first", text: "Please accept the contract before signing." });
+      toast({ icon: "error", title: "Accept first", text: "Please accept the contract before signing." });
       return;
     }
     if (!brandConfirmed) {
-      toast({ icon: "error", title: "Brand confirmation pending", text: "Brand must confirm before signing can start." });
+      toast({ icon: "error", title: "Brand acceptance pending", text: "Brand must accept before signing can start." });
       return;
     }
+
     setTopSignContractId(contractId);
     setTopSignOpen(true);
   };
