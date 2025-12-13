@@ -59,7 +59,7 @@ const MILESTONE_SPLIT_PRESETS = [
 const ReactSelect = dynamic(() => import("react-select"), { ssr: false });
 
 // ✅ Canonical contract statuses (match backend constants/contract.js)
-export const CONTRACT_STATUS = {
+const CONTRACT_STATUS = {
   DRAFT: "DRAFT",
   BRAND_SENT_DRAFT: "BRAND_SENT_DRAFT",
   BRAND_EDITED: "BRAND_EDITED",
