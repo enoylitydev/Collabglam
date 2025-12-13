@@ -193,7 +193,7 @@ export type ContractMeta = {
 
 // ───────────────────────── Contract Status (frontend mirror) ─────────────────────────
 // Keep these EXACTLY matching backend constants/strings.
-export const CONTRACT_STATUS = {
+const CONTRACT_STATUS = {
   BRAND_SENT_DRAFT: "BRAND_SENT_DRAFT",
   INFLUENCER_ACCEPTED: "INFLUENCER_ACCEPTED",
   BRAND_ACCEPTED: "BRAND_ACCEPTED",
