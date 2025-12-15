@@ -410,7 +410,7 @@ export default function BrandSubscriptionPage() {
       const { id: order_id, amount, currency } = orderResp.order;
 
       const rzp = new window.Razorpay({
-        key: "rzp_live_GngmINuJmpWywN",
+        key: "rzp_live_Rroqo7nHdOmQco",
         amount,
         currency,
         name: "CollabGlam",

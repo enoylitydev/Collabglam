@@ -90,7 +90,6 @@ export type ServerInfluencer = {
   notes?: string;
   shippingAddress?: string;
   taxFormType?: "W-9" | "W-8BEN" | "W-8BEN-E";
-  dataAccess?: { insightsReadOnly?: boolean; whitelisting?: boolean; sparkAds?: boolean };
 };
 
 export type LocalInfluencer = {
@@ -106,7 +105,6 @@ export type LocalInfluencer = {
   taxId: string;
   taxFormType?: ServerInfluencer["taxFormType"];
   notes: string;
-  dataAccess: NonNullable<ServerInfluencer["dataAccess"]>;
 };
 
 const emptyLocal: LocalInfluencer = {
@@ -122,7 +120,6 @@ const emptyLocal: LocalInfluencer = {
   taxId: "",
   taxFormType: "W-9",
   notes: "",
-  dataAccess: { insightsReadOnly: true, whitelisting: false, sparkAds: false },
 };
 
 const trim = (s?: string) => (s || "").trim();
@@ -160,11 +157,6 @@ const toServerInfluencer = (sp: LocalInfluencer): ServerInfluencer => ({
   notes: sp.notes,
   shippingAddress: composeShippingAddress(sp),
   taxFormType: sp.taxFormType,
-  dataAccess: {
-    insightsReadOnly: !!sp.dataAccess.insightsReadOnly,
-    whitelisting: !!sp.dataAccess.whitelisting,
-    sparkAds: !!sp.dataAccess.sparkAds,
-  },
 });
 
 export type PartyConfirm = { confirmed?: boolean; byUserId?: string; at?: string };
@@ -743,11 +735,6 @@ function InfluencerContractModal({
       taxId: "",
       taxFormType: "W-9",
       notes: "",
-      dataAccess: {
-        insightsReadOnly: true,
-        whitelisting: !!lite?.onboarding?.allowlisting,
-        sparkAds: false,
-      },
     };
   };
 
@@ -766,11 +753,6 @@ function InfluencerContractModal({
       taxId: ci.taxId ?? prev.taxId,
       taxFormType: (ci.taxFormType as any) ?? prev.taxFormType,
       notes: ci.notes ?? prev.notes,
-      dataAccess: {
-        insightsReadOnly: ci?.dataAccess?.insightsReadOnly ?? prev.dataAccess.insightsReadOnly,
-        whitelisting: ci?.dataAccess?.whitelisting ?? prev.dataAccess.whitelisting,
-        sparkAds: ci?.dataAccess?.sparkAds ?? prev.dataAccess.sparkAds,
-      },
     });
 
   const fetchInfluencerLite = useCallback(async () => {
@@ -1170,97 +1152,6 @@ function InfluencerContractModal({
                   <div className="mt-3">
                     <Textarea id="notes" label="Notes (optional)" value={local.notes} onChange={(v) => setLocal((p) => ({ ...p, notes: v }))} rows={3} disabled={!canEdit} />
                   </div>
-
-                  <div className="mt-4">
-                    <div className="text-sm font-medium text-gray-800 mb-2">
-                      Data / Access Consents
-                    </div>
-
-                    <TooltipProvider delayDuration={150}>
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-                        {/* Read-Only Insights Access */}
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <div>
-                              <Checkbox
-                                label="Read-Only Insights Access"
-                                checked={!!local.dataAccess.insightsReadOnly}
-                                onChange={(checked) =>
-                                  setLocal((p) => ({
-                                    ...p,
-                                    dataAccess: { ...p.dataAccess, insightsReadOnly: checked },
-                                  }))
-                                }
-                                disabled={!canEdit}
-                              />
-                            </div>
-                          </TooltipTrigger>
-                          <TooltipContent className="bg-black text-white border-black text-xs max-w-xs">
-                            <p>
-                              Allows the brand to view your analytics / insights only. No posting,
-                              editing, or account control.
-                            </p>
-                          </TooltipContent>
-                        </Tooltip>
-
-                        {/* Whitelisting Access */}
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <div>
-                              <Checkbox
-                                label="Whitelisting Access"
-                                checked={!!local.dataAccess.whitelisting}
-                                onChange={(checked) =>
-                                  setLocal((p) => ({
-                                    ...p,
-                                    dataAccess: { ...p.dataAccess, whitelisting: checked },
-                                  }))
-                                }
-                                disabled={!canEdit}
-                              />
-                            </div>
-                          </TooltipTrigger>
-                          <TooltipContent className="bg-black text-white border-black text-xs max-w-xs">
-                            <p>
-                              Lets the brand run paid ads using your handle/content (whitelisted
-                              usage) according to this agreement.
-                            </p>
-                          </TooltipContent>
-                        </Tooltip>
-
-                        {/* Spark Ads Access */}
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <div>
-                              <Checkbox
-                                label="Spark Ads Access"
-                                checked={!!local.dataAccess.sparkAds}
-                                onChange={(checked) =>
-                                  setLocal((p) => ({
-                                    ...p,
-                                    dataAccess: { ...p.dataAccess, sparkAds: checked },
-                                  }))
-                                }
-                                disabled={!canEdit}
-                              />
-                            </div>
-                          </TooltipTrigger>
-                          <TooltipContent className="bg-black text-white border-black text-xs max-w-xs">
-                            <p>
-                              Authorizes the brand to run Spark Ads on your posts where supported
-                              (e.g. TikTok Spark Ads).
-                            </p>
-                          </TooltipContent>
-                        </Tooltip>
-                      </div>
-                    </TooltipProvider>
-
-                    <div className="text-xs text-gray-500 mt-1">
-                      Consents appear in Parties block / Section 12(e) and Schedule K references
-                      inside the contract.
-                    </div>
-                  </div>
-
 
                   <div className="mt-5 flex flex-wrap gap-2">
                     <Button onClick={acceptOrSave} disabled={isWorking || !liteLoaded} className="bg-emerald-600 hover:bg-emerald-700 text-white" title={!liteLoaded ? "Loading your profile…" : ""}>

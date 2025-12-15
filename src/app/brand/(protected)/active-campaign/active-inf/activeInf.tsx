@@ -70,6 +70,7 @@ interface RawInfluencer {
   // New fields from backend
   socialHandle?: string | null;
   audienceSize?: number | null;
+  contractId?: string | null;
 }
 
 interface Meta {
@@ -92,6 +93,7 @@ interface InfluencerRow {
   updatedAt: string | null;
   isAccepted?: number;
   isAssigned?: number;
+  contractId: string | null;
 }
 
 type SortKey = "name" | "username" | "followers" | "updatedAt";
@@ -157,6 +159,7 @@ const toRow = (doc: RawInfluencer): InfluencerRow => {
     updatedAt: doc.updatedAt ?? null,
     isAccepted: doc.isAccepted,
     isAssigned: doc.isAssigned,
+    contractId: doc.contractId ?? null,
   };
 };
 
@@ -191,6 +194,8 @@ export default function ActiveInfluencersPage() {
   const [sortField, setSortField] = useState<SortKey>("updatedAt");
   const [sortOrder, setSortOrder] = useState<1 | 0>(1); // 1=desc, 0=asc
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
+
+  const [openingContractFor, setOpeningContractFor] = useState<string | null>(null);
 
   const [showMilestoneModal, setShowMilestoneModal] = useState(false);
   const [selectedInf, setSelectedInf] = useState<InfluencerRow | null>(null);
@@ -239,6 +244,106 @@ export default function ActiveInfluencersPage() {
     else {
       setSortField(field);
       setSortOrder(1);
+    }
+  };
+
+  const getLatestContractId = useCallback(
+    async (influencerId: string) => {
+      const brandId =
+        typeof window !== "undefined" ? localStorage.getItem("brandId") : null;
+
+      if (!brandId || !campaignId) return null;
+
+      // ⚠️ Adjust endpoint if your route name differs
+      const resp = await post<{ contracts: any[] }>("contract/getContract", {
+        brandId,
+        influencerId,
+        campaignId,
+      });
+
+      const latest = Array.isArray(resp?.contracts) ? resp.contracts[0] : null;
+      return latest?.contractId || null;
+    },
+    [campaignId]
+  );
+
+  const openContractPdf = async (contractId: string) => {
+    const base = process.env.NEXT_PUBLIC_API_URL || ""; // same base used by your API wrapper
+    const token =
+      typeof window !== "undefined" ? localStorage.getItem("token") : null; // ⚠️ change key if different
+
+    // ⚠️ Adjust endpoint to the exact route wired to `exports.viewContractPdf`
+    const pdfUrl = `${base}/contract/viewContractPdf`;
+
+    const r = await fetch(pdfUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ contractId }),
+    });
+
+    if (!r.ok) throw new Error("Failed to load contract PDF");
+
+    const blob = await r.blob();
+    const objectUrl = URL.createObjectURL(blob);
+
+    window.open(objectUrl, "_blank", "noopener,noreferrer");
+
+    // cleanup
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+  };
+
+  const handleViewContract = async (inf: InfluencerRow) => {
+    try {
+      if (!inf.contractId) {
+        toast({
+          icon: "error",
+          title: "Contract not found",
+          text: "No contractId found for this influencer.",
+        });
+        return;
+      }
+
+      setOpeningContractFor(inf.contractId);
+
+      const base = process.env.NEXT_PUBLIC_API_URL || "";
+      const url = `${base}contract/viewPdf`; // ✅ your route
+
+      // (optional) if you use Bearer token auth
+      const token =
+        typeof window !== "undefined"
+          ? localStorage.getItem("token") ||
+          localStorage.getItem("accessToken") ||
+          localStorage.getItem("authToken")
+          : null;
+
+      const r = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ contractId: inf.contractId }),
+      });
+
+      if (!r.ok) throw new Error("Failed to load PDF");
+
+      const blob = await r.blob();
+      const objectUrl = URL.createObjectURL(blob);
+
+      window.open(objectUrl, "_blank", "noopener,noreferrer");
+      setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+    } catch (e: any) {
+      console.error(e);
+      toast({
+        icon: "error",
+        title: "Could not open contract",
+        text: e?.message || "Something went wrong.",
+      });
+    } finally {
+      setOpeningContractFor(null);
     }
   };
 
@@ -435,7 +540,7 @@ export default function ActiveInfluencersPage() {
 
       // 2️⃣ Open Razorpay Checkout
       const rzp = new window.Razorpay({
-        key: "rzp_live_GngmINuJmpWywN", // or process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID
+        key: "rzp_live_Rroqo7nHdOmQco", // or process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID
         amount,
         currency,
         name: "CollabGlam",
@@ -683,6 +788,17 @@ export default function ActiveInfluencersPage() {
               }
             >
               Add Milestone
+            </Button>
+
+            <Button
+              size="sm"
+              variant="outline"
+              className="bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white hover:bg-gradient-to-r hover:from-[#FF7236] hover:to-[#FFA135] cursor-pointer disabled:opacity-50"
+              onClick={() => handleViewContract(inf)}
+              disabled={!inf.contractId || openingContractFor === inf.contractId}
+              title={inf.contractId ? "View contract" : "No contract available"}
+            >
+              {openingContractFor === inf.contractId ? "Opening..." : "View Contract"}
             </Button>
 
             <Button

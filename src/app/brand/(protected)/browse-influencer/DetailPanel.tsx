@@ -676,12 +676,12 @@ export const DetailPanel = React.memo<DetailPanelProps>(
                       {sendingInvite ? (
                         <>
                           <MessageSquare className="h-4 w-4 animate-pulse" />
-                          Please wait…
+                          Sending…
                         </>
                       ) : (
                         <>
                           <MessageSquare className="h-4 w-4" />
-                          Send Message
+                          Send Invitation
                         </>
                       )}
                     </button>
