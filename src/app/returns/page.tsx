@@ -82,8 +82,6 @@ const HARD_CODED_RETURNS_POLICY: Policy = {
   policyType: "Returns Policy",
   effectiveDate: "2025-07-14",
   content: `
-Returns Policy
-Effective Date: 2025-07-14
 
 Scope
 This policy applies to all digital engagement services (for example, likes, comments, replies) get through CollabGlam at https://collabglam.com.

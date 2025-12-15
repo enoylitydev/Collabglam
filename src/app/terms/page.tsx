@@ -83,8 +83,6 @@ const HARD_CODED_TOS: Policy = {
   policyType: "Terms of Service",
   effectiveDate: "2025-07-14",
   content: `
-Terms of Service
-Effective Date: 2025-07-14
 
 Eligibility
 You must be at least 18 years old and capable of forming a binding contract. By registering, you represent and warrant that you meet these requirements.

@@ -82,9 +82,6 @@ const HARD_CODED_COOKIE_POLICY: Policy = {
   policyType: "Cookie Policy",
   effectiveDate: "2025-07-14",
   content: `
-Cookie Policy
-Effective Date: 2025-07-14
-
 Scope
 This Cookie Policy explains how Meru Land Private (00 Radha Rani place, Raman Reiti, Vrindaban, Mathura, Mathura, Uttar Pradesh, India, 281121) use cookies and similar technologies on https://collabglam.com.
 

@@ -82,8 +82,6 @@ const HARD_CODED_SHIPPING_POLICY: Policy = {
   policyType: "Shipping & Delivery",
   effectiveDate: "2025-07-14",
   content: `
-Shipping & Delivery Policy
-Effective Date: 2025-07-14
 
 Scope
 This Shipping & Delivery Policy applies to all digital engagement services (for example: likes, comments, replies) got through CollabGlam at https://collabglam.com.

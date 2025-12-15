@@ -82,8 +82,6 @@ const HARD_CODED_POLICY: Policy = {
   policyType: "Privacy Policy",
   effectiveDate: "2025-07-14",
   content: `
-Privacy Policy
-Effective Date: 2025-07-14
 
 This Privacy Policy explains how Meru Land Private (00 Radha Rani place, Raman Reiti, Vrindaban, Mathura, Mathura, Uttar Pradesh, India, 281121) (collectively “Company,” “we,” “us” or “our”) collect, use, disclose and protect personal information when you use https://collabglam.com and related services.
 
