@@ -1,4 +1,3 @@
-/* eslint-disable @next/next/no-img-element */
 "use client";
 
 import React, { useEffect, useState, useMemo, useCallback } from "react";
@@ -992,7 +991,7 @@ export default function ActiveInfluencersPage() {
                     </strong>
                   </p>
                   <p>
-                    Razorpay fee (2%):{" "}
+                    Gateway Charges (2%):{" "}
                     <strong className="text-orange-600">
                       {razorpayFee.toLocaleString(undefined, {
                         style: "currency",
@@ -1040,13 +1039,13 @@ export default function ActiveInfluencersPage() {
                         <button
                           type="button"
                           className="absolute right-3 top-2 inline-flex h-5 w-5 items-center justify-center rounded-full bg-gray-200 text-[11px] font-semibold text-gray-700 cursor-help"
-                          aria-label="Razorpay fee info"
+                          aria-label="Payment Gateway Fee Info"
                         >
                           ?
                         </button>
                       </TooltipTrigger>
                       <TooltipContent className="max-w-xs text-xs bg-gray-800 text-white">
-                        Razorpay charges a 2% payment processing fee when you add milestone
+                        Payment Gateway charges a 2% payment processing fee when you add milestone
                         funds. This 2% is added on top of the milestone amount you enter.
                       </TooltipContent>
                     </Tooltip>

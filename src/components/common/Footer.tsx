@@ -38,11 +38,11 @@ export default function FooterWithNewsletter() {
     {
       title: "Legal",
       links: [
-        { label: "Privacy Policy", href: "/policy/privacy" },
-        { label: "Terms of Service", href: "/policy/terms-of-service" },
-        { label: "Cookie Policy", href: "/policy/cookies" },
-        { label: "Shipping & Delivery Policy", href: "/policy/shipping-delivery" },
-        { label: "Returns Policy", href: "/policy/return" },
+        { label: "Privacy Policy", href: "/privacy-policy" },
+        { label: "Terms of Service", href: "/terms" },
+        { label: "Cookie Policy", href: "/cookie-policy" },
+        { label: "Shipping & Delivery Policy", href: "/service-delivery" },
+        { label: "Returns Policy", href: "/returns" },
       ],
     },
   ];
