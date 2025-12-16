@@ -11,6 +11,7 @@ import {
 import { format } from "date-fns";
 import { post } from "@/lib/api";
 import { ArrowRight, PlayCircle } from "lucide-react";
+import BrandTourModal from "@/components/common/BrandTourModal";
 
 interface DashboardData {
   brandName: string;
@@ -25,6 +26,20 @@ export default function BrandDashboardHome() {
   const [fatalError, setFatalError] = useState<string | null>(null);
 
   const today = format(new Date(), "MMMM d, yyyy");
+
+  const [showTour, setShowTour] = useState(false);
+
+  useEffect(() => {
+    const brandId = localStorage.getItem("brandId");
+    if (!brandId) return;
+
+    const key = `brand_tour_seen_${brandId}`;
+    if (!localStorage.getItem(key)) setShowTour(true);
+  }, []);
+
+  const closeTour = () => {
+    setShowTour(false);
+  };
 
   useEffect(() => {
     const brandId = typeof window !== "undefined" ? localStorage.getItem("brandId") : null;
@@ -67,6 +82,8 @@ export default function BrandDashboardHome() {
       <div className="flex-1 flex flex-col overflow-y-auto">
         <main className="flex-1 px-6 py-8">
 
+          <BrandTourModal open={showTour} onClose={closeTour} />
+
           {/* Zero campaigns CTA */}
           {totalCreatedCampaigns === 0 && (
             <ZeroCampaignCTA
@@ -106,7 +123,7 @@ export default function BrandDashboardHome() {
               label="Hired Influencers"
               value={totalHiredInfluencers.toLocaleString()}
               accentFrom={accentFrom}
-              // onClick={() => router.push("/brand/browse-influencers")}
+            // onClick={() => router.push("/brand/browse-influencers")}
             />
 
             <StatCard
@@ -114,7 +131,7 @@ export default function BrandDashboardHome() {
               label="Budget Remaining"
               value={`$${budgetRemaining.toLocaleString()}`}
               accentFrom={accentFrom}
-              // onClick={() => router.push("/brand/dashboard/settings")}
+            // onClick={() => router.push("/brand/dashboard/settings")}
             />
           </div>
         </main>
