@@ -250,7 +250,7 @@ export default function BrandDashboardHome() {
                             ${Number(c.budget || 0).toLocaleString()}
                           </td>
 
-                          <td className="py-3 pr-4 text-gray-700">
+                          <td className="py-3 pr-4">
                             <button
                               type="button"
                               onClick={() => {
@@ -261,11 +261,31 @@ export default function BrandDashboardHome() {
                                   router.push(`/brand/created-campaign/applied-inf?id=${id}`);
                                 }
                               }}
-                              className="cursor-pointer"
-                              title={c.hasAcceptedInfluencer ? "View active influencers" : "View applied influencers"}
+                              className="group inline-flex items-center gap-2 rounded-full border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-800 hover:bg-gray-50 hover:border-gray-300 transition cursor-pointer"
+                              title={
+                                c.hasAcceptedInfluencer
+                                  ? "Open active influencers"
+                                  : "Open applied influencers"
+                              }
                             >
-                              <span className="px-2 py-1 rounded-full text-xs font-semibold bg-gray-100 text-gray-700 hover:bg-gray-200 transition">
+                              {/* count bubble */}
+                              <span
+                                className={`inline-flex min-w-[28px] justify-center rounded-full px-2 py-0.5 text-xs font-bold ${Number(c.appliedInfluencersCount || 0) > 0
+                                    ? "bg-gray-900 text-white"
+                                    : "bg-gray-100 text-gray-500"
+                                  }`}
+                              >
                                 {Number(c.appliedInfluencersCount || 0).toLocaleString()}
+                              </span>
+
+                              {/* label */}
+                              <span className="text-gray-700 group-hover:text-gray-900">
+                                Applied
+                              </span>
+
+                              {/* small hint */}
+                              <span className="text-[11px] font-medium text-gray-400 group-hover:text-gray-500">
+                                {c.hasAcceptedInfluencer ? "→ Active" : "→ List"}
                               </span>
                             </button>
                           </td>
