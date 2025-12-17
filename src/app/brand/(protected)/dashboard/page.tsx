@@ -10,28 +10,32 @@ import {
 } from "react-icons/hi";
 import { format } from "date-fns";
 import { post } from "@/lib/api";
-import { ArrowRight, PlayCircle } from "lucide-react";
-// import BrandTourModal from "@/components/common/BrandTourModal";
 
 type CampaignRow = {
-  id: string; // always normalized server-side
-  campaignsId?: string;
+  id: string;
+  campaignsId: string;
   productOrServiceName: string;
-  goal?: string;
-  budget?: number;
-  isActive?: number;
-  createdAt?: string;
+  goal: string;
+  budget: number;
+  isActive: number;
+  createdAt: string | null;
 
-  // acceptance info
   hasAcceptedInfluencer: boolean;
-  influencerId?: string | null;
-  contractId?: string | null;
+  influencerId: string | null;
+  contractId: string | null;
+
+  // ✅ per-campaign applied influencers (distinct)
+  appliedInfluencersCount: number;
 };
 
 type BrandDashboardHomePayload = {
   brandName: string;
   totalCreatedCampaigns: number;
   totalHiredInfluencers: number;
+
+  // ✅ sum of per-campaign applied counts (matches table totals)
+  totalAppliedInfluencers: number;
+
   budgetRemaining: number;
 
   campaignsMode: "all" | "accepted";
@@ -43,12 +47,9 @@ export default function BrandDashboardHome() {
 
   const [data, setData] = useState<BrandDashboardHomePayload | null>(null);
   const [fatalError, setFatalError] = useState<string | null>(null);
-
   const [searchTerm, setSearchTerm] = useState("");
+
   const today = format(new Date(), "MMMM d, yyyy");
-
-  // const [showTour, setShowTour] = useState(false);
-
   const accentFrom = "#FFA135";
   const accentTo = "#FF7236";
 
@@ -63,7 +64,6 @@ export default function BrandDashboardHome() {
 
     (async () => {
       try {
-        // ✅ new single endpoint (summary + table data)
         const json = await post<BrandDashboardHomePayload>("/dash/brand", {
           brandId,
         });
@@ -71,9 +71,9 @@ export default function BrandDashboardHome() {
       } catch (err: any) {
         setFatalError(
           err?.response?.data?.error ||
-          err?.response?.data?.message ||
-          err?.message ||
-          "Could not load dashboard"
+            err?.response?.data?.message ||
+            err?.message ||
+            "Could not load dashboard"
         );
       }
     })();
@@ -90,24 +90,27 @@ export default function BrandDashboardHome() {
     });
   }, [data, searchTerm]);
 
-  if (fatalError)
+  if (fatalError) {
     return (
       <div className="flex h-screen items-center justify-center">
         <p className="text-red-500">{fatalError}</p>
       </div>
     );
+  }
 
-  if (!data)
+  if (!data) {
     return (
       <div className="flex h-screen items-center justify-center">
         <p>Loading dashboard…</p>
       </div>
     );
+  }
 
   const {
     brandName,
     totalCreatedCampaigns,
     totalHiredInfluencers,
+    totalAppliedInfluencers,
     budgetRemaining,
     campaignsMode,
   } = data;
@@ -116,8 +119,6 @@ export default function BrandDashboardHome() {
     <div className="flex h-screen overflow-hidden">
       <div className="flex-1 flex flex-col overflow-y-auto">
         <main className="flex-1 px-6 py-8">
-          {/* <BrandTourModal open={showTour} onClose={() => setShowTour(false)} /> */}
-
           {/* Welcome */}
           <div className="rounded-lg bg-white p-6 mb-8 mt-4 md:mt-6">
             <h2
@@ -136,19 +137,25 @@ export default function BrandDashboardHome() {
           </div>
 
           {/* Summary */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
             <StatCard
               icon={<HiOutlineChartBar className="text-[#ef2f5b]" size={32} />}
               label="Created Campaigns"
               value={totalCreatedCampaigns}
               accentFrom={accentFrom}
-            // onClick={() => router.push("/brand/created-campaign")}
             />
 
             <StatCard
               icon={<HiOutlineUsers className="text-[#4f46e5]" size={32} />}
               label="Hired Influencers"
               value={totalHiredInfluencers.toLocaleString()}
+              accentFrom={accentFrom}
+            />
+
+            <StatCard
+              icon={<HiOutlineUsers className="text-[#f59e0b]" size={32} />}
+              label="Total Applied"
+              value={totalAppliedInfluencers.toLocaleString()}
               accentFrom={accentFrom}
             />
 
@@ -166,9 +173,12 @@ export default function BrandDashboardHome() {
             <div className="lg:col-span-2 bg-white rounded-lg shadow p-6">
               <div className="flex items-start sm:items-center justify-between gap-4 mb-4 flex-col sm:flex-row">
                 <div>
-                  <h2 className="text-lg font-semibold text-gray-800">
-                    Campaigns
-                  </h2>
+                  <h2 className="text-lg font-semibold text-gray-800">Campaigns</h2>
+                  <p className="text-xs text-gray-500">
+                    Showing{" "}
+                    <span className="font-semibold">{campaignsMode}</span>{" "}
+                    campaigns
+                  </p>
                 </div>
 
                 <div className="relative w-full sm:max-w-xs">
@@ -184,16 +194,21 @@ export default function BrandDashboardHome() {
 
               {!filteredCampaigns.length ? (
                 <div className="py-10 text-center text-gray-500 flex flex-wrap items-center justify-center gap-4">
+                  {/* Secondary */}
                   <button
                     onClick={() => router.push("/brand/browse-influencers")}
-                    className="w-64 rounded-xl px-5 py-3 font-semibold shadow-sm transition border border-gray-300 bg-white text-gray-800 hover:bg-gray-50 cursor-pointer">
+                    className="w-64 rounded-xl px-5 py-3 font-semibold shadow-sm transition border border-gray-300 bg-white text-gray-800 hover:bg-gray-50 cursor-pointer"
+                  >
                     Browse Influencers
                   </button>
 
+                  {/* Primary */}
                   <button
                     onClick={() => router.push("/brand/add-edit-campaign")}
                     className="w-64 rounded-xl px-4 py-3 text-white font-semibold shadow hover:shadow-md transition cursor-pointer"
-                    style={{ background: `linear-gradient(to right, ${accentFrom}, ${accentTo})` }}
+                    style={{
+                      background: `linear-gradient(to right, ${accentFrom}, ${accentTo})`,
+                    }}
                   >
                     Create New Campaign
                   </button>
@@ -206,10 +221,12 @@ export default function BrandDashboardHome() {
                         <th className="py-3 pr-4">Campaign</th>
                         <th className="py-3 pr-4">Goal</th>
                         <th className="py-3 pr-4">Budget</th>
+                        <th className="py-3 pr-4">Applied</th>
                         <th className="py-3 pr-4">Influencer</th>
                         <th className="py-3 text-right">Action</th>
                       </tr>
                     </thead>
+
                     <tbody>
                       {filteredCampaigns.map((c) => (
                         <tr key={c.id} className="border-b hover:bg-gray-50">
@@ -222,20 +239,25 @@ export default function BrandDashboardHome() {
                             ) : null}
                           </td>
 
-                          <td className="py-3 pr-4 text-gray-700">
-                            {c.goal || "—"}
-                          </td>
+                          <td className="py-3 pr-4 text-gray-700">{c.goal || "—"}</td>
 
                           <td className="py-3 pr-4 text-gray-700">
                             ${Number(c.budget || 0).toLocaleString()}
                           </td>
 
+                          <td className="py-3 pr-4 text-gray-700">
+                            <span className="px-2 py-1 rounded-full text-xs font-semibold bg-gray-100 text-gray-700">
+                              {Number(c.appliedInfluencersCount || 0).toLocaleString()}
+                            </span>
+                          </td>
+
                           <td className="py-3 pr-4">
                             <span
-                              className={`px-2 py-1 rounded-full text-xs font-semibold ${c.hasAcceptedInfluencer
-                                ? "bg-indigo-100 text-indigo-700"
-                                : "bg-yellow-100 text-yellow-700"
-                                }`}
+                              className={`px-2 py-1 rounded-full text-xs font-semibold ${
+                                c.hasAcceptedInfluencer
+                                  ? "bg-indigo-100 text-indigo-700"
+                                  : "bg-yellow-100 text-yellow-700"
+                              }`}
                             >
                               {c.hasAcceptedInfluencer ? "Accepted" : "Not accepted"}
                             </span>
@@ -250,7 +272,9 @@ export default function BrandDashboardHome() {
                                 color: "transparent",
                               }}
                               onClick={() =>
-                                router.push(`/brand/created-campaign/view-campaign?id=${c.campaignsId || c.id}`)
+                                router.push(
+                                  `/brand/created-campaign/view-campaign?id=${c.campaignsId || c.id}`
+                                )
                               }
                             >
                               View
@@ -264,11 +288,9 @@ export default function BrandDashboardHome() {
               )}
             </div>
 
-            {/* 1/3: Quick Actions / Info */}
+            {/* 1/3: Quick Actions */}
             <div className="lg:col-span-1 bg-white rounded-lg shadow p-6">
-              <h3 className="text-lg font-semibold text-gray-800 mb-2">
-                Quick Actions
-              </h3>
+              <h3 className="text-lg font-semibold text-gray-800 mb-2">Quick Actions</h3>
 
               <button
                 onClick={() => router.push("/brand/add-edit-campaign")}
@@ -280,11 +302,17 @@ export default function BrandDashboardHome() {
                 Create New Campaign
               </button>
 
+              <button
+                onClick={() => router.push("/brand/browse-influencers")}
+                className="w-full mt-3 rounded-xl px-4 py-3 font-semibold shadow-sm transition border border-gray-300 bg-white text-gray-800 hover:bg-gray-50"
+              >
+                Browse Influencers
+              </button>
+
               <div className="mt-4 text-sm text-gray-600">
                 <p className="mb-1">
-                  <span className="font-semibold">Tip:</span> If any campaign has
-                  no accepted influencer, we show the full list so you can quickly
-                  spot gaps.
+                  <span className="font-semibold">Tip:</span> If any campaign has no accepted
+                  influencer, we show the full list so you can quickly spot gaps.
                 </p>
               </div>
             </div>
@@ -295,10 +323,13 @@ export default function BrandDashboardHome() {
   );
 }
 
+/* ---------------- components ---------------- */
+
 const StatCard = ({ icon, label, value, accentFrom, onClick }: any) => (
   <div
-    className={`bg-white rounded-lg shadow p-5 flex items-center space-x-4 transition-shadow ${onClick ? "cursor-pointer hover:shadow-lg" : ""
-      }`}
+    className={`bg-white rounded-lg shadow p-5 flex items-center space-x-4 transition-shadow ${
+      onClick ? "cursor-pointer hover:shadow-lg" : ""
+    }`}
     onClick={onClick}
   >
     <div className="p-3 rounded-full" style={{ backgroundColor: `${accentFrom}20` }}>
