@@ -201,7 +201,7 @@ export default function BrandDashboardHome() {
                 <div className="py-10 text-center text-gray-500 flex flex-wrap items-center justify-center gap-4">
                   {/* Secondary */}
                   <button
-                    onClick={() => router.push("/brand/browse-influencers")}
+                    onClick={() => router.push("/brand/browse-influencer")}
                     className="w-64 rounded-xl px-5 py-3 font-semibold shadow-sm transition border border-gray-300 bg-white text-gray-800 hover:bg-gray-50 cursor-pointer"
                   >
                     Browse Influencers
@@ -341,7 +341,7 @@ export default function BrandDashboardHome() {
               </button>
 
               <button
-                onClick={() => router.push("/brand/browse-influencers")}
+                onClick={() => router.push("/brand/browse-influencer")}
                 className="w-full mt-3 rounded-xl px-4 py-3 font-semibold shadow-sm transition border border-gray-300 bg-white text-gray-800 hover:bg-gray-50"
               >
                 Browse Influencers
