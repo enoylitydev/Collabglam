@@ -4,16 +4,13 @@ import React, { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import {
   HiSearch,
-  HiOutlineEye,
   HiChevronLeft,
   HiChevronRight,
+  HiOutlineUserAdd,
   HiOutlineUserGroup,
   HiOutlinePencil,
-  HiOutlineUserAdd,
 } from "react-icons/hi";
 import { get } from "@/lib/api";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { Button } from "@/components/ui/button";
 
 interface Campaign {
   id: string;
@@ -202,6 +199,9 @@ const sliceText = (text: string, max = 40) =>
 
 function TableView({
   data,
+  expandedIds,
+  counts,
+  onToggle,
   formatDate,
   formatCurrency,
 }: {
@@ -213,126 +213,111 @@ function TableView({
   formatCurrency: (n: number) => string;
 }) {
   return (
-    <div className="p-[1.5px] rounded-lg bg-gradient-to-r shadow">
-      <div className="overflow-x-auto bg-white rounded-[0.5rem]">
-        <table className="w-full text-sm text-gray-600">
-          <thead
-            className="text-left text-white"
-            style={{
-              backgroundImage: `linear-gradient(to right, ${TABLE_GRADIENT_FROM}, ${TABLE_GRADIENT_TO})`,
-            }}
-          >
-            <tr>
-              {[
-                "Campaign",
-                "Type",
-                "Budget",
-                "Timeline",
-                "Influencers Applied",
-                "Actions",
-              ].map((h, i) => (
-                <th
-                  key={i}
-                  className="px-6 py-3 text-center font-medium whitespace-nowrap"
-                >
-                  {h}
-                </th>
-              ))}
+    <div className="p-[1.5px] rounded-xl bg-gradient-to-r from-[#FFA135] to-[#FF7236] shadow">
+      <div className="overflow-x-auto bg-white rounded-xl">
+        <table className="w-full text-sm text-gray-700">
+          <thead className="text-left text-white">
+            <tr className="bg-gradient-to-r from-[#FFA135] to-[#FF7236]">
+              {["Campaign", "Type", "Budget", "Timeline", "Influencers Applied", "Actions"].map(
+                (h, i) => (
+                  <th
+                    key={i}
+                    className="px-6 py-4 text-center font-semibold whitespace-nowrap"
+                  >
+                    {h}
+                  </th>
+                )
+              )}
             </tr>
           </thead>
+
           <tbody>
             {data.map((c, idx) => (
-              <React.Fragment key={c.id}>
-                <tr
-                  className={`${idx % 2 === 0 ? "bg-white" : "bg-gray-50"
-                    } group transition-colors hover:bg-transparent`}
-                  style={{ backgroundImage: "var(--row-hover-gradient)" }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.backgroundImage = `linear-gradient(to right, ${TABLE_GRADIENT_FROM}11, ${TABLE_GRADIENT_TO}11)`;
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.backgroundImage = "";
-                  }}
-                >
-                  {/* Campaign Name (sliced) */}
-                  <td className="px-6 py-4 align-top">
-                    <div className="font-medium text-gray-900 text-center">
-                      <span title={c.productOrServiceName}>
+              <tr
+                key={c.id}
+                className={[
+                  "border-b last:border-b-0",
+                  idx % 2 === 0 ? "bg-white" : "bg-gray-50",
+                  "transition-all duration-200",
+                  "hover:bg-gradient-to-r hover:from-[#FFA135]/10 hover:to-[#FF7236]/10",
+                ].join(" ")}
+              >
+                {/* Campaign Name (CLICKABLE -> view-campaign) */}
+                <td className="px-6 py-4 align-top">
+                  <div className="text-center">
+                    <Link
+                      href={`/brand/created-campaign/view-campaign?id=${c.id}`}
+                      className="inline-flex flex-col items-center gap-1 group"
+                      title={c.productOrServiceName}
+                    >
+                      <span className="font-semibold text-gray-900 group-hover:text-[#FF7236] group-hover:underline">
                         {sliceText(c.productOrServiceName, 40)}
                       </span>
-                    </div>
-                  </td>
+                      <span className="text-xs text-gray-500">
+                        View campaign details
+                      </span>
+                    </Link>
+                  </div>
+                </td>
 
-                  {/* Campaign Type */}
-                  <td className="px-6 py-4 whitespace-nowrap align-top text-center">
-                    {c.campaignType && c.campaignType.trim() !== ""
-                      ? sliceText(c.campaignType, 30)
-                      : "—"}
-                  </td>
+                {/* Campaign Type */}
+                <td className="px-6 py-4 whitespace-nowrap align-top text-center">
+                  {c.campaignType && c.campaignType.trim() !== ""
+                    ? sliceText(c.campaignType, 30)
+                    : "—"}
+                </td>
 
-                  {/* Budget */}
-                  <td className="px-6 py-4 whitespace-nowrap align-top text-center">
-                    {formatCurrency(c.budget)}
-                  </td>
+                {/* Budget */}
+                <td className="px-6 py-4 whitespace-nowrap align-top text-center font-medium text-gray-900">
+                  {formatCurrency(c.budget)}
+                </td>
 
-                  {/* Timeline */}
-                  <td className="px-6 py-4 whitespace-nowrap align-top text-center">
-                    {formatDate(c.timeline.startDate)} –{" "}
-                    {formatDate(c.timeline.endDate)}
-                  </td>
+                {/* Timeline */}
+                <td className="px-6 py-4 whitespace-nowrap align-top text-center">
+                  {formatDate(c.timeline.startDate)} – {formatDate(c.timeline.endDate)}
+                </td>
 
-                  {/* Influencers Applied */}
-                  <td className="px-6 py-4 text-center align-top">
-                    {c.applicantCount ?? "0"}
-                  </td>
+                {/* Influencers Applied (CLICKABLE -> applied-inf) */}
+                <td className="px-6 py-4 align-top text-center">
+                  <Link
+                    href={`/brand/created-campaign/applied-inf?id=${c.id}`}
+                    className="inline-flex items-center justify-center gap-2 rounded-full bg-gray-100 px-3 py-1 text-sm font-semibold text-gray-900 hover:bg-gray-200 transition"
+                    title="View applied influencers"
+                  >
+                    <HiOutlineUserGroup size={18} className="text-gray-700" />
+                    <span>{c.applicantCount ?? 0}</span>
 
-                  {/* Actions */}
-                  <td className="px-6 py-4 whitespace-nowrap align-top text-center">
-                    <div className="flex items-center space-x-2 justify-center">
-                      {/* View Campaign */}
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Link
-                            href={`/brand/created-campaign/view-campaign?id=${c.id}`}
-                            className="p-2 bg-gray-100 text-gray-800 rounded-full hover:bg-gray-200 focus:outline-none"
-                          >
-                            <HiOutlineEye size={18} />
-                          </Link>
-                        </TooltipTrigger>
-                        <TooltipContent>View Campaign</TooltipContent>
-                      </Tooltip>
+                    {(c.applicantCount ?? 0) > 0 && (
+                      <span className="ml-1 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 text-[11px] font-bold text-white bg-[#ef2f5b] rounded-full">
+                        {c.applicantCount}
+                      </span>
+                    )}
+                  </Link>
+                </td>
 
-                      {/* View Influencers */}
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Link
-                            href={`/brand/created-campaign/applied-inf?id=${c.id}`}
-                            className="relative flex items-center p-2 bg-gray-100 text-gray-800 rounded-full hover:bg-gray-200 focus:outline-none"
-                          >
-                            <HiOutlineUserGroup size={18} />
-                            {c.applicantCount > 0 && (
-                              <span className="absolute -top-1 -right-1 inline-flex items-center justify-center w-4 h-4 text-xs font-semibold text-white bg-[#ef2f5b] rounded-full">
-                                {c.applicantCount}
-                              </span>
-                            )}
-                          </Link>
-                        </TooltipTrigger>
-                        <TooltipContent>View Influencers</TooltipContent>
-                      </Tooltip>
+                {/* Actions */}
+                <td className="px-6 py-4 whitespace-nowrap align-top text-center">
+                  <div className="flex items-center justify-center gap-2">
+                    {/* Edit Campaign */}
+                    <Link
+                      href={`/brand/add-edit-campaign?id=${c.id}`}
+                      className="inline-flex items-center bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white hover:opacity-90 px-3 py-2 rounded-lg text-sm font-semibold"
+                    >
+                      <HiOutlinePencil className="mr-1" size={18} />
+                      Edit
+                    </Link>
 
-                      {/* Invite Influencer (Button instead of Tooltip) */}
-<Link
-  href={`/brand/browse-influencer?campaignId=${c.id}`}
-  className="inline-flex items-center bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white hover:opacity-90 cursor-pointer px-3 py-2 rounded-lg text-sm font-medium"
->
-  <HiOutlineUserAdd className="mr-1" size={18} />
-  Invite
-</Link>
-
-                    </div>
-                  </td>
-                </tr>
-              </React.Fragment>
+                    {/* Invite Influencer */}
+                    <Link
+                      href={`/brand/browse-influencer?campaignId=${c.id}`}
+                      className="inline-flex items-center bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white hover:opacity-90 px-3 py-2 rounded-lg text-sm font-semibold"
+                    >
+                      <HiOutlineUserAdd className="mr-1" size={18} />
+                      Invite
+                    </Link>
+                  </div>
+                </td>
+              </tr>
             ))}
           </tbody>
         </table>
