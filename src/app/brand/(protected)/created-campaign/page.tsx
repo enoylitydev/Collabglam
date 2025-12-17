@@ -13,6 +13,7 @@ import {
 } from "react-icons/hi";
 import { get } from "@/lib/api";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Button } from "@/components/ui/button";
 
 interface Campaign {
   id: string;
@@ -226,7 +227,6 @@ function TableView({
                 "Campaign",
                 "Type",
                 "Budget",
-                "Status",
                 "Timeline",
                 "Influencers Applied",
                 "Actions",
@@ -244,9 +244,8 @@ function TableView({
             {data.map((c, idx) => (
               <React.Fragment key={c.id}>
                 <tr
-                  className={`${
-                    idx % 2 === 0 ? "bg-white" : "bg-gray-50"
-                  } group transition-colors hover:bg-transparent`}
+                  className={`${idx % 2 === 0 ? "bg-white" : "bg-gray-50"
+                    } group transition-colors hover:bg-transparent`}
                   style={{ backgroundImage: "var(--row-hover-gradient)" }}
                   onMouseEnter={(e) => {
                     e.currentTarget.style.backgroundImage = `linear-gradient(to right, ${TABLE_GRADIENT_FROM}11, ${TABLE_GRADIENT_TO}11)`;
@@ -274,19 +273,6 @@ function TableView({
                   {/* Budget */}
                   <td className="px-6 py-4 whitespace-nowrap align-top text-center">
                     {formatCurrency(c.budget)}
-                  </td>
-
-                  {/* Status */}
-                  <td className="px-6 py-4 whitespace-nowrap align-top text-center">
-                    <span
-                      className={`inline-flex items-center justify-center px-2 py-1 text-xs font-semibold rounded-full ${
-                        c.isActive === 1
-                          ? "bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white"
-                          : "bg-red-100 text-red-800"
-                      }`}
-                    >
-                      {c.isActive === 1 ? "Active" : "Inactive"}
-                    </span>
                   </td>
 
                   {/* Timeline */}
@@ -334,31 +320,17 @@ function TableView({
                         <TooltipContent>View Influencers</TooltipContent>
                       </Tooltip>
 
-                      {/* Edit Campaign */}
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Link
-                            href={`/brand/add-edit-campaign?id=${c.id}`}
-                            className="p-2 bg-gray-100 text-gray-800 rounded-full hover:bg-gray-200 focus:outline-none"
-                          >
-                            <HiOutlinePencil size={18} />
-                          </Link>
-                        </TooltipTrigger>
-                        <TooltipContent>Edit Campaign</TooltipContent>
-                      </Tooltip>
-
-                      {/* Invite Influencer */}
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Link
-                            href={`/brand/browse-influencer?campaignId=${c.id}`}
-                            className="p-2 bg-gray-100 text-gray-800 rounded-full hover:bg-gray-200 focus:outline-none"
-                          >
-                            <HiOutlineUserAdd size={18} />
-                          </Link>
-                        </TooltipTrigger>
-                        <TooltipContent>Invite Influencer</TooltipContent>
-                      </Tooltip>
+                      {/* Invite Influencer (Button instead of Tooltip) */}
+                      <Button
+                        asChild
+                        size="sm"
+                        className="bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white hover:opacity-90"
+                      >
+                        <Link href={`/brand/browse-influencer?campaignId=${c.id}`}>
+                          <HiOutlineUserAdd className="mr-2" size={18} />
+                          Invite
+                        </Link>
+                      </Button>
                     </div>
                   </td>
                 </tr>
