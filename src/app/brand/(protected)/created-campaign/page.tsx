@@ -322,7 +322,7 @@ function TableView({
 
                       {/* Invite Influencer (Button instead of Tooltip) */}
                       <button
-                        className="bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white hover:opacity-90"
+                        className="bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white hover:opacity-90 cursor-pointer px-3 py-2 rounded-lg flex items-center space-x-1 text-sm font-medium"
                       >
                         <Link href={`/brand/browse-influencer?campaignId=${c.id}`}>
                           <HiOutlineUserAdd size={18} />
