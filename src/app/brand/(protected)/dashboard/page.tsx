@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   HiOutlineChartBar,
@@ -11,53 +11,84 @@ import {
 import { format } from "date-fns";
 import { post } from "@/lib/api";
 import { ArrowRight, PlayCircle } from "lucide-react";
-import BrandTourModal from "@/components/common/BrandTourModal";
+// import BrandTourModal from "@/components/common/BrandTourModal";
 
-interface DashboardData {
+type CampaignRow = {
+  id: string; // always normalized server-side
+  campaignsId?: string;
+  productOrServiceName: string;
+  goal?: string;
+  budget?: number;
+  isActive?: number;
+  createdAt?: string;
+
+  // acceptance info
+  hasAcceptedInfluencer: boolean;
+  influencerId?: string | null;
+  contractId?: string | null;
+};
+
+type BrandDashboardHomePayload = {
   brandName: string;
   totalCreatedCampaigns: number;
   totalHiredInfluencers: number;
   budgetRemaining: number;
-}
+
+  campaignsMode: "all" | "accepted";
+  campaigns: CampaignRow[];
+};
 
 export default function BrandDashboardHome() {
   const router = useRouter();
-  const [data, setData] = useState<DashboardData | null>(null);
+
+  const [data, setData] = useState<BrandDashboardHomePayload | null>(null);
   const [fatalError, setFatalError] = useState<string | null>(null);
 
+  const [searchTerm, setSearchTerm] = useState("");
   const today = format(new Date(), "MMMM d, yyyy");
 
-  const [showTour, setShowTour] = useState(false);
+  // const [showTour, setShowTour] = useState(false);
+
+  const accentFrom = "#FFA135";
+  const accentTo = "#FF7236";
 
   useEffect(() => {
-    const brandId = localStorage.getItem("brandId");
-    if (!brandId) return;
+    const brandId =
+      typeof window !== "undefined" ? localStorage.getItem("brandId") : null;
 
-    const key = `brand_tour_seen_${brandId}`;
-    if (!localStorage.getItem(key)) setShowTour(true);
-  }, []);
-
-  const closeTour = () => {
-    setShowTour(false);
-  };
-
-  useEffect(() => {
-    const brandId = typeof window !== "undefined" ? localStorage.getItem("brandId") : null;
     if (!brandId) {
       setFatalError("No brandId found in localStorage");
       return;
     }
+
     (async () => {
       try {
-        const json = await post<DashboardData>("/dash/brand", { brandId });
+        // ✅ new single endpoint (summary + table data)
+        const json = await post<BrandDashboardHomePayload>("/dash/brand", {
+          brandId,
+        });
         setData(json);
       } catch (err: any) {
         setFatalError(
-          err?.response?.data?.error || err?.message || "Could not load dashboard data"
+          err?.response?.data?.error ||
+            err?.response?.data?.message ||
+            err?.message ||
+            "Could not load dashboard"
         );
       }
     })();
   }, []);
+
+  const filteredCampaigns = useMemo(() => {
+    if (!data?.campaigns?.length) return [];
+    const q = searchTerm.trim().toLowerCase();
+    if (!q) return data.campaigns;
+
+    return data.campaigns.filter((c) => {
+      const hay = `${c.productOrServiceName || ""} ${c.goal || ""}`.toLowerCase();
+      return hay.includes(q);
+    });
+  }, [data, searchTerm]);
 
   if (fatalError)
     return (
@@ -73,16 +104,19 @@ export default function BrandDashboardHome() {
       </div>
     );
 
-  const { brandName, totalCreatedCampaigns, totalHiredInfluencers, budgetRemaining } = data;
-  const accentFrom = "#FFA135";
-  const accentTo = "#FF7236";
+  const {
+    brandName,
+    totalCreatedCampaigns,
+    totalHiredInfluencers,
+    budgetRemaining,
+    campaignsMode,
+  } = data;
 
   return (
     <div className="flex h-screen overflow-hidden">
       <div className="flex-1 flex flex-col overflow-y-auto">
         <main className="flex-1 px-6 py-8">
-
-          <BrandTourModal open={showTour} onClose={closeTour} />
+          {/* <BrandTourModal open={showTour} onClose={() => setShowTour(false)} /> */}
 
           {/* Zero campaigns CTA */}
           {totalCreatedCampaigns === 0 && (
@@ -105,7 +139,9 @@ export default function BrandDashboardHome() {
             >
               Welcome Back, {brandName}!
             </h2>
-            <p className="text-gray-700">Here's a quick overview of your account as of {today}.</p>
+            <p className="text-gray-700">
+              Here's a quick overview of your account as of {today}.
+            </p>
           </div>
 
           {/* Summary */}
@@ -123,7 +159,6 @@ export default function BrandDashboardHome() {
               label="Hired Influencers"
               value={totalHiredInfluencers.toLocaleString()}
               accentFrom={accentFrom}
-            // onClick={() => router.push("/brand/browse-influencers")}
             />
 
             <StatCard
@@ -131,8 +166,145 @@ export default function BrandDashboardHome() {
               label="Budget Remaining"
               value={`$${budgetRemaining.toLocaleString()}`}
               accentFrom={accentFrom}
-            // onClick={() => router.push("/brand/dashboard/settings")}
             />
+          </div>
+
+          {/* 2 Boxes */}
+          <div className="mt-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* 2/3: Campaign Table */}
+            <div className="lg:col-span-2 bg-white rounded-lg shadow p-6">
+              <div className="flex items-start sm:items-center justify-between gap-4 mb-4 flex-col sm:flex-row">
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-800">
+                    Campaigns
+                  </h3>
+                  <p className="text-sm text-gray-500">
+                    Showing{" "}
+                    <span className="font-semibold">
+                      {campaignsMode === "all" ? "all campaigns" : "accepted only"}
+                    </span>
+                  </p>
+                </div>
+
+                <div className="relative w-full sm:max-w-xs">
+                  <HiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                  <input
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    placeholder="Search campaigns…"
+                    className="w-full pl-10 pr-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-offset-2"
+                  />
+                </div>
+              </div>
+
+              {!filteredCampaigns.length ? (
+                <div className="py-10 text-center text-gray-500">
+                  No campaigns found.
+                </div>
+              ) : (
+                <div className="overflow-auto max-h-[440px]">
+                  <table className="w-full text-left text-sm">
+                    <thead className="sticky top-0 bg-white">
+                      <tr className="text-gray-500 border-b">
+                        <th className="py-3 pr-4">Campaign</th>
+                        <th className="py-3 pr-4">Goal</th>
+                        <th className="py-3 pr-4">Budget</th>
+                        <th className="py-3 pr-4">Status</th>
+                        <th className="py-3 pr-4">Influencer</th>
+                        <th className="py-3 text-right">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredCampaigns.map((c) => (
+                        <tr key={c.id} className="border-b hover:bg-gray-50">
+                          <td className="py-3 pr-4 font-medium text-gray-800">
+                            {c.productOrServiceName || "—"}
+                            {c.createdAt ? (
+                              <div className="text-xs text-gray-500">
+                                {format(new Date(c.createdAt), "MMM d, yyyy")}
+                              </div>
+                            ) : null}
+                          </td>
+
+                          <td className="py-3 pr-4 text-gray-700">
+                            {c.goal || "—"}
+                          </td>
+
+                          <td className="py-3 pr-4 text-gray-700">
+                            ${Number(c.budget || 0).toLocaleString()}
+                          </td>
+
+                          <td className="py-3 pr-4">
+                            <span
+                              className={`px-2 py-1 rounded-full text-xs font-semibold ${
+                                c.isActive === 1
+                                  ? "bg-green-100 text-green-700"
+                                  : "bg-gray-100 text-gray-600"
+                              }`}
+                            >
+                              {c.isActive === 1 ? "Active" : "Inactive"}
+                            </span>
+                          </td>
+
+                          <td className="py-3 pr-4">
+                            <span
+                              className={`px-2 py-1 rounded-full text-xs font-semibold ${
+                                c.hasAcceptedInfluencer
+                                  ? "bg-indigo-100 text-indigo-700"
+                                  : "bg-yellow-100 text-yellow-700"
+                              }`}
+                            >
+                              {c.hasAcceptedInfluencer ? "Accepted" : "Not accepted"}
+                            </span>
+                          </td>
+
+                          <td className="py-3 text-right">
+                            <button
+                              className="text-sm font-semibold"
+                              style={{
+                                background: `linear-gradient(to right, ${accentFrom}, ${accentTo})`,
+                                WebkitBackgroundClip: "text",
+                                color: "transparent",
+                              }}
+                              onClick={() =>
+                                router.push(`/brand/add-edit-campaign?id=${c.campaignsId || c.id}`)
+                              }
+                            >
+                              View
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            {/* 1/3: Quick Actions / Info */}
+            <div className="lg:col-span-1 bg-white rounded-lg shadow p-6">
+              <h3 className="text-lg font-semibold text-gray-800 mb-2">
+                Quick Actions
+              </h3>
+
+              <button
+                onClick={() => router.push("/brand/add-edit-campaign")}
+                className="w-full mt-3 rounded-xl px-4 py-3 text-white font-semibold shadow hover:shadow-md transition"
+                style={{
+                  background: `linear-gradient(to right, ${accentFrom}, ${accentTo})`,
+                }}
+              >
+                Create New Campaign
+              </button>
+
+              <div className="mt-4 text-sm text-gray-600">
+                <p className="mb-1">
+                  <span className="font-semibold">Tip:</span> If any campaign has
+                  no accepted influencer, we show the full list so you can quickly
+                  spot gaps.
+                </p>
+              </div>
+            </div>
           </div>
         </main>
       </div>
@@ -140,8 +312,9 @@ export default function BrandDashboardHome() {
   );
 }
 
-// --- Support components (unchanged) ---
-const ZeroCampaignCTA = ({ onClick, accentFrom, accentTo }: any) => (
+/* ---------------- Support components ---------------- */
+
+const ZeroCampaignCTA = ({ onClick }: any) => (
   <div className="w-full flex items-center py-8 px-4 md:py-0 md:px-0">
     <div
       role="button"
@@ -161,7 +334,12 @@ const ZeroCampaignCTA = ({ onClick, accentFrom, accentTo }: any) => (
 );
 
 const StatCard = ({ icon, label, value, accentFrom, onClick }: any) => (
-  <div className="bg-white rounded-lg shadow p-5 flex items-center space-x-4 cursor-pointer hover:shadow-lg transition-shadow" onClick={onClick}>
+  <div
+    className={`bg-white rounded-lg shadow p-5 flex items-center space-x-4 transition-shadow ${
+      onClick ? "cursor-pointer hover:shadow-lg" : ""
+    }`}
+    onClick={onClick}
+  >
     <div className="p-3 rounded-full" style={{ backgroundColor: `${accentFrom}20` }}>
       {icon}
     </div>

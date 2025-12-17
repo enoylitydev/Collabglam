@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
-import { X, ChevronLeft, ChevronRight } from "lucide-react";
+import { X, ChevronRight } from "lucide-react";
 
 type Media =
   | { type: "video"; src: string; poster?: string }
@@ -33,13 +33,16 @@ export default function BrandTourModal({
           title: "Enter Dashboard",
           description:
             "Get familiar with your workspace, view your campaigns, influencers, budget, and notifications all in one place.",
-          media: { type: "video", src: "/tour/step1.mp4" },
+          media: { type: "video", src: "/step-1.mp4", poster: "/step-1-poster.jpg" },
         },
         {
           title: "Create Your First Campaign",
           description:
             "Set your campaign objective, deliverables, budget, and timelines to begin the collaboration process.",
-          media: { type: "video", src: "/tour/step2.mp4" },
+          media: {
+            type: "gif",
+            src: "https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=800&h=400&fit=crop",
+          },
         },
       ],
     [stepsProp]
@@ -68,103 +71,100 @@ export default function BrandTourModal({
   const isFirst = active === 0;
   const isLast = active === steps.length - 1;
 
-  const renderMedia = () => {
-    if (step.media.type === "video") {
-      return (
-        <video
-          key={step.media.src} // forces reload when step changes
-          className="h-full w-full object-cover"
-          autoPlay
-          loop
-          muted
-          playsInline
-          preload="auto"
-          poster={step.media.poster}
-        >
-          <source src={step.media.src} type="video/mp4" />
-        </video>
-      );
-    }
-
-    // GIF fallback
-    return (
-      <img
-        src={step.media.src}
-        alt={step.title}
-        className="h-full w-full object-cover"
-      />
-    );
+  const goPrev = () => setActive((v) => Math.max(0, v - 1));
+  const goNext = () => {
+    if (isLast) onClose();
+    else setActive((v) => Math.min(steps.length - 1, v + 1));
   };
 
   return (
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center">
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
       {/* backdrop */}
-      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
+      <div className="absolute inset-0 bg-black/60" onClick={onClose} />
 
       {/* modal */}
-      <div className="relative w-[92%] max-w-5xl rounded-3xl bg-white shadow-2xl overflow-hidden">
-        {/* top bar */}
-        <div className="flex items-center justify-between px-6 py-4">
-          <h3 className="text-2xl font-bold">Step {active + 1}</h3>
+      <div
+        className="relative w-full max-w-3xl rounded-3xl bg-white shadow-2xl overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-6 py-2 bg-white border-b border-gray-100">
+          <h3 className="text-2xl font-bold text-gray-900">
+            Step {active + 1}
+          </h3>
           <button
             onClick={onClose}
-            className="rounded-full p-2 hover:bg-gray-100"
+            className="rounded-full p-1.5 hover:bg-gray-100 transition-colors"
             aria-label="Close"
           >
-            <X className="h-6 w-6" />
+            <X className="h-8 w-8 text-gray-600" />
           </button>
         </div>
-        <hr className="border-1 color-black" />
+
         {/* media block */}
-        <div className="px-6 pb-6">
-          <div className="rounded-2xl overflow-hidden bg-gradient-to-r from-orange-200 to-orange-100 border">
-            <div className="h-[280px] md:h-[340px] w-full">
-              {renderMedia()}
+        <div className="relative overflow-hidden bg-[radial-gradient(104.07%_104.07%_at_50%_0%,_#FF8C00_23.71%,_#FFF_97.6%)]">
+          <div className="mx-auto w-full max-w-4xl px-4 sm:px-6 md:px-8 pt-15">
+            <div className="relative w-full overflow-hidden rounded-2xl bg-white/60 backdrop-blur-sm border-[5px] border-white/2 shadow-[0_18px_40px_-28px_rgba(0,0,0,0.45)]">
+              <div className="relative w-full">
+                {step.media.type === "video" ? (
+                  <video
+                    className="h-full w-full object-contain"
+                    src={step.media.src}
+                    poster={step.media.poster}
+                    autoPlay
+                    muted
+                    playsInline
+                    loop={false}                 // important: allow "ended"
+                    onEnded={goNext}             // auto-advance after video completes
+                  />
+                ) : (
+                  <img
+                    src={step.media.src}
+                    alt={step.title}
+                    className="h-full w-full object-contain"
+                    loading="lazy"
+                  />
+                )}
+              </div>
             </div>
           </div>
         </div>
 
-        {/* content */}
-        <div className="px-6 pb-8">
-          <h2 className="text-5xl font-extrabold tracking-tight">
-            {step.title}
-          </h2>
-          <p className="mt-4 text-xl text-gray-600 max-w-3xl">
-            {step.description}
-          </p>
-        </div>
+        {/* content + footer */}
+        <div className="relative z-10 -mt-10 bg-white shadow-[0_-18px_30px_-20px_rgba(0,0,0,0.35)]">
+          {/* content */}
+          <div className="px-8 pt-8 pb-6">
+            <h2 className="text-4xl font-bold text-gray-900 leading-tight">
+              {step.title}
+            </h2>
+            <p className="mt-3 text-lg text-gray-600 leading-[140%]">
+              {step.description}
+            </p>
+          </div>
 
-        {/* footer */}
-        <div className="px-6 pb-6 flex items-center justify-between">
-          <button
-            onClick={() => setActive((v) => Math.max(0, v - 1))}
-            disabled={isFirst}
-            className={`inline-flex items-center gap-2 text-lg font-semibold ${
-              isFirst ? "opacity-40 cursor-not-allowed" : "hover:opacity-80"
-            }`}
-          >
-            <ChevronLeft className="h-5 w-5" />
-            Previous
-          </button>
+          {/* footer */}
+          <div className="px-8 pb-8 flex items-center justify-between">
+            <div />
 
-          <div className="flex items-center gap-3">
-            <button
-              onClick={onClose}
-              className="px-8 py-3 rounded-2xl text-lg font-semibold bg-gray-900 text-white hover:opacity-90"
-            >
-              Skip
-            </button>
+            <div className="flex items-center gap-2">
+              {!isFirst && (
+                <button
+                  onClick={goPrev}
+                  className={[
+                    "w-32 px-8 py-3 rounded-md text-base font-semibold transition-colors inline-flex items-center justify-center text-black hover:bg-[#ededed] cursor-pointer",
+                  ].join(" ")}
+                >
+                  Previous
+                </button>
+              )}
 
-            <button
-              onClick={() => {
-                if (isLast) onClose();
-                else setActive((v) => Math.min(steps.length - 1, v + 1));
-              }}
-              className="px-8 py-3 rounded-2xl text-lg font-semibold bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white hover:opacity-95 inline-flex items-center gap-2"
-            >
-              {isLast ? "Done" : "Next"}
-              {!isLast && <ChevronRight className="h-5 w-5" />}
-            </button>
+              <button
+                onClick={goNext}
+                className="w-32 px-8 py-3 rounded-md text-base font-semibold bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white hover:opacity-90 transition-opacity inline-flex items-center justify-center gap-2 cursor-pointer"
+              >
+                {isLast ? "Done" : "Next"}
+                {!isLast && <ChevronRight className="h-5 w-5" />}
+              </button>
+            </div>
           </div>
         </div>
       </div>
