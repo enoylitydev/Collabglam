@@ -371,8 +371,6 @@ export default function BrandDashboardHome() {
                                   {applied.toLocaleString()}
                                 </span>
 
-                                <span className="text-gray-700 group-hover:text-gray-900">Applied</span>
-
                                 <span className="text-[11px] font-medium text-gray-400 group-hover:text-gray-500">
                                   {c.hasAcceptedInfluencer ? "→ Active" : "→ List"}
                                 </span>
