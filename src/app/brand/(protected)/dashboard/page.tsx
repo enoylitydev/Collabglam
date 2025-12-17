@@ -251,16 +251,30 @@ export default function BrandDashboardHome() {
                           </td>
 
                           <td className="py-3 pr-4 text-gray-700">
-                            <span className="px-2 py-1 rounded-full text-xs font-semibold bg-gray-100 text-gray-700">
-                              {Number(c.appliedInfluencersCount || 0).toLocaleString()}
-                            </span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const id = c.campaignsId || c.id;
+                                if (c.hasAcceptedInfluencer) {
+                                  router.push(`/brand/active-campaign/active-inf?id=${id}`);
+                                } else {
+                                  router.push(`/brand/created-campaign/applied-inf?id=${id}`);
+                                }
+                              }}
+                              className="cursor-pointer"
+                              title={c.hasAcceptedInfluencer ? "View active influencers" : "View applied influencers"}
+                            >
+                              <span className="px-2 py-1 rounded-full text-xs font-semibold bg-gray-100 text-gray-700 hover:bg-gray-200 transition">
+                                {Number(c.appliedInfluencersCount || 0).toLocaleString()}
+                              </span>
+                            </button>
                           </td>
 
                           <td className="py-3 pr-4">
                             <span
                               className={`px-2 py-1 rounded-full text-xs font-semibold ${c.hasAcceptedInfluencer
-                                  ? "bg-indigo-100 text-indigo-700"
-                                  : "bg-yellow-100 text-yellow-700"
+                                ? "bg-indigo-100 text-indigo-700"
+                                : "bg-yellow-100 text-yellow-700"
                                 }`}
                             >
                               {c.hasAcceptedInfluencer ? "Accepted" : "Not accepted"}
