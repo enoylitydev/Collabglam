@@ -327,7 +327,7 @@ function TableView({
                         className="bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white hover:opacity-90"
                       >
                         <Link href={`/brand/browse-influencer?campaignId=${c.id}`}>
-                          <HiOutlineUserAdd className="mr-2" size={18} />
+                          <HiOutlineUserAdd className="mr-1" size={18} />
                           Invite
                         </Link>
                       </Button>
