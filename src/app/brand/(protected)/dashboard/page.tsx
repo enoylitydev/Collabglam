@@ -71,9 +71,9 @@ export default function BrandDashboardHome() {
       } catch (err: any) {
         setFatalError(
           err?.response?.data?.error ||
-            err?.response?.data?.message ||
-            err?.message ||
-            "Could not load dashboard"
+          err?.response?.data?.message ||
+          err?.message ||
+          "Could not load dashboard"
         );
       }
     })();
@@ -114,6 +114,11 @@ export default function BrandDashboardHome() {
     budgetRemaining,
     campaignsMode,
   } = data;
+
+  const truncate = (text: string, max = 100) => {
+    const t = (text || "").trim();
+    return t.length > max ? t.slice(0, max) + "…" : t;
+  };
 
   return (
     <div className="flex h-screen overflow-hidden">
@@ -231,7 +236,7 @@ export default function BrandDashboardHome() {
                       {filteredCampaigns.map((c) => (
                         <tr key={c.id} className="border-b hover:bg-gray-50">
                           <td className="py-3 pr-4 font-medium text-gray-800">
-                            {c.productOrServiceName || "—"}
+                            {truncate(c.productOrServiceName || "—", 100)}
                             {c.createdAt ? (
                               <div className="text-xs text-gray-500">
                                 {format(new Date(c.createdAt), "MMM d, yyyy")}
@@ -253,11 +258,10 @@ export default function BrandDashboardHome() {
 
                           <td className="py-3 pr-4">
                             <span
-                              className={`px-2 py-1 rounded-full text-xs font-semibold ${
-                                c.hasAcceptedInfluencer
+                              className={`px-2 py-1 rounded-full text-xs font-semibold ${c.hasAcceptedInfluencer
                                   ? "bg-indigo-100 text-indigo-700"
                                   : "bg-yellow-100 text-yellow-700"
-                              }`}
+                                }`}
                             >
                               {c.hasAcceptedInfluencer ? "Accepted" : "Not accepted"}
                             </span>
@@ -327,9 +331,8 @@ export default function BrandDashboardHome() {
 
 const StatCard = ({ icon, label, value, accentFrom, onClick }: any) => (
   <div
-    className={`bg-white rounded-lg shadow p-5 flex items-center space-x-4 transition-shadow ${
-      onClick ? "cursor-pointer hover:shadow-lg" : ""
-    }`}
+    className={`bg-white rounded-lg shadow p-5 flex items-center space-x-4 transition-shadow ${onClick ? "cursor-pointer hover:shadow-lg" : ""
+      }`}
     onClick={onClick}
   >
     <div className="p-3 rounded-full" style={{ backgroundColor: `${accentFrom}20` }}>
