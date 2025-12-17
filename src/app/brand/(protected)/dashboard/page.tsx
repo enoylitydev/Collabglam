@@ -316,7 +316,7 @@ export default function BrandDashboardHome() {
                           <tr key={c.id} className="border-b hover:bg-gray-50">
                             <td className="py-3 pr-4 font-medium text-gray-800">
                               <div className="truncate" title={c.productOrServiceName}>
-                                {truncate(c.productOrServiceName || "—", 100)}
+                                {truncate(c.productOrServiceName || "—", 50)}
                               </div>
                               {!!c.createdAt && (
                                 <div className="text-xs text-gray-500">{fmtDate(c.createdAt)}</div>
