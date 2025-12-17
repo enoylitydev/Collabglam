@@ -317,7 +317,7 @@ export default function BrandDashboardHome() {
                             <td className="py-3 pr-4 font-medium text-gray-800 align-top">
                               <div className="min-w-0">
                                 <div className="truncate" title={c.productOrServiceName || ""}>
-                                  {truncate(c.productOrServiceName || "—", 50)}
+                                  {truncate(c.productOrServiceName || "—", 40)}
                                 </div>
 
                                 {!!c.createdAt && (
