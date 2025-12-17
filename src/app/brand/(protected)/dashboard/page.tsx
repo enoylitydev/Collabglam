@@ -206,7 +206,7 @@ export default function BrandDashboardHome() {
 
   return (
     <div className="flex h-screen overflow-hidden">
-      <div className="flex-1 flex flex-col overflow-y-auto">
+      <div className="flex-1 flex flex-col overflow-y-auto overflow-x-hidden">
         <main className="flex-1 px-6 py-8">
           {/* Welcome */}
           <div className="rounded-lg bg-white p-6 mb-8 mt-4 md:mt-6">
@@ -294,16 +294,16 @@ export default function BrandDashboardHome() {
                   </div>
                 </div>
               ) : (
-                <div className="overflow-auto max-h-[440px]">
-                  <table className="w-full text-left text-sm">
-                    <thead className="sticky top-0 bg-white">
+                <div className="w-full">
+                  <table className="w-full table-fixed text-left text-sm">
+                    <thead className="sticky top-0 bg-white z-10">
                       <tr className="text-gray-500 border-b">
-                        <th className="py-3 pr-4">Campaign</th>
-                        <th className="py-3 pr-4">Goal</th>
-                        <th className="py-3 pr-4">Budget</th>
-                        <th className="py-3 pr-4">Applied</th>
-                        <th className="py-3 pr-4">Influencer</th>
-                        <th className="py-3 text-right">Action</th>
+                        <th className="py-3 pr-4 w-[34%]">Campaign</th>
+                        <th className="py-3 pr-4 w-[22%] hidden md:table-cell">Goal</th>
+                        <th className="py-3 pr-4 w-[14%]">Budget</th>
+                        <th className="py-3 pr-4 w-[14%]">Applied</th>
+                        <th className="py-3 pr-4 w-[10%] hidden lg:table-cell">Influencer</th>
+                        <th className="py-3 w-[6%] text-right">Action</th>
                       </tr>
                     </thead>
 
@@ -314,16 +314,21 @@ export default function BrandDashboardHome() {
 
                         return (
                           <tr key={c.id} className="border-b hover:bg-gray-50">
-                            <td className="py-3 pr-4 font-medium text-gray-800">
-                              <div className="truncate" title={c.productOrServiceName}>
-                                {truncate(c.productOrServiceName || "—", 50)}
+                            <td className="py-3 pr-4 font-medium text-gray-800 align-top">
+                              <div className="min-w-0">
+                                <div className="truncate" title={c.productOrServiceName || ""}>
+                                  {truncate(c.productOrServiceName || "—", 50)}
+                                </div>
+
+                                {!!c.createdAt && (
+                                  <div className="text-xs text-gray-500">{fmtDate(c.createdAt)}</div>
+                                )}
                               </div>
-                              {!!c.createdAt && (
-                                <div className="text-xs text-gray-500">{fmtDate(c.createdAt)}</div>
-                              )}
                             </td>
 
-                            <td className="py-3 pr-4 text-gray-700">{c.goal || "—"}</td>
+                            <td className="py-3 pr-4 text-gray-700 hidden md:table-cell">
+                              <div className="truncate" title={c.goal || ""}>{c.goal || "—"}</div>
+                            </td>
 
                             <td className="py-3 pr-4 text-gray-700">
                               ${Number(c.budget || 0).toLocaleString()}
@@ -356,14 +361,9 @@ export default function BrandDashboardHome() {
                                 </span>
                               </button>
                             </td>
-
-                            <td className="py-3 pr-4">
-                              <span
-                                className={`px-2 py-1 rounded-full text-xs font-semibold ${c.hasAcceptedInfluencer
-                                  ? "bg-indigo-100 text-indigo-700"
-                                  : "bg-yellow-100 text-yellow-700"
-                                  }`}
-                              >
+                            <td className="py-3 pr-4 hidden lg:table-cell">
+                              <span className={`px-2 py-1 rounded-full text-xs font-semibold ${c.hasAcceptedInfluencer ? "bg-indigo-100 text-indigo-700" : "bg-yellow-100 text-yellow-700"
+                                }`}>
                                 {c.hasAcceptedInfluencer ? "Accepted" : "Not accepted"}
                               </span>
                             </td>
