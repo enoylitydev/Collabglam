@@ -66,15 +66,10 @@ interface InvitationItemResponse {
   pagination: { total: number; page: number; limit: number; pages: number };
 }
 
-// Toast
-const toast = (opts: { icon: "success" | "error"; title: string; text?: string }) =>
-  Swal.fire({
-    showConfirmButton: false,
-    timer: 1200,
-    timerProgressBar: true,
-    background: "white",
-    ...opts,
-  });
+const truncate = (text: string, max = 100) => {
+  const t = (text || "").trim();
+  return t.length > max ? t.slice(0, max) + "…" : t;
+};
 
 // Pagination component
 const Pagination: React.FC<{ current: number; total: number; onChange: (p: number) => void }> = ({ current, total, onChange }) => (
@@ -508,7 +503,7 @@ export default function MyCampaignsPage() {
                 {campaigns.map((c, i) => (
                   <tr key={c.campaignsId} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
                     <td className="px-6 py-4">
-                      <div className="font-medium text-gray-900">{c.productOrServiceName}</div>
+                      <div className="font-medium text-gray-900">{truncate(c.productOrServiceName || "—", 100)}</div>
                       <div className="text-gray-600 line-clamp-1">{c.description}</div>
                     </td>
                     <td className="px-6 py-4 text-center">{c.brandName}</td>

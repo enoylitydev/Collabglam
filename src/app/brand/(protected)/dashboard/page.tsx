@@ -298,12 +298,29 @@ export default function BrandDashboardHome() {
                   <table className="w-full table-fixed text-left text-sm">
                     <thead className="sticky top-0 bg-white z-10">
                       <tr className="text-gray-500 border-b">
-                        <th className="py-3 pr-2 w-[34%]">Campaign</th>
-                        <th className="py-3 pr-2 w-[16%] hidden md:table-cell">Goal</th>
-                        <th className="py-3 pr-2 w-[14%]">Budget</th>
-                        <th className="py-3 pr-2 w-[20%]">Applied</th>
-                        <th className="py-3 pr-2 w-[10%] hidden lg:table-cell">Influencer</th>
-                        <th className="py-3 w-[6%] text-right">Action</th>
+                        <th className="py-3 pr-2 w-[42%] md:w-[34%] lg:w-[34%] whitespace-nowrap">
+                          Campaign
+                        </th>
+
+                        <th className="py-3 pr-2 w-[22%] hidden md:table-cell whitespace-nowrap">
+                          Goal
+                        </th>
+
+                        <th className="py-3 pr-2 w-[18%] md:w-[14%] whitespace-nowrap">
+                          Budget
+                        </th>
+
+                        <th className="py-3 pr-2 w-[28%] md:w-[20%] whitespace-nowrap">
+                          Applied
+                        </th>
+
+                        <th className="py-3 pr-2 w-[14%] hidden lg:table-cell whitespace-nowrap">
+                          Influencer
+                        </th>
+
+                        <th className="py-3 text-right w-[10%] md:w-[8%] lg:w-[10%] whitespace-nowrap">
+                          Action
+                        </th>
                       </tr>
                     </thead>
 
@@ -368,7 +385,7 @@ export default function BrandDashboardHome() {
                               </span>
                             </td>
 
-                            <td className="py-3 text-right">
+                            <td className="py-3 text-right whitespace-nowrap">
                               <button
                                 className="text-sm font-semibold"
                                 style={{
@@ -400,7 +417,7 @@ export default function BrandDashboardHome() {
 
                 <button
                   type="button"
-                  onClick={() => router.push("/brand/emails")}
+                  onClick={() => router.push("/brand/email")}
                   className="text-xs font-semibold px-3 py-2 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 transition"
                   title="Open full inbox"
                 >
