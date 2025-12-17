@@ -1,7 +1,13 @@
 // src/components/BrandTopbar.tsx
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, {
+  useState,
+  useEffect,
+  useRef,
+  useCallback,
+  useMemo,
+} from "react";
 import {
   HiSearch,
   HiUserCircle,
@@ -29,7 +35,7 @@ type NotificationItem = {
   title: string;
   message?: string;
   createdAt: string;
-  isRead?: boolean;
+  isRead: boolean;
   actionPath?: string;
   type?: string;
   entityId?: string;
@@ -37,21 +43,19 @@ type NotificationItem = {
 
 function normalizeNotif(n: any): NotificationItem {
   return {
-    id: n?.id || n?._id || n?.notificationId || `${Date.now()}`,
-    title: n?.title || "",
-    message: n?.message || "",
-    createdAt: n?.createdAt || new Date().toISOString(),
+    id: String(n?.id || n?._id || n?.notificationId || `${Date.now()}`),
+    title: String(n?.title || ""),
+    message: n?.message ? String(n.message) : "",
+    createdAt: String(n?.createdAt || new Date().toISOString()),
     isRead: Boolean(n?.isRead),
-    actionPath: n?.actionPath || "",
-    type: n?.type || "",
-    entityId: n?.entityId ? String(n.entityId) : undefined,
+    actionPath: n?.actionPath ? String(n.actionPath) : "",
+    type: n?.type ? String(n.type) : "",
+    entityId: n?.entityId != null ? String(n.entityId) : undefined,
   };
 }
 
 type BrandDashResp = {
-  brandName: string;
-  totalActiveCampaigns?: number;
-  totalInfluencers?: number;
+  brandName?: string;
   budgetRemaining?: number;
 };
 
@@ -63,9 +67,17 @@ type SubscriptionFeature = {
 };
 
 type LegacyBrandResp = {
-  name: string;
-  email: string;
-  walletBalance: number;
+  name?: string;
+  email?: string;
+  walletBalance?: number;
+
+  // ✅ logo fields (new + legacy)
+  logoUrl?: string;
+  logoProfileUrl?: string;
+  logoProfileurl?: string;
+  logoFilename?: string;
+  logoFileId?: string;
+
   subscription?: {
     planName?: string;
     expiresAt?: string;
@@ -84,14 +96,16 @@ export default function BrandTopbar({
   const [brandId, setBrandId] = useState<string | null>(null);
 
   // Profile / subscription
+  const [loading, setLoading] = useState(true);
   const [brandName, setBrandName] = useState("");
   const [budgetRemaining, setBudgetRemaining] = useState<number | null>(null);
   const [email, setEmail] = useState("");
   const [subscriptionName, setSubscriptionName] = useState("");
   const [subscriptionExpiresAt, setSubscriptionExpiresAt] = useState("");
 
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null); // soft errors only
+  // ✅ Brand logo in topbar
+  const [brandLogoUrl, setBrandLogoUrl] = useState("");
+  const [logoBroken, setLogoBroken] = useState(false);
 
   // Profile menu
   const [menuOpen, setMenuOpen] = useState(false);
@@ -104,6 +118,7 @@ export default function BrandTopbar({
   const [notifLoading, setNotifLoading] = useState(false);
   const [notifError, setNotifError] = useState<string | null>(null);
   const [unreadCount, setUnreadCount] = useState(0);
+  const notifInFlightRef = useRef(false);
 
   // Credits dropdown
   const [creditsOpen, setCreditsOpen] = useState(false);
@@ -115,15 +130,7 @@ export default function BrandTopbar({
   const [profileLimit, setProfileLimit] = useState<number | null>(null);
   const [profileUsed, setProfileUsed] = useState<number | null>(null);
 
-  // Search (topbar quick search)
-  const [searchOpen, setSearchOpen] = useState(false);
-  const searchRef = useRef<HTMLDivElement | null>(null);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
-  const [searchLoading, setSearchLoading] = useState(false);
-  const debounceRef = useRef<number | null>(null);
-
-  // Desktop vs Mobile (for layout tweaks)
+  // Desktop vs Mobile
   const [isDesktop, setIsDesktop] = useState(false);
   useEffect(() => {
     const update = () => setIsDesktop(window.innerWidth >= 768);
@@ -142,7 +149,7 @@ export default function BrandTopbar({
         localStorage.getItem("planName") ||
         "";
       setBrandId(id);
-      setEmail(mail);
+      if (mail) setEmail(mail);
       if (plan) setSubscriptionName(plan.toLowerCase());
     } catch {
       // ignore
@@ -150,156 +157,128 @@ export default function BrandTopbar({
   }, []);
 
   // Helper to extract a feature by key
-  function extractFeature(
-    features: SubscriptionFeature[] | undefined,
-    key: string
-  ) {
-    if (!Array.isArray(features)) return { limit: null, used: null };
-    const row = features.find((f) => f.key === key);
-    if (!row) return { limit: null, used: null };
+  const extractFeature = useCallback(
+    (features: SubscriptionFeature[] | undefined, key: string) => {
+      if (!Array.isArray(features)) return { limit: null as number | null, used: null as number | null };
+      const row = features.find((f) => f.key === key);
+      if (!row) return { limit: null, used: null };
 
-    const rawLimit = row.limit ?? row.value;
-    const limit =
-      rawLimit === undefined || rawLimit === null
-        ? null
-        : Number.isFinite(Number(rawLimit))
-        ? Number(rawLimit)
-        : null;
+      const rawLimit = row.limit ?? row.value;
+      const limit =
+        rawLimit === undefined || rawLimit === null
+          ? null
+          : Number.isFinite(Number(rawLimit))
+          ? Number(rawLimit)
+          : null;
 
-    const used =
-      row.used === undefined || row.used === null
-        ? 0
-        : Number.isFinite(Number(row.used))
-        ? Number(row.used)
-        : 0;
+      const used =
+        row.used === undefined || row.used === null
+          ? 0
+          : Number.isFinite(Number(row.used))
+          ? Number(row.used)
+          : 0;
 
-    return { limit, used };
-  }
+      return { limit, used };
+    },
+    []
+  );
 
-  // Load brand details (dash -> legacy -> local fallbacks)
+  // ✅ Load brand details (dash + legacy to get logo/credits)
   useEffect(() => {
     let cancelled = false;
     if (!brandId) return;
 
     (async () => {
       setLoading(true);
-      setError(null);
 
-      // 1) Try modern dashboard endpoint
+      // 1) dashboard (fast)
       try {
         const dash = await post<BrandDashResp>(`/dash/brand`);
-        if (!cancelled && dash) {
-          if (dash.brandName) setBrandName(dash.brandName);
-          if (typeof dash.budgetRemaining === "number") {
-            setBudgetRemaining(dash.budgetRemaining);
-          }
+        if (cancelled) return;
+        if (dash?.brandName) setBrandName(dash.brandName);
+        if (typeof dash?.budgetRemaining === "number") {
+          setBudgetRemaining(dash.budgetRemaining);
         }
       } catch {
-        // swallow; fallback to legacy
+        // ignore
       }
 
-      // 2) Try legacy /brand?id=...
-      const stillNeedName = !brandName;
-      const stillNeedBudget = budgetRemaining == null;
-      if (!cancelled && (stillNeedName || stillNeedBudget)) {
-        try {
-          const legacy = await get<LegacyBrandResp>(
-            `/brand?id=${encodeURIComponent(brandId)}`
+      // 2) legacy (logo + subscription + credits + fallback name/budget)
+      try {
+        const legacy = await get<LegacyBrandResp>(
+          `/brand?id=${encodeURIComponent(brandId)}`
+        );
+        if (cancelled) return;
+
+        if (legacy?.name) setBrandName((prev) => prev || legacy.name || "");
+        if (typeof legacy?.walletBalance === "number") {
+          setBudgetRemaining((prev) =>
+            prev == null ? legacy.walletBalance! : prev
           );
-          if (!cancelled && legacy) {
-            if (stillNeedName) setBrandName(legacy?.name || "");
-            if (stillNeedBudget) {
-              setBudgetRemaining(
-                typeof legacy?.walletBalance === "number"
-                  ? legacy.walletBalance
-                  : null
-              );
-            }
-
-            if (!email && legacy?.email) setEmail(legacy.email);
-            const plan = legacy?.subscription?.planName;
-            if (plan && !subscriptionName)
-              setSubscriptionName(plan.toLowerCase());
-            const exp = legacy?.subscription?.expiresAt;
-            if (exp) setSubscriptionExpiresAt(exp);
-
-            // Credits from features
-            const features = legacy?.subscription?.features;
-            const searchFeat = extractFeature(features, "searches_per_month");
-            const profileFeat = extractFeature(
-              features,
-              "profile_views_per_month"
-            );
-
-            setSearchLimit(searchFeat.limit);
-            setSearchUsed(searchFeat.used);
-
-            setProfileLimit(profileFeat.limit);
-            setProfileUsed(profileFeat.used);
-          }
-        } catch (e) {
-          if (!cancelled && !brandName) {
-            setError(null); // keep UI clean; show placeholders instead
-          }
         }
-      }
 
-      if (!cancelled) setLoading(false);
+        if (legacy?.email) setEmail((prev) => prev || legacy.email || "");
+
+        const plan = legacy?.subscription?.planName;
+        if (plan) setSubscriptionName((prev) => prev || plan.toLowerCase());
+
+        const exp = legacy?.subscription?.expiresAt;
+        if (exp) setSubscriptionExpiresAt(exp);
+
+        // ✅ logo (new field + legacy fallbacks)
+        const logo =
+          legacy?.logoUrl ||
+          legacy?.logoProfileUrl ||
+          legacy?.logoProfileurl ||
+          "";
+        if (logo) {
+          setBrandLogoUrl(logo);
+          setLogoBroken(false);
+        }
+
+        // credits
+        const features = legacy?.subscription?.features;
+        const searchFeat = extractFeature(features, "searches_per_month");
+        const profileFeat = extractFeature(features, "profile_views_per_month");
+
+        setSearchLimit(searchFeat.limit);
+        setSearchUsed(searchFeat.used);
+
+        setProfileLimit(profileFeat.limit);
+        setProfileUsed(profileFeat.used);
+      } catch {
+        // ignore; UI can still render with dash values
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
     })();
 
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [brandId]);
+  }, [brandId, extractFeature]);
 
   // click-outside to close menus/dropdowns
   useEffect(() => {
     const handleClick = (e: MouseEvent) => {
       const target = e.target as Node;
-      if (menuRef.current && !menuRef.current.contains(target))
-        setMenuOpen(false);
-      if (notifRef.current && !notifRef.current.contains(target))
-        setNotifOpen(false);
-      if (creditsRef.current && !creditsRef.current.contains(target))
-        setCreditsOpen(false);
-      if (searchRef.current && !searchRef.current.contains(target))
-        setSearchOpen(false);
+      if (menuRef.current && !menuRef.current.contains(target)) setMenuOpen(false);
+      if (notifRef.current && !notifRef.current.contains(target)) setNotifOpen(false);
+      if (creditsRef.current && !creditsRef.current.contains(target)) setCreditsOpen(false);
     };
     document.addEventListener("mousedown", handleClick);
     return () => document.removeEventListener("mousedown", handleClick);
   }, []);
 
-  // Debounced search
-  useEffect(() => {
-    if (!searchQuery.trim()) {
-      setSearchResults([]);
-      setSearchLoading(false);
-      return;
-    }
-    setSearchLoading(true);
-    if (debounceRef.current !== null) window.clearTimeout(debounceRef.current);
-
-    debounceRef.current = window.setTimeout(async () => {
-      try {
-        const results = await get<SearchResult[]>(
-          `/search/brand?query=${encodeURIComponent(searchQuery)}`
-        );
-        setSearchResults(results);
-      } catch (err) {
-        console.error("Search error", err);
-        setSearchResults([]);
-      } finally {
-        setSearchLoading(false);
-      }
-    }, 300);
-  }, [searchQuery]);
-
   // Notifications helpers
-  async function reloadNotifications() {
+  const reloadNotifications = useCallback(async () => {
     if (!brandId) return;
+    if (notifInFlightRef.current) return;
+
+    notifInFlightRef.current = true;
     setNotifLoading(true);
     setNotifError(null);
+
     try {
       const resp = await get<{ data?: any[]; unread?: number }>(
         `/notifications/brand?recipientType=brand&brandId=${encodeURIComponent(
@@ -317,11 +296,12 @@ export default function BrandTopbar({
       console.error("Failed to load notifications", err);
       setNotifError("Could not load notifications. Please try again.");
     } finally {
+      notifInFlightRef.current = false;
       setNotifLoading(false);
     }
-  }
+  }, [brandId]);
 
-  async function reloadCredits() {
+  const reloadCredits = useCallback(async () => {
     if (!brandId) return;
 
     try {
@@ -332,10 +312,7 @@ export default function BrandTopbar({
       const features = legacy?.subscription?.features;
 
       const searchFeat = extractFeature(features, "searches_per_month");
-      const profileFeat = extractFeature(
-        features,
-        "profile_views_per_month"
-      );
+      const profileFeat = extractFeature(features, "profile_views_per_month");
 
       setSearchLimit(searchFeat.limit);
       setSearchUsed(searchFeat.used);
@@ -348,75 +325,83 @@ export default function BrandTopbar({
 
       const exp = legacy?.subscription?.expiresAt;
       if (exp) setSubscriptionExpiresAt(exp);
+
+      // refresh logo too (nice-to-have)
+      const logo =
+        legacy?.logoUrl ||
+        legacy?.logoProfileUrl ||
+        legacy?.logoProfileurl ||
+        "";
+      if (logo) {
+        setBrandLogoUrl(logo);
+        setLogoBroken(false);
+      }
     } catch (err) {
       console.error("Failed to reload credits", err);
     }
-  }
+  }, [brandId, extractFeature]);
 
   // Notifications: fetch on load + when brandId changes
   useEffect(() => {
     if (!brandId) return;
     reloadNotifications();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [brandId]);
+  }, [brandId, reloadNotifications]);
 
-  // 🔁 AUTO-POLL NOTIFICATIONS EVERY 5 SECONDS (no page refresh)
+  // 🔁 AUTO-POLL NOTIFICATIONS EVERY 5 SECONDS
   useEffect(() => {
     if (!brandId) return;
     const intervalId = window.setInterval(() => {
       reloadNotifications();
     }, 5000);
-
     return () => window.clearInterval(intervalId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [brandId]);
+  }, [brandId, reloadNotifications]);
 
   // Refresh when dropdown opens
   useEffect(() => {
     if (notifOpen) reloadNotifications();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [notifOpen]);
+  }, [notifOpen, reloadNotifications]);
 
   // Reload credits when credits dropdown opens
   useEffect(() => {
     if (creditsOpen) reloadCredits();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [creditsOpen]);
+  }, [creditsOpen, reloadCredits]);
 
-  async function onNotifClick(n: NotificationItem) {
-    try {
-      if (!n.isRead && brandId) {
-        setNotifications((prev) =>
-          prev.map((x) => (x.id === n.id ? { ...x, isRead: true } : x))
-        );
-        setUnreadCount((c) => Math.max(0, c - 1));
-        await post(`/notifications/brand/mark-read`, { id: n.id, brandId });
+  const onNotifClick = useCallback(
+    async (n: NotificationItem) => {
+      try {
+        if (!n.isRead && brandId) {
+          setNotifications((prev) =>
+            prev.map((x) => (x.id === n.id ? { ...x, isRead: true } : x))
+          );
+          setUnreadCount((c) => Math.max(0, c - 1));
+          await post(`/notifications/brand/mark-read`, { id: n.id, brandId });
+        }
+      } catch {
+        // revert by reloading
+        reloadNotifications();
+      } finally {
+        const path = n.actionPath || "/brand/notifications";
+        router.push(path.startsWith("/") ? path : `/${path}`);
       }
-    } catch (e) {
-      // rollback
-      setNotifications((prev) =>
-        prev.map((x) => (x.id === n.id ? { ...x, isRead: n.isRead } : x))
-      );
-      if (!n.isRead) setUnreadCount((c) => c + 1);
-    } finally {
-      const path = n.actionPath || "/brand/notifications";
-      router.push(path.startsWith("/") ? path : `/${path}`);
-    }
-  }
+    },
+    [brandId, router, reloadNotifications]
+  );
 
-  async function markAllRead() {
+  const markAllRead = useCallback(async () => {
     if (!brandId || notifications.length === 0) return;
+
     const hadUnread = notifications.some((n) => !n.isRead);
     setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
     if (hadUnread) setUnreadCount(0);
+
     try {
       await post(`/notifications/brand/mark-all-read`, { brandId });
-    } catch (err) {
+    } catch {
       await reloadNotifications();
     }
-  }
+  }, [brandId, notifications, reloadNotifications]);
 
-  function formatWhen(iso: string) {
+  const formatWhen = (iso: string) => {
     try {
       const d = new Date(iso);
       if (Number.isNaN(d.getTime())) return "";
@@ -424,21 +409,17 @@ export default function BrandTopbar({
     } catch {
       return "";
     }
-  }
+  };
 
-  function goToSearchResult(r: SearchResult) {
-    setSearchOpen(false);
-    if (!r.url) return;
-    if (r.url.startsWith("http")) {
-      window.open(r.url, "_blank");
-    } else {
-      router.push(r.url);
+
+  const formattedExpiry = useMemo(() => {
+    if (!subscriptionExpiresAt) return "";
+    try {
+      return new Date(subscriptionExpiresAt).toLocaleDateString();
+    } catch {
+      return "";
     }
-  }
-
-  const formattedExpiry = subscriptionExpiresAt
-    ? new Date(subscriptionExpiresAt).toLocaleDateString()
-    : "";
+  }, [subscriptionExpiresAt]);
 
   // Credits math
   const hasSearchCap = searchLimit != null && searchLimit > 0;
@@ -448,6 +429,7 @@ export default function BrandTopbar({
     hasSearchCap && searchUsed != null && searchLimit
       ? Math.min(100, (searchUsed / searchLimit) * 100)
       : 0;
+
   const profilePercent =
     hasProfileCap && profileUsed != null && profileLimit
       ? Math.min(100, (profileUsed / profileLimit) * 100)
@@ -467,6 +449,17 @@ export default function BrandTopbar({
     (searchLimit != null && searchLimit >= 0) ||
     (profileLimit != null && profileLimit >= 0);
 
+  const avatar = brandLogoUrl && !logoBroken ? (
+    <img
+      src={brandLogoUrl}
+      alt="Brand logo"
+      className="h-7 w-7 rounded-full object-cover border border-gray-200"
+      onError={() => setLogoBroken(true)}
+    />
+  ) : (
+    <HiUserCircle size={24} className="text-gray-600" />
+  );
+
   return (
     <header className="w-full bg-white shadow-sm relative z-20">
       <div className="flex items-center justify-between h-16 px-4 border-b border-gray-200">
@@ -476,62 +469,10 @@ export default function BrandTopbar({
           <button
             onClick={onSidebarOpen}
             className="md:hidden p-2 rounded-md hover:bg-gray-100 focus:outline-none"
+            aria-label="Open sidebar"
           >
             <HiMenu size={24} className="text-gray-600" />
           </button>
-
-          {/* Search (desktop) */}
-          <div className="hidden md:block relative" ref={searchRef}>
-            {searchOpen && (
-              <div className="absolute left-0 mt-2 w-80 bg-white border border-gray-200 rounded-xl shadow-lg z-[900]">
-                <div className="px-3 py-2 border-b border-gray-100">
-                  <input
-                    type="text"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Search campaigns, influencers..."
-                    className="w-full text-sm px-2 py-1.5 border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500"
-                    autoFocus
-                  />
-                </div>
-
-                <div className="max-h-72 overflow-auto">
-                  {searchLoading ? (
-                    <div className="p-3 text-xs text-gray-500">
-                      Searching...
-                    </div>
-                  ) : !searchQuery.trim() ? (
-                    <div className="p-3 text-xs text-gray-400">
-                      Type to search.
-                    </div>
-                  ) : searchResults.length === 0 ? (
-                    <div className="p-3 text-xs text-gray-500">
-                      No results found.
-                    </div>
-                  ) : (
-                    <ul className="divide-y divide-gray-100">
-                      {searchResults.map((r) => (
-                        <li
-                          key={r.id}
-                          className="px-3 py-2 hover:bg-gray-50 cursor-pointer"
-                          onClick={() => goToSearchResult(r)}
-                        >
-                          <p className="text-sm font-medium text-gray-800 truncate">
-                            {r.title}
-                          </p>
-                          {r.subtitle && (
-                            <p className="text-xs text-gray-500 truncate">
-                              {r.subtitle}
-                            </p>
-                          )}
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
         </div>
 
         {/* Right side: Notifications, Credits, Budget, Brand name, Profile */}
@@ -658,7 +599,6 @@ export default function BrandTopbar({
           {/* Credits (Desktop) – icon + dropdown */}
           {isDesktop && !loading && hasAnyCredits && (
             <div className="hidden md:block relative" ref={creditsRef}>
-              {/* Trigger */}
               <button
                 type="button"
                 onClick={() => setCreditsOpen((o) => !o)}
@@ -669,10 +609,8 @@ export default function BrandTopbar({
                 <span className="font-semibold">Credits</span>
               </button>
 
-              {/* Dropdown */}
               {creditsOpen && (
                 <div className="absolute right-0 mt-2 w-80 bg-white border border-gray-200 rounded-xl shadow-lg z-[900] overflow-hidden">
-                  {/* Header */}
                   <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between bg-gray-50">
                     <div className="flex flex-col">
                       <span className="text-sm font-semibold text-gray-800">
@@ -692,7 +630,6 @@ export default function BrandTopbar({
                     )}
                   </div>
 
-                  {/* Body */}
                   <div className="px-4 py-3 space-y-3">
                     {/* Searches */}
                     {searchLimit != null && (
@@ -707,6 +644,7 @@ export default function BrandTopbar({
                               : `${searchUsed ?? 0}/${searchLimit}`}
                           </span>
                         </div>
+
                         {hasSearchCap ? (
                           <>
                             <div className="w-full h-1.5 rounded-full bg-gray-200 overflow-hidden">
@@ -724,8 +662,7 @@ export default function BrandTopbar({
                             {searchRemaining != null && (
                               <p className="mt-1 text-[11px] text-gray-500">
                                 {searchRemaining} search
-                                {searchRemaining === 1 ? "" : "es"} left this
-                                month
+                                {searchRemaining === 1 ? "" : "es"} left this month
                               </p>
                             )}
                           </>
@@ -750,6 +687,7 @@ export default function BrandTopbar({
                               : `${profileUsed ?? 0}/${profileLimit}`}
                           </span>
                         </div>
+
                         {hasProfileCap ? (
                           <>
                             <div className="w-full h-1.5 rounded-full bg-gray-200 overflow-hidden">
@@ -767,8 +705,7 @@ export default function BrandTopbar({
                             {profileRemaining != null && (
                               <p className="mt-1 text-[11px] text-gray-500">
                                 {profileRemaining} profile view
-                                {profileRemaining === 1 ? "" : "s"} left this
-                                month
+                                {profileRemaining === 1 ? "" : "s"} left this month
                               </p>
                             )}
                           </>
@@ -790,6 +727,7 @@ export default function BrandTopbar({
             <button
               className="flex items-center space-x-1 bg-gray-100 hover:bg-gray-200 px-3 py-1 rounded-md text-md"
               title="Budget remaining"
+              type="button"
             >
               <HiCreditCard size={20} className="text-gray-600" />
               <span className="font-medium text-gray-800">
@@ -812,23 +750,33 @@ export default function BrandTopbar({
             <button
               onClick={() => setMenuOpen((o) => !o)}
               className="flex items-center space-x-1 p-2 rounded-md hover:bg-gray-100 focus:outline-none"
+              aria-haspopup="menu"
+              aria-expanded={menuOpen}
+              aria-label="Profile menu"
             >
-              <HiUserCircle size={24} className="text-gray-600" />
+              {/* ✅ show logo if present else icon */}
+              {avatar}
               <HiChevronDown size={16} className="text-gray-600" />
             </button>
+
             {menuOpen && !loading && (
-              <div className="absolute right-0 mt-2 w-64 bg-white border border-gray-200 rounded-md shadow-lg z-10">
+              <div className="absolute right-0 mt-2 w-68 bg-white border border-gray-200 rounded-md shadow-lg z-10">
                 <div className="px-4 py-3 border-b border-gray-100">
-                  <p className="text-md font-semibold text-gray-700 break-words">
-                    {brandName || "Brand"}
-                  </p>
-                  {email && (
-                    <p className="text-sm text-gray-500 break-words">
-                      {email}
-                    </p>
-                  )}
+                  <div className="flex items-center gap-3">
+                    <div className="min-w-0">
+                      <p className="text-md font-semibold text-gray-700 break-words">
+                        {brandName || "Brand"}
+                      </p>
+                      {email && (
+                        <p className="text-sm text-gray-500 break-words">
+                          {email}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
                   {subscriptionName && (
-                    <p className="text-sm text-gray-500 break-words">
+                    <p className="text-sm text-gray-500 break-words mt-2">
                       Plan:{" "}
                       {subscriptionName.charAt(0).toUpperCase() +
                         subscriptionName.slice(1)}
@@ -840,6 +788,7 @@ export default function BrandTopbar({
                     </p>
                   )}
                 </div>
+
                 <ul className="py-1">
                   <li className="px-4 py-2 hover:bg-gray-100 text-md">
                     <a href="/brand/profile">View Profile</a>

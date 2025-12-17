@@ -1212,7 +1212,7 @@ function RejectButton({ contractId, onDone }: { contractId: string; onDone: () =
       </Button>
       {open && (
         <div className="fixed inset-0 backdrop-blur-sm bg-gray-900/30 flex items-center justify-center z-50">
-          <div className="relative bg-white rounded-lg w-96 p-6 space-y-4">
+          <div className="relative bg-white rounded-lg w-108 p-6 space-y-4">
             <button onClick={() => setOpen(false)} className="absolute top-2 right-2 p-2 text-gray-600 hover:text-gray-900">
               <HiX size={24} />
             </button>
