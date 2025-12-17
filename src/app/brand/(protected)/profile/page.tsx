@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useState, useId } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState, useId } from "react";
 import Select from "react-select";
 import { get, post } from "@/lib/api";
 import { resolveFileUrl } from "@/lib/files";
@@ -12,12 +12,12 @@ import {
   HiCheck,
   HiX,
   HiCreditCard,
-  HiCash,
   HiCalendar,
   HiShieldCheck,
+  HiUpload,
 } from "react-icons/hi";
 
-// --- shadcn/ui imports ---
+// shadcn/ui
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -30,21 +30,14 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
-import {
-  Card,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-  CardContent,
-  CardFooter,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { useRouter } from "next/navigation";
 
-// --- SweetAlert2 ---
+// SweetAlert2
 import Swal, { SweetAlertIcon, SweetAlertOptions } from "sweetalert2";
 
-/* Tiny helpers around SweetAlert2 */
+/* ===================== SweetAlert helpers ===================== */
 const fire = (opts: SweetAlertOptions) =>
   Swal.fire({
     confirmButtonColor: "#FF7236",
@@ -64,9 +57,7 @@ const toast = (icon: SweetAlertIcon, title: string, text?: string) =>
     text,
   });
 
-/* ===================== Types & Helpers ===================== */
-
-// --- deterministic formatting helpers (SSR-safe) ---
+/* ===================== Formatting helpers (SSR-safe) ===================== */
 const FIXED_LOCALE = "en-US";
 const FIXED_TZ = "UTC";
 
@@ -92,30 +83,44 @@ const formatDateTime = (iso?: string) => {
 };
 
 const formatUSD = (n: number) =>
-  new Intl.NumberFormat(FIXED_LOCALE, { style: "currency", currency: "USD" }).format(
-    n
-  );
+  new Intl.NumberFormat(FIXED_LOCALE, { style: "currency", currency: "USD" }).format(n);
 
 const titleizeFeatureKey = (k: string) =>
   k.replace(/_/g, " ").replace(/\b\w/g, (m) => m.toUpperCase());
 
-type SubscriptionFeature = {
-  key: string;
-  limit: number;
-  used: number;
-};
+/* ===================== Types ===================== */
+type SubscriptionFeature = { key: string; limit: number; used: number };
 
 type BrandData = {
+  brandId: string;
   name: string;
+  pocName: string;
+
   email: string;
-  phone: string; // local number (no +code)
+  phone: string;
   country: string;
   countryId: string;
   callingId: string;
-  callingCode?: string; // "+91"
-  brandId: string;
+  callingCode?: string;
+
+  website?: string;
+  instagramHandle?: string;
+  companySize?: string;
+  referralCode?: string;
+
+  categoryId?: string;
+  categoryName?: string;
+  businessType?: string;
+
+  logoUrl?: string;
+  logoFileId?: string;
+  logoFilename?: string;
+
+  brandAliasEmail: string;
+
   createdAt: string;
   updatedAt: string;
+
   subscription: {
     expiresAt: string;
     startedAt: string;
@@ -124,20 +129,34 @@ type BrandData = {
   };
   subscriptionExpired: boolean;
   walletBalance: number;
-
-  // logo & alias
-  logoUrl?: string;
-  logoFileId?: string;
-  logoFilename?: string;
-  brandAliasEmail: string;
-
-  // NEW: point-of-contact name
-  pocName: string;
 };
 
-/* ===================== Utilities ===================== */
+interface Country {
+  _id: string;
+  countryName: string;
+  callingCode: string;
+  countryCode: string;
+  flag: string;
+}
+interface CountryOption {
+  value: string;
+  label: string;
+  country: Country;
+}
+type CategoryItem = { _id: string; name: string; id?: number };
+type BusinessTypeItem = { _id: string; name: string };
+type MetaOptions = { categories: CategoryItem[]; businessTypes: BusinessTypeItem[] };
+type SimpleOption = { value: string; label: string };
 
+/* ===================== Small utils ===================== */
 const isEmailEqual = (a = "", b = "") => a.trim().toLowerCase() === b.trim().toLowerCase();
+const deepClone = <T,>(obj: T): T =>
+  // @ts-ignore
+  typeof structuredClone === "function" ? structuredClone(obj) : JSON.parse(JSON.stringify(obj));
+
+function validateEmail(email: string) {
+  return /[^@\s]+@[^@\s]+\.[^@\s]+/.test(email);
+}
 
 function formatPhoneDisplay(code?: string, num?: string) {
   const c = (code || "").trim();
@@ -147,86 +166,71 @@ function formatPhoneDisplay(code?: string, num?: string) {
   return `${c ? c : ""}${c && n ? " " : ""}${n}`;
 }
 
-const deepClone = <T,>(obj: T): T =>
-  // @ts-ignore
-  typeof structuredClone === "function" ? structuredClone(obj) : JSON.parse(JSON.stringify(obj));
-
 function normalizeBrand(data: any): BrandData {
   const s = data?.subscription ?? {};
   const brand = data?.brand ?? data;
 
-  // Build logo URL if needed
+  // best-effort logo URL
   let logoUrl: string | undefined = brand?.logoUrl;
-
   if (!logoUrl) {
-    if (brand?.logoFilename) {
-      logoUrl = `/file/${encodeURIComponent(brand.logoFilename)}`;
-    } else if (brand?.logoFileId) {
-      logoUrl = `/file/id/${brand.logoFileId}`;
-    }
+    if (brand?.logoFilename) logoUrl = `/file/${encodeURIComponent(brand.logoFilename)}`;
+    else if (brand?.logoFileId) logoUrl = `/file/id/${brand.logoFileId}`;
   }
 
-  const brandAliasEmail =
-    brand?.brandAliasEmail ??
-    brand?.aliasEmail ??
-    "";
+  const brandAliasEmail = brand?.brandAliasEmail ?? brand?.aliasEmail ?? "";
+
+  const populatedCategory = brand?.category;
+  const categoryId =
+    populatedCategory && typeof populatedCategory === "object"
+      ? populatedCategory._id
+      : brand?.categoryId ?? brand?.category ?? "";
+
+  const categoryName =
+    (populatedCategory && typeof populatedCategory === "object"
+      ? populatedCategory.name
+      : brand?.categoryName) ?? "";
 
   return {
+    brandId: brand?.brandId ?? "",
     name: brand?.name ?? "",
+    pocName: brand?.pocName ?? brand?.name ?? "",
+
     email: brand?.email ?? "",
     phone: brand?.phone ?? "",
     country: brand?.country ?? "",
     countryId: brand?.countryId ?? "",
     callingId: brand?.callingId ?? "",
     callingCode: brand?.callingcode ?? brand?.callingCode ?? "",
-    brandId: brand?.brandId ?? "",
-    createdAt: brand?.createdAt ?? "",
-    updatedAt: brand?.updatedAt ?? "",
+
+    website: brand?.website ?? "",
+    instagramHandle: brand?.instagramHandle ?? "",
+    companySize: brand?.companySize ?? "",
+    referralCode: brand?.referralCode ?? "",
+
+    categoryId: categoryId || "",
+    categoryName: categoryName || "",
+    businessType: brand?.businessType ?? "",
+
     logoUrl,
     logoFileId: brand?.logoFileId ?? "",
     logoFilename: brand?.logoFilename ?? "",
     brandAliasEmail,
 
-    // POC name from backend, fallback to brand name
-    pocName: brand?.pocName ?? brand?.name ?? "",
+    createdAt: brand?.createdAt ?? "",
+    updatedAt: brand?.updatedAt ?? "",
 
     subscription: {
       planName: s?.planName ?? brand?.planName ?? "",
       startedAt: s?.startedAt ?? brand?.startedAt ?? "",
       expiresAt: s?.expiresAt ?? brand?.expiresAt ?? "",
-      features: Array.isArray(s?.features)
-        ? s.features
-        : Array.isArray(brand?.features)
-          ? brand.features
-          : [],
+      features: Array.isArray(s?.features) ? s.features : Array.isArray(brand?.features) ? brand.features : [],
     },
     subscriptionExpired: !!brand?.subscriptionExpired,
-    walletBalance: Number.isFinite(+brand?.walletBalance)
-      ? +brand.walletBalance
-      : 0,
+    walletBalance: Number.isFinite(+brand?.walletBalance) ? +brand.walletBalance : 0,
   };
 }
 
-function validateEmail(email: string) {
-  return /[^@\s]+@[^@\s]+\.[^@\s]+/.test(email);
-}
-
-/* ===================== Country / Calling code ===================== */
-
-interface Country {
-  _id: string;
-  countryName: string;
-  callingCode: string; // e.g. +91
-  countryCode: string; // e.g. IN
-  flag: string; // emoji or URL
-}
-
-interface CountryOption {
-  value: string;
-  label: string;
-  country: Country;
-}
-
+/* ===================== Options builders ===================== */
 const buildCountryOptions = (countries: Country[]): CountryOption[] =>
   countries.map((c) => ({
     value: c._id,
@@ -235,11 +239,7 @@ const buildCountryOptions = (countries: Country[]): CountryOption[] =>
   }));
 
 const buildCallingOptions = (countries: Country[]): CountryOption[] => {
-  const opts = countries.map((c) => ({
-    value: c._id,
-    label: `${c.callingCode}`,
-    country: c,
-  }));
+  const opts = countries.map((c) => ({ value: c._id, label: `${c.callingCode}`, country: c }));
   const usIdx = opts.findIndex((o) => o.country.countryCode === "US");
   if (usIdx > -1) {
     const [us] = opts.splice(usIdx, 1);
@@ -258,11 +258,18 @@ const filterByCountryName = (option: { data: CountryOption }, raw: string) => {
   );
 };
 
-/* ===================== Dual-OTP Email Editor ===================== */
+/* ===================== Styling tokens ===================== */
+const CG_GRADIENT = "bg-gradient-to-r from-[#FFA135] to-[#FF7236]";
+const CG_ICON = `${CG_GRADIENT} text-white`;
+const inputClass =
+  "h-11 bg-gray-50 border-gray-200 focus-visible:ring-2 focus-visible:ring-[#FF7236]/25 focus-visible:ring-offset-0";
+const panelClass =
+  "bg-white border border-gray-200 rounded-2xl shadow-sm hover:shadow-md transition-shadow duration-200";
 
-type EmailFlowState = "idle" | "needs" | "codes_sent" | "verifying" | "verified";
+/* ===================== Email Update (Single OTP to NEW email) ===================== */
+type EmailFlowState = "idle" | "needs" | "code_sent" | "verifying" | "verified";
 
-const EmailEditorDualOTPRaw = ({
+const EmailEditorNewEmailOTP = ({
   brandId,
   originalEmail,
   value,
@@ -278,9 +285,7 @@ const EmailEditorDualOTPRaw = ({
   onStateChange: (s: EmailFlowState) => void;
 }) => {
   const [flow, setFlow] = useState<EmailFlowState>("idle");
-  const [wasVerified, setWasVerified] = useState(false);
-  const [oldOtp, setOldOtp] = useState("");
-  const [newOtp, setNewOtp] = useState("");
+  const [otp, setOtp] = useState("");
   const [busy, setBusy] = useState(false);
   const [expiresAt, setExpiresAt] = useState<string | null>(null);
   const [resendIn, setResendIn] = useState(0);
@@ -289,249 +294,188 @@ const EmailEditorDualOTPRaw = ({
   const needs = useMemo(() => !isEmailEqual(value, originalEmail), [value, originalEmail]);
   const valueIsValid = useMemo(() => validateEmail(value), [value]);
 
-  // Cooldown tick
   useEffect(() => {
     if (resendIn <= 0) return;
     const id = setInterval(() => setResendIn((s) => (s > 0 ? s - 1 : 0)), 1000);
     return () => clearInterval(id);
   }, [resendIn]);
 
-  // Manage flow based on whether email changed
   useEffect(() => {
     if (!needs) {
       setFlow("idle");
-      setOldOtp("");
-      setNewOtp("");
+      setOtp("");
+      setExpiresAt(null);
       onStateChange("idle");
-    } else if (flow === "codes_sent" || flow === "verifying" || flow === "verified") {
-      onStateChange(flow);
-    } else {
-      setFlow("needs");
-      onStateChange("needs");
-      setWasVerified(false);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [needs, flow, value, originalEmail]);
-
-  const requestCodes = useCallback(async () => {
-    if (!valueIsValid || busy || resendIn > 0) {
-      if (valueIsValid) setOpen(true);
       return;
     }
+    if (flow === "idle" || flow === "verified") {
+      setFlow("needs");
+      onStateChange("needs");
+      return;
+    }
+    onStateChange(flow);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [needs]);
+
+  const requestCode = useCallback(async () => {
+    if (!valueIsValid || busy || resendIn > 0) return;
+
     setBusy(true);
     try {
-      const resp = await post<{
-        message?: string;
-        oldEmail?: string;
-        newEmail?: string;
-        expiresAt?: string;
-      }>("/brand/requestEmailUpdate", { brandId, newEmail: value.trim().toLowerCase() });
-      setFlow("codes_sent");
+      const resp = await post<{ message?: string; expiresAt?: string }>("/brand/requestEmailUpdate", {
+        brandId,
+        newEmail: value.trim().toLowerCase(),
+      });
+
+      setFlow("code_sent");
+      onStateChange("code_sent");
       setExpiresAt(resp?.expiresAt || null);
       setResendIn(30);
-      onStateChange("codes_sent");
       setOpen(true);
-      toast("success", "Codes sent", `OTPs sent to ${originalEmail} and ${value}.`);
+
+      toast("success", "OTP sent", `Code sent to ${value.trim().toLowerCase()}`);
     } catch (e: any) {
-      await fire({
-        icon: "error",
-        title: "Failed to send codes",
-        text: e?.message || "Please try again.",
-      });
+      await fire({ icon: "error", title: "Failed to send OTP", text: e?.message || "Please try again." });
     } finally {
       setBusy(false);
     }
-  }, [brandId, originalEmail, value, valueIsValid, busy, resendIn, onStateChange]);
+  }, [brandId, value, valueIsValid, busy, resendIn, onStateChange]);
 
   const verifyAndPersist = useCallback(async () => {
-    if (oldOtp.trim().length !== 6 || newOtp.trim().length !== 6) {
-      await fire({ icon: "warning", title: "Enter both 6-digit OTPs" });
+    if (otp.trim().length !== 6) {
+      await fire({ icon: "warning", title: "Enter the 6-digit OTP" });
       return;
     }
+
     setBusy(true);
     setFlow("verifying");
     onStateChange("verifying");
+
     try {
-      const res = await post<{ email: string; token?: string; message?: string }>(
-        "/brand/verifyEmailUpdate",
-        { brandId, newEmail: value.trim().toLowerCase(), oldOtp: oldOtp.trim(), newOtp: newOtp.trim() }
-      );
-      const newEmail = (res as any)?.email || value.trim().toLowerCase();
-      const token = (res as any)?.token;
-      onVerified(newEmail, token);
+      const res = await post<{ email: string; token?: string; message?: string }>("/brand/verifyEmailUpdate", {
+        brandId,
+        newEmail: value.trim().toLowerCase(),
+        otp: otp.trim(),
+      });
+
+      const newEmail = res?.email || value.trim().toLowerCase();
+      onVerified(newEmail, res?.token);
+
       setFlow("verified");
       onStateChange("verified");
-      setOldOtp("");
-      setNewOtp("");
-      setWasVerified(true);
+      setOtp("");
       setOpen(false);
-      await fire({
-        icon: "success",
-        title: "Email updated",
-        text: res?.message || "Email updated successfully.",
-      });
+
+      await fire({ icon: "success", title: "Email updated", text: res?.message || "Email updated successfully." });
     } catch (e: any) {
-      setFlow("codes_sent");
-      onStateChange("codes_sent");
+      setFlow("code_sent");
+      onStateChange("code_sent");
       await fire({
         icon: "error",
         title: "Verification failed",
-        text: e?.message || "Please check the codes and try again.",
+        text: e?.message || "Invalid or expired OTP.",
       });
     } finally {
       setBusy(false);
     }
-  }, [brandId, value, oldOtp, newOtp, onVerified, onStateChange]);
-
-  const handleOtp =
-    (setter: (v: string) => void) => (e: React.ChangeEvent<HTMLInputElement>) => {
-      const digits = e.target.value.replace(/\D/g, "").slice(0, 6);
-      setter(digits);
-    };
+  }, [brandId, value, otp, onVerified, onStateChange]);
 
   const emailInputId = useId();
-  const oldOtpId = useId();
-  const newOtpId = useId();
+  const otpId = useId();
 
   return (
-    <div
-      className="relative bg-white border border-gray-100 p-6 rounded-xl shadow-sm hover:shadow-md transition-shadow duration-200"
-      aria-busy={busy}
-    >
+    <div className={panelClass + " p-5"}>
       <div className="flex items-start gap-4">
-        <div className="flex-shrink-0 w-10 h-10 bg-gradient-to-br from-blue-50 to-indigo-100 rounded-lg flex items-center justify-center">
-          <HiMail className="text-indigo-600 w-5 h-5" />
+        <div className={`flex-shrink-0 w-11 h-11 rounded-xl flex items-center justify-center ${CG_ICON}`}>
+          <HiMail className="w-5 h-5" />
         </div>
+
         <div className="flex-1 min-w-0">
           <Label className="mb-2 block text-sm text-gray-700" htmlFor={emailInputId}>
             Email Address
           </Label>
 
-          <div className="w-full">
-            <Input
-              id={emailInputId}
-              className="w-full"
-              value={value}
-              onChange={(e) => onChange(e.target.value)}
-              placeholder="name@example.com"
-              aria-invalid={needs && !validateEmail(value)}
-              onKeyDown={(e) => {
-                if (
-                  e.key === "Enter" &&
-                  needs &&
-                  valueIsValid &&
-                  (flow === "needs" || flow === "codes_sent")
-                ) {
-                  requestCodes();
-                }
-              }}
-            />
+          <Input
+            id={emailInputId}
+            className={inputClass}
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            placeholder="name@example.com"
+            aria-invalid={needs && !validateEmail(value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && needs && valueIsValid) requestCode();
+            }}
+          />
 
-            <div className="mt-2 flex items-center justify-between gap-2 flex-wrap">
-              <div className="min-w-0">
-                {wasVerified && !needs ? (
-                  <Badge
-                    variant="secondary"
-                    className="bg-emerald-100 text-emerald-800 border border-emerald-200 w-fit"
-                  >
-                    <HiCheck className="w-4 h-4 mr-1" />
-                    Verified
-                  </Badge>
-                ) : needs && valueIsValid ? (
-                  <Button
-                    onClick={requestCodes}
-                    disabled={busy}
-                    className="inline-flex items-center justify-center px-4 py-2 bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white hover:shadow-lg transition-transform duration-200 sm:hover:scale-105 disabled:opacity-60"
-                  >
-                    {flow === "codes_sent"
-                      ? resendIn > 0
-                        ? `Enter Codes (${resendIn}s)`
-                        : "Enter Codes"
-                      : busy
-                        ? "Sending…"
-                        : "Verify"}
-                  </Button>
-                ) : null}
-              </div>
+          <div className="mt-3 flex items-center gap-2 flex-wrap">
+            {needs && valueIsValid ? (
+              <Button
+                onClick={requestCode}
+                disabled={busy}
+                className={`${CG_GRADIENT} text-white disabled:opacity-60`}
+              >
+                {flow === "code_sent"
+                  ? resendIn > 0
+                    ? `Enter OTP (${resendIn}s)`
+                    : "Enter OTP"
+                  : busy
+                    ? "Sending…"
+                    : "Verify"}
+              </Button>
+            ) : null}
 
-              {needs && flow === "needs" && (
-                <button
-                  type="button"
-                  onClick={() => onChange(originalEmail)}
-                  className="text-s text-red-500 hover:text-red-700 transition-colors ml-auto shrink-0 whitespace-nowrap"
-                >
-                  Cancel
-                </button>
-              )}
-            </div>
+            {needs ? (
+              <button
+                type="button"
+                onClick={() => onChange(originalEmail)}
+                className="text-sm text-red-500 hover:text-red-700 transition-colors ml-auto"
+              >
+                Cancel
+              </button>
+            ) : null}
           </div>
 
           <Dialog open={open} onOpenChange={setOpen}>
             <DialogContent className="max-w-[95vw] sm:max-w-lg bg-white">
               <DialogHeader>
                 <DialogTitle className="flex items-center gap-2">
-                  <HiShieldCheck className="w-5 h-5 text-amber-600" />
-                  Verify your email
+                  <span className={`w-9 h-9 rounded-lg flex items-center justify-center ${CG_ICON}`}>
+                    <HiShieldCheck className="w-5 h-5" />
+                  </span>
+                  Verify new email
                 </DialogTitle>
                 <DialogDescription>
-                  Enter the 6-digit codes sent to{" "}
-                  <strong className="break-words">{originalEmail}</strong> (current) and{" "}
-                  <strong className="break-words">{value}</strong> (new).
-                  {expiresAt && (
-                    <span className="block mt-1 text-xs text-amber-600">
-                      Expires: {formatDateTime(expiresAt)}
-                    </span>
-                  )}
+                  Enter the 6-digit OTP sent to <strong className="break-words">{value}</strong>.
+                  {expiresAt ? (
+                    <span className="block mt-1 text-xs text-gray-600">Expires: {formatDateTime(expiresAt)}</span>
+                  ) : null}
                 </DialogDescription>
               </DialogHeader>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor={oldOtpId} className="text-xs text-gray-600 mb-2">
-                    Current Email OTP
-                  </Label>
-                  <Input
-                    id={oldOtpId}
-                    placeholder="000000"
-                    value={oldOtp}
-                    onChange={handleOtp(setOldOtp)}
-                    inputMode="numeric"
-                    pattern="\d*"
-                    maxLength={6}
-                    className="text-center tracking-widest font-mono text-lg"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor={newOtpId} className="text-xs text-gray-600 mb-2">
-                    New Email OTP
-                  </Label>
-                  <Input
-                    id={newOtpId}
-                    placeholder="000000"
-                    value={newOtp}
-                    onChange={handleOtp(setNewOtp)}
-                    inputMode="numeric"
-                    pattern="\d*"
-                    maxLength={6}
-                    className="text-center tracking-widest font-mono text-lg"
-                  />
-                </div>
+              <div className="space-y-2">
+                <Label htmlFor={otpId} className="text-sm text-gray-700">
+                  OTP
+                </Label>
+                <Input
+                  id={otpId}
+                  placeholder="000000"
+                  value={otp}
+                  onChange={(e) => setOtp(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                  inputMode="numeric"
+                  maxLength={6}
+                  className={`${inputClass} text-center tracking-widest font-mono text-lg`}
+                />
               </div>
 
               <DialogFooter className="mt-4 flex items-center justify-between sm:justify-end gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  disabled={busy || resendIn > 0}
-                  onClick={requestCodes}
-                  title={resendIn > 0 ? `Resend in ${resendIn}s` : "Resend codes"}
-                >
-                  {resendIn > 0 ? `Resend (${resendIn}s)` : "Resend Codes"}
+                <Button type="button" variant="outline" disabled={busy || resendIn > 0} onClick={requestCode}>
+                  {resendIn > 0 ? `Resend (${resendIn}s)` : "Resend OTP"}
                 </Button>
+
                 <Button
                   onClick={verifyAndPersist}
-                  disabled={busy || oldOtp.length !== 6 || newOtp.length !== 6}
-                  className="inline-flex items-center px-6 py-3 bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white font-medium rounded-xl shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 disabled:opacity-60 disabled:transform-none"
+                  disabled={busy || otp.length !== 6}
+                  className={`${CG_GRADIENT} text-white px-6 disabled:opacity-60`}
                 >
                   {busy ? "Verifying…" : "Verify & Update"}
                 </Button>
@@ -544,62 +488,83 @@ const EmailEditorDualOTPRaw = ({
   );
 };
 
-const EmailEditorDualOTP = React.memo(EmailEditorDualOTPRaw);
+const EmailEditor = React.memo(EmailEditorNewEmailOTP);
 
-/* ===================== Main Page ===================== */
-
+/* ===================== Page ===================== */
 export default function BrandProfilePage() {
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
 
   const router = useRouter();
+
   const [brand, setBrand] = useState<BrandData | null>(null);
   const [form, setForm] = useState<BrandData | null>(null);
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
   const [isEditing, setIsEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [emailFlow, setEmailFlow] = useState<EmailFlowState>("idle");
 
   const [countries, setCountries] = useState<Country[]>([]);
+  const [meta, setMeta] = useState<MetaOptions>({ categories: [], businessTypes: [] });
+
+  // react-select selected values
+  const [selectedCountry, setSelectedCountry] = useState<CountryOption | null>(null);
+  const [selectedCalling, setSelectedCalling] = useState<CountryOption | null>(null);
+  const [selectedCategory, setSelectedCategory] = useState<SimpleOption | null>(null);
+  const [selectedBusinessType, setSelectedBusinessType] = useState<SimpleOption | null>(null);
+
+  // logo: pick now, upload only on Save Changes (single API call)
+  const fileRef = useRef<HTMLInputElement | null>(null);
+  const [selectedLogoFile, setSelectedLogoFile] = useState<File | null>(null);
+  const [logoPreviewUrl, setLogoPreviewUrl] = useState<string>("");
+
+  useEffect(() => {
+    return () => {
+      if (logoPreviewUrl) URL.revokeObjectURL(logoPreviewUrl);
+    };
+  }, [logoPreviewUrl]);
+
   const countryOptions = useMemo(() => buildCountryOptions(countries), [countries]);
   const codeOptions = useMemo(() => buildCallingOptions(countries), [countries]);
 
+  const categoryOptions2 = useMemo<SimpleOption[]>(
+    () => (meta.categories || []).map((c) => ({ value: c._id, label: c.name })),
+    [meta.categories]
+  );
+
+  const businessTypeOptions2 = useMemo<SimpleOption[]>(
+    () => (meta.businessTypes || []).map((b) => ({ value: b.name, label: b.name })),
+    [meta.businessTypes]
+  );
+
   const maps = useMemo(() => {
-    const co = buildCountryOptions(countries);
-    const ko = buildCallingOptions(countries);
+    const co = countryOptions;
+    const ko = codeOptions;
     return {
       countryById: new Map(co.map((o) => [o.value, o] as const)),
       callingById: new Map(ko.map((o) => [o.value, o] as const)),
       co,
       ko,
     };
-  }, [countries]);
-
-  const [selectedCountry, setSelectedCountry] = useState<CountryOption | null>(null);
-  const [selectedCalling, setSelectedCalling] = useState<CountryOption | null>(null);
+  }, [countryOptions, codeOptions]);
 
   const selectStyles = useMemo(
     () => ({
-      container: (base: any) => ({
-        ...base,
-        width: "100%",
-        minWidth: 0,
-      }),
+      container: (base: any) => ({ ...base, width: "100%", minWidth: 0 }),
       control: (base: any, state: any) => ({
         ...base,
         backgroundColor: "#F9FAFB",
-        borderColor: state.isFocused ? "#F97316" : "#E5E7EB",
-        boxShadow: state.isFocused ? "0 0 0 2px rgba(249, 115, 22, 0.2)" : "none",
-        "&:hover": { borderColor: "#F97316" },
-        borderRadius: "8px",
-        padding: "4px",
+        borderColor: state.isFocused ? "#FF7236" : "#E5E7EB",
+        boxShadow: state.isFocused ? "0 0 0 2px rgba(255, 114, 54, 0.18)" : "none",
+        "&:hover": { borderColor: "#FF7236" },
+        borderRadius: "12px",
+        padding: "2px",
         minHeight: "44px",
       }),
-      valueContainer: (base: any) => ({
-        ...base,
-        overflow: "hidden",
-      }),
+      valueContainer: (base: any) => ({ ...base, overflow: "hidden" }),
       singleValue: (base: any) => ({
         ...base,
         maxWidth: "100%",
@@ -609,18 +574,17 @@ export default function BrandProfilePage() {
       }),
       option: (base: any, state: any) => ({
         ...base,
-        backgroundColor: state.isSelected
-          ? "#FED7AA"
-          : state.isFocused
-            ? "#FFF7ED"
-            : "transparent",
-        color: state.isSelected ? "#9A3412" : "#374151",
-        "&:hover": { backgroundColor: "#FFF7ED" },
+        backgroundColor: state.isSelected ? "rgba(255, 114, 54, 0.12)" : state.isFocused ? "rgba(255, 114, 54, 0.08)" : "transparent",
+        color: "#111827",
       }),
       menuPortal: (base: any) => ({ ...base, zIndex: 50 }),
     }),
     []
   );
+
+  const onField = useCallback(<K extends keyof BrandData>(key: K, value: BrandData[K]) => {
+    setForm((prev) => (prev ? { ...prev, [key]: value } : prev));
+  }, []);
 
   // Initial fetch
   useEffect(() => {
@@ -630,18 +594,22 @@ export default function BrandProfilePage() {
       setLoading(false);
       return;
     }
+
     let cancelled = false;
 
     (async () => {
       try {
-        const [brandRes, countryRes] = await Promise.all([
+        const [brandRes, countryRes, metaRes] = await Promise.all([
           get<any>(`/brand?id=${brandId}`),
           get<Country[]>("/country/getall"),
+          get<MetaOptions>("/brand/metaOptions"),
         ]);
+
         if (cancelled) return;
 
         const countriesList = Array.isArray(countryRes) ? countryRes : [];
         setCountries(countriesList);
+        setMeta(metaRes || { categories: [], businessTypes: [] });
 
         const normalized = normalizeBrand(brandRes);
         setBrand(normalized);
@@ -651,21 +619,28 @@ export default function BrandProfilePage() {
           localStorage.setItem("brandAliasEmail", normalized.brandAliasEmail);
         }
 
-        const localCO = buildCountryOptions(countriesList);
-        const localKO = buildCallingOptions(countriesList);
+        const co = buildCountryOptions(countriesList);
+        const ko = buildCallingOptions(countriesList);
 
         const matchedCountry =
-          localCO.find((o) => o.value === normalized.countryId) ||
-          localCO.find((o) => o.country.countryName === normalized.country) ||
+          co.find((o) => o.value === normalized.countryId) ||
+          co.find((o) => o.country.countryName === normalized.country) ||
           null;
 
         const matchedCalling =
-          localKO.find((o) => o.value === normalized.callingId) ||
-          localKO.find((o) => o.country.callingCode === normalized.callingCode) ||
+          ko.find((o) => o.value === normalized.callingId) ||
+          ko.find((o) => o.country.callingCode === normalized.callingCode) ||
           null;
 
         setSelectedCountry(matchedCountry);
         setSelectedCalling(matchedCalling);
+
+        setSelectedCategory(
+          normalized.categoryId ? { value: normalized.categoryId, label: normalized.categoryName || "Selected" } : null
+        );
+        setSelectedBusinessType(
+          normalized.businessType ? { value: normalized.businessType, label: normalized.businessType } : null
+        );
       } catch (e: any) {
         console.error(e);
         if (!cancelled) setError(e?.message || "Failed to load brand profile.");
@@ -679,81 +654,71 @@ export default function BrandProfilePage() {
     };
   }, []);
 
-  // Align selections when brand / countries load at different times
+  // keep form synced to selects
   useEffect(() => {
-    if (!brand || !countries.length) return;
+    if (!form) return;
 
-    if (!selectedCountry || selectedCountry.value !== brand.countryId) {
-      const c =
-        maps.countryById.get(brand.countryId) ||
-        maps.co.find((o) => o.country.countryName === brand.country) ||
-        null;
-      setSelectedCountry(c);
-    }
-    if (!selectedCalling || selectedCalling.value !== brand.callingId) {
-      const k =
-        maps.callingById.get(brand.callingId) ||
-        maps.ko.find((o) => o.country.callingCode === brand.callingCode) ||
-        null;
-      setSelectedCalling(k);
-    }
+    setForm((prev) =>
+      prev
+        ? {
+          ...prev,
+          countryId: selectedCountry?.value || prev.countryId,
+          country: selectedCountry?.country.countryName || prev.country,
+        }
+        : prev
+    );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [brand, countries]);
+  }, [selectedCountry?.value]);
 
-  // keep form.country / callingCode synced
   useEffect(() => {
-    if (!selectedCountry) return;
+    if (!form) return;
+
     setForm((prev) =>
       prev
         ? {
-            ...prev,
-            countryId: selectedCountry.value,
-            country: selectedCountry.country.countryName,
-          }
+          ...prev,
+          callingId: selectedCalling?.value || prev.callingId,
+          callingCode: selectedCalling?.country.callingCode || prev.callingCode,
+        }
         : prev
     );
-  }, [selectedCountry]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedCalling?.value]);
 
   useEffect(() => {
-    if (!selectedCalling) return;
-    setForm((prev) =>
-      prev
-        ? {
-            ...prev,
-            callingId: selectedCalling.value,
-            callingCode: selectedCalling.country.callingCode,
-          }
-        : prev
-    );
-  }, [selectedCalling]);
+    if (!form) return;
+    setForm((p) => (p ? { ...p, categoryId: selectedCategory?.value || "", categoryName: selectedCategory?.label || "" } : p));
+  }, [selectedCategory]);
 
-  const onField = useCallback(
-    <K extends keyof BrandData>(key: K, value: BrandData[K]) => {
-      setForm((prev) => (prev ? { ...prev, [key]: value } : prev));
-    },
-    []
-  );
+  useEffect(() => {
+    if (!form) return;
+    setForm((p) => (p ? { ...p, businessType: selectedBusinessType?.value || "" } : p));
+  }, [selectedBusinessType]);
 
   const resetEdits = useCallback(() => {
     if (!brand) return;
     const cl = deepClone(brand);
     setForm(cl);
+
     setIsEditing(false);
     setEmailFlow("idle");
-    setSelectedCountry(
-      cl.countryId ? maps.countryById.get(cl.countryId) || null : null
-    );
-    setSelectedCalling(
-      cl.callingId ? maps.callingById.get(cl.callingId) || null : null
-    );
+
+    setSelectedCountry(cl.countryId ? maps.countryById.get(cl.countryId) || null : null);
+    setSelectedCalling(cl.callingId ? maps.callingById.get(cl.callingId) || null : null);
+
+    setSelectedCategory(cl.categoryId ? { value: cl.categoryId, label: cl.categoryName || "Selected" } : null);
+    setSelectedBusinessType(cl.businessType ? { value: cl.businessType, label: cl.businessType } : null);
+
+    setSelectedLogoFile(null);
+    if (logoPreviewUrl) URL.revokeObjectURL(logoPreviewUrl);
+    setLogoPreviewUrl("");
+
     toast("info", "Changes discarded");
-  }, [brand, maps.countryById, maps.callingById]);
+  }, [brand, maps.countryById, maps.callingById, logoPreviewUrl]);
 
   const refetchBrand = useCallback(
     async (id?: string) => {
-      const brandId =
-        id ?? (typeof window !== "undefined" ? localStorage.getItem("brandId") : null);
-
+      const brandId = id ?? (typeof window !== "undefined" ? localStorage.getItem("brandId") : null);
       if (!brandId) return;
 
       try {
@@ -767,25 +732,36 @@ export default function BrandProfilePage() {
           localStorage.setItem("brandAliasEmail", normalized.brandAliasEmail);
         }
 
-        const matchedCountry =
-          maps.countryById.get(normalized.countryId) ||
-          maps.co.find((o) => o.country.countryName === normalized.country) ||
-          null;
+        setSelectedCountry(
+          maps.countryById.get(normalized.countryId) || maps.co.find((o) => o.country.countryName === normalized.country) || null
+        );
+        setSelectedCalling(
+          maps.callingById.get(normalized.callingId) || maps.ko.find((o) => o.country.callingCode === normalized.callingCode) || null
+        );
 
-        const matchedCalling =
-          maps.callingById.get(normalized.callingId) ||
-          maps.ko.find((o) => o.country.callingCode === normalized.callingCode) ||
-          null;
-
-        setSelectedCountry(matchedCountry);
-        setSelectedCalling(matchedCalling);
-      } catch (e: any) {
+        setSelectedCategory(
+          normalized.categoryId ? { value: normalized.categoryId, label: normalized.categoryName || "Selected" } : null
+        );
+        setSelectedBusinessType(
+          normalized.businessType ? { value: normalized.businessType, label: normalized.businessType } : null
+        );
+      } catch (e) {
         console.error(e);
         toast("error", "Failed to refresh", "Couldn't reload brand after saving.");
       }
     },
-    [maps.countryById, maps.callingById, maps.co, maps.ko]
+    [maps]
   );
+
+  const onPickLogo = useCallback((file?: File) => {
+    if (!file) return;
+
+    if (logoPreviewUrl) URL.revokeObjectURL(logoPreviewUrl);
+    setSelectedLogoFile(file);
+    setLogoPreviewUrl(URL.createObjectURL(file));
+
+    toast("success", "Logo selected", "Click Save Changes to upload.");
+  }, [logoPreviewUrl]);
 
   const saveProfile = useCallback(async () => {
     if (!form || !brand) return;
@@ -801,23 +777,42 @@ export default function BrandProfilePage() {
 
     setSaving(true);
     try {
-      const payload: any = {
-        brandId: form.brandId,
-        name: form.name,
-        phone: form.phone,
-        countryId: form.countryId || undefined,
-        callingId: form.callingId || undefined,
-        logoUrl: form.logoUrl || undefined,
-        // NEW: send POC name to backend
-        pocName: form.pocName || undefined,
-      };
+      const fd = new FormData();
 
-      await post<any>("/brand/update", payload);
+      fd.append("brandId", form.brandId);
+
+      fd.append("name", form.name || "");
+      fd.append("pocName", form.pocName || "");
+
+      fd.append("phone", form.phone || "");
+      fd.append("countryId", form.countryId || "");
+      fd.append("callingId", form.callingId || "");
+
+      fd.append("website", form.website || "");
+      fd.append("instagramHandle", form.instagramHandle || "");
+      fd.append("companySize", form.companySize || "");
+      fd.append("referralCode", form.referralCode || "");
+
+      fd.append("categoryId", form.categoryId || "");
+      fd.append("businessType", form.businessType || "");
+
+      // ✅ attach logo only if selected
+      if (selectedLogoFile) fd.append("file", selectedLogoFile);
+
+      const token = (typeof window !== "undefined" && localStorage.getItem("token")) || "";
+
+      // ✅ axios post (your wrapper)
+      await post("/brand/update", fd);
 
       await refetchBrand(form.brandId);
 
       setIsEditing(false);
       setEmailFlow("idle");
+
+      setSelectedLogoFile(null);
+      if (logoPreviewUrl) URL.revokeObjectURL(logoPreviewUrl);
+      setLogoPreviewUrl("");
+
       await fire({ icon: "success", title: "Profile saved" });
     } catch (e: any) {
       console.error(e);
@@ -829,188 +824,302 @@ export default function BrandProfilePage() {
     } finally {
       setSaving(false);
     }
-  }, [brand, emailFlow, form, refetchBrand]);
+  }, [brand, emailFlow, form, refetchBrand, selectedLogoFile, logoPreviewUrl]);
+
 
   const daysLeft = useMemo(() => {
     if (!brand?.subscription.expiresAt) return null;
     const end = new Date(brand.subscription.expiresAt).getTime();
-    const now = Date.now();
-    const diff = Math.max(0, end - now);
+    const diff = Math.max(0, end - Date.now());
     return Math.ceil(diff / (1000 * 60 * 60 * 24));
   }, [brand?.subscription.expiresAt]);
 
   if (loading) return <Loader />;
   if (error) return <Error message={error} />;
 
-  const saveDisabled =
-    saving || (emailFlow !== "idle" && emailFlow !== "verified");
-
-  const brandLogoUrl = resolveFileUrl(form?.logoUrl || brand?.logoUrl);
+  const saveDisabled = saving || (emailFlow !== "idle" && emailFlow !== "verified");
+  const brandLogoUrl = resolveFileUrl(logoPreviewUrl || form?.logoUrl || brand?.logoUrl);
 
   return (
-    <div className="min-h-screen py-8">
+    <div className="min-h-screen py-6 sm:py-10">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Header */}
-        <Card className="mb-8 bg-white border border-gray-200 shadow-sm">
-          <CardContent className="p-8">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <Card className="mb-6 sm:mb-8 bg-white border border-gray-200 rounded-2xl shadow-sm">
+          <CardContent className="p-5 sm:p-8">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div className="min-w-0">
-                <h1 className="text-3xl font-bold text-gray-900 mb-2">Brand Profile</h1>
-                <p className="text-gray-600">Manage your brand information and settings</p>
+                <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Brand Profile</h1>
+                <p className="text-gray-600 mt-1">Manage your brand information and settings</p>
               </div>
-              {!isEditing && (
+
+              {!isEditing ? (
                 <Button
                   onClick={() => setIsEditing(true)}
-                  className="w-full sm:w-auto inline-flex items-center px-6 py-3 bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white font-medium rounded-xl shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200"
+                  className={`${CG_GRADIENT} text-white w-full sm:w-auto rounded-xl px-6 py-3 shadow hover:opacity-95`}
                 >
                   <HiUser className="w-5 h-5 mr-2" />
                   Edit Profile
                 </Button>
+              ) : (
+                <div className="grid grid-cols-2 gap-2 w-full sm:w-auto">
+                  <Button
+                    type="button"
+                    onClick={resetEdits}
+                    disabled={saving}
+                    variant="outline"
+                    className="rounded-xl h-11"
+                  >
+                    <HiX className="w-5 h-5 mr-2" />
+                    Cancel
+                  </Button>
+                  <Button
+                    type="button"
+                    onClick={saveProfile}
+                    disabled={saveDisabled}
+                    className={`${CG_GRADIENT} text-white rounded-xl h-11 shadow hover:opacity-95 disabled:opacity-60`}
+                    title={
+                      emailFlow !== "idle" && emailFlow !== "verified"
+                        ? "Verify the new email to enable saving"
+                        : undefined
+                    }
+                  >
+                    <HiCheck className="w-5 h-5 mr-2" />
+                    {saving ? "Saving…" : "Save Changes"}
+                  </Button>
+                </div>
               )}
             </div>
           </CardContent>
         </Card>
 
-        {/* Profile Section */}
-        <Card className="mb-8 bg-white border border-gray-200 shadow-sm">
-          <CardContent className="p-8">
-            <div className="flex flex-col sm:flex-row items-center sm:items-start justify-center sm:justify-start gap-4 sm:gap-6 mb-8 text-center sm:text-left">
-              <div className="border-1 flex-shrink-0 w-16 h-16 sm:w-20 sm:h-20 bg-gradient-to-r from-[#FFA135] to-[#FF7236] rounded-full flex items-center justify-center mx-auto sm:mx-0 overflow-hidden">
-                {brandLogoUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={brandLogoUrl}
-                    alt={`${brand?.name || "Brand"} logo`}
-                    className="w-full h-full object-cover"
-                  />
-                ) : (
-                  <HiUser className="w-8 h-8 sm:w-10 sm:h-10 text-white" />
+        {/* Profile */}
+        <Card className="mb-6 sm:mb-8 bg-white border border-gray-200 rounded-2xl shadow-sm">
+          <CardContent className="p-5 sm:p-8">
+            <div className="flex flex-col sm:flex-row items-center sm:items-start gap-4 sm:gap-6 mb-8">
+              {/* Logo */}
+              <div className="flex flex-col items-center gap-3">
+                <div className={`w-20 h-20 rounded-full overflow-hidden ring-4 ring-gray-100 ${CG_GRADIENT}`}>
+                  {brandLogoUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={brandLogoUrl} alt={`${brand?.name || "Brand"} logo`} className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center">
+                      <HiUser className="w-10 h-10 text-white" />
+                    </div>
+                  )}
+                </div>
+
+                {isEditing && (
+                  <>
+                    <input
+                      ref={fileRef}
+                      type="file"
+                      accept="image/png,image/jpeg,image/jpg,image/webp,image/svg+xml"
+                      className="hidden"
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        if (f) onPickLogo(f);
+                        e.currentTarget.value = "";
+                      }}
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="rounded-xl h-10"
+                      onClick={() => fileRef.current?.click()}
+                    >
+                      <HiUpload className="w-4 h-4 mr-2" />
+                      {selectedLogoFile ? "Change Logo" : "Select Logo"}
+                    </Button>
+                    {selectedLogoFile ? (
+                      <p className="text-xs text-gray-600 max-w-[220px] text-center break-words">
+                        Selected: <span className="font-medium">{selectedLogoFile.name}</span>
+                      </p>
+                    ) : null}
+                  </>
                 )}
               </div>
 
-              <div className="flex-1 min-w-0 w-full max-w-xl mx-auto sm:mx-0">
-                <div className="text-center sm:text-left">
-                  <Field
-                    label="Brand Name"
-                    value={form?.name ?? ""}
-                    readValue={brand?.name ?? ""}
-                    editing={isEditing}
-                    onChange={(v) => onField("name", v as any)}
-                    large
-                  />
-                </div>
+              {/* Brand Name */}
+              <div className="w-full max-w-2xl">
+                <Field
+                  label="Brand Name"
+                  value={form?.name ?? ""}
+                  readValue={brand?.name ?? ""}
+                  editing={isEditing}
+                  onChange={(v) => onField("name", v as any)}
+                  large
+                />
               </div>
             </div>
 
-            {/* Contact Information */}
-            <div className="space-y-6">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">
-                Contact Information
-              </h3>
+            {/* Contact */}
+            <SectionTitle title="Contact Information" />
 
-              {/* Row 0: POC Name */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
+              <IconField
+                icon={HiUser}
+                label="POC Name"
+                value={form?.pocName ?? ""}
+                readValue={brand?.pocName ?? ""}
+                onChange={(v) => onField("pocName", v as any)}
+                editing={isEditing}
+              />
+
+              {!isEditing ? (
                 <IconField
-                  icon={HiUser}
-                  label="POC Name"
-                  value={form?.pocName ?? ""}
-                  readValue={brand?.pocName ?? ""}
-                  onChange={(v) => onField("pocName", v as any)}
-                  editing={isEditing}
+                  icon={HiMail}
+                  label="Email Address"
+                  value=""
+                  readValue={brand?.email ?? ""}
+                  onChange={() => { }}
+                  editing={false}
                 />
-              </div>
+              ) : (
+                brand &&
+                form && (
+                  <EmailEditor
+                    brandId={brand.brandId}
+                    originalEmail={brand.email}
+                    value={form.email}
+                    onChange={(v) => onField("email", v as any)}
+                    onVerified={(newEmail, token) => {
+                      setBrand((b) => (b ? { ...b, email: newEmail } : b));
+                      setForm((f) => (f ? { ...f, email: newEmail } : f));
+                      setEmailFlow("verified");
 
-              {/* Row 1: Email + Phone */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {!isEditing ? (
-                  <IconField
-                    icon={HiMail}
-                    label="Email Address"
-                    value=""
-                    readValue={brand?.email ?? ""}
-                    onChange={() => {}}
-                    editing={false}
+                      if (typeof window !== "undefined" && token) {
+                        localStorage.setItem("token", token);
+                      }
+                    }}
+                    onStateChange={setEmailFlow}
                   />
-                ) : (
-                  brand &&
-                  form && (
-                    <EmailEditorDualOTP
-                      brandId={brand.brandId}
-                      originalEmail={brand.email}
-                      value={form.email}
-                      onChange={(v) => onField("email", v as any)}
-                      onVerified={(newEmail, token) => {
-                        setBrand((b) => (b ? { ...b, email: newEmail } : b));
-                        setForm((f) => (f ? { ...f, email: newEmail } : f));
-                        setEmailFlow("verified");
-                        if (token) {
-                          localStorage.setItem("brand_token", token);
-                          localStorage.removeItem("token");
-                        }
-                      }}
-                      onStateChange={setEmailFlow}
-                    />
-                  )
-                )}
+                )
+              )}
+            </div>
 
-                <PhoneField
-                  valueNumber={form?.phone ?? ""}
-                  readValueNumber={brand?.phone ?? ""}
-                  code={form?.callingCode || brand?.callingCode || ""}
-                  editing={isEditing}
-                  onNumberChange={(v) => onField("phone", v as any)}
-                  codeOptions={codeOptions}
-                  selectedCalling={selectedCalling}
-                  onCallingChange={(opt) => setSelectedCalling(opt as any)}
-                  selectStyles={selectStyles}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 mt-4 sm:mt-6">
+              <PhoneField
+                valueNumber={form?.phone ?? ""}
+                readValueNumber={brand?.phone ?? ""}
+                code={form?.callingCode || brand?.callingCode || ""}
+                editing={isEditing}
+                onNumberChange={(v) => onField("phone", v as any)}
+                codeOptions={codeOptions}
+                selectedCalling={selectedCalling}
+                onCallingChange={(opt) => setSelectedCalling(opt as any)}
+                selectStyles={selectStyles}
+              />
+
+              <CountryField
+                editing={isEditing}
+                readValue={brand?.country ?? ""}
+                countryOptions={countryOptions}
+                selectedCountry={selectedCountry}
+                onCountryChange={(opt) => setSelectedCountry(opt as CountryOption)}
+                selectStyles={selectStyles}
+              />
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 mt-4 sm:mt-6">
+              <IconField
+                icon={HiMail}
+                label="Brand Alias Email"
+                value=""
+                readValue={brand?.brandAliasEmail ?? ""}
+                onChange={() => { }}
+                editing={false}
+              />
+              <div className="hidden lg:block" />
+            </div>
+
+            {/* Business */}
+            <div className="mt-10">
+              <SectionTitle title="Business Information" />
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
+              <SelectPanel label="Category" editing={isEditing} readValue={brand?.categoryName || "—"}>
+                <Select
+                  inputId="brandCategory"
+                  options={categoryOptions2}
+                  value={selectedCategory}
+                  onChange={(opt) => setSelectedCategory(opt as any)}
+                  styles={selectStyles}
+                  menuPortalTarget={typeof document !== "undefined" ? document.body : undefined}
                 />
-              </div>
+              </SelectPanel>
 
-              {/* Row 2: Country + Brand Alias Email */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <div className="max-w-md">
-                  <CountryField
-                    editing={isEditing}
-                    readValue={brand?.country ?? ""}
-                    countryOptions={countryOptions}
-                    selectedCountry={selectedCountry}
-                    onCountryChange={(opt) => setSelectedCountry(opt as CountryOption)}
-                    selectStyles={selectStyles}
-                  />
-                </div>
+              <SelectPanel label="Business Type" editing={isEditing} readValue={brand?.businessType || "—"}>
+                <Select
+                  inputId="brandBusinessType"
+                  options={businessTypeOptions2}
+                  value={selectedBusinessType}
+                  onChange={(opt) => setSelectedBusinessType(opt as any)}
+                  styles={selectStyles}
+                  menuPortalTarget={typeof document !== "undefined" ? document.body : undefined}
+                />
+              </SelectPanel>
+            </div>
 
-                <div className="max-w-xl">
-                  <IconField
-                    icon={HiMail}
-                    label="Brand Alias Email"
-                    value=""
-                    readValue={brand?.brandAliasEmail ?? ""}
-                    onChange={() => {}}
-                    editing={false}
-                  />
-                </div>
-              </div>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 mt-4 sm:mt-6">
+              <IconField
+                icon={HiGlobe}
+                label="Website"
+                value={form?.website ?? ""}
+                readValue={brand?.website ?? ""}
+                onChange={(v) => onField("website", v as any)}
+                editing={isEditing}
+                placeholder="https://yourbrand.com"
+              />
+
+              <IconField
+                icon={HiGlobe}
+                label="Instagram Handle"
+                value={form?.instagramHandle ?? ""}
+                readValue={brand?.instagramHandle ?? ""}
+                onChange={(v) => onField("instagramHandle", v as any)}
+                editing={isEditing}
+                placeholder="@yourbrand"
+              />
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 mt-4 sm:mt-6">
+              <SelectPanel label="Company Size" editing={isEditing} readValue={brand?.companySize || "—"}>
+                <select
+                  className="w-full h-11 rounded-xl border border-gray-200 bg-gray-50 px-3 text-sm outline-none focus:ring-2 focus:ring-[#FF7236]/25"
+                  value={form?.companySize ?? ""}
+                  onChange={(e) => onField("companySize", e.target.value as any)}
+                >
+                  <option value="">Select</option>
+                  <option value="1-10">1-10</option>
+                  <option value="11-50">11-50</option>
+                  <option value="51-200">51-200</option>
+                  <option value="200+">200+</option>
+                </select>
+              </SelectPanel>
+
+              <div className="hidden lg:block" />
             </div>
           </CardContent>
         </Card>
 
         {/* Wallet + Subscription (view mode only) */}
         {!isEditing && (
-          <div className="flex flex-col gap-6 mb-8">
-            {/* Wallet */}
-            <Card className="bg-white border border-gray-200 shadow-sm">
-              <CardHeader className="pb-4">
+          <div className="flex flex-col gap-6 mb-10">
+            <Card className="bg-white border border-gray-200 rounded-2xl shadow-sm">
+              <CardHeader className="pb-2">
                 <div className="flex items-center gap-3">
-                  <div className="flex-shrink-0 w-10 h-10 bg-gradient-to-r from-[#FFA135] to-[#FF7236] rounded-lg flex items-center justify-center">
-                    <HiGlobe className="w-5 h-5 text-white" />
+                  <div className={`w-11 h-11 rounded-xl flex items-center justify-center ${CG_ICON}`}>
+                    <HiGlobe className="w-5 h-5" />
                   </div>
                   <div>
                     <CardTitle>Wallet</CardTitle>
-                    <CardDescription>Balance &amp; top-up</CardDescription>
+                    <CardDescription>Balance</CardDescription>
                   </div>
                 </div>
               </CardHeader>
-              <CardContent className="space-y-2">
+              <CardContent className="space-y-1">
                 <p className="text-3xl font-bold text-gray-900">
                   {brand ? (mounted ? formatUSD(brand.walletBalance || 0) : "—") : "—"}
                 </p>
@@ -1018,21 +1127,21 @@ export default function BrandProfilePage() {
               </CardContent>
             </Card>
 
-            {/* Subscription */}
-            <Card className="bg-white border border-gray-200 shadow-sm">
-              <CardHeader className="pb-4">
+            <Card className="bg-white border border-gray-200 rounded-2xl shadow-sm">
+              <CardHeader className="pb-3">
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                   <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 bg-gradient-to-r from-[#FFA135] to-[#FF7236] rounded-xl flex items-center justify-center">
-                      <HiCreditCard className="w-6 h-6 text-white" />
+                    <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${CG_ICON}`}>
+                      <HiCreditCard className="w-6 h-6" />
                     </div>
                     <div>
                       <CardTitle>Subscription</CardTitle>
                       <CardDescription>Plan &amp; usage</CardDescription>
                     </div>
                   </div>
+
                   <Button
-                    className="w-full sm:w-auto max-w-full self-stretch sm:self-auto inline-flex items-center justify-center px-4 py-2 bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white font-medium rounded-xl shadow hover:shadow-md transition-all"
+                    className={`${CG_GRADIENT} text-white rounded-xl px-4 py-2 shadow hover:opacity-95`}
                     onClick={() => router.push("/brand/subscriptions")}
                   >
                     <HiCreditCard className="w-5 h-5 mr-2" />
@@ -1042,45 +1151,38 @@ export default function BrandProfilePage() {
               </CardHeader>
 
               <CardContent className="space-y-5">
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-2xl font-bold text-gray-900 capitalize">
                     {brand?.subscription.planName || "No Plan"}
                   </span>
                   {!brand?.subscriptionExpired ? (
-                    <Badge className="ml-1 bg-emerald-100 text-emerald-800 border border-emerald-200">
-                      Active
-                    </Badge>
+                    <Badge className="bg-emerald-100 text-emerald-800 border border-emerald-200">Active</Badge>
                   ) : (
-                    <Badge className="ml-1 bg-red-100 text-red-700 border border-red-200">
-                      Expired
-                    </Badge>
+                    <Badge className="bg-red-100 text-red-700 border border-red-200">Expired</Badge>
                   )}
                 </div>
 
                 <div className="space-y-1 text-sm text-gray-600">
-                  {brand?.subscription.startedAt && (
+                  {brand?.subscription.startedAt ? (
                     <div className="flex items-center gap-2">
                       <HiCalendar className="w-4 h-4" />
-                      <span>
-                        Started:{" "}
-                        {mounted ? formatDate(brand.subscription.startedAt) : "—"}
-                      </span>
+                      <span>Started: {mounted ? formatDate(brand.subscription.startedAt) : "—"}</span>
                     </div>
-                  )}
-                  {brand?.subscription.expiresAt && (
+                  ) : null}
+
+                  {brand?.subscription.expiresAt ? (
                     <div className="flex items-center gap-2">
                       <HiCalendar className="w-4 h-4" />
                       <span>
-                        Expires:{" "}
-                        {mounted ? formatDate(brand.subscription.expiresAt) : "—"}
-                        {mounted && typeof daysLeft === "number" && (
+                        Expires: {mounted ? formatDate(brand.subscription.expiresAt) : "—"}
+                        {mounted && typeof daysLeft === "number" ? (
                           <span className="ml-2 text-gray-500">
                             • {daysLeft} day{daysLeft === 1 ? "" : "s"} left
                           </span>
-                        )}
+                        ) : null}
                       </span>
                     </div>
-                  )}
+                  ) : null}
                 </div>
 
                 <div className="mt-2 space-y-4">
@@ -1090,50 +1192,29 @@ export default function BrandProfilePage() {
                     const limit = Math.max(0, rawLimit);
                     const used = Math.max(0, f.used ?? 0);
                     const unlimited = limit === 0;
-                    const label = isManager
-                      ? "Dedicated Manager Support"
-                      : titleizeFeatureKey(f.key);
-
-                    const gradientSolid =
-                      "bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white";
+                    const label = isManager ? "Dedicated Manager Support" : titleizeFeatureKey(f.key);
 
                     if (isManager) {
-                      const status = unlimited
-                        ? "Unlimited"
-                        : limit >= 1
-                          ? "Available"
-                          : "Not included";
+                      const status = unlimited ? "Unlimited" : limit >= 1 ? "Available" : "Not included";
                       const badgeClass = unlimited
-                        ? `${gradientSolid} border border-transparent`
+                        ? `${CG_GRADIENT} text-white border border-transparent`
                         : limit >= 1
                           ? "bg-emerald-100 text-emerald-800 border border-emerald-200"
                           : "bg-gray-100 text-gray-700 border border-gray-200";
                       const Icon = unlimited || limit >= 1 ? HiCheck : HiX;
 
                       return (
-                        <div key={f.key} className="flex items-center justify-between">
-                          <div className="flex items-center gap-2 text-sm">
-                            <Icon
-                              className={
-                                unlimited || limit >= 1
-                                  ? "w-4 h-4 text-[#FF7236]"
-                                  : "w-4 h-4 text-gray-400"
-                              }
-                            />
-                            <span className="text-gray-800">{label}</span>
+                        <div key={f.key} className="flex items-center justify-between gap-3">
+                          <div className="flex items-center gap-2 text-sm min-w-0">
+                            <Icon className={unlimited || limit >= 1 ? "w-4 h-4 text-[#FF7236]" : "w-4 h-4 text-gray-400"} />
+                            <span className="text-gray-800 break-words">{label}</span>
                           </div>
-                          <span className={`text-xs px-2 py-1 rounded-md ${badgeClass}`}>
-                            {status}
-                          </span>
+                          <span className={`text-xs px-2 py-1 rounded-md whitespace-nowrap ${badgeClass}`}>{status}</span>
                         </div>
                       );
                     }
 
-                    const pct = unlimited
-                      ? 100
-                      : limit > 0
-                        ? Math.min(100, Math.round((used / limit) * 100))
-                        : 0;
+                    const pct = unlimited ? 100 : limit > 0 ? Math.min(100, Math.round((used / limit) * 100)) : 0;
 
                     const barClasses = unlimited
                       ? "[&>div]:bg-gradient-to-r [&>div]:from-[#FFA135] [&>div]:to-[#FF7236]"
@@ -1145,35 +1226,23 @@ export default function BrandProfilePage() {
 
                     return (
                       <div key={f.key} className="group">
-                        <div className="flex items-center justify-between mb-1 text-sm">
-                          <span className="text-gray-800">{label}</span>
-                          <span className="text-gray-500 tabular-nums">
+                        <div className="flex items-center justify-between mb-1 text-sm gap-3">
+                          <span className="text-gray-800 break-words">{label}</span>
+                          <span className="text-gray-500 tabular-nums whitespace-nowrap">
                             {used} / {unlimited ? "∞" : limit}
                           </span>
                         </div>
 
-                        <Progress
-                          value={pct}
-                          className={`h-2 rounded-full bg-gray-100 ${barClasses}`}
-                          aria-label={`${label} usage: ${used} of ${
-                            unlimited ? "unlimited" : limit
-                          }`}
-                        />
+                        <Progress value={pct} className={`h-2 rounded-full bg-gray-100 ${barClasses}`} />
 
                         <div className="mt-1 flex items-center justify-between text-xs text-gray-500">
-                          <span className="tabular-nums">
-                            {unlimited ? "∞" : `${pct}%`}
-                          </span>
+                          <span className="tabular-nums">{unlimited ? "∞" : `${pct}%`}</span>
                           {unlimited ? (
-                            <span
-                              className={`tabular-nums flex items-center gap-1 px-1.5 py-0.5 rounded ${gradientSolid}`}
-                            >
+                            <span className={`tabular-nums px-2 py-0.5 rounded ${CG_GRADIENT} text-white`}>
                               Unlimited
                             </span>
                           ) : (
-                            <span className="tabular-nums">
-                              {Math.max(0, limit - used)} left
-                            </span>
+                            <span className="tabular-nums">{Math.max(0, limit - used)} left</span>
                           )}
                         </div>
                       </div>
@@ -1184,53 +1253,21 @@ export default function BrandProfilePage() {
             </Card>
           </div>
         )}
-
-        {/* Action Buttons */}
-        {isEditing && (
-          <Card className="bg-white border border-gray-200 shadow-sm">
-            <CardContent className="p-6">
-              <div className="flex flex-col sm:flex-row gap-4 sm:justify-end">
-                <Button
-                  type="button"
-                  onClick={resetEdits}
-                  disabled={saving}
-                  variant="outline"
-                  className="inline-flex items-center justify-center px-6 py-3"
-                >
-                  <HiX className="w-5 h-5 mr-2" />
-                  Cancel
-                </Button>
-
-                <Button
-                  type="button"
-                  onClick={saveProfile}
-                  disabled={saveDisabled}
-                  className="inline-flex items-center justify-center px-6 py-3 bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white font-medium rounded-xl shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 disabled:opacity-60 disabled:transform-none"
-                  title={
-                    emailFlow !== "idle" && emailFlow !== "verified"
-                      ? "Verify the new email to enable saving"
-                      : undefined
-                  }
-                >
-                  <HiCheck className="w-5 h-5 mr-2" />
-                  {saving ? "Saving…" : "Save Changes"}
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        )}
       </div>
     </div>
   );
 }
 
-/* -------- UI Helpers -------- */
+/* ===================== UI helpers ===================== */
+function SectionTitle({ title }: { title: string }) {
+  return <h3 className="text-lg font-semibold text-gray-900 mb-3">{title}</h3>;
+}
 
 function Loader() {
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-gray-100 flex items-center justify-center">
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
       <div className="text-center">
-        <div className="w-12 h-12 mx-auto mb-4 border-4 border-orange-200 border-t-orange-500 rounded-full animate-spin"></div>
+        <div className="w-12 h-12 mx-auto mb-4 border-4 border-orange-200 border-t-orange-500 rounded-full animate-spin" />
         <p className="text-gray-600 font-medium">Loading profile…</p>
       </div>
     </div>
@@ -1243,19 +1280,14 @@ function Error({ message }: { message: string }) {
   }, [message]);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-gray-100 flex items-center justify-center">
-      <div className="max-w-md mx-auto text-center bg-white p-8 rounded-2xl shadow-sm border border-gray-100">
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
+      <div className="max-w-md mx-auto text-center bg-white p-8 rounded-2xl shadow-sm border border-gray-200">
         <div className="w-16 h-16 mx-auto mb-4 bg-red-100 rounded-full flex items-center justify-center">
           <HiX className="w-8 h-8 text-red-600" />
         </div>
-        <h2 className="text-xl font-semibold text-gray-900 mb-2">
-          Error Loading Profile
-        </h2>
+        <h2 className="text-xl font-semibold text-gray-900 mb-2">Error Loading Profile</h2>
         <p className="text-red-600 mb-4">{message}</p>
-        <Button
-          onClick={() => window.location.reload()}
-          className="px-6 py-3 bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white font-medium rounded-xl hover:shadow-md transition-all duration-200"
-        >
+        <Button onClick={() => window.location.reload()} className={`${CG_GRADIENT} text-white rounded-xl px-6 py-3 shadow hover:opacity-95`}>
           Try Again
         </Button>
       </div>
@@ -1289,17 +1321,13 @@ const Field = React.memo(function Field({
       {editing ? (
         <Input
           id={id}
-          className={`${large ? "text-2xl font-bold" : "text-base"}`}
+          className={`${inputClass} ${large ? "text-xl sm:text-2xl font-bold" : "text-sm"}`}
           value={value}
           onChange={(e) => onChange(e.target.value)}
           placeholder={placeholder}
         />
       ) : (
-        <p
-          className={`${
-            large ? "text-2xl font-bold" : "text-lg font-medium"
-          } text-gray-900 break-words`}
-        >
+        <p className={`${large ? "text-xl sm:text-2xl font-bold" : "text-lg font-medium"} text-gray-900 break-words`}>
           {readValue || "—"}
         </p>
       )}
@@ -1315,6 +1343,7 @@ const IconField = React.memo(function IconField({
   readValue,
   onChange,
   editing,
+  placeholder,
 }: {
   icon: any;
   label: string;
@@ -1323,42 +1352,61 @@ const IconField = React.memo(function IconField({
   readValue: string;
   onChange: (v: string) => void;
   editing: boolean;
+  placeholder?: string;
 }) {
   const id = useId();
   return (
-    <div className="bg-white border border-gray-100 p-6 rounded-xl shadow-sm hover:shadow-md transition-shadow duration-200 min-w-0">
+    <div className={`${panelClass} p-5 min-w-0`}>
       <div className="flex items-start gap-4">
-        <div className="flex-shrink-0 w-10 h-10 bg-gradient-to-r from-[#FFA135] to-[#FF7236] rounded-lg flex items-center justify-center">
-          <Icon className="text-white w-5 h-5" />
+        <div className={`flex-shrink-0 w-11 h-11 rounded-xl flex items-center justify-center ${CG_ICON}`}>
+          <Icon className="w-5 h-5" />
         </div>
         <div className="flex-1 min-w-0">
           <Label className="block text-sm text-gray-700 mb-2" htmlFor={id}>
             {label}
           </Label>
           {editing ? (
-            <div className="flex items-center gap-2">
-              {prefix && (
-                <span className="px-3 py-2 bg-gray-100 text-gray-700 text-sm rounded-lg font-medium">
+            <div className="flex items-center gap-2 min-w-0">
+              {prefix ? (
+                <span className="px-3 h-11 flex items-center bg-gray-100 text-gray-700 text-sm rounded-xl font-medium whitespace-nowrap">
                   {prefix}
                 </span>
-              )}
+              ) : null}
               <Input
                 id={id}
-                className="flex-1"
+                className={`${inputClass} flex-1`}
                 value={value}
                 onChange={(e) => onChange(e.target.value)}
+                placeholder={placeholder}
               />
             </div>
           ) : (
-            <p className="text-lg font-medium text-gray-900 break-words">
-              {readValue || "—"}
-            </p>
+            <p className="text-lg font-medium text-gray-900 break-words">{readValue || "—"}</p>
           )}
         </div>
       </div>
     </div>
   );
 });
+
+function SelectPanel({
+  label,
+  editing,
+  readValue,
+  children,
+}: {
+  label: string;
+  editing: boolean;
+  readValue: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className={`${panelClass} p-5 min-w-0`}>
+      <Label className="block text-sm text-gray-700 mb-2">{label}</Label>
+      {editing ? children : <p className="text-lg font-medium text-gray-900 break-words">{readValue}</p>}
+    </div>
+  );
+}
 
 const PhoneField = React.memo(function PhoneField({
   valueNumber,
@@ -1382,19 +1430,18 @@ const PhoneField = React.memo(function PhoneField({
   selectStyles: any;
 }) {
   const readText = formatPhoneDisplay(code, readValueNumber);
+  const numberId = useId();
 
   const handleNumber = (v: string) => {
     const sanitized = v.replace(/[^\d\s-]/g, "").replace(/^\+/, "").slice(0, 20);
     onNumberChange(sanitized);
   };
 
-  const numberId = useId();
-
   return (
-    <div className="bg-white border border-gray-100 p-6 rounded-xl shadow-sm hover:shadow-md transition-shadow duration-200 min-w-0">
+    <div className={`${panelClass} p-5 min-w-0`}>
       <div className="flex items-start gap-4">
-        <div className="flex-shrink-0 w-10 h-10 bg-gradient-to-r from-[#FFA135] to-[#FF7236] rounded-lg flex items-center justify-center">
-          <HiPhone className="text-white w-5 h-5" />
+        <div className={`flex-shrink-0 w-11 h-11 rounded-xl flex items-center justify-center ${CG_ICON}`}>
+          <HiPhone className="w-5 h-5" />
         </div>
         <div className="flex-1 min-w-0">
           <Label className="block text-sm text-gray-700 mb-2" htmlFor={numberId}>
@@ -1410,10 +1457,7 @@ const PhoneField = React.memo(function PhoneField({
                   value={selectedCalling}
                   onChange={(opt) => onCallingChange(opt as any)}
                   styles={selectStyles}
-                  classNamePrefix="rs"
-                  menuPortalTarget={
-                    typeof document !== "undefined" ? document.body : undefined
-                  }
+                  menuPortalTarget={typeof document !== "undefined" ? document.body : undefined}
                 />
               </div>
               <div className="sm:col-span-2 min-w-0">
@@ -1424,7 +1468,7 @@ const PhoneField = React.memo(function PhoneField({
                   placeholder="Phone number"
                   inputMode="numeric"
                   maxLength={20}
-                  className="w-full"
+                  className={inputClass}
                 />
               </div>
             </div>
@@ -1453,10 +1497,10 @@ const CountryField = React.memo(function CountryField({
   selectStyles: any;
 }) {
   return (
-    <div className="bg-white border border-gray-100 p-6 rounded-xl shadow-sm hover:shadow-md transition-shadow duration-200 min-w-0">
+    <div className={`${panelClass} p-5 w-full min-w-0`}>
       <div className="flex items-start gap-4">
-        <div className="flex-shrink-0 w-10 h-10 bg-gradient-to-r from-[#FFA135] to-[#FF7236] rounded-lg flex items-center justify-center">
-          <HiGlobe className="text-white w-5 h-5" />
+        <div className={`flex-shrink-0 w-11 h-11 rounded-xl flex items-center justify-center ${CG_ICON}`}>
+          <HiGlobe className="w-5 h-5" />
         </div>
         <div className="flex-1 min-w-0">
           <Label className="block text-sm text-gray-700 mb-2">Country</Label>
@@ -1469,14 +1513,10 @@ const CountryField = React.memo(function CountryField({
               onChange={(opt) => onCountryChange(opt as CountryOption)}
               filterOption={filterByCountryName as any}
               styles={selectStyles}
-              menuPortalTarget={
-                typeof document !== "undefined" ? document.body : undefined
-              }
+              menuPortalTarget={typeof document !== "undefined" ? document.body : undefined}
             />
           ) : (
-            <p className="text-lg font-medium text-gray-900 break-words">
-              {readValue || "—"}
-            </p>
+            <p className="text-lg font-medium text-gray-900 break-words">{readValue || "—"}</p>
           )}
         </div>
       </div>
