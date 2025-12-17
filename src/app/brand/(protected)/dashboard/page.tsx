@@ -236,7 +236,7 @@ export default function BrandDashboardHome() {
                       {filteredCampaigns.map((c) => (
                         <tr key={c.id} className="border-b hover:bg-gray-50">
                           <td className="py-3 pr-4 font-medium text-gray-800">
-                            {truncate(c.productOrServiceName || "—", 100)}
+                            {truncate(c.productOrServiceName || "—", 50)}
                             {c.createdAt ? (
                               <div className="text-xs text-gray-500">
                                 {format(new Date(c.createdAt), "MMM d, yyyy")}
