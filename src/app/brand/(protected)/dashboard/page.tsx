@@ -299,9 +299,9 @@ export default function BrandDashboardHome() {
                     <thead className="sticky top-0 bg-white z-10">
                       <tr className="text-gray-500 border-b">
                         <th className="py-3 pr-2 w-[34%]">Campaign</th>
-                        <th className="py-3 pr-2 w-[22%] hidden md:table-cell">Goal</th>
+                        <th className="py-3 pr-2 w-[16%] hidden md:table-cell">Goal</th>
                         <th className="py-3 pr-2 w-[14%]">Budget</th>
-                        <th className="py-3 pr-2 w-[14%]">Applied</th>
+                        <th className="py-3 pr-2 w-[20%]">Applied</th>
                         <th className="py-3 pr-2 w-[10%] hidden lg:table-cell">Influencer</th>
                         <th className="py-3 w-[6%] text-right">Action</th>
                       </tr>
