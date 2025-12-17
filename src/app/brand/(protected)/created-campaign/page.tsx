@@ -216,18 +216,23 @@ function TableView({
     <div className="p-[1.5px] rounded-xl bg-gradient-to-r from-[#FFA135] to-[#FF7236] shadow">
       <div className="overflow-x-auto bg-white rounded-xl">
         <table className="w-full text-sm text-gray-700">
+          <colgroup>
+            <col style={{ width: "34%" }} />
+            <col style={{ width: "10%" }} />
+            <col style={{ width: "12%" }} />
+            <col style={{ width: "20%" }} />
+            <col style={{ width: "12%" }} />
+            <col style={{ width: "12%" }} />
+          </colgroup>
+
           <thead className="text-left text-white">
             <tr className="bg-gradient-to-r from-[#FFA135] to-[#FF7236]">
-              {["Campaign", "Type", "Budget", "Timeline", "Influencers Applied", "Actions"].map(
-                (h, i) => (
-                  <th
-                    key={i}
-                    className="px-6 py-4 text-center font-semibold whitespace-nowrap"
-                  >
-                    {h}
-                  </th>
-                )
-              )}
+              <th className="px-6 py-4 text-center font-semibold whitespace-nowrap">Campaign</th>
+              <th className="px-6 py-4 text-center font-semibold whitespace-nowrap">Type</th>
+              <th className="px-6 py-4 text-center font-semibold whitespace-nowrap">Budget</th>
+              <th className="px-6 py-4 text-center font-semibold whitespace-nowrap">Timeline</th>
+              <th className="px-6 py-4 text-center font-semibold whitespace-nowrap">Influencers Applied</th>
+              <th className="px-6 py-4 text-center font-semibold whitespace-nowrap">Actions</th>
             </tr>
           </thead>
 
@@ -250,11 +255,8 @@ function TableView({
                       className="inline-flex flex-col items-center gap-1 group"
                       title={c.productOrServiceName}
                     >
-                      <span className="font-semibold text-gray-900 group-hover:text-[#FF7236] group-hover:underline">
+                      <span className="font-bold text-gray-900 group-hover:text-[#FF7236] group-hover:underline">
                         {sliceText(c.productOrServiceName, 40)}
-                      </span>
-                      <span className="text-xs text-gray-500">
-                        View campaign details
                       </span>
                     </Link>
                   </div>
@@ -281,24 +283,16 @@ function TableView({
                 <td className="px-6 py-4 align-top text-center">
                   <Link
                     href={`/brand/created-campaign/applied-inf?id=${c.id}`}
-                    className="inline-flex items-center justify-center gap-2 rounded-full bg-gray-100 px-3 py-1 text-sm font-semibold text-gray-900 hover:bg-gray-200 transition"
+                    className="inline-flex items-center justify-center rounded-full bg-gray-100 px-4 py-1 text-sm font-bold text-gray-900 hover:bg-gray-200 transition"
                     title="View applied influencers"
                   >
-                    <HiOutlineUserGroup size={18} className="text-gray-700" />
-                    <span>{c.applicantCount ?? 0}</span>
-
-                    {(c.applicantCount ?? 0) > 0 && (
-                      <span className="ml-1 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 text-[11px] font-bold text-white bg-[#ef2f5b] rounded-full">
-                        {c.applicantCount}
-                      </span>
-                    )}
+                    {c.applicantCount ?? 0}
                   </Link>
                 </td>
 
                 {/* Actions */}
                 <td className="px-6 py-4 whitespace-nowrap align-top text-center">
                   <div className="flex items-center justify-center gap-2">
-                    {/* Edit Campaign */}
                     <Link
                       href={`/brand/add-edit-campaign?id=${c.id}`}
                       className="inline-flex items-center bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white hover:opacity-90 px-3 py-2 rounded-lg text-sm font-semibold"
@@ -307,7 +301,6 @@ function TableView({
                       Edit
                     </Link>
 
-                    {/* Invite Influencer */}
                     <Link
                       href={`/brand/browse-influencer?campaignId=${c.id}`}
                       className="inline-flex items-center bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white hover:opacity-90 px-3 py-2 rounded-lg text-sm font-semibold"
