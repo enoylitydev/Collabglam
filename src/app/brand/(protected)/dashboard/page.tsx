@@ -71,9 +71,9 @@ export default function BrandDashboardHome() {
       } catch (err: any) {
         setFatalError(
           err?.response?.data?.error ||
-            err?.response?.data?.message ||
-            err?.message ||
-            "Could not load dashboard"
+          err?.response?.data?.message ||
+          err?.message ||
+          "Could not load dashboard"
         );
       }
     })();
@@ -118,15 +118,6 @@ export default function BrandDashboardHome() {
         <main className="flex-1 px-6 py-8">
           {/* <BrandTourModal open={showTour} onClose={() => setShowTour(false)} /> */}
 
-          {/* Zero campaigns CTA */}
-          {totalCreatedCampaigns === 0 && (
-            <ZeroCampaignCTA
-              onClick={() => router.push("/brand/add-edit-campaign")}
-              accentFrom={accentFrom}
-              accentTo={accentTo}
-            />
-          )}
-
           {/* Welcome */}
           <div className="rounded-lg bg-white p-6 mb-8 mt-4 md:mt-6">
             <h2
@@ -151,7 +142,7 @@ export default function BrandDashboardHome() {
               label="Created Campaigns"
               value={totalCreatedCampaigns}
               accentFrom={accentFrom}
-              onClick={() => router.push("/brand/created-campaign")}
+            // onClick={() => router.push("/brand/created-campaign")}
             />
 
             <StatCard
@@ -175,15 +166,9 @@ export default function BrandDashboardHome() {
             <div className="lg:col-span-2 bg-white rounded-lg shadow p-6">
               <div className="flex items-start sm:items-center justify-between gap-4 mb-4 flex-col sm:flex-row">
                 <div>
-                  <h3 className="text-lg font-semibold text-gray-800">
+                  <h2 className="text-lg font-semibold text-gray-800">
                     Campaigns
-                  </h3>
-                  <p className="text-sm text-gray-500">
-                    Showing{" "}
-                    <span className="font-semibold">
-                      {campaignsMode === "all" ? "all campaigns" : "accepted only"}
-                    </span>
-                  </p>
+                  </h2>
                 </div>
 
                 <div className="relative w-full sm:max-w-xs">
@@ -198,8 +183,20 @@ export default function BrandDashboardHome() {
               </div>
 
               {!filteredCampaigns.length ? (
-                <div className="py-10 text-center text-gray-500">
-                  No campaigns found.
+                <div className="py-10 text-center text-gray-500 flex flex-wrap items-center justify-center gap-4">
+                  <button
+                    onClick={() => router.push("/brand/browse-influencers")}
+                    className="w-64 rounded-xl px-5 py-3 font-semibold shadow-sm transition border border-gray-300 bg-white text-gray-800 hover:bg-gray-50 cursor-pointer">
+                    Browse Influencers
+                  </button>
+
+                  <button
+                    onClick={() => router.push("/brand/add-edit-campaign")}
+                    className="w-64 rounded-xl px-4 py-3 text-white font-semibold shadow hover:shadow-md transition cursor-pointer"
+                    style={{ background: `linear-gradient(to right, ${accentFrom}, ${accentTo})` }}
+                  >
+                    Create New Campaign
+                  </button>
                 </div>
               ) : (
                 <div className="overflow-auto max-h-[440px]">
@@ -209,7 +206,6 @@ export default function BrandDashboardHome() {
                         <th className="py-3 pr-4">Campaign</th>
                         <th className="py-3 pr-4">Goal</th>
                         <th className="py-3 pr-4">Budget</th>
-                        <th className="py-3 pr-4">Status</th>
                         <th className="py-3 pr-4">Influencer</th>
                         <th className="py-3 text-right">Action</th>
                       </tr>
@@ -236,23 +232,10 @@ export default function BrandDashboardHome() {
 
                           <td className="py-3 pr-4">
                             <span
-                              className={`px-2 py-1 rounded-full text-xs font-semibold ${
-                                c.isActive === 1
-                                  ? "bg-green-100 text-green-700"
-                                  : "bg-gray-100 text-gray-600"
-                              }`}
-                            >
-                              {c.isActive === 1 ? "Active" : "Inactive"}
-                            </span>
-                          </td>
-
-                          <td className="py-3 pr-4">
-                            <span
-                              className={`px-2 py-1 rounded-full text-xs font-semibold ${
-                                c.hasAcceptedInfluencer
-                                  ? "bg-indigo-100 text-indigo-700"
-                                  : "bg-yellow-100 text-yellow-700"
-                              }`}
+                              className={`px-2 py-1 rounded-full text-xs font-semibold ${c.hasAcceptedInfluencer
+                                ? "bg-indigo-100 text-indigo-700"
+                                : "bg-yellow-100 text-yellow-700"
+                                }`}
                             >
                               {c.hasAcceptedInfluencer ? "Accepted" : "Not accepted"}
                             </span>
@@ -267,7 +250,7 @@ export default function BrandDashboardHome() {
                                 color: "transparent",
                               }}
                               onClick={() =>
-                                router.push(`/brand/add-edit-campaign?id=${c.campaignsId || c.id}`)
+                                router.push(`/brand/created-campaign/view-campaign?id=${c.campaignsId || c.id}`)
                               }
                             >
                               View
@@ -312,32 +295,10 @@ export default function BrandDashboardHome() {
   );
 }
 
-/* ---------------- Support components ---------------- */
-
-const ZeroCampaignCTA = ({ onClick }: any) => (
-  <div className="w-full flex items-center py-8 px-4 md:py-0 md:px-0">
-    <div
-      role="button"
-      tabIndex={0}
-      onClick={onClick}
-      onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && onClick()}
-      className="group flex flex-col sm:flex-row items-center justify-center text-center gap-4 w-full max-w-xl p-6 rounded-2xl shadow-md transform transition-all bg-gradient-to-r from-[#FF8C00] via-[#FF5E7E] to-[#D12E53] hover:scale-105 hover:shadow-lg cursor-pointer focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#FF8C00]"
-    >
-      <PlayCircle className="h-8 w-8 text-white group-hover:animate-pulse" />
-      <div className="space-y-1">
-        <p className="text-white font-bold text-lg">Create New Campaign</p>
-        <p className="text-white/90 text-sm">Find perfect Influencer for your brand</p>
-      </div>
-      <ArrowRight className="h-5 w-5 text-white transform transition-transform group-hover:translate-x-1" />
-    </div>
-  </div>
-);
-
 const StatCard = ({ icon, label, value, accentFrom, onClick }: any) => (
   <div
-    className={`bg-white rounded-lg shadow p-5 flex items-center space-x-4 transition-shadow ${
-      onClick ? "cursor-pointer hover:shadow-lg" : ""
-    }`}
+    className={`bg-white rounded-lg shadow p-5 flex items-center space-x-4 transition-shadow ${onClick ? "cursor-pointer hover:shadow-lg" : ""
+      }`}
     onClick={onClick}
   >
     <div className="p-3 rounded-full" style={{ backgroundColor: `${accentFrom}20` }}>
