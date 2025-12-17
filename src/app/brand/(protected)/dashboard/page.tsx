@@ -298,11 +298,11 @@ export default function BrandDashboardHome() {
                   <table className="w-full table-fixed text-left text-sm">
                     <thead className="sticky top-0 bg-white z-10">
                       <tr className="text-gray-500 border-b">
-                        <th className="py-3 pr-4 w-[34%]">Campaign</th>
-                        <th className="py-3 pr-4 w-[22%] hidden md:table-cell">Goal</th>
-                        <th className="py-3 pr-4 w-[14%]">Budget</th>
-                        <th className="py-3 pr-4 w-[14%]">Applied</th>
-                        <th className="py-3 pr-4 w-[10%] hidden lg:table-cell">Influencer</th>
+                        <th className="py-3 pr-2 w-[34%]">Campaign</th>
+                        <th className="py-3 pr-2 w-[22%] hidden md:table-cell">Goal</th>
+                        <th className="py-3 pr-2 w-[14%]">Budget</th>
+                        <th className="py-3 pr-2 w-[14%]">Applied</th>
+                        <th className="py-3 pr-2 w-[10%] hidden lg:table-cell">Influencer</th>
                         <th className="py-3 w-[6%] text-right">Action</th>
                       </tr>
                     </thead>
@@ -326,15 +326,15 @@ export default function BrandDashboardHome() {
                               </div>
                             </td>
 
-                            <td className="py-3 pr-4 text-gray-700 hidden md:table-cell">
+                            <td className="py-3 pr-2 text-gray-700 hidden md:table-cell">
                               <div className="truncate" title={c.goal || ""}>{c.goal || "—"}</div>
                             </td>
 
-                            <td className="py-3 pr-4 text-gray-700">
+                            <td className="py-3 pr-2 text-gray-700">
                               ${Number(c.budget || 0).toLocaleString()}
                             </td>
 
-                            <td className="py-3 pr-4">
+                            <td className="py-3 pr-2">
                               <button
                                 type="button"
                                 onClick={() => {
