@@ -149,3 +149,28 @@ html {
     /* letter-spacing: 0.030em; */
   }
 }
+
+/* SweetAlert2 toast: slide from right (top-end) */
+.emc-toast {
+  border-radius: 16px !important;
+  overflow: hidden;
+  will-change: transform, opacity;
+}
+
+.emc-toast-in {
+  animation: emcToastIn 220ms ease-out forwards !important;
+}
+
+.emc-toast-out {
+  animation: emcToastOut 180ms ease-in forwards !important;
+}
+
+@keyframes emcToastIn {
+  from { opacity: 0; transform: translateX(24px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes emcToastOut {
+  from { opacity: 1; transform: translateX(0); }
+  to   { opacity: 0; transform: translateX(24px); }
+}

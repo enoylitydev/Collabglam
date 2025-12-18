@@ -10,6 +10,7 @@ import {
 } from "react-icons/hi";
 import { format } from "date-fns";
 import { post } from "@/lib/api";
+import BrandTourModal from "@/components/common/BrandTourModal";
 
 /* ---------------- types ---------------- */
 
@@ -208,6 +209,8 @@ export default function BrandDashboardHome() {
     <div className="flex h-screen overflow-hidden">
       <div className="flex-1 flex flex-col overflow-y-auto overflow-x-hidden">
         <main className="flex-1 px-6 py-8">
+
+          {/* <BrandTourModal open={true} onClose={() => {}} startAt={0} /> */}
           {/* Welcome */}
           <div className="rounded-lg bg-white p-6 mb-8 mt-4 md:mt-6">
             <h2
@@ -254,6 +257,7 @@ export default function BrandDashboardHome() {
           {/* Main grid */}
           <div className="mt-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* Campaigns */}
+            {/* Campaigns */}
             <div className="lg:col-span-2 bg-white rounded-lg shadow p-6">
               <div className="flex items-start sm:items-center justify-between gap-4 mb-4 flex-col sm:flex-row">
                 <div>
@@ -294,114 +298,204 @@ export default function BrandDashboardHome() {
                   </div>
                 </div>
               ) : (
-                <div className="w-full">
-                  <table className="w-full table-fixed text-left text-sm">
-                    <thead className="sticky top-0 bg-white z-10">
-                      <tr className="text-gray-500 border-b">
-                        <th className="py-3 pr-2 w-[42%] md:w-[34%] lg:w-[34%] whitespace-nowrap">
-                          Campaign
-                        </th>
+                <>
+                  {/* ✅ Mobile cards (prevents overlap) */}
+                  <div className="md:hidden space-y-3">
+                    {filteredCampaigns.map((c) => {
+                      const id = c.campaignsId || c.id;
+                      const applied = Number(c.appliedInfluencersCount || 0);
 
-                        <th className="py-3 pr-2 w-[22%] hidden md:table-cell whitespace-nowrap">
-                          Goal
-                        </th>
-
-                        <th className="py-3 pr-2 w-[18%] md:w-[14%] whitespace-nowrap">
-                          Budget
-                        </th>
-
-                        <th className="py-3 pr-2 w-[28%] md:w-[20%] whitespace-nowrap">
-                          Applied
-                        </th>
-
-                        <th className="py-3 pr-2 w-[14%] hidden lg:table-cell whitespace-nowrap">
-                          Influencer
-                        </th>
-
-                        <th className="py-3 text-right w-[10%] md:w-[8%] lg:w-[10%] whitespace-nowrap">
-                          Action
-                        </th>
-                      </tr>
-                    </thead>
-
-                    <tbody>
-                      {filteredCampaigns.map((c) => {
-                        const id = c.campaignsId || c.id;
-                        const applied = Number(c.appliedInfluencersCount || 0);
-
-                        return (
-                          <tr key={c.id} className="border-b hover:bg-gray-50">
-                            <td className="py-3 pr-4 font-medium text-gray-800 align-top">
-                              <div className="min-w-0">
-                                <div className="truncate" title={c.productOrServiceName || ""}>
-                                  {truncate(c.productOrServiceName || "—", 40)}
-                                </div>
-
-                                {!!c.createdAt && (
-                                  <div className="text-xs text-gray-500">{fmtDate(c.createdAt)}</div>
-                                )}
+                      return (
+                        <div
+                          key={c.id}
+                          className="rounded-xl border border-gray-100 p-4 hover:bg-gray-50 transition"
+                        >
+                          {/* Top row */}
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <div className="font-semibold text-gray-900 truncate" title={c.productOrServiceName || ""}>
+                                {truncate(c.productOrServiceName || "—", 60)}
                               </div>
-                            </td>
+                              {!!c.createdAt && (
+                                <div className="text-xs text-gray-500 mt-1">{fmtDate(c.createdAt)}</div>
+                              )}
+                            </div>
 
-                            <td className="py-3 pr-2 text-gray-700 hidden md:table-cell">
-                              <div className="truncate" title={c.goal || ""}>{c.goal || "—"}</div>
-                            </td>
+                            <button
+                              className="text-sm font-semibold shrink-0"
+                              style={{
+                                background: `linear-gradient(to right, ${accentFrom}, ${accentTo})`,
+                                WebkitBackgroundClip: "text",
+                                color: "transparent",
+                              }}
+                              onClick={() => router.push(`/brand/created-campaign/view-campaign?id=${id}`)}
+                            >
+                              View
+                            </button>
+                          </div>
 
-                            <td className="py-3 pr-2 text-gray-700">
-                              ${Number(c.budget || 0).toLocaleString()}
-                            </td>
+                          {/* Goal */}
+                          <div className="mt-3 text-sm text-gray-700">
+                            <span className="text-gray-500">Goal: </span>
+                            <span className="font-medium">{c.goal || "—"}</span>
+                          </div>
 
-                            <td className="py-3 pr-2">
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  if (c.hasAcceptedInfluencer) {
-                                    router.push(`/brand/active-campaign/active-inf?id=${id}`);
-                                  } else {
-                                    router.push(`/brand/created-campaign/applied-inf?id=${id}`);
-                                  }
-                                }}
-                                className="group inline-flex items-center gap-2 rounded-full border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-800 hover:bg-gray-50 hover:border-gray-300 transition cursor-pointer"
-                                title={c.hasAcceptedInfluencer ? "Open active influencers" : "Open applied influencers"}
+                          {/* Budget + Applied */}
+                          <div className="mt-3 flex items-center justify-between gap-3">
+                            <div className="text-sm text-gray-700">
+                              <span className="text-gray-500">Budget: </span>
+                              <span className="font-semibold">${Number(c.budget || 0).toLocaleString()}</span>
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (c.hasAcceptedInfluencer) {
+                                  router.push(`/brand/active-campaign/active-inf?id=${id}`);
+                                } else {
+                                  router.push(`/brand/created-campaign/applied-inf?id=${id}`);
+                                }
+                              }}
+                              className="inline-flex items-center gap-2 rounded-full border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-800 hover:bg-gray-50 hover:border-gray-300 transition cursor-pointer"
+                              title={c.hasAcceptedInfluencer ? "Open active influencers" : "Open applied influencers"}
+                            >
+                              <span
+                                className={`inline-flex min-w-[28px] justify-center rounded-full px-2 py-0.5 text-xs font-bold ${applied > 0 ? "bg-gray-900 text-white" : "bg-gray-100 text-gray-500"
+                                  }`}
                               >
+                                {applied.toLocaleString()}
+                              </span>
+                              <span className="text-[11px] font-medium text-gray-500">
+                                {c.hasAcceptedInfluencer ? "Active" : "List"}
+                              </span>
+                            </button>
+                          </div>
+
+                          {/* Status */}
+                          <div className="mt-3">
+                            <span
+                              className={`px-2 py-1 rounded-full text-xs font-semibold ${c.hasAcceptedInfluencer ? "bg-indigo-100 text-indigo-700" : "bg-yellow-100 text-yellow-700"
+                                }`}
+                            >
+                              {c.hasAcceptedInfluencer ? "Accepted" : "Not accepted"}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* ✅ Desktop table (progressive columns) */}
+                  <div className="hidden md:block w-full overflow-x-auto">
+                    <table className="w-full table-auto text-left text-sm min-w-[620px] lg:min-w-[780px] xl:min-w-[900px]">
+                      <thead className="sticky top-0 bg-white z-10">
+                        <tr className="text-gray-500 border-b">
+                          <th className="py-3 pr-4 whitespace-nowrap">Campaign</th>
+
+                          {/* show from lg */}
+                          <th className="py-3 pr-4 whitespace-nowrap hidden lg:table-cell">Goal</th>
+
+                          <th className="py-3 pr-4 whitespace-nowrap">Budget</th>
+                          <th className="py-3 pr-4 whitespace-nowrap">Applied</th>
+
+                          {/* show from xl */}
+                          <th className="py-3 pr-4 whitespace-nowrap hidden xl:table-cell">Influencer</th>
+
+                          <th className="py-3 text-right whitespace-nowrap">Action</th>
+                        </tr>
+                      </thead>
+
+                      <tbody>
+                        {filteredCampaigns.map((c) => {
+                          const id = c.campaignsId || c.id;
+                          const applied = Number(c.appliedInfluencersCount || 0);
+
+                          return (
+                            <tr key={c.id} className="border-b hover:bg-gray-50">
+                              {/* Campaign */}
+                              <td className="py-3 pr-4 font-medium text-gray-800 align-top">
+                                <div className="min-w-0">
+                                  <div className="truncate" title={c.productOrServiceName || ""}>
+                                    {truncate(c.productOrServiceName || "—", 40)}
+                                  </div>
+                                  {!!c.createdAt && (
+                                    <div className="text-xs text-gray-500">{fmtDate(c.createdAt)}</div>
+                                  )}
+                                </div>
+                              </td>
+
+                              {/* Goal (lg+) */}
+                              <td className="py-3 pr-4 text-gray-700 hidden lg:table-cell">
+                                <div className="max-w-[280px] xl:max-w-[360px] truncate" title={c.goal || ""}>
+                                  {c.goal || "—"}
+                                </div>
+                              </td>
+
+                              {/* Budget */}
+                              <td className="py-3 pr-4 text-gray-700 whitespace-nowrap">
+                                ${Number(c.budget || 0).toLocaleString()}
+                              </td>
+
+                              {/* Applied */}
+                              <td className="py-3 pr-4">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (c.hasAcceptedInfluencer) {
+                                      router.push(`/brand/active-campaign/active-inf?id=${id}`);
+                                    } else {
+                                      router.push(`/brand/created-campaign/applied-inf?id=${id}`);
+                                    }
+                                  }}
+                                  className="group inline-flex items-center gap-2 rounded-full border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-800 hover:bg-gray-50 hover:border-gray-300 transition cursor-pointer"
+                                  title={c.hasAcceptedInfluencer ? "Open active influencers" : "Open applied influencers"}
+                                >
+                                  <span
+                                    className={`inline-flex min-w-[28px] justify-center rounded-full px-2 py-0.5 text-xs font-bold ${applied > 0 ? "bg-gray-900 text-white" : "bg-gray-100 text-gray-500"
+                                      }`}
+                                  >
+                                    {applied.toLocaleString()}
+                                  </span>
+
+                                  <span className="text-[11px] font-medium text-gray-400 group-hover:text-gray-500">
+                                    {c.hasAcceptedInfluencer ? "→ Active" : "→ List"}
+                                  </span>
+                                </button>
+                              </td>
+
+                              {/* Influencer (xl+) */}
+                              <td className="py-3 pr-4 hidden xl:table-cell">
                                 <span
-                                  className={`inline-flex min-w-[28px] justify-center rounded-full px-2 py-0.5 text-xs font-bold ${applied > 0 ? "bg-gray-900 text-white" : "bg-gray-100 text-gray-500"
+                                  className={`px-2 py-1 rounded-full text-xs font-semibold ${c.hasAcceptedInfluencer
+                                      ? "bg-indigo-100 text-indigo-700"
+                                      : "bg-yellow-100 text-yellow-700"
                                     }`}
                                 >
-                                  {applied.toLocaleString()}
+                                  {c.hasAcceptedInfluencer ? "Accepted" : "Not accepted"}
                                 </span>
+                              </td>
 
-                                <span className="text-[11px] font-medium text-gray-400 group-hover:text-gray-500">
-                                  {c.hasAcceptedInfluencer ? "→ Active" : "→ List"}
-                                </span>
-                              </button>
-                            </td>
-                            <td className="py-3 pr-4 hidden lg:table-cell">
-                              <span className={`px-2 py-1 rounded-full text-xs font-semibold ${c.hasAcceptedInfluencer ? "bg-indigo-100 text-indigo-700" : "bg-yellow-100 text-yellow-700"
-                                }`}>
-                                {c.hasAcceptedInfluencer ? "Accepted" : "Not accepted"}
-                              </span>
-                            </td>
-
-                            <td className="py-3 text-right whitespace-nowrap">
-                              <button
-                                className="text-sm font-semibold"
-                                style={{
-                                  background: `linear-gradient(to right, ${accentFrom}, ${accentTo})`,
-                                  WebkitBackgroundClip: "text",
-                                  color: "transparent",
-                                }}
-                                onClick={() => router.push(`/brand/created-campaign/view-campaign?id=${id}`)}
-                              >
-                                View
-                              </button>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
+                              {/* Action */}
+                              <td className="py-3 text-right whitespace-nowrap">
+                                <button
+                                  className="text-sm font-semibold"
+                                  style={{
+                                    background: `linear-gradient(to right, ${accentFrom}, ${accentTo})`,
+                                    WebkitBackgroundClip: "text",
+                                    color: "transparent",
+                                  }}
+                                  onClick={() => router.push(`/brand/created-campaign/view-campaign?id=${id}`)}
+                                >
+                                  View
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
               )}
             </div>
 

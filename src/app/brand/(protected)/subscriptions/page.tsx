@@ -2,6 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import { get, post } from "@/lib/api";
+import Link from "next/link";
 import {
   CheckCircle,
   XCircle,
@@ -17,7 +18,6 @@ import {
   Plus,
   Info,
 } from "lucide-react";
-import Link from "next/link";
 
 /** Types */
 
@@ -63,6 +63,8 @@ interface Plan {
 }
 
 interface BrandData {
+  name: string;
+  email: string;
   subscription: { planName: string; expiresAt: string | null } | null;
 }
 
@@ -76,14 +78,9 @@ declare global {
 
 /** Helpers */
 
-const capitalize = (s: string) =>
-  s ? s.charAt(0).toUpperCase() + s.slice(1) : "";
-
-const nice = (s: string) =>
-  s.replace(/_/g, " ").replace(/^\w/, (c) => c.toUpperCase());
-
-const currencySymbol = (c?: string) =>
-  c === "INR" ? "₹" : c === "EUR" ? "€" : "$";
+const capitalize = (s: string) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : "");
+const nice = (s: string) => s.replace(/_/g, " ").replace(/^\w/, (c) => c.toUpperCase());
+const currencySymbol = (c?: string) => (c === "INR" ? "₹" : c === "EUR" ? "€" : "$");
 
 const LABELS: Record<string, string> = {
   // Brand (new keys)
@@ -185,17 +182,14 @@ const SUPPORT_PRETTY: Record<string, string> = {
 };
 
 const isUnlimited = (k: string, v: FeatureValue) =>
-  v === Infinity ||
-  (typeof v === "number" && v === 0 && ZERO_IS_UNLIMITED.has(k));
+  v === Infinity || (typeof v === "number" && v === 0 && ZERO_IS_UNLIMITED.has(k));
 
 const formatValue = (key: string, v: FeatureValue): string => {
   if (isUnlimited(key, v)) return "Unlimited";
 
   if (key === "support_channels" && Array.isArray(v)) {
     return v
-      .map(
-        (s) => SUPPORT_PRETTY[String(s).toLowerCase()] ?? String(s)
-      )
+      .map((s) => SUPPORT_PRETTY[String(s).toLowerCase()] ?? String(s))
       .join(" + ");
   }
 
@@ -216,15 +210,14 @@ const isPositive = (key: string, v: FeatureValue) => {
   return Boolean(v);
 };
 
-const isEnterpriseBrand = (p: Plan) =>
-  p.role === "Brand" && p.name?.toLowerCase() === "enterprise";
-
-const computedLabel = (plan: Plan) =>
-  plan.label ||
-  (plan.name === "growth" ? "Popular" : undefined);
+const isEnterpriseBrand = (p: Plan) => p.role === "Brand" && p.name?.toLowerCase() === "enterprise";
+const computedLabel = (plan: Plan) => plan.label || (plan.name === "growth" ? "Popular" : undefined);
 
 const loadScript = (src: string) =>
   new Promise<boolean>((res) => {
+    const existing = document.querySelector(`script[src="${src}"]`);
+    if (existing) return res(true);
+
     const s = document.createElement("script");
     s.src = src;
     s.onload = () => res(true);
@@ -238,49 +231,48 @@ export default function BrandSubscriptionPage() {
   const [plans, setPlans] = useState<Plan[]>([]);
   const [currentPlan, setCurrentPlan] = useState<string | null>(null);
   const [expiresAt, setExpiresAt] = useState<string | null>(null);
-
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState<string | null>(null);
-  const [paymentStatus, setPaymentStatus] =
-    useState<PaymentStatus>("idle");
+  const [paymentStatus, setPaymentStatus] = useState<PaymentStatus>("idle");
   const [paymentMessage, setPaymentMessage] = useState<string>("");
 
   // downgrade modal
   const [showDowngradeModal, setShowDowngradeModal] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState<Plan | null>(null);
   const [confirmText, setConfirmText] = useState("");
-  const [submittingDowngrade, setSubmittingDowngrade] =
-    useState(false);
+  const [submittingDowngrade, setSubmittingDowngrade] = useState(false);
+
+  // contact-us modal
+  const [showContactModal, setShowContactModal] = useState(false);
+  const [contactSubmitting, setContactSubmitting] = useState(false);
+  const [contactToast, setContactToast] = useState<{ type: "idle" | "success" | "failed"; message: string }>({
+    type: "idle",
+    message: "",
+  });
+  const [contactForm, setContactForm] = useState({
+    name: "",
+    email: "",
+    subject: "",
+    message: "",
+  });
 
   useEffect(() => {
     (async () => {
       try {
         // Plans for Brand, sorted like pricing page
-        const { plans: fetched } = await post<{
-          message: string;
-          plans: Plan[];
-        }>("/subscription/list", { role: "Brand" });
+        const { plans: fetched } = await post<{ message: string; plans: Plan[] }>("/subscription/list", {
+          role: "Brand",
+        });
 
-        const sorted =
-          (fetched || [])
-            .slice()
-            .sort(
-              (a, b) =>
-                (a.sortOrder ?? 999) - (b.sortOrder ?? 999)
-            ) ?? [];
+        const sorted = (fetched || []).slice().sort((a, b) => (a.sortOrder ?? 999) - (b.sortOrder ?? 999));
 
         const ORDER = ORDER_BY_ROLE_BRAND;
         const withOrdered = sorted.map((p) => {
-          const known = ORDER.map((k) =>
-            p.features.find((f) => f.key === k)
-          ).filter((f): f is Feature => Boolean(f));
-          const remaining = p.features.filter(
-            (f) => !ORDER.includes(f.key)
+          const known = ORDER.map((k) => p.features.find((f) => f.key === k)).filter(
+            (f): f is Feature => Boolean(f)
           );
-          return {
-            ...p,
-            _ordered: [...known, ...remaining],
-          };
+          const remaining = p.features.filter((f) => !ORDER.includes(f.key));
+          return { ...p, _ordered: [...known, ...remaining] };
         });
 
         setPlans(withOrdered);
@@ -288,22 +280,26 @@ export default function BrandSubscriptionPage() {
         // Brand subscription
         const id = localStorage.getItem("brandId");
         if (id) {
-          const { subscription } = await get<BrandData>(
-            `/brand?id=${id}`
-          );
-          setCurrentPlan(subscription?.planName || null);
-          setExpiresAt(subscription?.expiresAt ?? null);
+          const brand = await get<BrandData>(`/brand?id=${id}`);
 
-          if (subscription?.planName) {
-            localStorage.setItem("brandPlanName", subscription.planName);
+          setCurrentPlan(brand.subscription?.planName || null);
+          setExpiresAt(brand.subscription?.expiresAt ?? null);
+
+          // ✅ Prefill Contact modal fields
+          setContactForm((p) => ({
+            ...p,
+            name: brand.name || "",
+            email: brand.email || "", // or: brand.brandAliasEmail || brand.email || ""
+          }));
+
+          if (brand.subscription?.planName) {
+            localStorage.setItem("brandPlanName", brand.subscription.planName);
           }
         }
       } catch (e) {
         console.error(e);
         setPaymentStatus("failed");
-        setPaymentMessage(
-          "Unable to load subscription info. Please try again."
-        );
+        setPaymentMessage("Unable to load subscription info. Please try again.");
       } finally {
         setLoading(false);
       }
@@ -311,53 +307,31 @@ export default function BrandSubscriptionPage() {
   }, []);
 
   const currentPlanObj = useMemo(
-    () =>
-      plans.find(
-        (p) =>
-          p.name.toLowerCase() === currentPlan?.toLowerCase()
-      ),
+    () => plans.find((p) => p.name.toLowerCase() === currentPlan?.toLowerCase()),
     [plans, currentPlan]
   );
 
   // Loss preview (for downgrade modal)
   const featureLoss = useMemo(() => {
-    if (!currentPlanObj || !selectedPlan)
-      return [] as { key: string; from: any; to: any }[];
+    if (!currentPlanObj || !selectedPlan) return [] as { key: string; from: any; to: any }[];
 
-    const mapNew = new Map(
-      selectedPlan.features.map((f) => [f.key, f.value])
-    );
+    const mapNew = new Map(selectedPlan.features.map((f) => [f.key, f.value]));
     const union = Array.from(
-      new Set([
-        ...currentPlanObj.features.map((f) => f.key),
-        ...selectedPlan.features.map((f) => f.key),
-      ])
+      new Set([...currentPlanObj.features.map((f) => f.key), ...selectedPlan.features.map((f) => f.key)])
     );
 
     return union
       .map((k) => {
-        const from =
-          currentPlanObj.features.find((f) => f.key === k)?.value;
+        const from = currentPlanObj.features.find((f) => f.key === k)?.value;
         const to = mapNew.get(k);
+
         const loss = (() => {
-          if (isUnlimited(k, from) && !isUnlimited(k, to))
-            return true;
-          if (BOOLEAN_KEYS.has(k))
-            return Boolean(from) && !Boolean(to);
-          if (
-            typeof from === "number" &&
-            typeof to === "number"
-          )
-            return to < from;
-          if (
-            typeof from === "boolean" &&
-            typeof to === "boolean"
-          )
-            return from && !to;
-          if (Array.isArray(from) && Array.isArray(to))
-            return to.length < from.length;
-          if ((from == null) !== (to == null))
-            return from != null && to == null;
+          if (isUnlimited(k, from) && !isUnlimited(k, to)) return true;
+          if (BOOLEAN_KEYS.has(k)) return Boolean(from) && !Boolean(to);
+          if (typeof from === "number" && typeof to === "number") return to < from;
+          if (typeof from === "boolean" && typeof to === "boolean") return from && !to;
+          if (Array.isArray(from) && Array.isArray(to)) return to.length < from.length;
+          if ((from == null) !== (to == null)) return from != null && to == null;
           return false;
         })();
 
@@ -366,12 +340,53 @@ export default function BrandSubscriptionPage() {
       .filter(Boolean) as { key: string; from: any; to: any }[];
   }, [currentPlanObj, selectedPlan]);
 
-  const handleSelect = async (plan: Plan) => {
-    if (processing || plan.name.toLowerCase() === currentPlan?.toLowerCase())
-      return;
+  const handleSendContact = async (e?: React.FormEvent) => {
+    e?.preventDefault();
 
+    const name = contactForm.name.trim();
+    const email = contactForm.email.trim();
+    const subject = contactForm.subject.trim();
+    const message = contactForm.message.trim();
+
+    if (!name || !email || !subject || !message) {
+      setContactToast({ type: "failed", message: "All fields are required." });
+      return;
+    }
+
+    setContactSubmitting(true);
+    setContactToast({ type: "idle", message: "" });
+
+    try {
+      // ✅ Change this URL if your route differs
+      await post("/contact/send", { name, email, subject, message });
+
+      setContactToast({ type: "success", message: "Message sent successfully!" });
+      setShowContactModal(false);
+      setContactForm({ name: "", email: "", subject: "", message: "" });
+    } catch (err) {
+      console.error(err);
+      setContactToast({ type: "failed", message: "Could not send message. Please try again." });
+    } finally {
+      setContactSubmitting(false);
+    }
+  };
+
+  const openContactModal = () => {
+    setContactToast({ type: "idle", message: "" });
+    setContactForm((p) => ({
+      ...p,
+      subject: p.subject || "Enterprise plan enquiry",
+      message: p.message || "Hi CollabGlam team, we want a custom plan for our brand. Please share details.",
+    }));
+    setShowContactModal(true);
+  };
+
+  const handleSelect = async (plan: Plan) => {
+    if (processing || plan.name.toLowerCase() === currentPlan?.toLowerCase()) return;
+
+    // ✅ Enterprise Contact Us opens modal
     if (isEnterpriseBrand(plan) || plan.name.toLowerCase() === "enterprise") {
-      window.location.href = "/contact-us";
+      openContactModal();
       return;
     }
 
@@ -388,9 +403,7 @@ export default function BrandSubscriptionPage() {
     setPaymentStatus("processing");
     setPaymentMessage("");
 
-    const ok = await loadScript(
-      "https://checkout.razorpay.com/v1/checkout.js"
-    );
+    const ok = await loadScript("https://checkout.razorpay.com/v1/checkout.js");
     if (!ok) {
       setPaymentStatus("failed");
       setPaymentMessage("Payment SDK failed to load.");
@@ -418,11 +431,7 @@ export default function BrandSubscriptionPage() {
         order_id,
         handler: async (response: any) => {
           try {
-            await post("/payment/verify", {
-              ...response,
-              planId: plan.planId,
-              brandId,
-            });
+            await post("/payment/verify", { ...response, planId: plan.planId, brandId });
 
             await post("/subscription/assign", {
               userType: "Brand",
@@ -431,11 +440,7 @@ export default function BrandSubscriptionPage() {
             });
 
             setCurrentPlan(plan.name);
-            setExpiresAt(
-              new Date(
-                Date.now() + 30 * 24 * 60 * 60 * 1000
-              ).toISOString()
-            );
+            setExpiresAt(new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString());
 
             localStorage.setItem("brandPlanName", plan.name);
             localStorage.setItem("brandPlanId", plan.planId);
@@ -445,9 +450,7 @@ export default function BrandSubscriptionPage() {
             window.location.reload();
           } catch {
             setPaymentStatus("failed");
-            setPaymentMessage(
-              "Payment verified but failed to assign subscription. Please contact support."
-            );
+            setPaymentMessage("Payment verified but failed to assign subscription. Please contact support.");
           }
         },
         prefill: { name: "", email: "", contact: "" },
@@ -456,18 +459,14 @@ export default function BrandSubscriptionPage() {
 
       rzp.on("payment.failed", (resp: any) => {
         setPaymentStatus("failed");
-        setPaymentMessage(
-          `Payment Failed: ${resp.error.description}`
-        );
+        setPaymentMessage(`Payment Failed: ${resp.error.description}`);
       });
 
       rzp.open();
     } catch (e) {
       console.error(e);
       setPaymentStatus("failed");
-      setPaymentMessage(
-        "Failed to initiate payment. Try again later."
-      );
+      setPaymentMessage("Failed to initiate payment. Try again later.");
     } finally {
       setProcessing(null);
     }
@@ -496,18 +495,12 @@ export default function BrandSubscriptionPage() {
       localStorage.setItem("brandPlanId", selectedPlan.planId);
 
       setPaymentStatus("success");
-      setPaymentMessage(
-        `You've moved to the ${capitalize(
-          selectedPlan.name
-        )} plan.`
-      );
+      setPaymentMessage(`You've moved to the ${capitalize(selectedPlan.name)} plan.`);
       setShowDowngradeModal(false);
       setConfirmText("");
     } catch {
       setPaymentStatus("failed");
-      setPaymentMessage(
-        "Could not change your plan right now. Please try again."
-      );
+      setPaymentMessage("Could not change your plan right now. Please try again.");
     } finally {
       setSubmittingDowngrade(false);
     }
@@ -517,60 +510,44 @@ export default function BrandSubscriptionPage() {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center px-4 bg-gray-50">
         <Loader2 className="w-16 h-16 text-orange-500 animate-spin" />
-        <p className="mt-4 text-gray-700">
-          Loading your subscription…
-        </p>
+        <p className="mt-4 text-gray-700">Loading your subscription…</p>
       </div>
     );
   }
 
   return (
-    <section
-      id="brand-subscription"
-      className="relative py-20 font-lexend min-h-screen"
-    >
+    <section id="brand-subscription" className="relative py-20 font-lexend min-h-screen">
       <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        {/* Header - aligned with Brand Pricing page */}
+        {/* Header */}
         <div className="text-center mb-10">
           <div className="flex items-center justify-center gap-2 mb-3">
             <Crown className="w-8 h-8 text-orange-500" />
-            <h2 className="text-4xl lg:text-5xl font-bold text-gray-900">
-              Brand Subscription
-            </h2>
+            <h2 className="text-4xl lg:text-5xl font-bold text-gray-900">Brand Subscription</h2>
           </div>
-          <p className="text-lg text-gray-600 mt-3">
-            Simple, transparent pricing. Start free, upgrade as you
-            grow.
-          </p>
+          <p className="text-lg text-gray-600 mt-3">Simple, transparent pricing. Start free, upgrade as you grow.</p>
         </div>
 
-        {/* Current plan pill */}
+        {/* Current plan */}
         {currentPlan && (
           <div className="max-w-2xl mx-auto mb-8">
             <div className="bg-white rounded-2xl border border-gray-200 shadow p-6 text-center">
               <div className="flex items-center justify-center gap-2 mb-2">
                 <CheckCircle className="w-5 h-5 text-emerald-600" />
-                <span className="text-sm font-medium text-gray-600 uppercase tracking-wide">
-                  Current Plan
-                </span>
+                <span className="text-sm font-medium text-gray-600 uppercase tracking-wide">Current Plan</span>
               </div>
               <h3 className="text-2xl font-bold text-gray-900">
-                {currentPlanObj?.displayName ||
-                  capitalize(currentPlan)}
+                {currentPlanObj?.displayName || capitalize(currentPlan)}
               </h3>
               <p className="text-gray-600 mt-1">
                 {expiresAt ? (
                   <>
                     Renews on{" "}
                     <span className="font-semibold">
-                      {new Date(expiresAt).toLocaleDateString(
-                        "en-US",
-                        {
-                          year: "numeric",
-                          month: "long",
-                          day: "numeric",
-                        }
-                      )}
+                      {new Date(expiresAt).toLocaleDateString("en-US", {
+                        year: "numeric",
+                        month: "long",
+                        day: "numeric",
+                      })}
                     </span>
                   </>
                 ) : (
@@ -581,17 +558,16 @@ export default function BrandSubscriptionPage() {
           </div>
         )}
 
-        {/* Status toast */}
+        {/* Payment status toast */}
         {paymentStatus !== "idle" && (
           <div className="max-w-md mx-auto mb-8">
             <div
-              className={`p-4 rounded-2xl border flex items-center justify-center gap-3 ${
-                paymentStatus === "success"
-                  ? "bg-emerald-50 border-emerald-200 text-emerald-800"
-                  : paymentStatus === "processing"
+              className={`p-4 rounded-2xl border flex items-center justify-center gap-3 ${paymentStatus === "success"
+                ? "bg-emerald-50 border-emerald-200 text-emerald-800"
+                : paymentStatus === "processing"
                   ? "bg-orange-50 border-orange-200 text-orange-800"
                   : "bg-red-50 border-red-200 text-red-800"
-              }`}
+                }`}
             >
               {paymentStatus === "success" ? (
                 <CheckCircle className="w-6 h-6" />
@@ -601,45 +577,31 @@ export default function BrandSubscriptionPage() {
                 <XCircle className="w-6 h-6" />
               )}
               <p className="font-medium">
-                {paymentMessage ||
-                  (paymentStatus === "processing"
-                    ? "Working on it…"
-                    : null)}
+                {paymentMessage || (paymentStatus === "processing" ? "Working on it…" : null)}
               </p>
             </div>
           </div>
         )}
 
-        {/* Grid — same layout as Brand Pricing page */}
+        {/* Plans grid */}
         <div className="grid gap-8 grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {plans.map((plan) => {
             const id = plan._id || plan.planId;
             const isEnterprise = isEnterpriseBrand(plan);
             const badge = computedLabel(plan);
-            const isFree =
-              plan.monthlyCost <= 0 && !plan.isCustomPricing;
+            const isFree = plan.monthlyCost <= 0 && !plan.isCustomPricing;
             const sym = currencySymbol(plan.currency);
 
-            const isActive =
-              !!currentPlan &&
-              plan.name.toLowerCase() ===
-                currentPlan.toLowerCase();
+            const isActive = !!currentPlan && plan.name.toLowerCase() === currentPlan.toLowerCase();
             const isProcessing = processing === plan.name;
 
-            const badgeClasses =
-              "bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white";
-
+            const badgeClasses = "bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white";
             const baseButtonClasses =
               "mt-4 w-full py-3 text-sm font-semibold rounded-md shadow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-orange-400";
 
-            const borderClasses = badge
-              ? "border-orange-300"
-              : "border-gray-200";
-            const activeClasses = isActive
-              ? "border-orange-400 ring-2 ring-orange-300"
-              : "";
+            const borderClasses = badge ? "border-orange-300" : "border-gray-200";
+            const activeClasses = isActive ? "border-orange-400 ring-2 ring-orange-300" : "";
 
-            // Enterprise layout: full-width, split design
             if (isEnterprise) {
               return (
                 <div
@@ -651,13 +613,11 @@ export default function BrandSubscriptionPage() {
                       <span
                         className={`inline-flex items-center gap-1 text-xs font-bold py-1.5 px-3 rounded-full shadow ${badgeClasses}`}
                       >
-                        <Star className="w-3 h-3 fill-current" />{" "}
-                        {badge}
+                        <Star className="w-3 h-3 fill-current" /> {badge}
                       </span>
                     </div>
                   )}
 
-                  {/* Left: title + description + CTA */}
                   <div className="w-full lg:w-5/12 px-8 py-10 flex flex-col justify-center gap-4">
                     <h3 className="text-3xl lg:text-4xl font-bold text-gray-900">
                       {plan.displayName || nice(plan.name)}
@@ -671,11 +631,8 @@ export default function BrandSubscriptionPage() {
                       <button
                         onClick={() => handleSelect(plan)}
                         disabled={isActive || isProcessing}
-                        className={`inline-flex items-center justify-center px-6 py-3 text-sm font-semibold rounded-md shadow bg-gradient-to-r from-[#FFA135] to-[#FF7236] hover:from-[#FF8C1A] hover:to-[#FF5C1E] text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-orange-400 ${
-                          isActive || isProcessing
-                            ? "opacity-70 cursor-not-allowed"
-                            : ""
-                        }`}
+                        className={`inline-flex items-center justify-center px-6 py-3 text-sm font-semibold rounded-md shadow bg-gradient-to-r from-[#FFA135] to-[#FF7236] hover:from-[#FF8C1A] hover:to-[#FF5C1E] text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-orange-400 ${isActive || isProcessing ? "opacity-70 cursor-not-allowed" : ""
+                          }`}
                       >
                         {isActive ? (
                           <>
@@ -697,45 +654,30 @@ export default function BrandSubscriptionPage() {
                     </div>
                   </div>
 
-                  {/* Right: features in 2 columns */}
                   <div className="w-full lg:w-7/12 px-8 py-10 border-t lg:border-t-0 lg:border-l border-gray-200">
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-10 gap-y-3">
                       {plan._ordered
-                        ?.filter(({ key, value }) =>
-                          isPositive(key, value)
-                        )
+                        ?.filter(({ key, value }) => isPositive(key, value))
                         .map(({ key, value, note }) => {
                           const display = formatValue(key, value);
                           const label = LABELS[key] || nice(key);
 
                           return (
-                            <div
-                              key={key}
-                              className="flex items-start gap-2 text-sm text-gray-800"
-                            >
+                            <div key={key} className="flex items-start gap-2 text-sm text-gray-800">
                               <Check className="mt-0.5 h-4 w-4 text-emerald-500" />
                               <span className="leading-6">
                                 {label}
-                                {display &&
-                                display !== "Yes" &&
-                                display !== "Unlimited" &&
-                                display !== "—" ? (
+                                {display && display !== "Yes" && display !== "Unlimited" && display !== "—" ? (
                                   <>
-                                    :{" "}
-                                    <strong>{display}</strong>
+                                    : <strong>{display}</strong>
                                   </>
                                 ) : display === "Unlimited" ? (
                                   <>
                                     {" "}
-                                    —{" "}
-                                    <strong>Unlimited</strong>
+                                    — <strong>Unlimited</strong>
                                   </>
                                 ) : null}
-                                {note && (
-                                  <span className="ml-1 text-[11px] text-gray-500">
-                                    ({note})
-                                  </span>
-                                )}
+                                {note && <span className="ml-1 text-[11px] text-gray-500">({note})</span>}
                               </span>
                             </div>
                           );
@@ -746,29 +688,23 @@ export default function BrandSubscriptionPage() {
               );
             }
 
-            // Default layout (other Brand plans)
             return (
               <div
                 key={id}
                 className={`group relative flex flex-col h-full rounded-3xl bg-white shadow-sm transition-all hover:shadow-xl border ${borderClasses} ${activeClasses}`}
               >
-                {/* Badge */}
                 {badge && (
                   <div className="absolute -top-3 left-1/2 -translate-x-1/2">
                     <span
                       className={`inline-flex items-center gap-1 text-xs font-bold py-1.5 px-3 rounded-full shadow ${badgeClasses}`}
                     >
-                      <Star className="w-3 h-3 fill-current" />{" "}
-                      {badge}
+                      <Star className="w-3 h-3 fill-current" /> {badge}
                     </span>
                   </div>
                 )}
 
-                {/* Header */}
                 <div className="px-8 pt-8 pb-6 min-h-[170px] flex flex-col">
-                  <h3 className="text-2xl font-bold text-gray-900">
-                    {plan.displayName || nice(plan.name)}
-                  </h3>
+                  <h3 className="text-2xl font-bold text-gray-900">{plan.displayName || nice(plan.name)}</h3>
                   <p className="text-gray-600 mt-2">
                     {plan.overview ||
                       (isFree
@@ -777,35 +713,28 @@ export default function BrandSubscriptionPage() {
                   </p>
                 </div>
 
-                {/* Divider */}
                 <div className="border-t border-gray-200" />
 
-                {/* Price + CTA */}
                 <div className="px-8 py-6 text-center min-h-[140px] flex flex-col items-center justify-center">
                   {isFree ? (
-                    <span className="text-4xl font-extrabold tracking-tight text-gray-900">
-                      Free
-                    </span>
+                    <span className="text-4xl font-extrabold tracking-tight text-gray-900">Free</span>
                   ) : (
                     <div className="flex items-baseline justify-center gap-2">
                       <span className="text-4xl font-extrabold tracking-tight text-gray-900">
                         {sym}
                         {plan.monthlyCost.toLocaleString()}
                       </span>
-                      <span className="text-sm text-gray-500">
-                        /month
-                      </span>
+                      <span className="text-sm text-gray-500">/month</span>
                     </div>
                   )}
 
                   <button
                     onClick={() => handleSelect(plan)}
                     disabled={isActive || isProcessing}
-                    className={`${baseButtonClasses} ${
-                      isActive || isProcessing
-                        ? "bg-gray-100 text-gray-500 cursor-not-allowed border border-gray-200"
-                        : "bg-gradient-to-r from-[#FFA135] to-[#FF7236] hover:from-[#FF8C1A] hover:to-[#FF5C1E] text-white"
-                    }`}
+                    className={`${baseButtonClasses} ${isActive || isProcessing
+                      ? "bg-gray-100 text-gray-500 cursor-not-allowed border border-gray-200"
+                      : "bg-gradient-to-r from-[#FFA135] to-[#FF7236] hover:from-[#FF8C1A] hover:to-[#FF5C1E] text-white"
+                      }`}
                   >
                     {isActive ? (
                       <span className="inline-flex items-center justify-center gap-2">
@@ -826,89 +755,53 @@ export default function BrandSubscriptionPage() {
                   </button>
                 </div>
 
-                {/* Features list */}
                 <ul className="px-8 pb-8 space-y-3 mb-auto">
-                  {plan._ordered?.map(
-                    ({ key, value, note }) => {
-                      const display = formatValue(key, value);
-                      const ok = isPositive(key, value);
-                      const label = LABELS[key] || nice(key);
+                  {plan._ordered?.map(({ key, value, note }) => {
+                    const display = formatValue(key, value);
+                    const ok = isPositive(key, value);
+                    const label = LABELS[key] || nice(key);
 
-                      return (
-                        <li
-                          key={key}
-                          className={`flex items-start gap-3 ${
-                            ok
-                              ? "text-gray-800"
-                              : "text-gray-400"
-                          }`}
-                        >
-                          <span
-                            className={`mt-0.5 inline-flex items-center justify-center rounded-sm ring-1 h-5 w-5 flex-shrink-0 ${
-                              ok
-                                ? "bg-green-50 text-green-600 ring-green-200"
-                                : "bg-gray-100 text-gray-400 ring-gray-200"
+                    return (
+                      <li key={key} className={`flex items-start gap-3 ${ok ? "text-gray-800" : "text-gray-400"}`}>
+                        <span
+                          className={`mt-0.5 inline-flex items-center justify-center rounded-sm ring-1 h-5 w-5 flex-shrink-0 ${ok ? "bg-green-50 text-green-600 ring-green-200" : "bg-gray-100 text-gray-400 ring-gray-200"
                             }`}
-                          >
-                            {ok ? (
-                              <Check className="h-3.5 w-3.5" />
-                            ) : (
-                              <X className="h-3.5 w-3.5" />
-                            )}
-                          </span>
-                          <span className="text-[15px] leading-6">
-                            {label}
-                            {display &&
-                            display !== "Yes" &&
-                            display !== "Unlimited" &&
-                            display !== "—" ? (
-                              <>
-                                :{" "}
-                                <strong>{display}</strong>
-                              </>
-                            ) : display === "Unlimited" ? (
-                              <>
-                                {" "}
-                                —{" "}
-                                <strong>Unlimited</strong>
-                              </>
-                            ) : null}
-                            {note && (
-                              <span className="ml-1 text-xs text-gray-500">
-                                ({note})
-                              </span>
-                            )}
-                          </span>
-                        </li>
-                      );
-                    }
-                  )}
+                        >
+                          {ok ? <Check className="h-3.5 w-3.5" /> : <X className="h-3.5 w-3.5" />}
+                        </span>
+                        <span className="text-[15px] leading-6">
+                          {label}
+                          {display && display !== "Yes" && display !== "Unlimited" && display !== "—" ? (
+                            <>
+                              : <strong>{display}</strong>
+                            </>
+                          ) : display === "Unlimited" ? (
+                            <>
+                              {" "}
+                              — <strong>Unlimited</strong>
+                            </>
+                          ) : null}
+                          {note && <span className="ml-1 text-xs text-gray-500">({note})</span>}
+                        </span>
+                      </li>
+                    );
+                  })}
 
-                  {/* Add-ons (same style as previous subscription page) */}
                   {plan.addons && plan.addons.length > 0 && (
                     <li className="mt-2">
                       <div className="rounded-2xl border border-orange-200 bg-orange-50/50 p-4">
                         <div className="flex items-center mb-2 text-orange-900 font-semibold">
-                          <Plus className="w-4 h-4 mr-2" />{" "}
-                          Available Add-ons
+                          <Plus className="w-4 h-4 mr-2" /> Available Add-ons
                         </div>
                         <ul className="space-y-2">
                           {plan.addons.map((a) => {
-                            const sym = currencySymbol(a.currency);
+                            const symAddon = currencySymbol(a.currency);
                             return (
-                              <li
-                                key={a.key}
-                                className="text-sm text-orange-800"
-                              >
-                                <span className="font-medium">
-                                  {a.name}
-                                </span>{" "}
+                              <li key={a.key} className="text-sm text-orange-800">
+                                <span className="font-medium">{a.name}</span>{" "}
                                 <span className="opacity-80">
-                                  — {sym}
-                                  {a.price}{" "}
-                                  {a.type === "one_time"
-                                    ? "one-time"
-                                    : "/mo"}
+                                  — {symAddon}
+                                  {a.price} {a.type === "one_time" ? "one-time" : "/mo"}
                                 </span>
                               </li>
                             );
@@ -923,10 +816,8 @@ export default function BrandSubscriptionPage() {
           })}
         </div>
 
-        {/* Footnote: same as pricing page */}
         <p className="text-center text-gray-500 text-sm mt-12">
-          All paid plans include a 7-day Money-Back Guarantee • No
-          setup fees • Cancel any time •{" "}
+          All paid plans include a 7-day Money-Back Guarantee • No setup fees • Cancel any time •{" "}
           <Link
             href="/policy/terms-of-service"
             className="underline underline-offset-2 hover:text-gray-700"
@@ -938,13 +829,125 @@ export default function BrandSubscriptionPage() {
         </p>
       </div>
 
-      {/* Downgrade modal (unchanged logic, updated labels) */}
+      {/* CONTACT MODAL */}
+      {showContactModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/60" onClick={() => setShowContactModal(false)} />
+          <div
+            className="relative bg-white w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="bg-orange-50 px-8 py-6 border-b border-orange-100">
+              <div className="flex items-start justify-between">
+                <div className="flex items-center gap-3">
+                  <div>
+                    <h3 className="text-2xl font-bold text-gray-900">Contact Us</h3>
+                    <p className="text-gray-600 mt-1">Send your details — we’ll reach out ASAP.</p>
+                  </div>
+                </div>
+
+                <button onClick={() => setShowContactModal(false)} className="p-2 rounded-full hover:bg-white/50">
+                  <X className="w-6 h-6 text-gray-500" />
+                </button>
+              </div>
+            </div>
+
+            <form onSubmit={handleSendContact} className="px-8 py-6 space-y-4">
+              {contactToast.type !== "idle" && (
+                <div
+                  className={`p-4 rounded-2xl border text-sm ${contactToast.type === "success"
+                    ? "bg-emerald-50 border-emerald-200 text-emerald-800"
+                    : "bg-red-50 border-red-200 text-red-800"
+                    }`}
+                >
+                  {contactToast.message}
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <label className="block">
+                  <span className="text-sm font-medium text-gray-700">Name</span>
+                  <input
+                    disabled
+                    readOnly
+                    className="mt-2 w-full rounded-xl px-4 py-3 border-2 text-gray-300 border-gray-200 cursor-not-allowed"
+                    value={contactForm.name}
+                    placeholder="Your name"
+                  />
+                </label>
+
+                <label className="block">
+                  <span className="text-sm font-medium text-gray-700">Email</span>
+                  <input
+                    disabled
+                    readOnly
+                    type="email"
+                    className="mt-2 w-full rounded-xl px-4 py-3 border-2 border-gray-200 text-gray-300 cursor-not-allowed"
+                    value={contactForm.email}
+                    placeholder="you@company.com"
+                  />
+                </label>
+              </div>
+
+              <label className="block">
+                <span className="text-sm font-medium text-gray-700">Subject</span>
+                <input
+                  className="mt-2 w-full border-1 border-gray-200 rounded-xl px-4 py-3 focus:ring focus:ring-orange-400 focus:border-orange-400 outline-none"
+                  value={contactForm.subject}
+                  onChange={(e) => setContactForm((p) => ({ ...p, subject: e.target.value }))}
+                  placeholder="Enterprise plan enquiry"
+                  required
+                />
+              </label>
+
+              <label className="block">
+                <span className="text-sm font-medium text-gray-700">Message</span>
+                <textarea
+                  className="mt-2 w-full border-1 border-gray-200 rounded-xl px-4 py-3 focus:ring focus:ring-orange-400 focus:border-orange-400 outline-none min-h-[140px]"
+                  value={contactForm.message}
+                  onChange={(e) => setContactForm((p) => ({ ...p, message: e.target.value }))}
+                  placeholder="Write your message..."
+                  required
+                />
+              </label>
+
+              <div className="bg-gray-50 px-8 py-6 -mx-8 -mb-6 flex flex-col sm:flex-row gap-3 justify-end">
+                <button
+                  type="button"
+                  onClick={() => setShowContactModal(false)}
+                  className="w-48 px-6 py-3 rounded-xl bg-white border-2 border-gray-200 hover:border-gray-300 text-gray-800 font-semibold"
+                  disabled={contactSubmitting}
+                >
+                  Cancel
+                </button>
+
+                <button
+                  type="submit"
+                  disabled={contactSubmitting}
+                  className={`w-48 px-6 py-3 rounded-xl font-semibold text-white transition-colors ${contactSubmitting
+                    ? "bg-gray-400 cursor-not-allowed"
+                    : "bg-gradient-to-r from-[#FFA135] to-[#FF7236] hover:from-[#FF7236] hover:to-[#FFA135] shadow-lg"
+                    }`}
+                >
+                  {contactSubmitting ? (
+                    <span className="inline-flex items-center gap-2">
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Sending…
+                    </span>
+                  ) : (
+                    "Send message"
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* DOWNGRADE MODAL */}
       {showDowngradeModal && selectedPlan && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div
-            className="absolute inset-0 bg-black/60"
-            onClick={() => setShowDowngradeModal(false)}
-          />
+          <div className="absolute inset-0 bg-black/60" onClick={() => setShowDowngradeModal(false)} />
           <div className="relative bg-white w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden">
             <div className="bg-orange-50 px-8 py-6 border-b border-orange-100">
               <div className="flex items-start justify-between">
@@ -953,18 +956,11 @@ export default function BrandSubscriptionPage() {
                     <AlertTriangle className="w-6 h-6 text-orange-600" />
                   </div>
                   <div>
-                    <h3 className="text-2xl font-bold text-gray-900">
-                      Before you change your plan…
-                    </h3>
-                    <p className="text-gray-600 mt-1">
-                      We’d hate to see you lose superpowers 😢
-                    </p>
+                    <h3 className="text-2xl font-bold text-gray-900">Before you change your plan…</h3>
+                    <p className="text-gray-600 mt-1">We’d hate to see you lose superpowers 😢</p>
                   </div>
                 </div>
-                <button
-                  onClick={() => setShowDowngradeModal(false)}
-                  className="p-2 rounded-full hover:bg-white/50"
-                >
+                <button onClick={() => setShowDowngradeModal(false)} className="p-2 rounded-full hover:bg-white/50">
                   <X className="w-6 h-6 text-gray-500" />
                 </button>
               </div>
@@ -973,10 +969,8 @@ export default function BrandSubscriptionPage() {
             <div className="px-8 py-6 space-y-6">
               <p className="text-gray-700">
                 Moving to{" "}
-                <span className="font-semibold text-gray-900">
-                  {capitalize(selectedPlan.name)}
-                </span>{" "}
-                will reduce or remove some features:
+                <span className="font-semibold text-gray-900">{capitalize(selectedPlan.name)}</span> will reduce or remove
+                some features:
               </p>
 
               {featureLoss.length > 0 && (
@@ -984,30 +978,18 @@ export default function BrandSubscriptionPage() {
                   <div className="flex items-center gap-2 mb-4">
                     <XCircle className="w-5 h-5 text-red-500" />
                     <p className="font-semibold text-red-900">
-                      You’ll lose access or limits will be reduced
-                      on:
+                      You’ll lose access or limits will be reduced on:
                     </p>
                   </div>
                   <ul className="space-y-3">
                     {featureLoss.map((d) => (
-                      <li
-                        key={d.key}
-                        className="flex items-center gap-3"
-                      >
+                      <li key={d.key} className="flex items-center gap-3">
                         <div className="w-2 h-2 bg-red-400 rounded-full" />
                         <span className="text-red-800">
-                          <span className="font-medium">
-                            {LABELS[d.key] || nice(d.key)}:
-                          </span>
-                          <span className="ml-2 font-semibold">
-                            {formatValue(d.key, d.from)}
-                          </span>
-                          <span className="mx-2 text-red-600">
-                            →
-                          </span>
-                          <span className="font-semibold">
-                            {formatValue(d.key, d.to)}
-                          </span>
+                          <span className="font-medium">{LABELS[d.key] || nice(d.key)}:</span>
+                          <span className="ml-2 font-semibold">{formatValue(d.key, d.from)}</span>
+                          <span className="mx-2 text-red-600">→</span>
+                          <span className="font-semibold">{formatValue(d.key, d.to)}</span>
                         </span>
                       </li>
                     ))}
@@ -1019,12 +1001,9 @@ export default function BrandSubscriptionPage() {
                 <div className="flex items-start gap-3">
                   <Heart className="w-6 h-6 text-orange-500 mt-0.5" />
                   <div>
-                    <p className="text-orange-900 font-medium mb-2">
-                      We’d love to keep you!
-                    </p>
+                    <p className="text-orange-900 font-medium mb-2">We’d love to keep you!</p>
                     <p className="text-orange-800 text-sm">
-                      Need a custom plan, a pause, or a startup
-                      discount? Email{" "}
+                      Need a custom plan, a pause, or a startup discount? Email{" "}
                       <a
                         className="inline-flex items-center gap-1 font-semibold underline hover:text-orange-900"
                         href="mailto:support@collabglam.com?subject=Plan%20change%20help"
@@ -1040,19 +1019,13 @@ export default function BrandSubscriptionPage() {
               <div>
                 <label className="block">
                   <span className="text-sm font-medium text-gray-700 mb-2 block">
-                    Type{" "}
-                    <span className="font-bold text-gray-900">
-                      CANCEL
-                    </span>{" "}
-                    to confirm
+                    Type <span className="font-bold text-gray-900">CANCEL</span> to confirm
                   </span>
                   <input
                     className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-orange-400 focus:border-orange-400 outline-none"
                     placeholder="Type CANCEL here..."
                     value={confirmText}
-                    onChange={(e) =>
-                      setConfirmText(e.target.value)
-                    }
+                    onChange={(e) => setConfirmText(e.target.value)}
                   />
                 </label>
               </div>
@@ -1068,16 +1041,11 @@ export default function BrandSubscriptionPage() {
               </button>
               <button
                 onClick={handleConfirmDowngrade}
-                disabled={
-                  confirmText.trim().toUpperCase() !== "CANCEL" ||
-                  submittingDowngrade
-                }
-                className={`px-6 py-3 rounded-xl font-semibold text-white transition-colors ${
-                  confirmText.trim().toUpperCase() === "CANCEL" &&
-                  !submittingDowngrade
-                    ? "bg-gradient-to-r from-[#FFA135] to-[#FF7236] hover:from-[#FF7236] hover:to-[#FFA135] shadow-lg"
-                    : "bg-gray-400 cursor-not-allowed"
-                }`}
+                disabled={confirmText.trim().toUpperCase() !== "CANCEL" || submittingDowngrade}
+                className={`px-6 py-3 rounded-xl font-semibold text-white transition-colors ${confirmText.trim().toUpperCase() === "CANCEL" && !submittingDowngrade
+                  ? "bg-gradient-to-r from-[#FFA135] to-[#FF7236] hover:from-[#FF7236] hover:to-[#FFA135] shadow-lg"
+                  : "bg-gray-400 cursor-not-allowed"
+                  }`}
               >
                 {submittingDowngrade ? (
                   <span className="inline-flex items-center gap-2">

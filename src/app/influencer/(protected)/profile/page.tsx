@@ -314,7 +314,7 @@ function normalizeInfluencer(data: any): InfluencerData {
   const spArr = Array.isArray(inf?.socialProfiles) ? inf.socialProfiles : [];
   const preferred =
     spArr.find((p: any) => p?.provider === (inf?.primaryPlatform || "")) || spArr[0] || {};
-  const fallbackHandle = preferred?.username ? `@${preferred.username}` : "";
+  const fallbackHandle = preferred?.username ? `${preferred.username}` : "";
   const fallbackLink = preferred?.url || "";
   const fallbackImage = preferred?.picture || "";
 

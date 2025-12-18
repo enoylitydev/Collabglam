@@ -1,8 +1,6 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
-import Swal from "sweetalert2";
-import "sweetalert2/dist/sweetalert2.css";
 import dynamic from "next/dynamic";
 import { useRouter, useSearchParams } from "next/navigation";
 import { get, post } from "@/lib/api";
@@ -16,7 +14,7 @@ import {
   HiOutlineUpload,
   HiOutlineCheckCircle,
 } from "react-icons/hi";
-
+import { toast } from "@/components/common/toast"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -35,6 +33,8 @@ import { Separator } from "@/components/ui/separator";
 
 const ReactSelect = dynamic(() => import("react-select"), { ssr: false });
 import type { FilterOptionOption } from "react-select";
+import Swal from "sweetalert2";
+import "sweetalert2/dist/sweetalert2.css";
 
 // ── types ───────────────────────────────────────────────────
 
@@ -324,30 +324,6 @@ export default function CampaignFormPage() {
     () => existingImages.map((v) => fileUrl(v)),
     [existingImages]
   );
-
-  // ── SweetAlert2 Toast helper (brand-styled) ──────────────
-  const toast = (opts: {
-    icon: "success" | "error" | "warning" | "info";
-    title: string;
-    text?: string;
-  }) =>
-    Swal.fire({
-      ...opts,
-      toast: true,
-      position: "top-end",
-      showConfirmButton: false,
-      timer: 2200,
-      timerProgressBar: true,
-      background: "#020617",
-      color: "#F9FAFB",
-      customClass: {
-        popup:
-          "rounded-xl border border-slate-700 bg-slate-900/95 shadow-lg backdrop-blur",
-        title: "text-sm font-semibold",
-        htmlContainer: "text-xs text-slate-200",
-        icon: "border-none",
-      },
-    });
 
   // ── hydrate helper used by edit + draft load ─────────────
   const hydrateFromCampaign = (data: CampaignEditPayload) => {

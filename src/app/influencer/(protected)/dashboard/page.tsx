@@ -11,10 +11,6 @@ import {
   HiX,
 } from "react-icons/hi";
 import { post } from "@/lib/api";
-import { Button } from "@/components/ui/button";
-import Swal from "sweetalert2";
-import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
 
 // Pagination metadata
 interface PaginationMeta {
@@ -518,7 +514,6 @@ export default function MyCampaignsPage() {
                 ))}
               </tbody>
             </table>
-            <Pagination current={campMeta.page} total={campMeta.totalPages} onChange={setCampPage} />
           </>
         )}
       </div>

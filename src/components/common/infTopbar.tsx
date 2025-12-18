@@ -23,6 +23,7 @@ type LiteInfluencerResp = {
   planId: string | null;
   planName: string | null;
   expiresAt?: string | null;
+  primaryProfile?: { picture?: string | null } | null;
 };
 
 type NotificationItem = {
@@ -61,6 +62,7 @@ export default function InfluencerTopbar({ onSidebarOpen }: InfluencerTopbarProp
 
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const [profilePic, setProfilePic] = useState<string>("");
 
   // ---------------- Notifications ----------------
   const [notifOpen, setNotifOpen] = useState(false);
@@ -111,6 +113,12 @@ export default function InfluencerTopbar({ onSidebarOpen }: InfluencerTopbarProp
         setEmail(data?.email ?? "");
         setSubscriptionName(data?.planName ?? "");
         setSubscriptionExpiresAt(data?.expiresAt ?? "");
+        setProfilePic(
+          (data as any)?.primaryProfile?.picture ||
+          (data as any)?.picture ||
+          ""
+        );
+
         setError(null);
       } catch (err) {
         if (!cancelled) {
@@ -380,9 +388,8 @@ export default function InfluencerTopbar({ onSidebarOpen }: InfluencerTopbarProp
                         {notifications.map((n) => (
                           <li
                             key={n.id}
-                            className={`px-4 py-3 hover:bg-gray-50 cursor-pointer ${
-                              n.isRead ? "bg-white" : "bg-yellow-50"
-                            }`}
+                            className={`px-4 py-3 hover:bg-gray-50 cursor-pointer ${n.isRead ? "bg-white" : "bg-yellow-50"
+                              }`}
                             onClick={() => onNotifClick(n)}
                           >
                             <div className="flex items-start gap-2">
@@ -445,7 +452,15 @@ export default function InfluencerTopbar({ onSidebarOpen }: InfluencerTopbarProp
                 aria-haspopup="menu"
                 aria-expanded={menuOpen}
               >
-                <HiUserCircle size={24} className="text-gray-900" />
+                {profilePic ? (
+                  <img
+                    src={profilePic}
+                    alt={influencerName || "Profile"}
+                    className="h-7 w-7 rounded-full object-cover border border-white/60 shadow-sm"
+                  />
+                ) : (
+                  <HiUserCircle size={24} className="text-gray-900" />
+                )}
                 <HiChevronDown size={16} className="text-gray-900" />
               </button>
 
