@@ -34,6 +34,7 @@ interface RawCampaign {
   isActive: number;
   budget: number;
   applicantCount?: number;
+  totalAcceptedMembers?: number
   campaignType?: string; // ✅ NEW
 }
 
@@ -45,6 +46,7 @@ interface Campaign {
   isActive: number;
   budget: number;
   applicantCount: number;
+  totalAcceptedMembers?: number
   campaignType?: string; // ✅ NEW
 }
 
@@ -118,6 +120,7 @@ export default function BrandActiveCampaignsPage() {
           isActive: c.isActive,
           budget: c.budget,
           applicantCount: c.applicantCount ?? 0,
+          totalAcceptedMembers: c.totalAcceptedMembers ?? 0,
           campaignType: c.campaignType, // ✅ map campaignType
         }));
 
@@ -340,7 +343,7 @@ function TableView({ data, formatDate, formatCurrency }: TableViewProps) {
 
                 {/* Influencers Working */}
                 <td className="px-6 py-4 text-center align-top">
-                  {c.applicantCount ?? "0"}
+                  {c.totalAcceptedMembers ?? "0"}
                 </td>
 
                 {/* Actions */}

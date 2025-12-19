@@ -2212,7 +2212,7 @@ export default function AppliedInfluencersPage() {
                             : "none"
                         }
                       >
-                        {applicantCount} Applied{" "}
+                        {influencers.length} Applied{" "}
                         <SortIndicator field="name" />
                       </TableHead>
                       <TableHead
