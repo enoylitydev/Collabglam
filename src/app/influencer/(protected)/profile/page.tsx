@@ -11,7 +11,6 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -185,8 +184,8 @@ function normalizeGenderStr(raw: any): GenderStr | undefined {
     typeof raw === "number" && Number.isFinite(raw)
       ? raw
       : typeof raw === "string" && /^[0-9]+$/.test(raw.trim())
-      ? Number(raw.trim())
-      : null;
+        ? Number(raw.trim())
+        : null;
 
   if (num !== null) {
     switch (num) {
@@ -446,7 +445,7 @@ function MultiSelect({
 
 export type EmailFlowState = "idle" | "needs" | "codes_sent" | "verifying" | "verified";
 
-function EmailEditorDualOTP({
+function EmailEditorSingleOTP({
   influencerId,
   originalEmail,
   value,
@@ -462,8 +461,7 @@ function EmailEditorDualOTP({
   onStateChange: (s: EmailFlowState) => void;
 }) {
   const [flow, setFlow] = useState<EmailFlowState>("idle");
-  const [oldOtp, setOldOtp] = useState("");
-  const [newOtp, setNewOtp] = useState("");
+  const [otp, setOtp] = useState("");
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -474,8 +472,7 @@ function EmailEditorDualOTP({
   useEffect(() => {
     if (!needs) {
       setFlow("idle");
-      setOldOtp("");
-      setNewOtp("");
+      setOtp("");
       setErr(null);
       setMsg(null);
       onStateChange("idle");
@@ -485,12 +482,13 @@ function EmailEditorDualOTP({
       setFlow("needs");
       onStateChange("needs");
     }
-  }, [needs, flow, value, originalEmail, onStateChange]);
+  }, [needs, flow, onStateChange]);
 
-  const requestCodes = useCallback(async () => {
+  const requestCode = useCallback(async () => {
     setErr(null);
     setMsg(null);
     if (!valueIsValid) return;
+
     setBusy(true);
     try {
       const resp = await post<{ message?: string }>("/influencer/requestEmailUpdate", {
@@ -498,45 +496,49 @@ function EmailEditorDualOTP({
         newEmail: value.trim().toLowerCase(),
         role: "Influencer",
       });
+
       setFlow("codes_sent");
-      const m = resp?.message || `OTPs sent to ${originalEmail} (current) and ${value} (new).`;
+      const m = resp?.message || `OTP sent to ${value.trim().toLowerCase()}.`;
       setMsg(m);
       onStateChange("codes_sent");
-      await Swal.fire({ icon: "info", title: "OTPs sent", text: m });
+      await Swal.fire({ icon: "info", title: "OTP sent", text: m });
     } catch (e: any) {
-      const m = e?.message || "Failed to send codes.";
+      const m = e?.message || "Failed to send OTP.";
       setErr(m);
       await Swal.fire({ icon: "error", title: "Error", text: m });
     } finally {
       setBusy(false);
     }
-  }, [influencerId, originalEmail, value, valueIsValid, onStateChange]);
+  }, [influencerId, value, valueIsValid, onStateChange]);
 
   const verifyAndPersist = useCallback(async () => {
     setErr(null);
-    if (oldOtp.trim().length !== 6 || newOtp.trim().length !== 6) {
-      const m = "Enter both 6-digit OTPs.";
+
+    if (otp.trim().length !== 6) {
+      const m = "Enter the 6-digit OTP.";
       setErr(m);
       await Swal.fire({ icon: "warning", title: "Invalid OTP", text: m });
       return;
     }
+
     setBusy(true);
     setFlow("verifying");
     onStateChange("verifying");
+
     try {
-      await post<{ message?: string }>("/influencer/verifyEmailUpdateOtp", {
+      await post<{ message?: string }>("/influencer/verifyotp", {
         influencerId,
         role: "Influencer",
-        oldEmailOtp: oldOtp.trim(),
-        newEmailOtp: newOtp.trim(),
+        otp: otp.trim(),
         newEmail: value.trim().toLowerCase(),
       });
+
       onVerified(value.trim().toLowerCase());
       setMsg("Email updated successfully.");
       setFlow("verified");
       onStateChange("verified");
-      setOldOtp("");
-      setNewOtp("");
+      setOtp("");
+
       await Swal.fire({
         icon: "success",
         title: "Email updated",
@@ -552,32 +554,32 @@ function EmailEditorDualOTP({
     } finally {
       setBusy(false);
     }
-  }, [influencerId, value, oldOtp, newOtp, onVerified, onStateChange]);
+  }, [influencerId, value, otp, onVerified, onStateChange]);
 
-  const handleOtp =
-    (setter: (v: string) => void) => (e: React.ChangeEvent<HTMLInputElement>) => {
-      const digits = e.target.value.replace(/\D/g, "").slice(0, 6);
-      setter(digits);
-    };
+  const handleOtp = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const digits = e.target.value.replace(/\D/g, "").slice(0, 6);
+    setOtp(digits);
+  };
 
   return (
     <Card className="max-w-md bg-white">
       <CardContent className="pt-6 space-y-3">
         <Label>Email Address</Label>
+
         <div className="flex gap-2">
           <Input
             value={value}
             onChange={(e) => onChange(e.target.value)}
             placeholder="name@example.com"
             onKeyDown={(e) => {
-              if (e.key === "Enter" && needs && valueIsValid && flow === "needs") {
-                requestCodes();
+              if (e.key === "Enter" && needs && valueIsValid && (flow === "needs" || flow === "idle")) {
+                requestCode();
               }
             }}
           />
           {needs && valueIsValid && (flow === "needs" || flow === "idle") && (
             <Button
-              onClick={requestCodes}
+              onClick={requestCode}
               disabled={busy}
               className="bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-800"
             >
@@ -594,46 +596,31 @@ function EmailEditorDualOTP({
               <div>
                 <p className="text-sm font-medium">Verification Required</p>
                 <p className="text-sm text-muted-foreground">
-                  Enter the 6-digit codes sent to{" "}
-                  <span className="font-semibold">{originalEmail}</span> (current) and{" "}
-                  <span className="font-semibold">{value}</span> (new).
+                  Enter the 6-digit code sent to <span className="font-semibold">{value}</span>.
                 </p>
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <Label className="text-xs">Current Email OTP</Label>
-                <Input
-                  className="font-mono tracking-[0.3em] text-center text-lg"
-                  placeholder="000000"
-                  value={oldOtp}
-                  onChange={handleOtp(setOldOtp)}
-                  inputMode="numeric"
-                  maxLength={6}
-                />
-              </div>
-              <div>
-                <Label className="text-xs">New Email OTP</Label>
-                <Input
-                  className="font-mono tracking-[0.3em] text-center text-lg"
-                  placeholder="000000"
-                  value={newOtp}
-                  onChange={handleOtp(setNewOtp)}
-                  inputMode="numeric"
-                  maxLength={6}
-                />
-              </div>
+            <div>
+              <Label className="text-xs">New Email OTP</Label>
+              <Input
+                className="font-mono tracking-[0.3em] text-center text-lg"
+                placeholder="000000"
+                value={otp}
+                onChange={handleOtp}
+                inputMode="numeric"
+                maxLength={6}
+              />
             </div>
 
             <div className="flex flex-col sm:flex-row gap-2 sm:justify-end">
-              <Button variant="outline" onClick={requestCodes} disabled={busy}>
-                Resend Codes
+              <Button variant="outline" onClick={requestCode} disabled={busy}>
+                Resend Code
               </Button>
               <Button
                 onClick={verifyAndPersist}
                 className="bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-800"
-                disabled={busy || oldOtp.length !== 6 || newOtp.length !== 6}
+                disabled={busy || otp.length !== 6}
               >
                 {busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 Verify & Update
@@ -673,6 +660,7 @@ function EmailEditorDualOTP({
     </Card>
   );
 }
+
 
 /* ===================== Main Page ===================== */
 export default function InfluencerProfilePage() {
@@ -970,8 +958,11 @@ export default function InfluencerProfilePage() {
       return;
     }
 
-    // Phone quick check (model expects 10 digits when otpVerified)
-    if (form.otpVerified && !/^\d{10}$/.test((form.phone || "").trim())) {
+    // Phone: optional update
+    const phoneTrim = (form.phone || "").trim();
+
+    // If provided, validate (but don't force it)
+    if (form.otpVerified && phoneTrim && !/^\d{10}$/.test(phoneTrim)) {
       await Swal.fire({
         icon: "warning",
         title: "Invalid phone",
@@ -1009,7 +1000,11 @@ export default function InfluencerProfilePage() {
       // Basics
       fd.append("name", form.name || "");
       if (form.password) fd.append("password", form.password);
-      fd.append("phone", form.phone || "");
+      const originalPhone = (influencer.phone || "").trim();
+
+      if (phoneTrim && phoneTrim !== originalPhone) {
+        fd.append("phone", phoneTrim);
+      }
 
       // Gender: send label (backend expects String enum)
       if (typeof form.gender !== "undefined") {
@@ -1225,7 +1220,7 @@ export default function InfluencerProfilePage() {
               ) : (
                 influencer &&
                 form && (
-                  <EmailEditorDualOTP
+                  <EmailEditorSingleOTP
                     influencerId={influencer.influencerId}
                     originalEmail={influencer.email}
                     value={form.email}
@@ -1453,8 +1448,8 @@ export default function InfluencerProfilePage() {
                       <p className="text-2xl font-bold">
                         {influencer?.subscription?.planName
                           ? influencer.subscription.planName.replace(/^./u, (c) =>
-                              c.toLocaleUpperCase()
-                            )
+                            c.toLocaleUpperCase()
+                          )
                           : "No Plan"}
                       </p>
                       <div className="space-y-1 text-sm text-muted-foreground mt-2">
@@ -1512,8 +1507,8 @@ export default function InfluencerProfilePage() {
                           const status = unlimited
                             ? "Unlimited"
                             : limit >= 1
-                            ? "Available"
-                            : "Not Included";
+                              ? "Available"
+                              : "Not Included";
                           const ok = unlimited || limit >= 1;
 
                           return (
@@ -1527,13 +1522,12 @@ export default function InfluencerProfilePage() {
                                 <span className="text-gray-800">{label}</span>
                               </div>
                               <span
-                                className={`text-xs px-2 py-1 rounded-md border ${
-                                  unlimited
-                                    ? "bg-blue-100 text-blue-700 border-blue-200"
-                                    : ok
+                                className={`text-xs px-2 py-1 rounded-md border ${unlimited
+                                  ? "bg-blue-100 text-blue-700 border-blue-200"
+                                  : ok
                                     ? "bg-emerald-100 text-emerald-800 border-emerald-200"
                                     : "bg-gray-100 text-gray-700 border-gray-200"
-                                }`}
+                                  }`}
                               >
                                 {status}
                               </span>
@@ -1544,16 +1538,16 @@ export default function InfluencerProfilePage() {
                         const pct = unlimited
                           ? 100
                           : limit > 0
-                          ? Math.min(100, Math.round((used / limit) * 100))
-                          : 0;
+                            ? Math.min(100, Math.round((used / limit) * 100))
+                            : 0;
 
                         const barColorClass = unlimited
                           ? "[&>div]:bg-gradient-to-r [&>div]:from-[#FFBF00] [&>div]:to-[#FFDB58]"
                           : used >= limit
-                          ? "[&>div]:bg-gradient-to-r [&>div]:from-red-500 [&>div]:to-red-400"
-                          : pct >= 80
-                          ? "[&>div]:bg-gradient-to-r [&>div]:from-orange-500 [&>div]:to-orange-300"
-                          : "[&>div]:bg-gradient-to-r [&>div]:from-[#FFBF00] [&>div]:to-[#FFDB58]";
+                            ? "[&>div]:bg-gradient-to-r [&>div]:from-red-500 [&>div]:to-red-400"
+                            : pct >= 80
+                              ? "[&>div]:bg-gradient-to-r [&>div]:from-orange-500 [&>div]:to-orange-300"
+                              : "[&>div]:bg-gradient-to-r [&>div]:from-[#FFBF00] [&>div]:to-[#FFDB58]";
 
                         return (
                           <div key={f.key} className="group">
