@@ -725,7 +725,7 @@ export default function BrandTopbar({
           {/* Budget Remaining */}
           {!loading && budgetRemaining !== null && (
             <button
-              className="flex items-center space-x-1 bg-gray-100 hover:bg-gray-200 px-3 py-1 rounded-md text-md"
+              className="flex items-center space-x-1 bg-gray-100 px-3 py-1 rounded-md text-md"
               title="Budget remaining"
               type="button"
             >

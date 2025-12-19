@@ -7,10 +7,11 @@ import {
   HiChevronLeft,
   HiChevronRight,
   HiOutlineUserAdd,
-  HiOutlineUserGroup,
   HiOutlinePencil,
 } from "react-icons/hi";
-import { get } from "@/lib/api";
+import { get, post } from "@/lib/api";
+
+type CampaignStatus = "open" | "paused";
 
 interface Campaign {
   id: string;
@@ -21,6 +22,8 @@ interface Campaign {
   budget: number;
   applicantCount: number;
   campaignType?: string;
+
+  campaignStatus?: CampaignStatus; // open | paused
 }
 
 interface CampaignsResponse {
@@ -45,6 +48,11 @@ export default function BrandActiveCampaignsPage() {
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [counts, setCounts] = useState<Record<string, number>>({});
 
+  // ✅ per-row status update loading
+  const [statusUpdating, setStatusUpdating] = useState<Record<string, boolean>>(
+    {}
+  );
+
   const fetchCampaigns = useCallback(
     async (page: number, term: string) => {
       setLoading(true);
@@ -64,16 +72,27 @@ export default function BrandActiveCampaignsPage() {
         const raw = Array.isArray(res?.data) ? res.data : [];
         const active = raw.filter((c: any) => c.isActive === 1);
 
-        const normalized: Campaign[] = active.map((c: any) => ({
-          id: c.campaignsId ?? c.id,
-          productOrServiceName: c.productOrServiceName,
-          description: c.description,
-          timeline: c.timeline,
-          isActive: c.isActive,
-          budget: c.budget,
-          applicantCount: c.applicantCount || 0,
-          campaignType: c.campaignType || "",
-        }));
+        const normalized: Campaign[] = active.map((c: any) => {
+          const rawStatus = String(c.campaignStatus || "open")
+            .toLowerCase()
+            .trim();
+
+          // ✅ closed removed: if legacy "closed" ever comes, treat it as paused
+          const safeStatus: CampaignStatus =
+            rawStatus === "paused" || rawStatus === "closed" ? "paused" : "open";
+
+          return {
+            id: c.campaignsId ?? c.id,
+            productOrServiceName: c.productOrServiceName,
+            description: c.description,
+            timeline: c.timeline,
+            isActive: c.isActive,
+            budget: c.budget,
+            applicantCount: c.applicantCount || 0,
+            campaignType: c.campaignType || "",
+            campaignStatus: safeStatus,
+          };
+        });
 
         setCampaigns(normalized);
         setTotalPages(res?.pagination?.pages ?? 1);
@@ -120,6 +139,54 @@ export default function BrandActiveCampaignsPage() {
     }
   };
 
+  const updateStatus = async (campaignId: string, next: CampaignStatus) => {
+    const brandId =
+      typeof window !== "undefined" ? localStorage.getItem("brandId") : null;
+
+    if (!brandId) throw new Error("No brandId found in localStorage.");
+
+    try {
+      const res = await post("/campaign/status", {
+        brandId,
+        campaignId,
+        status: next,
+      });
+
+      return res.data;
+    } catch (err: any) {
+      const msg =
+        err?.response?.data?.message ||
+        err?.message ||
+        "Failed to update campaign status.";
+      throw new Error(msg);
+    }
+  };
+
+  const onChangeStatus = async (campaign: Campaign, next: CampaignStatus) => {
+    const id = campaign.id;
+    const prev = (campaign.campaignStatus || "open") as CampaignStatus;
+
+    // optimistic update
+    setCampaigns((prevList) =>
+      prevList.map((c) => (c.id === id ? { ...c, campaignStatus: next } : c))
+    );
+
+    setStatusUpdating((p) => ({ ...p, [id]: true }));
+    setError(null);
+
+    try {
+      await updateStatus(id, next);
+    } catch (e: any) {
+      // rollback
+      setCampaigns((prevList) =>
+        prevList.map((c) => (c.id === id ? { ...c, campaignStatus: prev } : c))
+      );
+      setError(e?.message || "Failed to update status.");
+    } finally {
+      setStatusUpdating((p) => ({ ...p, [id]: false }));
+    }
+  };
+
   const formatDate = (dateStr: string) =>
     new Intl.DateTimeFormat("en-US", {
       month: "short",
@@ -141,7 +208,10 @@ export default function BrandActiveCampaignsPage() {
 
       <div className="mb-6 max-w-md">
         <div className="relative">
-          <HiSearch className="absolute inset-y-0 left-3 my-auto text-gray-400" size={20} />
+          <HiSearch
+            className="absolute inset-y-0 left-3 my-auto text-gray-400"
+            size={20}
+          />
           <input
             type="text"
             placeholder="Search campaigns..."
@@ -164,6 +234,8 @@ export default function BrandActiveCampaignsPage() {
           expandedIds={expandedIds}
           counts={counts}
           onToggle={toggleExpand}
+          onChangeStatus={onChangeStatus}
+          statusUpdating={statusUpdating}
           formatDate={formatDate}
           formatCurrency={formatCurrency}
         />
@@ -190,10 +262,6 @@ function SkeletonTable() {
   );
 }
 
-const TABLE_GRADIENT_FROM = "#FFA135";
-const TABLE_GRADIENT_TO = "#FF7236";
-
-// 🔹 helper for slicing text
 const sliceText = (text: string, max = 40) =>
   text.length > max ? `${text.slice(0, max - 3)}...` : text;
 
@@ -202,6 +270,8 @@ function TableView({
   expandedIds,
   counts,
   onToggle,
+  onChangeStatus,
+  statusUpdating,
   formatDate,
   formatCurrency,
 }: {
@@ -209,6 +279,8 @@ function TableView({
   expandedIds: Set<string>;
   counts: Record<string, number>;
   onToggle: (c: Campaign) => void;
+  onChangeStatus: (c: Campaign, next: CampaignStatus) => void;
+  statusUpdating: Record<string, boolean>;
   formatDate: (d: string) => string;
   formatCurrency: (n: number) => string;
 }) {
@@ -217,101 +289,138 @@ function TableView({
       <div className="overflow-x-auto bg-white rounded-xl">
         <table className="w-full text-sm text-gray-700">
           <colgroup>
-            <col style={{ width: "34%" }} />
+            <col style={{ width: "28%" }} />
             <col style={{ width: "10%" }} />
             <col style={{ width: "12%" }} />
-            <col style={{ width: "20%" }} />
+            <col style={{ width: "18%" }} />
             <col style={{ width: "12%" }} />
-            <col style={{ width: "12%" }} />
+            <col style={{ width: "10%" }} />
+            <col style={{ width: "10%" }} />
           </colgroup>
 
           <thead className="text-left text-white">
             <tr className="bg-gradient-to-r from-[#FFA135] to-[#FF7236]">
-              <th className="px-6 py-4 text-center font-semibold whitespace-nowrap">Campaign</th>
-              <th className="px-6 py-4 text-center font-semibold whitespace-nowrap">Type</th>
-              <th className="px-6 py-4 text-center font-semibold whitespace-nowrap">Budget</th>
-              <th className="px-6 py-4 text-center font-semibold whitespace-nowrap">Timeline</th>
-              <th className="px-6 py-4 text-center font-semibold whitespace-nowrap">Influencers Applied</th>
-              <th className="px-6 py-4 text-center font-semibold whitespace-nowrap">Actions</th>
+              <th className="px-6 py-4 text-center font-semibold whitespace-nowrap">
+                Campaign
+              </th>
+              <th className="px-6 py-4 text-center font-semibold whitespace-nowrap">
+                Type
+              </th>
+              <th className="px-6 py-4 text-center font-semibold whitespace-nowrap">
+                Budget
+              </th>
+              <th className="px-6 py-4 text-center font-semibold whitespace-nowrap">
+                Timeline
+              </th>
+              <th className="px-6 py-4 text-center font-semibold whitespace-nowrap">
+                Status
+              </th>
+              <th className="px-6 py-4 text-center font-semibold whitespace-nowrap">
+                Influencers Applied
+              </th>
+              <th className="px-6 py-4 text-center font-semibold whitespace-nowrap">
+                Actions
+              </th>
             </tr>
           </thead>
 
           <tbody>
-            {data.map((c, idx) => (
-              <tr
-                key={c.id}
-                className={[
-                  "border-b last:border-b-0",
-                  idx % 2 === 0 ? "bg-white" : "bg-gray-50",
-                  "transition-all duration-200",
-                  "hover:bg-gradient-to-r hover:from-[#FFA135]/10 hover:to-[#FF7236]/10",
-                ].join(" ")}
-              >
-                {/* Campaign Name (CLICKABLE -> view-campaign) */}
-                <td className="px-6 py-4 align-top">
-                  <div className="text-center">
-                    <Link
-                      href={`/brand/created-campaign/view-campaign?id=${c.id}`}
-                      className="inline-flex flex-col items-center gap-1 group"
-                      title={c.productOrServiceName}
+            {data.map((c, idx) => {
+              const status = (c.campaignStatus || "open") as CampaignStatus;
+              const isBusy = !!statusUpdating[c.id];
+
+              return (
+                <tr
+                  key={c.id}
+                  className={[
+                    "border-b last:border-b-0",
+                    idx % 2 === 0 ? "bg-white" : "bg-gray-50",
+                    "transition-all duration-200",
+                    "hover:bg-gradient-to-r hover:from-[#FFA135]/10 hover:to-[#FF7236]/10",
+                  ].join(" ")}
+                >
+                  <td className="px-6 py-4 align-top">
+                    <div className="text-center">
+                      <Link
+                        href={`/brand/created-campaign/view-campaign?id=${c.id}`}
+                        className="inline-flex flex-col items-center gap-1 group"
+                        title={c.productOrServiceName}
+                      >
+                        <span className="font-bold text-gray-900 group-hover:text-[#FF7236] group-hover:underline">
+                          {sliceText(c.productOrServiceName, 40)}
+                        </span>
+                      </Link>
+                    </div>
+                  </td>
+
+                  <td className="px-6 py-4 whitespace-nowrap align-top text-center">
+                    {c.campaignType && c.campaignType.trim() !== ""
+                      ? sliceText(c.campaignType, 30)
+                      : "—"}
+                  </td>
+
+                  <td className="px-6 py-4 whitespace-nowrap align-top text-center font-medium text-gray-900">
+                    {formatCurrency(c.budget)}
+                  </td>
+
+                  <td className="px-6 py-4 whitespace-nowrap align-top text-center">
+                    {formatDate(c.timeline.startDate)} –{" "}
+                    {formatDate(c.timeline.endDate)}
+                  </td>
+
+                  {/* ✅ closed removed */}
+                  <td className="px-6 py-4 whitespace-nowrap align-top text-center">
+                    <select
+                      value={status}
+                      disabled={isBusy}
+                      onChange={(e) =>
+                        onChangeStatus(c, e.target.value as CampaignStatus)
+                      }
+                      className={[
+                        "px-3 py-2 rounded-lg text-sm font-semibold border",
+                        "bg-white",
+                        "focus:outline-none focus:ring focus:ring-[#FF7236] focus:border-[#FF7236]",
+                        isBusy ? "opacity-60 cursor-wait" : "",
+                      ].join(" ")}
+                      title="Update campaign status"
                     >
-                      <span className="font-bold text-gray-900 group-hover:text-[#FF7236] group-hover:underline">
-                        {sliceText(c.productOrServiceName, 40)}
-                      </span>
-                    </Link>
-                  </div>
-                </td>
+                      <option value="open">Open</option>
+                      <option value="paused">Paused</option>
+                    </select>
+                  </td>
 
-                {/* Campaign Type */}
-                <td className="px-6 py-4 whitespace-nowrap align-top text-center">
-                  {c.campaignType && c.campaignType.trim() !== ""
-                    ? sliceText(c.campaignType, 30)
-                    : "—"}
-                </td>
-
-                {/* Budget */}
-                <td className="px-6 py-4 whitespace-nowrap align-top text-center font-medium text-gray-900">
-                  {formatCurrency(c.budget)}
-                </td>
-
-                {/* Timeline */}
-                <td className="px-6 py-4 whitespace-nowrap align-top text-center">
-                  {formatDate(c.timeline.startDate)} – {formatDate(c.timeline.endDate)}
-                </td>
-
-                {/* Influencers Applied (CLICKABLE -> applied-inf) */}
-                <td className="px-6 py-4 align-top text-center">
-                  <Link
-                    href={`/brand/created-campaign/applied-inf?id=${c.id}`}
-                    className="inline-flex items-center justify-center rounded-full bg-gray-100 px-4 py-1 text-sm font-bold text-gray-900 hover:bg-gray-200 transition"
-                    title="View applied influencers"
-                  >
-                    {c.applicantCount ?? 0}
-                  </Link>
-                </td>
-
-                {/* Actions */}
-                <td className="px-6 py-4 whitespace-nowrap align-top text-center">
-                  <div className="flex items-center justify-center gap-2">
+                  <td className="px-6 py-4 align-top text-center">
                     <Link
-                      href={`/brand/add-edit-campaign?id=${c.id}`}
-                      className="inline-flex items-center bg-white border border-gray-900 text-gray-900 hover:bg-gray-50 px-3 py-2 rounded-lg text-sm font-semibold"
+                      href={`/brand/created-campaign/applied-inf?id=${c.id}`}
+                      className="inline-flex items-center justify-center rounded-full bg-gray-100 px-4 py-1 text-sm font-bold text-gray-900 hover:bg-gray-200 transition"
+                      title="View applied influencers"
                     >
-                      <HiOutlinePencil className="mr-1" size={18} />
-                      Edit
+                      {c.applicantCount ?? 0}
                     </Link>
+                  </td>
 
-                    <Link
-                      href={`/brand/browse-influencer?campaignId=${c.id}`}
-                      className="inline-flex items-center bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white hover:opacity-90 px-3 py-2 rounded-lg text-sm font-semibold"
-                    >
-                      <HiOutlineUserAdd className="mr-1" size={18} />
-                      Invite
-                    </Link>
-                  </div>
-                </td>
-              </tr>
-            ))}
+                  <td className="px-6 py-4 whitespace-nowrap align-top text-center">
+                    <div className="flex items-center justify-center gap-2">
+                      <Link
+                        href={`/brand/add-edit-campaign?id=${c.id}`}
+                        className="inline-flex items-center bg-white border border-gray-900 text-gray-900 hover:bg-gray-50 px-3 py-2 rounded-lg text-sm font-semibold"
+                      >
+                        <HiOutlinePencil className="mr-1" size={18} />
+                        Edit
+                      </Link>
+
+                      <Link
+                        href={`/brand/browse-influencer?campaignId=${c.id}`}
+                        className="inline-flex items-center bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white hover:opacity-90 px-3 py-2 rounded-lg text-sm font-semibold"
+                      >
+                        <HiOutlineUserAdd className="mr-1" size={18} />
+                        Invite
+                      </Link>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>

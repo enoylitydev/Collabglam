@@ -371,11 +371,6 @@ export default function MyCampaignsPage() {
               <h3 className="text-sm text-gray-500">Pending Approvals</h3>
               <p className="text-3xl font-bold">{pendingCount}</p>
             </div>
-            {pendingCount > 0 && (
-              <span className="inline-block bg-red-100 text-red-600 px-2 py-1 rounded-full text-xs font-semibold">
-                {pendingCount}
-              </span>
-            )}
           </div>
         </div>
 

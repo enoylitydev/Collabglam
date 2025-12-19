@@ -451,7 +451,7 @@ export default function BrandDashboardHome() {
                                   title={c.hasAcceptedInfluencer ? "Open active influencers" : "Open applied influencers"}
                                 >
                                   <span
-                                    className={`inline-flex min-w-[28px] justify-center rounded-full px-2 py-0.5 text-xs font-bold ${applied > 0 ? "bg-gray-900 text-white" : "bg-gray-100 text-gray-500"
+                                    className={`inline-flex min-w-[28px] justify-center rounded-full px-2 py-0.5 text-xs font-bold ${applied > 0 ? "bg-[#EAF6EC] text-[#28A745]" : "bg-gray-100 text-gray-500"
                                       }`}
                                   >
                                     {applied.toLocaleString()}
