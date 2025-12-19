@@ -1175,9 +1175,6 @@ function InfluencerContractModal({
               <span className="text-amber-600">Fill details to accept the contract.</span>
             )}
           </div>
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={onClose}>Close</Button>
-          </div>
         </div>
       </div>
 
