@@ -113,7 +113,10 @@ const formatNumber = (n?: number | null) =>
 const formatDate = (iso?: string | null) =>
   iso ? new Date(iso).toLocaleDateString() : "—";
 
-const buildSocialUrl = (provider: Provider | undefined, username: string): string => {
+const buildSocialUrl = (
+  provider: Provider | undefined,
+  username: string
+): string => {
   const u = username.replace(/^@/, "");
   if (provider === "youtube") return `https://www.youtube.com/@${u}`;
   if (provider === "tiktok") return `https://www.tiktok.com/@${u}`;
@@ -150,10 +153,10 @@ const toRow = (doc: RawInfluencer): InfluencerRow => {
       doc.primaryPlatform === "instagram"
         ? "Instagram"
         : doc.primaryPlatform === "youtube"
-          ? "YouTube"
-          : doc.primaryPlatform === "tiktok"
-            ? "TikTok"
-            : doc.primaryPlatform || undefined,
+        ? "YouTube"
+        : doc.primaryPlatform === "tiktok"
+        ? "TikTok"
+        : doc.primaryPlatform || undefined,
     categoryNames,
     followers,
     updatedAt: doc.updatedAt ?? null,
@@ -195,7 +198,9 @@ export default function ActiveInfluencersPage() {
   const [sortOrder, setSortOrder] = useState<1 | 0>(1); // 1=desc, 0=asc
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
 
-  const [openingContractFor, setOpeningContractFor] = useState<string | null>(null);
+  const [openingContractFor, setOpeningContractFor] = useState<string | null>(
+    null
+  );
 
   const [showMilestoneModal, setShowMilestoneModal] = useState(false);
   const [selectedInf, setSelectedInf] = useState<InfluencerRow | null>(null);
@@ -205,6 +210,10 @@ export default function ActiveInfluencersPage() {
     description: "",
   });
   const [isSavingMilestone, setIsSavingMilestone] = useState(false);
+
+  // ✅ NEW: Applied influencers count + loading
+  const [appliedCount, setAppliedCount] = useState<number>(0);
+  const [isAppliedCountLoading, setIsAppliedCountLoading] = useState(false);
 
   // Razorpay fee settings
   const FEE_PERCENT = 0.02; // 2%
@@ -245,6 +254,57 @@ export default function ActiveInfluencersPage() {
       setSortField(field);
       setSortOrder(1);
     }
+  };
+
+  // ✅ NEW: Fetch applied influencers count (limit static 100000, campaignId dynamic)
+  const refreshAppliedCount = useCallback(async () => {
+    if (!campaignId) return;
+
+    try {
+      setIsAppliedCountLoading(true);
+
+      const resp = await post<any>("apply/list", {
+        campaignId,
+        page: 1,
+        limit: 100000, // ✅ static as requested
+        search: "",
+        sortField: "name",
+        sortOrder: 1,
+      });
+
+      const totalFromMeta = Number(resp?.meta?.total);
+      const totalFromRoot = Number(resp?.total ?? resp?.count);
+
+      const listLen =
+        (Array.isArray(resp?.applies) && resp.applies.length) ||
+        (Array.isArray(resp?.applications) && resp.applications.length) ||
+        (Array.isArray(resp?.influencers) && resp.influencers.length) ||
+        (Array.isArray(resp?.data) && resp.data.length) ||
+        0;
+
+      const finalTotal = !Number.isNaN(totalFromMeta)
+        ? totalFromMeta
+        : !Number.isNaN(totalFromRoot)
+        ? totalFromRoot
+        : listLen;
+
+      setAppliedCount(finalTotal);
+    } catch (e) {
+      console.error("Failed to load applied influencers count", e);
+      setAppliedCount(0);
+    } finally {
+      setIsAppliedCountLoading(false);
+    }
+  }, [campaignId]);
+
+  useEffect(() => {
+    refreshAppliedCount();
+  }, [refreshAppliedCount]);
+
+  // ✅ NEW: Applied Influencers button click
+  const handleViewAppliedInfluencers = () => {
+    if (!campaignId) return;
+    router.push(`/brand/created-campaign/applied-inf?id=${campaignId}`);
   };
 
   const getLatestContractId = useCallback(
@@ -315,8 +375,8 @@ export default function ActiveInfluencersPage() {
       const token =
         typeof window !== "undefined"
           ? localStorage.getItem("token") ||
-          localStorage.getItem("accessToken") ||
-          localStorage.getItem("authToken")
+            localStorage.getItem("accessToken") ||
+            localStorage.getItem("authToken")
           : null;
 
       const r = await fetch(url, {
@@ -389,11 +449,8 @@ export default function ActiveInfluencersPage() {
 
       setCampaignMilestoneTotal(sum);
 
-      if (budget != null && sum >= budget) {
-        setIsBudgetLocked(true);
-      } else {
-        setIsBudgetLocked(false);
-      }
+      if (budget != null && sum >= budget) setIsBudgetLocked(true);
+      else setIsBudgetLocked(false);
     } catch (e) {
       console.error("Failed to refresh campaign budget / milestones", e);
     }
@@ -677,8 +734,9 @@ export default function ActiveInfluencersPage() {
       const baseRow = (
         <TableRow
           key={rowKey}
-          className={`${idx % 2 === 0 ? "bg-white" : "bg-gray-50"
-            } transition-colors`}
+          className={`${
+            idx % 2 === 0 ? "bg-white" : "bg-gray-50"
+          } transition-colors`}
           onMouseEnter={(e) =>
             (e.currentTarget.style.backgroundImage = hoverGradient)
           }
@@ -763,16 +821,6 @@ export default function ActiveInfluencersPage() {
               View
             </Button>
 
-            {/* <Button
-              size="sm"
-              variant="outline"
-              className="bg-gradient-to-r from-[#FF8C00] via-[#FF5E7E] to-[#D12E53] text-white cursor-pointer hover:bg-gradient-to-r hover:from-[#FF5E7E] hover:to-[#D12E53]"
-              onClick={() => router.push("/brand/messages")}
-              title="Message"
-            >
-              Message
-            </Button> */}
-
             <Button
               size="sm"
               variant="outline"
@@ -783,8 +831,8 @@ export default function ActiveInfluencersPage() {
                 !inf.influencerId
                   ? "Missing influencerId"
                   : isBudgetLocked
-                    ? "Campaign budget already fully allocated in milestones"
-                    : "Add milestone"
+                  ? "Campaign budget already fully allocated in milestones"
+                  : "Add milestone"
               }
             >
               Add Milestone
@@ -839,7 +887,7 @@ export default function ActiveInfluencersPage() {
 
       return [baseRow, detailsRow].filter(Boolean);
     });
-  }, [paginatedRows, expandedRow, campaignId, router, isBudgetLocked]);
+  }, [paginatedRows, expandedRow, campaignId, router, isBudgetLocked, openingContractFor]);
 
   const totalPages = meta.totalPages;
   const totalAccepted = meta.total;
@@ -879,9 +927,9 @@ export default function ActiveInfluencersPage() {
               <strong>
                 {remainingBudget != null
                   ? remainingBudget.toLocaleString(undefined, {
-                    style: "currency",
-                    currency: "USD",
-                  })
+                      style: "currency",
+                      currency: "USD",
+                    })
                   : "—"}
               </strong>
             </p>
@@ -889,8 +937,8 @@ export default function ActiveInfluencersPage() {
 
           {isBudgetLocked && (
             <p className="text-xs font-semibold text-red-600">
-              Milestone total has reached the campaign budget. You cannot create
-              more milestones.
+              Milestone total has reached the campaign budget. You cannot create more
+              milestones.
             </p>
           )}
         </div>
@@ -904,23 +952,40 @@ export default function ActiveInfluencersPage() {
         </Button>
       </header>
 
-      {/* Search */}
-      <div className="mb-6 max-w-md">
-        <div className="relative">
-          <HiSearch
-            className="absolute inset-y-0 left-3 my-auto text-gray-400"
-            size={20}
-          />
-          <input
-            type="text"
-            placeholder="Search influencers..."
-            value={searchTerm}
-            onChange={(e) => {
-              setSearchTerm(e.target.value);
-              setPage(1);
-            }}
-            className="w-full pl-10 pr-4 py-2 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
-          />
+      {/* ✅ Search + Applied Influencers Button */}
+      <div className="mb-6 w-full">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+          <div className="relative w-full sm:max-w-md">
+            <HiSearch
+              className="absolute inset-y-0 left-3 my-auto text-gray-400"
+              size={20}
+            />
+            <input
+              type="text"
+              placeholder="Search influencers..."
+              value={searchTerm}
+              onChange={(e) => {
+                setSearchTerm(e.target.value);
+                setPage(1);
+              }}
+              className="w-full pl-10 pr-4 py-2 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
+            />
+          </div>
+
+          <Button
+            size="sm"
+            onClick={handleViewAppliedInfluencers}
+            disabled={!campaignId}
+            className={`bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white hover:from-[#FF7236] hover:to-[#FFA135] cursor-pointer disabled:opacity-50 ${
+              appliedCount > 0 ? "animate-pulse" : ""
+            }`}
+            title={campaignId ? "View applied influencers" : "Missing campaign id"}
+          >
+            <span>Applied Influencers</span>
+            <span className="ml-2 rounded-full bg-white/20 px-2 py-0.5 text-xs font-semibold">
+              {isAppliedCountLoading ? "..." : appliedCount}
+            </span>
+          </Button>
         </div>
       </div>
 
@@ -1024,9 +1089,7 @@ export default function ActiveInfluencersPage() {
             >
               <div className="text-white">
                 <p className="text-xs uppercase tracking-wide">Create milestone</p>
-                <h2 className="text-lg font-semibold mt-1">
-                  {selectedInf.name}
-                </h2>
+                <h2 className="text-lg font-semibold mt-1">{selectedInf.name}</h2>
                 <div className="mt-1 text-xs text-white flex flex-wrap items-center gap-2">
                   {selectedInf.username && (
                     <span>@{selectedInf.username.replace(/^@/, "")}</span>
@@ -1037,12 +1100,8 @@ export default function ActiveInfluencersPage() {
                     </span>
                   )}
                   {campaignName && (
-                    <span
-                      className="truncate max-w-[170px]"
-                      title={campaignName}
-                    >
-                      Campaign:{" "}
-                      <span className="font-medium">{campaignName}</span>
+                    <span className="truncate max-w-[170px]" title={campaignName}>
+                      Campaign: <span className="font-medium">{campaignName}</span>
                     </span>
                   )}
                 </div>
@@ -1079,9 +1138,9 @@ export default function ActiveInfluencersPage() {
                   <strong>
                     {remainingBudget != null
                       ? remainingBudget.toLocaleString(undefined, {
-                        style: "currency",
-                        currency: "USD",
-                      })
+                          style: "currency",
+                          currency: "USD",
+                        })
                       : "—"}
                   </strong>
                 </p>
@@ -1089,8 +1148,8 @@ export default function ActiveInfluencersPage() {
 
               {isBudgetLocked && (
                 <p className="text-xs font-semibold text-red-600">
-                  Milestone total has reached the campaign budget. You cannot
-                  create more milestones.
+                  Milestone total has reached the campaign budget. You cannot create
+                  more milestones.
                 </p>
               )}
 
@@ -1102,7 +1161,7 @@ export default function ActiveInfluencersPage() {
                     <strong>
                       {amountNum.toLocaleString(undefined, {
                         style: "currency",
-                        currency: "USD", // change to "INR" if needed
+                        currency: "USD",
                       })}
                     </strong>
                   </p>
@@ -1161,8 +1220,9 @@ export default function ActiveInfluencersPage() {
                         </button>
                       </TooltipTrigger>
                       <TooltipContent className="max-w-xs text-xs bg-gray-800 text-white">
-                        Payment Gateway charges a 2% payment processing fee when you add milestone
-                        funds. This 2% is added on top of the milestone amount you enter.
+                        Payment Gateway charges a 2% payment processing fee when you add
+                        milestone funds. This 2% is added on top of the milestone amount
+                        you enter.
                       </TooltipContent>
                     </Tooltip>
                   </TooltipProvider>
@@ -1196,19 +1256,17 @@ export default function ActiveInfluencersPage() {
                 <Button
                   onClick={handleSaveMilestone}
                   disabled={
-                    !selectedInf?.influencerId ||
-                    isSavingMilestone ||
-                    isBudgetLocked
+                    !selectedInf?.influencerId || isSavingMilestone || isBudgetLocked
                   }
                   className="bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white hover:from-[#FF8A1F] hover:to-[#FF5A2E] focus:outline-none focus:ring-2 focus:ring-[#FFA135]/40 cursor-pointer disabled:opacity-60"
                 >
                   {isBudgetLocked
                     ? "Budget Reached"
                     : isSavingMilestone
-                      ? "Processing..."
-                      : amountNum > 0
-                        ? `Pay ${totalWithFee.toFixed(2)} (incl. fee)`
-                        : "Add Milestone"}
+                    ? "Processing..."
+                    : amountNum > 0
+                    ? `Pay ${totalWithFee.toFixed(2)} (incl. fee)`
+                    : "Add Milestone"}
                 </Button>
               </div>
             </div>
@@ -1228,6 +1286,6 @@ const LoadingSkeleton = ({ rows }: { rows: number }) => (
   </div>
 );
 
-const ErrorMessage: React.FC<{ children: React.ReactNode }> = ({
-  children,
-}) => <p className="p-6 text-center text-destructive">{children}</p>;
+const ErrorMessage: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <p className="p-6 text-center text-destructive">{children}</p>
+);
