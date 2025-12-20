@@ -55,10 +55,13 @@ interface Mail {
 }
 
 interface InfluencerOption {
-  id: string;
+  id: string;               // influencerId OR some id used by backend
   name: string;
   handle?: string;
   platform?: string;
+
+  // ✅ NEW: threadId if known (from /emails/influencer/list)
+  threadId?: string;
 }
 
 type FilterType = 'all' | 'incoming' | 'outgoing';
@@ -71,6 +74,23 @@ interface AttachmentPayload {
 }
 
 const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024; // 20MB
+const THREAD_COOLDOWN_MS = 2 * 24 * 60 * 60 * 1000; // ✅ 2 days
+
+type Eligibility =
+  | { allowed: true; state: 'allowed'; reason: string }
+  | { allowed: false; state: 'cooldown'; reason: string; waitMs: number }
+  | { allowed: false; state: 'blocked'; reason: string };
+
+function formatWait(ms: number): string {
+  const totalSec = Math.max(0, Math.floor(ms / 1000));
+  const d = Math.floor(totalSec / 86400);
+  const h = Math.floor((totalSec % 86400) / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+
+  if (d > 0) return `${d}d ${h}h`;
+  if (h > 0) return `${h}h ${m}m`;
+  return `${m}m`;
+}
 
 const EmailPage: React.FC = () => {
   const [brandId, setBrandId] = useState<string>('');
@@ -109,14 +129,13 @@ const EmailPage: React.FC = () => {
     return html.replace(/<[^>]+>/g, '');
   };
 
-  // 1) Determine brandId (from localStorage or env)
+  // 1) Determine brandId (from localStorage)
   useEffect(() => {
     const storedBrandId = window.localStorage.getItem('brandId');
     const storedAliasEmail = window.localStorage.getItem('brandAliasEmail');
 
     setBrandId(storedBrandId || '');
     setBrandAliasEmail(storedAliasEmail || '');
-
   }, []);
 
   // Helper: get influencer display name by id
@@ -128,6 +147,93 @@ const EmailPage: React.FC = () => {
     if (fromMail) return fromMail;
 
     return 'Creator';
+  };
+
+  // ✅ Fast lookup: thread -> messages
+  const mailsByThread = useMemo(() => {
+    const map = new Map<string, Mail[]>();
+    for (const m of mails) {
+      if (!m.threadId) continue;
+      const arr = map.get(m.threadId) || [];
+      arr.push(m);
+      map.set(m.threadId, arr);
+    }
+    // sort each thread ascending by createdAt
+    for (const [k, arr] of map.entries()) {
+      arr.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+      map.set(k, arr);
+    }
+    return map;
+  }, [mails]);
+
+  const influencerById = useMemo(() => {
+    const map = new Map<string, InfluencerOption>();
+    influencers.forEach((i) => map.set(i.id, i));
+    return map;
+  }, [influencers]);
+
+  // ✅ Resolve threadId for influencer (for compose gating)
+  const resolveThreadIdForInfluencer = (influencerId: string): string | null => {
+    // reply mode already has threadId
+    if (composeThreadId) return composeThreadId;
+
+    // try influencer list (from /emails/influencer/list)
+    const opt = influencerById.get(influencerId);
+    if (opt?.threadId) return opt.threadId;
+
+    // fallback: find newest mail by influencerId
+    const m = mails.find((x) => x.influencerId === influencerId);
+    return m?.threadId || null;
+  };
+
+  // ✅ Eligibility calculator (your rule)
+  const getEligibility = (influencerId: string): Eligibility => {
+    const threadId = resolveThreadIdForInfluencer(influencerId);
+
+    // If we don't even have a thread yet → first message allowed
+    if (!threadId) {
+      return { allowed: true, state: 'allowed', reason: 'First message allowed.' };
+    }
+
+    const threadMails = mailsByThread.get(threadId) || [];
+
+    const incomingExists = threadMails.some((m) => m.direction === 'incoming');
+    if (incomingExists) {
+      return { allowed: true, state: 'allowed', reason: 'Influencer replied — messaging is unlocked.' };
+    }
+
+    const outgoing = threadMails.filter((m) => m.direction === 'outgoing');
+    const outgoingCount = outgoing.length;
+
+    if (outgoingCount === 0) {
+      return { allowed: true, state: 'allowed', reason: 'First message allowed.' };
+    }
+
+    if (outgoingCount === 1) {
+      const first = outgoing[0];
+      const firstAt = new Date(first.createdAt).getTime();
+      const now = Date.now();
+      const elapsed = now - firstAt;
+
+      if (elapsed >= THREAD_COOLDOWN_MS) {
+        return { allowed: true, state: 'allowed', reason: '2 days passed — follow-up allowed.' };
+      }
+
+      const waitMs = THREAD_COOLDOWN_MS - elapsed;
+      return {
+        allowed: false,
+        state: 'cooldown',
+        reason: `Wait ${formatWait(waitMs)} before sending a follow-up (2-day rule).`,
+        waitMs,
+      };
+    }
+
+    // outgoingCount >= 2 and no incoming ever => blocked until influencer replies
+    return {
+      allowed: false,
+      state: 'blocked',
+      reason: 'You already sent 2 emails without a reply. You can message again only after the influencer replies.',
+    };
   };
 
   // 2) Load threads + messages → flatten into Mail[]
@@ -146,7 +252,10 @@ const EmailPage: React.FC = () => {
         const allMails: Mail[] = [];
 
         for (const thread of threads) {
-          const threadId: string = thread._id;
+          const threadId: string = thread.threadId;
+
+          // NOTE: /threads/brand currently populates influencer with only name+email
+          // so this is usually influencer._id
           const influencerId: string =
             thread.influencer?._id || thread.influencer || '';
 
@@ -193,13 +302,13 @@ const EmailPage: React.FC = () => {
 
             const attachments: MailAttachment[] = Array.isArray(msg.attachments)
               ? msg.attachments.map((att: any) => ({
-                _id: att._id,
-                filename: att.filename,
-                contentType: att.contentType,
-                size: att.size,
-                url: att.url,
-                storageKey: att.storageKey,
-              }))
+                  _id: att._id,
+                  filename: att.filename,
+                  contentType: att.contentType,
+                  size: att.size,
+                  url: att.url,
+                  storageKey: att.storageKey,
+                }))
               : [];
 
             const mail: Mail = {
@@ -247,47 +356,85 @@ const EmailPage: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [brandId]);
 
-  // 3) Load influencers list for compose
+  // 3) Load influencers list for compose (based on API: { brand, conversations })
   useEffect(() => {
     if (!brandId) return;
+
+    const buildFallbackFromMails = (): InfluencerOption[] => {
+      const map = new Map<string, InfluencerOption>();
+
+      for (const m of mails) {
+        const id = String(m.influencerId || '').trim();
+        if (!id) continue;
+
+        if (!map.has(id)) {
+          map.set(id, {
+            id,
+            name: m.influencerName || 'Creator',
+            threadId: m.threadId,
+          });
+        }
+      }
+
+      return Array.from(map.values());
+    };
 
     const loadInfluencers = async () => {
       try {
         setIsLoadingInfluencers(true);
         setInfluencerError(null);
 
-        const json = await get<any>('emails/influencer/list', {
-          brandId,
-        });
-        const listRaw: any[] =
-          json?.influencers || json?.data || json?.results || [];
+        const res = await get<any>(
+          `/emails/influencer/list?brandId=${encodeURIComponent(brandId)}`
+        );
 
-        const list: InfluencerOption[] = listRaw.map((inf) => ({
-          id: inf._id || inf.influencerId,
-          name:
-            inf.name ||
-            inf.handle ||
-            (inf.email ? inf.email.split('@')[0] : 'Creator'),
-          handle: inf.handle,
-          platform: inf.platform,
-        }));
+        const payload = res?.data ?? res;
+
+        const conversations: any[] = Array.isArray(payload?.conversations)
+          ? payload.conversations
+          : [];
+
+        const map = new Map<string, InfluencerOption>();
+
+        for (const c of conversations) {
+          const influencerId = String(c?.influencer?.influencerId || '').trim();
+          if (!influencerId) continue;
+
+          const name = c?.influencer?.name || 'Creator';
+          const threadId = String(c?.threadId || '').trim() || undefined;
+
+          if (!map.has(influencerId)) {
+            map.set(influencerId, {
+              id: influencerId,
+              name,
+              threadId, // ✅ store threadId for gating
+            });
+          }
+        }
+
+        let list = Array.from(map.values());
+
+        if (!list.length) {
+          list = buildFallbackFromMails();
+        }
+
+        list.sort((a, b) => a.name.localeCompare(b.name));
 
         setInfluencers(list);
       } catch (err: any) {
         console.error('Error loading influencers:', err);
-        setInfluencerError(
-          err?.message || 'Failed to load influencers for compose'
-        );
+
+        setInfluencers(buildFallbackFromMails());
+        setInfluencerError(err?.message || 'Failed to load influencers for compose');
       } finally {
         setIsLoadingInfluencers(false);
       }
     };
 
     loadInfluencers();
-  }, [brandId]);
+  }, [brandId, mails]);
 
   // 4) Filtering + selected mail
-
   const filteredMails = useMemo(() => {
     let result = [...mails];
 
@@ -334,8 +481,23 @@ const EmailPage: React.FC = () => {
     }
   }, [filteredMails, selectedMail, selectedMailId]);
 
-  // 5) Compose helpers
+  // ✅ Compose recipient status list
+  const composeRecipientStatuses = useMemo(() => {
+    return composeInfluencerIds.map((id) => {
+      const name = getInfluencerNameById(id);
+      const eligibility = getEligibility(id);
+      return { id, name, eligibility };
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [composeInfluencerIds, mailsByThread, composeThreadId, influencers]);
 
+  const allowedRecipientIds = useMemo(() => {
+    return composeRecipientStatuses
+      .filter((x) => x.eligibility.allowed)
+      .map((x) => x.id);
+  }, [composeRecipientStatuses]);
+
+  // 5) Compose helpers
   const openCompose = (opts?: {
     subject?: string;
     body?: string;
@@ -348,15 +510,12 @@ const EmailPage: React.FC = () => {
     setComposeThreadId(opts?.threadId ?? null);
     setComposeError(null);
 
-    // fresh attachments every time
     setComposeAttachments([]);
 
     if (opts?.threadId && opts.influencerId) {
-      // Reply mode – single influencer
       setComposeInfluencerIds([opts.influencerId]);
       setComposeToDisplay(opts?.toDisplay ?? '');
     } else {
-      // New / forward – multi allowed
       setComposeInfluencerIds([]);
       setComposeToDisplay('');
     }
@@ -391,7 +550,6 @@ const EmailPage: React.FC = () => {
       setComposeAttachments((prev) => [...prev, ...accepted]);
     }
 
-    // allow selecting same file again
     e.target.value = '';
   };
 
@@ -409,7 +567,7 @@ const EmailPage: React.FC = () => {
             const reader = new FileReader();
 
             reader.onload = () => {
-              const result = reader.result as string; // data:...;base64,XXXX
+              const result = reader.result as string;
               const base64 = result.includes(',')
                 ? result.split(',')[1]
                 : result;
@@ -451,6 +609,30 @@ const EmailPage: React.FC = () => {
       return;
     }
 
+    // ✅ Apply rule BEFORE sending
+    const blocked = composeRecipientStatuses.filter((x) => !x.eligibility.allowed);
+    const allowed = composeRecipientStatuses.filter((x) => x.eligibility.allowed);
+
+    if (!allowed.length) {
+      // none can send
+      const msg = blocked[0]?.eligibility.reason || 'You cannot send this email right now.';
+      setComposeError(msg);
+      return;
+    }
+
+    // If some are blocked, warn but still send to allowed
+    if (blocked.length) {
+      const list = blocked
+        .slice(0, 3)
+        .map((b) => `${b.name}: ${b.eligibility.reason}`)
+        .join(' | ');
+      setComposeError(
+        `Some recipients were skipped (${blocked.length}). ${list}${blocked.length > 3 ? ' …' : ''}`
+      );
+    } else {
+      setComposeError(null);
+    }
+
     let attachmentsPayload: AttachmentPayload[] = [];
     try {
       attachmentsPayload = await buildAttachmentPayload();
@@ -466,12 +648,12 @@ const EmailPage: React.FC = () => {
 
     try {
       setIsSending(true);
-      setComposeError(null);
 
       const sentMails: Mail[] = [];
       const failures: string[] = [];
 
-      for (const influencerId of composeInfluencerIds) {
+      // ✅ send only to allowed recipients
+      for (const influencerId of allowed.map((x) => x.id)) {
         try {
           const data = await post<any>('/emails/brand-to-influencer', {
             brandId,
@@ -498,13 +680,11 @@ const EmailPage: React.FC = () => {
 
           const influencerName = getInfluencerNameById(influencerId);
 
-          // Local metadata for newly-sent mail
           const attachmentsMeta: MailAttachment[] = attachmentsPayload.map(
             (att) => ({
               filename: att.filename,
               contentType: att.contentType,
               size: att.size,
-              // url will be populated once re-fetched from backend
             })
           );
 
@@ -547,6 +727,8 @@ const EmailPage: React.FC = () => {
         );
       } else {
         setComposeAttachments([]);
+
+        // close modal only if everything that was allowed succeeded
         setIsComposeOpen(false);
       }
     } catch (err: any) {
@@ -620,7 +802,6 @@ const EmailPage: React.FC = () => {
       ? 'You'
       : selectedMail?.influencerName || 'Creator';
 
-  // helpers for previews
   const selectedAttachments = selectedMail?.attachments || [];
   const imageAttachments = selectedAttachments.filter(
     (att) => att.contentType?.startsWith('image/') && att.url
@@ -629,9 +810,16 @@ const EmailPage: React.FC = () => {
     (att) => att.contentType?.startsWith('video/') && att.url
   );
 
+  const sendDisabled =
+    isSending ||
+    !composeSubject.trim() ||
+    !composeBody.trim() ||
+    !composeInfluencerIds.length ||
+    allowedRecipientIds.length === 0;
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#FFF9F2] via-white to-[#FFE7CF]">
-      <div className="max-w-6xl mx-auto px-4 py-6 md:py-10">
+<div className="max-w-6xl mx-auto px-4 py-6 md:py-10">
         {/* Header */}
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-7">
           <div className="space-y-2">
@@ -1085,8 +1273,7 @@ const EmailPage: React.FC = () => {
                     className="w-full text-xs px-3 py-2 rounded-lg border border-gray-200 bg-gray-50 text-gray-700"
                   />
                   <p className="text-[10px] text-gray-400">
-                    This reply continues the same thread with this creator via
-                    the email relay.
+                    This reply continues the same thread with this creator via the email relay.
                   </p>
                 </div>
               ) : (
@@ -1100,6 +1287,7 @@ const EmailPage: React.FC = () => {
                     onChange={(e) => setInfluencerSearch(e.target.value)}
                     className="w-full text-xs px-3 py-2 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#FFA135] focus:border-[#FFA135]"
                   />
+
                   <div className="max-h-40 overflow-y-auto rounded-lg border border-gray-200 bg-white">
                     {isLoadingInfluencers ? (
                       <div className="px-3 py-2 text-[11px] text-gray-500">
@@ -1111,24 +1299,21 @@ const EmailPage: React.FC = () => {
                       </div>
                     ) : filteredInfluencersForPicker.length === 0 ? (
                       <div className="px-3 py-2 text-[11px] text-gray-500">
-                        No influencers found. Adjust your search or set up the
-                        email-list endpoint.
+                        No influencers found.
                       </div>
                     ) : (
                       <ul className="divide-y divide-gray-100 text-xs">
                         {filteredInfluencersForPicker.map((inf) => {
                           const checked = composeInfluencerIds.includes(inf.id);
                           const secondaryLine = inf.handle
-                            ? `${inf.handle}${inf.platform ? ` • ${inf.platform}` : ''
-                            }`
+                            ? `${inf.handle}${inf.platform ? ` • ${inf.platform}` : ''}`
                             : inf.platform || 'Creator';
+
                           return (
                             <li key={inf.id}>
                               <button
                                 type="button"
-                                onClick={() =>
-                                  toggleInfluencerSelection(inf.id)
-                                }
+                                onClick={() => toggleInfluencerSelection(inf.id)}
                                 className="w-full flex items-center justify-between gap-2 px-3 py-2 hover:bg-gray-50"
                               >
                                 <div className="flex items-center gap-2">
@@ -1154,11 +1339,55 @@ const EmailPage: React.FC = () => {
                       </ul>
                     )}
                   </div>
+
                   <p className="text-[10px] text-gray-400">
-                    The same email will be sent separately to each selected
-                    influencer. Replies appear in individual threads via the
-                    relay.
+                    The same email will be sent separately to each selected influencer.
                   </p>
+                </div>
+              )}
+
+              {/* ✅ NEW: Eligibility status panel */}
+              {composeRecipientStatuses.length > 0 && (
+                <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
+                  <p className="text-[11px] font-medium text-gray-700">
+                    Messaging rules (2-day cooldown if no reply)
+                  </p>
+                  <div className="mt-1 space-y-1">
+                    {composeRecipientStatuses.slice(0, 6).map((r) => (
+                      <div key={r.id} className="flex items-start justify-between gap-3">
+                        <span className="text-[11px] text-gray-700 truncate">
+                          {r.name}
+                        </span>
+                        <span
+                          className={`text-[10px] px-2 py-0.5 rounded-full border shrink-0 ${
+                            r.eligibility.allowed
+                              ? 'bg-emerald-50 text-emerald-700 border-emerald-100'
+                              : r.eligibility.state === 'cooldown'
+                                ? 'bg-amber-50 text-amber-700 border-amber-100'
+                                : 'bg-rose-50 text-rose-700 border-rose-100'
+                          }`}
+                          title={r.eligibility.reason}
+                        >
+                          {r.eligibility.allowed
+                            ? 'Allowed'
+                            : r.eligibility.state === 'cooldown'
+                              ? 'Wait'
+                              : 'Blocked'}
+                        </span>
+                      </div>
+                    ))}
+                    {composeRecipientStatuses.length > 6 && (
+                      <p className="text-[10px] text-gray-400">
+                        +{composeRecipientStatuses.length - 6} more…
+                      </p>
+                    )}
+                  </div>
+
+                  {allowedRecipientIds.length === 0 && (
+                    <p className="mt-2 text-[11px] text-rose-600">
+                      You can’t send right now — all selected recipients are blocked by the rule.
+                    </p>
+                  )}
                 </div>
               )}
 
@@ -1171,7 +1400,7 @@ const EmailPage: React.FC = () => {
                   type="text"
                   value={composeSubject}
                   onChange={(e) => setComposeSubject(e.target.value)}
-                  placeholder='Subject'
+                  placeholder="Subject"
                   className="w-full text-xs px-3 py-2 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#FFA135] focus:border-[#FFA135]"
                 />
               </div>
@@ -1197,9 +1426,7 @@ const EmailPage: React.FC = () => {
                         className="inline-flex items-center gap-1.5 px-2 py-1 rounded-full bg-gray-100 text-[11px] text-gray-700"
                       >
                         <Paperclip className="w-3 h-3" />
-                        <span className="max-w-[140px] truncate">
-                          {file.name}
-                        </span>
+                        <span className="max-w-[140px] truncate">{file.name}</span>
                         <span className="text-[10px] text-gray-400">
                           {Math.round(file.size / 1024)} KB
                         </span>
@@ -1251,11 +1478,16 @@ const EmailPage: React.FC = () => {
                 <button
                   type="button"
                   onClick={handleSend}
-                  disabled={isSending}
+                  disabled={sendDisabled}
                   className="inline-flex items-center gap-1.5 text-xs px-4 py-1.5 rounded-full bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white shadow-sm hover:shadow-md disabled:opacity-60 disabled:cursor-not-allowed"
+                  title={
+                    allowedRecipientIds.length === 0
+                      ? 'Blocked by messaging rules'
+                      : undefined
+                  }
                 >
                   <Send className="w-3 h-3" />
-                  {isSending ? 'Sending…' : 'Send'}
+                  {isSending ? 'Sending…' : `Send${allowedRecipientIds.length && composeInfluencerIds.length > 1 ? ` (${allowedRecipientIds.length})` : ''}`}
                 </button>
               </div>
             </div>

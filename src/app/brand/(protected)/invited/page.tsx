@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useMemo } from 'react';
 import {
   Users,
   Loader2,
@@ -23,6 +23,7 @@ type Invitation = {
   status: InvitationStatus;
   campaignId?: string | null;
   campaignName?: string | null;
+  missingEmailId?: string | null; // ✅ IMPORTANT (exists in your API response)
   createdAt: string;
   updatedAt: string;
 };
@@ -65,13 +66,41 @@ async function listInvitations(
 const prettyDate = (iso: string) =>
   iso
     ? new Date(iso).toLocaleString(undefined, {
-      dateStyle: 'medium',
-      timeStyle: 'short',
-    })
+        dateStyle: 'medium',
+        timeStyle: 'short',
+      })
     : '';
 
 const truncateText = (value: string, max = 60) =>
   value.length > max ? `${value.slice(0, max)}…` : value;
+
+// ✅ Eligibility response from backend
+type EligibilityState = 'allowed' | 'cooldown' | 'blocked' | 'missing_email';
+
+type InvitationEligibility = {
+  canSend: boolean;
+  state: EligibilityState;
+  reason: string;
+  nextAllowedAt?: string | null;
+  threadId?: string | null;
+  outgoingCount?: number;
+};
+
+function formatWaitUntil(iso?: string | null) {
+  if (!iso) return '';
+  const t = new Date(iso).getTime();
+  const ms = t - Date.now();
+  if (ms <= 0) return 'now';
+
+  const totalSec = Math.floor(ms / 1000);
+  const d = Math.floor(totalSec / 86400);
+  const h = Math.floor((totalSec % 86400) / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+
+  if (d > 0) return `${d}d ${h}h`;
+  if (h > 0) return `${h}h ${m}m`;
+  return `${m}m`;
+}
 
 export default function InvitedInfluencersPage() {
   const [brandId, setBrandId] = useState<string | null>(null);
@@ -82,10 +111,18 @@ export default function InvitedInfluencersPage() {
 
   const hasAnyCampaign = items.some((inv) => !!inv.campaignName);
 
+  // ✅ eligibility cache
+  const [eligibilityByInvitationId, setEligibilityByInvitationId] = useState<
+    Record<string, InvitationEligibility>
+  >({});
+
   // Compose modal state
   const [isComposeOpen, setIsComposeOpen] = useState(false);
   const [selectedInvitation, setSelectedInvitation] =
     useState<Invitation | null>(null);
+  const [selectedEligibility, setSelectedEligibility] =
+    useState<InvitationEligibility | null>(null);
+
   const [composeSubject, setComposeSubject] = useState('');
   const [composeBody, setComposeBody] = useState('');
   const [composeError, setComposeError] = useState<string | null>(null);
@@ -97,11 +134,10 @@ export default function InvitedInfluencersPage() {
 
   const composeToDisplay = selectedInvitation?.handle ?? '';
 
-  // Read brandId once (alias/relay handled by backend now)
+  // Read brandId once
   useEffect(() => {
     try {
-      const storedBrandId =
-        window.localStorage.getItem('brandId')
+      const storedBrandId = window.localStorage.getItem('brandId');
       const storedAliasEmail = window.localStorage.getItem('brandAliasEmail');
 
       if (!storedBrandId) {
@@ -116,7 +152,7 @@ export default function InvitedInfluencersPage() {
     }
   }, []);
 
-  // Fetch invitations (currently using status: 'all')
+  // Fetch invitations (status: 'all')
   useEffect(() => {
     if (!brandId) return;
 
@@ -135,8 +171,8 @@ export default function InvitedInfluencersPage() {
         console.error(err);
         setError(
           err?.response?.data?.message ||
-          err?.message ||
-          'Failed to load All handles'
+            err?.message ||
+            'Failed to load invited handles'
         );
       } finally {
         setLoading(false);
@@ -153,9 +189,88 @@ export default function InvitedInfluencersPage() {
     setComposeBody('');
     setComposeAttachments([]);
     setComposeError(null);
+    setSelectedEligibility(null);
   };
 
+  // ✅ Call backend eligibility endpoint & cache result
+  const fetchEligibility = async (
+    invitationId: string
+  ): Promise<InvitationEligibility | null> => {
+    if (!brandId || !invitationId) return null;
+
+    try {
+      const res = await post<InvitationEligibility>(
+        '/newinvitations/eligibility',
+        { brandId, invitationId }
+      );
+
+      setEligibilityByInvitationId((prev) => ({
+        ...prev,
+        [invitationId]: res,
+      }));
+
+      return res;
+    } catch (err: any) {
+      console.error('eligibility check failed', err);
+      // don’t hard-block UI on eligibility API failure; show a soft error
+      return null;
+    }
+  };
+
+  // optional: prefetch eligibility for sendable invites
+  useEffect(() => {
+    if (!brandId) return;
+    if (!items.length) return;
+
+    const sendable = items.filter((i) => i.missingEmailId);
+    const unseen = sendable.filter((i) => !eligibilityByInvitationId[i.invitationId]);
+
+    if (!unseen.length) return;
+
+    let cancelled = false;
+
+    (async () => {
+      // small sequential to avoid blasting server
+      for (const inv of unseen.slice(0, 25)) {
+        if (cancelled) return;
+        await fetchEligibility(inv.invitationId);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [brandId, items]);
+
   const openComposeForInvitation = async (inv: Invitation) => {
+    if (!brandId) {
+      setError('Missing brandId');
+      return;
+    }
+
+    // ✅ If there’s no MissingEmail/email linked, you can’t send anything yet
+    if (!inv.missingEmailId) {
+      setError(
+        `No email found yet for ${inv.handle}. Wait until the system resolves the email (MissingEmailId).`
+      );
+      return;
+    }
+
+    // ✅ enforce rule BEFORE opening compose
+    const eligibility =
+      eligibilityByInvitationId[inv.invitationId] ||
+      (await fetchEligibility(inv.invitationId));
+
+    if (eligibility) {
+      setSelectedEligibility(eligibility);
+
+      if (!eligibility.canSend) {
+        setError(eligibility.reason);
+        return;
+      }
+    }
+
     setSelectedInvitation(inv);
     resetComposeState();
     setIsComposeOpen(true);
@@ -171,8 +286,9 @@ export default function InvitedInfluencersPage() {
 
       const bodyTemplate = `Hi ${inv.handle},
 
-We’re excited about your content and would love to collaborate${inv.campaignName ? ` on our "${inv.campaignName}" campaign` : ''
-        }.
+We’re excited about your content and would love to collaborate${
+        inv.campaignName ? ` on our "${inv.campaignName}" campaign` : ''
+      }.
 
 [Add your brief, deliverables, timelines, and budget details here]
 
@@ -198,7 +314,6 @@ CollabGlam Brand Team
       setComposeBody(res.textBody || '');
     } catch (err: any) {
       console.error('Failed to fetch invitation template:', err);
-      // Fallback to minimal template if preview fails
       const subjectBase = 'Collaboration opportunity';
       const subject = inv.campaignName
         ? `${subjectBase} – ${inv.campaignName}`
@@ -208,8 +323,9 @@ CollabGlam Brand Team
 
       const bodyTemplate = `Hi ${inv.handle},
 
-We’re excited about your content and would love to collaborate${inv.campaignName ? ` on our "${inv.campaignName}" campaign` : ''
-        }.
+We’re excited about your content and would love to collaborate${
+        inv.campaignName ? ` on our "${inv.campaignName}" campaign` : ''
+      }.
 
 [Add your brief, deliverables, timelines, and budget details here]
 
@@ -247,7 +363,6 @@ CollabGlam Brand Team
       setComposeAttachments((prev) => [...prev, ...accepted]);
     }
 
-    // allow selecting same file again
     e.target.value = '';
   };
 
@@ -265,10 +380,8 @@ CollabGlam Brand Team
             const reader = new FileReader();
 
             reader.onload = () => {
-              const result = reader.result as string; // data:...;base64,XXXX
-              const base64 = result.includes(',')
-                ? result.split(',')[1]
-                : result;
+              const result = reader.result as string;
+              const base64 = result.includes(',') ? result.split(',')[1] : result;
 
               resolve({
                 filename: file.name,
@@ -302,6 +415,18 @@ CollabGlam Brand Team
       setComposeError('Missing brandId. Please ensure a brand is selected.');
       return;
     }
+    if (!selectedInvitation.missingEmailId) {
+      setComposeError('No email available for this invitation yet.');
+      return;
+    }
+
+    // ✅ Re-check eligibility right before sending (fresh)
+    const eligibility = await fetchEligibility(selectedInvitation.invitationId);
+    if (eligibility && !eligibility.canSend) {
+      setComposeError(eligibility.reason);
+      setSelectedEligibility(eligibility);
+      return;
+    }
 
     setIsSending(true);
     setComposeError(null);
@@ -321,13 +446,12 @@ CollabGlam Brand Team
     }
 
     try {
-      // New architecture: let backend resolve emails using IDs & metadata
       await post('/emails/campaign-invitation', {
         brandId,
         invitationId: selectedInvitation.invitationId,
         campaignId: selectedInvitation.campaignId || undefined,
-        handle: selectedInvitation.handle, // optional, for logging/template
-        platform: selectedInvitation.platform, // optional
+        handle: selectedInvitation.handle,
+        platform: selectedInvitation.platform,
         subject: composeSubject.trim(),
         body: composeBody.trim(),
         attachments: attachmentsPayload,
@@ -336,17 +460,21 @@ CollabGlam Brand Team
       setIsComposeOpen(false);
       setSelectedInvitation(null);
       setComposeAttachments([]);
+
+      // ✅ refresh eligibility cache after sending
+      await fetchEligibility(selectedInvitation.invitationId);
     } catch (err: any) {
       console.error(err);
       setComposeError(
-        err?.response?.data?.message ||
-        err?.message ||
-        'Failed to send email'
+        err?.response?.data?.message || err?.message || 'Failed to send email'
       );
     } finally {
       setIsSending(false);
     }
   };
+
+  // small memo: show per-row status
+  const rowEligibility = useMemo(() => eligibilityByInvitationId, [eligibilityByInvitationId]);
 
   return (
     <div className="min-h-screen">
@@ -362,17 +490,15 @@ CollabGlam Brand Team
                 Invited Handles
               </h1>
               <p className="text-sm text-gray-600">
-                Creators you&apos;ve reached out to, with their current invite
-                status and campaign (if any).
+                Creators you&apos;ve reached out to, with invite status and campaign (if any).
               </p>
             </div>
           </div>
 
-          {/* Tiny stats row */}
           <div className="flex items-center gap-3 text-xs text-gray-500">
             <span className="inline-flex items-center rounded-full bg-white border border-gray-200 px-3 py-1">
               <span className="mr-1 h-1.5 w-1.5 rounded-full bg-amber-500" />
-              {invitedCount} invited handle{invitedCount === 1 ? '' : 's'}
+              {invitedCount} handle{invitedCount === 1 ? '' : 's'}
             </span>
           </div>
         </header>
@@ -393,8 +519,7 @@ CollabGlam Brand Team
             </span>
             {invitedCount > 0 && (
               <span className="text-xs text-gray-500">
-                Showing first {invitedCount} invite
-                {invitedCount === 1 ? '' : 's'}
+                Showing {invitedCount} item{invitedCount === 1 ? '' : 's'}
               </span>
             )}
           </div>
@@ -409,14 +534,13 @@ CollabGlam Brand Team
             </div>
           )}
 
-          {/* Empty state */}
+          {/* Empty */}
           {!loading && items.length === 0 && (
             <div className="p-8 text-center text-gray-500 text-sm">
               <Users className="w-10 h-10 mx-auto mb-3 opacity-40" />
               <p className="font-medium">No invited handles yet</p>
               <p className="text-xs mt-1">
-                Invite creators from the Browse Influencers page to see them
-                here.
+                Invite creators from the Browse Influencers page to see them here.
               </p>
             </div>
           )}
@@ -437,27 +561,61 @@ CollabGlam Brand Team
                 </thead>
                 <tbody className="divide-y divide-gray-100">
                   {items.map((inv) => {
-                    const isInvited = inv.status === 'invited';
+                    const elig = rowEligibility[inv.invitationId];
+
+                    const missingEmail = !inv.missingEmailId;
+                    const ruleBlocks = elig ? !elig.canSend : false;
+
+                    const disabled = isSending || missingEmail || ruleBlocks;
+
+                    let btnLabel = 'Send Email';
+                    if (missingEmail) btnLabel = 'No Email Yet';
+                    else if (elig?.state === 'cooldown') btnLabel = `Wait ${formatWaitUntil(elig.nextAllowedAt)}`;
+                    else if (elig?.state === 'blocked') btnLabel = 'Blocked';
+
                     return (
                       <tr
                         key={inv.invitationId}
                         className="hover:bg-gray-50 transition-colors"
                       >
-                        {/* Handle */}
                         <Td>
                           <div className="flex flex-col">
                             <span className="font-medium text-gray-900">
                               {inv.handle}
                             </span>
-                            {inv.campaignName && (
-                              <span className="mt-0.5 text-[11px] text-gray-400 sm:hidden">
-                                via campaign
+
+                            {/* ✅ eligibility hint */}
+                            {inv.missingEmailId ? (
+                              elig ? (
+                                <span
+                                  className={`mt-0.5 text-[11px] ${
+                                    elig.state === 'allowed'
+                                      ? 'text-emerald-600'
+                                      : elig.state === 'cooldown'
+                                        ? 'text-amber-600'
+                                        : 'text-rose-600'
+                                  }`}
+                                  title={elig.reason}
+                                >
+                                  {elig.state === 'allowed'
+                                    ? 'Allowed'
+                                    : elig.state === 'cooldown'
+                                      ? `Cooldown: ${formatWaitUntil(elig.nextAllowedAt)}`
+                                      : 'Blocked until reply'}
+                                </span>
+                              ) : (
+                                <span className="mt-0.5 text-[11px] text-gray-400">
+                                  Checking rules…
+                                </span>
+                              )
+                            ) : (
+                              <span className="mt-0.5 text-[11px] text-gray-400">
+                                Email not resolved yet
                               </span>
                             )}
                           </div>
                         </Td>
 
-                        {/* Campaign (only if any campaign exists across list) */}
                         {hasAnyCampaign && (
                           <Td>
                             {inv.campaignName ? (
@@ -468,19 +626,16 @@ CollabGlam Brand Team
                                 {truncateText(inv.campaignName, 65)}
                               </span>
                             ) : (
-                              <span className="text-gray-400 text-xs italic">
-                                –
-                              </span>
+                              <span className="text-gray-400 text-xs italic">–</span>
                             )}
                           </Td>
                         )}
 
-                        {/* Status */}
                         <Td>
                           <span
                             className={[
                               'inline-flex items-center rounded-full px-3 py-0.5 text-xs font-medium',
-                              isInvited
+                              inv.status === 'invited'
                                 ? 'border-amber-200 bg-amber-50 text-amber-700'
                                 : 'border-emerald-200 bg-emerald-50 text-emerald-700',
                               'border',
@@ -490,41 +645,42 @@ CollabGlam Brand Team
                           </span>
                         </Td>
 
-                        {/* Platform */}
                         <Td className="hidden sm:table-cell">
                           <span className="inline-flex items-center rounded-full bg-slate-50 px-2.5 py-0.5 text-[11px] font-medium uppercase tracking-wide text-slate-700">
                             {inv.platform}
                           </span>
                         </Td>
 
-                        {/* Invited At */}
                         <Td className="hidden md:table-cell">
                           <span className="text-gray-500 text-xs">
                             {prettyDate(inv.createdAt)}
                           </span>
                         </Td>
 
-                        {/* Action */}
                         <Td className="text-right">
                           <button
                             type="button"
                             onClick={() => {
-                              if (!isInvited && !isSending) {
-                                openComposeForInvitation(inv);
-                              }
+                              if (!disabled) openComposeForInvitation(inv);
                             }}
-                            disabled={isInvited || isSending}
+                            disabled={disabled}
+                            title={
+                              missingEmail
+                                ? 'No email found yet for this handle'
+                                : elig?.reason || undefined
+                            }
                             className={`
                               inline-flex items-center gap-1.5 rounded-full border border-orange-200 px-3 py-1 
                               text-xs font-medium transition-colors
-                              ${isInvited || isSending
-                                ? 'bg-orange-50 text-orange-300 cursor-not-allowed opacity-60'
-                                : 'bg-orange-50 text-orange-700 hover:bg-orange-100 cursor-pointer'
+                              ${
+                                disabled
+                                  ? 'bg-orange-50 text-orange-300 cursor-not-allowed opacity-60'
+                                  : 'bg-orange-50 text-orange-700 hover:bg-orange-100 cursor-pointer'
                               }
                             `}
                           >
                             <Mail className="w-3 h-3" />
-                            Send Email
+                            {btnLabel}
                           </button>
                         </Td>
                       </tr>
@@ -536,11 +692,9 @@ CollabGlam Brand Team
           )}
         </div>
 
-        {/* Tiny hint */}
         <p className="mt-4 text-[11px] text-gray-500">
-          This view is intentionally minimal: it only shows handles that are
-          currently in
-          <span className="font-semibold mx-1">invited</span> status.
+          Rule: if a creator has never replied, you can send 1 email anytime, the 2nd only after 48 hours,
+          and after 2 emails you are blocked until they reply.
         </p>
       </div>
 
@@ -559,7 +713,7 @@ CollabGlam Brand Team
                     Compose Email
                   </h2>
                   <p className="text-xs text-gray-500">
-                    Send collaboration offers directly to your creator pipeline.
+                    Send collaboration offers to this creator via the relay.
                   </p>
                 </div>
               </div>
@@ -577,7 +731,30 @@ CollabGlam Brand Team
 
             {/* Body */}
             <div className="px-6 py-4 space-y-3 overflow-y-auto">
-              {/* From (no real email shown / sent) */}
+              {/* Rule banner */}
+              {selectedEligibility && (
+                <div
+                  className={[
+                    'rounded-lg border px-3 py-2 text-[11px]',
+                    selectedEligibility.state === 'allowed'
+                      ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                      : selectedEligibility.state === 'cooldown'
+                        ? 'bg-amber-50 border-amber-200 text-amber-800'
+                        : 'bg-rose-50 border-rose-200 text-rose-800',
+                  ].join(' ')}
+                >
+                  {selectedEligibility.state === 'cooldown' && selectedEligibility.nextAllowedAt ? (
+                    <p>
+                      {selectedEligibility.reason} (next allowed in{' '}
+                      <b>{formatWaitUntil(selectedEligibility.nextAllowedAt)}</b>)
+                    </p>
+                  ) : (
+                    <p>{selectedEligibility.reason}</p>
+                  )}
+                </div>
+              )}
+
+              {/* From */}
               <div className="space-y-1.5">
                 <label className="text-[11px] font-medium text-gray-500">
                   From
@@ -597,14 +774,12 @@ CollabGlam Brand Team
                 </label>
                 <input
                   type="text"
-                  value={composeToDisplay}
+                  value={selectedInvitation.handle}
                   readOnly
                   className="w-full text-xs px-3 py-2 rounded-lg border border-gray-200 bg-gray-50 text-gray-700"
                 />
                 <p className="text-[10px] text-gray-400">
-                  This message will be sent to this creator via your email
-                  relay. The backend uses the invitation ID to resolve the
-                  contact.
+                  Backend uses invitationId to resolve the recipient email.
                 </p>
               </div>
 
@@ -617,7 +792,6 @@ CollabGlam Brand Team
                   type="text"
                   value={composeSubject}
                   onChange={(e) => setComposeSubject(e.target.value)}
-                  placeholder="Collaboration for your upcoming content"
                   className="w-full text-xs px-3 py-2 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#FFA135] focus:border-[#FFA135]"
                 />
               </div>
@@ -630,19 +804,10 @@ CollabGlam Brand Team
                 <textarea
                   value={composeBody}
                   onChange={(e) => setComposeBody(e.target.value)}
-                  placeholder={`Hi ${selectedInvitation.handle},
-
-We’re excited about your content and would love to collaborate on an upcoming campaign.
-
-[Add your brief, deliverables, timelines, and budget details here]
-
-Looking forward to hearing from you,
-CollabGlam Brand Team`}
                   rows={8}
                   className="w-full text-xs px-3 py-2 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#FFA135] focus:border-[#FFA135] resize-none"
                 />
 
-                {/* Attachments preview */}
                 {composeAttachments.length > 0 && (
                   <div className="flex flex-wrap gap-2 pt-2">
                     {composeAttachments.map((file, index) => (
@@ -711,8 +876,9 @@ CollabGlam Brand Team`}
                 <button
                   type="button"
                   onClick={handleSend}
-                  disabled={isSending}
+                  disabled={isSending || (selectedEligibility ? !selectedEligibility.canSend : false)}
                   className="inline-flex items-center gap-1.5 text-xs px-4 py-1.5 rounded-full bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white shadow-sm hover:shadow-md disabled:opacity-60 disabled:cursor-not-allowed"
+                  title={selectedEligibility?.reason}
                 >
                   <Send className="w-3 h-3" />
                   {isSending ? 'Sending…' : 'Send'}
