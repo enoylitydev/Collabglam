@@ -34,8 +34,8 @@ interface RawCampaign {
   isActive: number;
   budget: number;
   applicantCount?: number;
-  totalAcceptedMembers?: number
-  campaignType?: string; // ✅ NEW
+  totalAcceptedMembers?: number;
+  campaignType?: string;
 }
 
 interface Campaign {
@@ -46,15 +46,15 @@ interface Campaign {
   isActive: number;
   budget: number;
   applicantCount: number;
-  totalAcceptedMembers?: number
-  campaignType?: string; // ✅ NEW
+  totalAcceptedMembers?: number;
+  campaignType?: string;
 }
 
 interface CampaignsApiResponse {
   meta?: ApiMeta;
-  pagination?: ApiMeta; // fallback if backend uses a different key
+  pagination?: ApiMeta;
   campaigns?: RawCampaign[];
-  data?: RawCampaign[]; // fallback
+  data?: RawCampaign[];
 }
 
 export default function BrandActiveCampaignsPage() {
@@ -64,7 +64,7 @@ export default function BrandActiveCampaignsPage() {
   const [error, setError] = useState<string | null>(null);
 
   const [currentPage, setCurrentPage] = useState(1);
-  const [limit] = useState(10); // easy to expose later
+  const [limit] = useState(10);
   const [totalPages, setTotalPages] = useState(1);
 
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
@@ -121,7 +121,7 @@ export default function BrandActiveCampaignsPage() {
           budget: c.budget,
           applicantCount: c.applicantCount ?? 0,
           totalAcceptedMembers: c.totalAcceptedMembers ?? 0,
-          campaignType: c.campaignType, // ✅ map campaignType
+          campaignType: c.campaignType,
         }));
 
         setCampaigns(normalised);
@@ -183,7 +183,10 @@ export default function BrandActiveCampaignsPage() {
       {/* Search */}
       <div className="mb-6 max-w-md">
         <div className="relative">
-          <HiSearch className="absolute inset-y-0 left-3 my-auto text-gray-400" size={20} />
+          <HiSearch
+            className="absolute inset-y-0 left-3 my-auto text-gray-400"
+            size={20}
+          />
           <input
             type="text"
             placeholder="Search campaigns..."
@@ -246,7 +249,6 @@ interface TableViewProps {
 }
 
 function TableView({ data, formatDate, formatCurrency }: TableViewProps) {
-  // ✅ helper to slice text (like we did before)
   const truncate = (value?: string, len = 25) => {
     if (!value) return "—";
     const v = value.trim();
@@ -267,19 +269,23 @@ function TableView({ data, formatDate, formatCurrency }: TableViewProps) {
             <tr>
               {[
                 "Campaign",
-                "Campaign Type", // ✅ new column
+                "Campaign Type",
                 "Budget",
                 "Status",
-                "Timeline",
-                "Influencers Working",
+                "Compaign Timeline",
+                "Active Influencers",
                 "Actions",
               ].map((h) => (
-                <th key={h} className="px-6 py-3 text-center font-medium whitespace-nowrap">
+                <th
+                  key={h}
+                  className="px-6 py-3 text-center font-medium whitespace-nowrap"
+                >
                   {h}
                 </th>
               ))}
             </tr>
           </thead>
+
           <tbody>
             {data.map((c, idx) => (
               <tr
@@ -302,7 +308,7 @@ function TableView({ data, formatDate, formatCurrency }: TableViewProps) {
                   </div>
                 </td>
 
-                {/* ✅ Campaign Type (sliced with tooltip) */}
+                {/* Campaign Type */}
                 <td className="px-6 py-4 align-top text-center">
                   {c.campaignType ? (
                     <Tooltip>
@@ -338,17 +344,32 @@ function TableView({ data, formatDate, formatCurrency }: TableViewProps) {
 
                 {/* Timeline */}
                 <td className="px-6 py-4 whitespace-nowrap text-center align-top">
-                  {formatDate(c.timeline.startDate)} – {formatDate(c.timeline.endDate)}
+                  {formatDate(c.timeline.startDate)} –{" "}
+                  {formatDate(c.timeline.endDate)}
                 </td>
 
-                {/* Influencers Working */}
+                {/* ✅ Active Influencers (NOW SAME PILL STYLE AS APPLIED INFLUENCERS) */}
                 <td className="px-6 py-4 text-center align-top">
-                  {c.totalAcceptedMembers ?? "0"}
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Link
+                        href={`/brand/active-campaign/active-inf?id=${c.id}&name=${encodeURIComponent(
+                          c.productOrServiceName
+                        )}`}
+                        className="inline-flex items-center justify-center rounded-full bg-gray-100 px-4 py-1 text-sm font-bold text-gray-900 hover:bg-gray-200 transition"
+                        title="View active influencers"
+                      >
+                        {c.totalAcceptedMembers ?? 0}
+                      </Link>
+                    </TooltipTrigger>
+                    <TooltipContent>View Influencers</TooltipContent>
+                  </Tooltip>
                 </td>
 
                 {/* Actions */}
                 <td className="px-6 py-4 whitespace-nowrap items-center align-top">
                   <div className="flex items-center justify-center space-x-2">
+                    {/* View Campaign */}
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <Link
@@ -361,12 +382,11 @@ function TableView({ data, formatDate, formatCurrency }: TableViewProps) {
                       <TooltipContent>View Campaign</TooltipContent>
                     </Tooltip>
 
+                    {/* Applicants icon */}
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <Link
-                          href={`/brand/active-campaign/active-inf?id=${c.id}&name=${encodeURIComponent(
-                            c.productOrServiceName
-                          )}`}
+                          href={`/brand/created-campaign/applied-inf?id=${c.id}&createdPage=true`}
                           className="relative flex items-center p-2 bg-gray-100 text-gray-800 rounded-full hover:bg-gray-200 focus:outline-none"
                         >
                           <HiOutlineUserGroup size={18} />
@@ -377,7 +397,7 @@ function TableView({ data, formatDate, formatCurrency }: TableViewProps) {
                           )}
                         </Link>
                       </TooltipTrigger>
-                      <TooltipContent>View Influencers</TooltipContent>
+                      <TooltipContent>View Applicants</TooltipContent>
                     </Tooltip>
                   </div>
                 </td>

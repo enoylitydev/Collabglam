@@ -476,6 +476,8 @@ export default function AppliedInfluencersPage() {
   const searchParams = useSearchParams();
   const campaignId = searchParams.get("id");
   const influencerId = searchParams.get("infId");
+  const createdPage = searchParams.get("createdPage") === "true";
+
 
   const [serverBudget, setServerBudget] = useState<number | null>(null);
   const [serverTimeline, setServerTimeline] = useState<{
@@ -838,6 +840,7 @@ export default function AppliedInfluencersPage() {
           search: (search ?? searchTerm).trim(),
           sortField,
           sortOrder,
+           createdPage,
         };
         const res: any = await post("/apply/list", payload);
         const influencersList =

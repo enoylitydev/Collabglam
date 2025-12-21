@@ -846,7 +846,9 @@ export default function ActiveInfluencersPage() {
               disabled={!inf.contractId || openingContractFor === inf.contractId}
               title={inf.contractId ? "View contract" : "No contract available"}
             >
-              {openingContractFor === inf.contractId ? "Opening..." : "View Contract"}
+              {openingContractFor === inf.contractId
+                ? "Opening..."
+                : "View Contract"}
             </Button>
 
             <Button
@@ -887,7 +889,14 @@ export default function ActiveInfluencersPage() {
 
       return [baseRow, detailsRow].filter(Boolean);
     });
-  }, [paginatedRows, expandedRow, campaignId, router, isBudgetLocked, openingContractFor]);
+  }, [
+    paginatedRows,
+    expandedRow,
+    campaignId,
+    router,
+    isBudgetLocked,
+    openingContractFor,
+  ]);
 
   const totalPages = meta.totalPages;
   const totalAccepted = meta.total;
@@ -937,8 +946,8 @@ export default function ActiveInfluencersPage() {
 
           {isBudgetLocked && (
             <p className="text-xs font-semibold text-red-600">
-              Milestone total has reached the campaign budget. You cannot create more
-              milestones.
+              Milestone total has reached the campaign budget. You cannot create
+              more milestones.
             </p>
           )}
         </div>
@@ -952,7 +961,7 @@ export default function ActiveInfluencersPage() {
         </Button>
       </header>
 
-      {/* ✅ Search + Applied Influencers Button */}
+      {/* ✅ Search (Applied Influencers button removed) */}
       <div className="mb-6 w-full">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
           <div className="relative w-full sm:max-w-md">
@@ -971,21 +980,6 @@ export default function ActiveInfluencersPage() {
               className="w-full pl-10 pr-4 py-2 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
             />
           </div>
-
-          <Button
-            size="sm"
-            onClick={handleViewAppliedInfluencers}
-            disabled={!campaignId}
-            className={`bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white hover:from-[#FF7236] hover:to-[#FFA135] cursor-pointer disabled:opacity-50 ${
-              appliedCount > 0 ? "animate-pulse" : ""
-            }`}
-            title={campaignId ? "View applied influencers" : "Missing campaign id"}
-          >
-            <span>Applied Influencers</span>
-            <span className="ml-2 rounded-full bg-white/20 px-2 py-0.5 text-xs font-semibold">
-              {isAppliedCountLoading ? "..." : appliedCount}
-            </span>
-          </Button>
         </div>
       </div>
 
@@ -1088,8 +1082,12 @@ export default function ActiveInfluencersPage() {
               }}
             >
               <div className="text-white">
-                <p className="text-xs uppercase tracking-wide">Create milestone</p>
-                <h2 className="text-lg font-semibold mt-1">{selectedInf.name}</h2>
+                <p className="text-xs uppercase tracking-wide">
+                  Create milestone
+                </p>
+                <h2 className="text-lg font-semibold mt-1">
+                  {selectedInf.name}
+                </h2>
                 <div className="mt-1 text-xs text-white flex flex-wrap items-center gap-2">
                   {selectedInf.username && (
                     <span>@{selectedInf.username.replace(/^@/, "")}</span>
@@ -1100,8 +1098,12 @@ export default function ActiveInfluencersPage() {
                     </span>
                   )}
                   {campaignName && (
-                    <span className="truncate max-w-[170px]" title={campaignName}>
-                      Campaign: <span className="font-medium">{campaignName}</span>
+                    <span
+                      className="truncate max-w-[170px]"
+                      title={campaignName}
+                    >
+                      Campaign:{" "}
+                      <span className="font-medium">{campaignName}</span>
                     </span>
                   )}
                 </div>
@@ -1148,8 +1150,8 @@ export default function ActiveInfluencersPage() {
 
               {isBudgetLocked && (
                 <p className="text-xs font-semibold text-red-600">
-                  Milestone total has reached the campaign budget. You cannot create
-                  more milestones.
+                  Milestone total has reached the campaign budget. You cannot
+                  create more milestones.
                 </p>
               )}
 
@@ -1220,9 +1222,9 @@ export default function ActiveInfluencersPage() {
                         </button>
                       </TooltipTrigger>
                       <TooltipContent className="max-w-xs text-xs bg-gray-800 text-white">
-                        Payment Gateway charges a 2% payment processing fee when you add
-                        milestone funds. This 2% is added on top of the milestone amount
-                        you enter.
+                        Payment Gateway charges a 2% payment processing fee when
+                        you add milestone funds. This 2% is added on top of the
+                        milestone amount you enter.
                       </TooltipContent>
                     </Tooltip>
                   </TooltipProvider>
@@ -1256,7 +1258,9 @@ export default function ActiveInfluencersPage() {
                 <Button
                   onClick={handleSaveMilestone}
                   disabled={
-                    !selectedInf?.influencerId || isSavingMilestone || isBudgetLocked
+                    !selectedInf?.influencerId ||
+                    isSavingMilestone ||
+                    isBudgetLocked
                   }
                   className="bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white hover:from-[#FF8A1F] hover:to-[#FF5A2E] focus:outline-none focus:ring-2 focus:ring-[#FFA135]/40 cursor-pointer disabled:opacity-60"
                 >
