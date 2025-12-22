@@ -53,6 +53,7 @@ export default function BrandCreatedCampaignsPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [limit] = useState(10);
   const [totalPages, setTotalPages] = useState(1);
+  const [debouncedSearch, setDebouncedSearch] = useState("");
 
   // ✅ per-row status update loading
   const [statusUpdating, setStatusUpdating] = useState<Record<string, boolean>>(
@@ -113,17 +114,20 @@ export default function BrandCreatedCampaignsPage() {
     [limit]
   );
 
-  useEffect(() => {
-    fetchCampaigns(currentPage, search);
-  }, [fetchCampaigns, currentPage]); // eslint-disable-line react-hooks/exhaustive-deps
-
+  // debounce search (also resets to page 1)
   useEffect(() => {
     const t = setTimeout(() => {
       setCurrentPage(1);
-      fetchCampaigns(1, search);
+      setDebouncedSearch(search.trim());
     }, 400);
+
     return () => clearTimeout(t);
-  }, [search, fetchCampaigns]);
+  }, [search]);
+
+  // single source of truth for fetching
+  useEffect(() => {
+    fetchCampaigns(currentPage, debouncedSearch);
+  }, [fetchCampaigns, currentPage, debouncedSearch]);
 
   const updateStatus = async (campaignId: string, next: CampaignStatus) => {
     const brandId =
@@ -320,14 +324,6 @@ function TableView({
                           className="inline-flex items-center gap-2 group"
                           title={c.productOrServiceName}
                         >
-                          {c.influencerWorking ? (
-                            <span
-                              className="inline-block h-2.5 w-2.5 rounded-full bg-green-500 ring-2 ring-green-200"
-                              title="Influencer started working"
-                              aria-label="Influencer started working"
-                            />
-                          ) : null}
-
                           <span className="font-bold text-gray-900 group-hover:text-[#FF7236] group-hover:underline">
                             {sliceText(c.productOrServiceName, 40)}
                           </span>

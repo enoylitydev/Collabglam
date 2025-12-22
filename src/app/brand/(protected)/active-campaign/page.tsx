@@ -2,19 +2,12 @@
 
 import React, { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
-import {
-  HiSearch,
-  HiOutlineEye,
-  HiChevronLeft,
-  HiChevronRight,
-  HiOutlineUserGroup,
-} from "react-icons/hi";
-import { get, post } from "@/lib/api";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+import { HiSearch, HiChevronLeft, HiChevronRight, HiOutlineUserGroup } from "react-icons/hi";
+import { post } from "@/lib/api";
+
+// ✅ Theme
+const TABLE_GRADIENT_FROM = "#FFA135";
+const TABLE_GRADIENT_TO = "#FF7236";
 
 // ---- Types ----
 interface ApiMeta {
@@ -62,33 +55,42 @@ export default function BrandActiveCampaignsPage() {
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [debouncedSearch, setDebouncedSearch] = useState("");
 
   const [currentPage, setCurrentPage] = useState(1);
   const [limit] = useState(10);
   const [totalPages, setTotalPages] = useState(1);
 
-  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
-  const [counts, setCounts] = useState<Record<string, number>>({});
-
   // ---- Helpers ----
-  const formatDate = (dateStr: string) =>
-    new Intl.DateTimeFormat("en-US", {
+  const formatDate = (dateStr?: string) => {
+    if (!dateStr) return "—";
+    const d = new Date(dateStr);
+    if (Number.isNaN(d.getTime())) return "—";
+    return new Intl.DateTimeFormat("en-US", {
       month: "short",
       day: "numeric",
       year: "numeric",
-    }).format(new Date(dateStr));
+    }).format(d);
+  };
 
   const formatCurrency = (amt: number) =>
-    new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency: "USD",
-    }).format(amt);
+    new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(
+      Number.isFinite(amt) ? amt : 0
+    );
+
+  const truncate = (value?: string, len = 32) => {
+    if (!value) return "—";
+    const v = value.trim();
+    if (v.length <= len) return v;
+    return v.slice(0, len) + "…";
+  };
 
   // ---- Fetch ----
   const fetchCampaigns = useCallback(
     async (page: number, term: string) => {
       setLoading(true);
       setError(null);
+
       try {
         const brandId =
           typeof window !== "undefined" ? localStorage.getItem("brandId") : null;
@@ -102,14 +104,14 @@ export default function BrandActiveCampaignsPage() {
         });
 
         const list: RawCampaign[] = Array.isArray(res?.campaigns)
-          ? res!.campaigns!
+          ? res.campaigns!
           : Array.isArray(res?.data)
-          ? res!.data!
-          : [];
+            ? res.data!
+            : [];
 
         const active = list.filter((c) => c.isActive === 1);
 
-        const normalised: Campaign[] = active.map((c) => ({
+        const normalized: Campaign[] = active.map((c) => ({
           id: c.campaignsId ?? c._id,
           productOrServiceName: c.productOrServiceName,
           description: c.description ?? "",
@@ -124,12 +126,12 @@ export default function BrandActiveCampaignsPage() {
           campaignType: c.campaignType,
         }));
 
-        setCampaigns(normalised);
+        setCampaigns(normalized);
 
         const meta = res.meta || res.pagination;
         setTotalPages(meta?.totalPages || meta?.pages || 1);
       } catch (err: any) {
-        setError(err.message || "Failed to load campaigns.");
+        setError(err?.message || "Failed to load campaigns.");
       } finally {
         setLoading(false);
       }
@@ -137,56 +139,31 @@ export default function BrandActiveCampaignsPage() {
     [limit]
   );
 
-  // initial + page changes
-  useEffect(() => {
-    fetchCampaigns(currentPage, search);
-  }, [fetchCampaigns, currentPage]);
-
-  // debounce search -> reset to page 1
+  // debounce search (also resets to page 1)
   useEffect(() => {
     const t = setTimeout(() => {
       setCurrentPage(1);
-      fetchCampaigns(1, search);
+      setDebouncedSearch(search.trim());
     }, 400);
-    return () => clearTimeout(t);
-  }, [search, fetchCampaigns]);
 
-  // ---- Expand row (count influencers) ----
-  const toggleExpand = async (campaign: Campaign) => {
-    const id = campaign.id;
-    const newSet = new Set(expandedIds);
-    if (newSet.has(id)) {
-      newSet.delete(id);
-      setExpandedIds(newSet);
-    } else {
-      newSet.add(id);
-      setExpandedIds(newSet);
-      if (!(id in counts)) {
-        try {
-          const res = await get<{ count: number }>("/campaign/influencers", {
-            campaignId: id,
-          });
-          setCounts((prev) => ({ ...prev, [id]: res.count }));
-        } catch {
-          setCounts((prev) => ({ ...prev, [id]: 0 }));
-        }
-      }
-    }
-  };
+    return () => clearTimeout(t);
+  }, [search]);
+
+  // single source of truth for fetching
+  useEffect(() => {
+    fetchCampaigns(currentPage, debouncedSearch);
+  }, [fetchCampaigns, currentPage, debouncedSearch]);
 
   return (
-    <div className="p-6 min-h-screen">
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-3xl font-semibold">Active Campaigns</h1>
+    <div className="p-6 min-h-screen space-y-5">
+      <div className="flex justify-between items-center">
+        <h1 className="text-3xl font-semibold text-gray-900">Active Campaigns</h1>
       </div>
 
       {/* Search */}
-      <div className="mb-6 max-w-md">
+      <div className="max-w-md">
         <div className="relative">
-          <HiSearch
-            className="absolute inset-y-0 left-3 my-auto text-gray-400"
-            size={20}
-          />
+          <HiSearch className="absolute inset-y-0 left-3 my-auto text-gray-400" size={20} />
           <input
             type="text"
             placeholder="Search campaigns..."
@@ -204,14 +181,147 @@ export default function BrandActiveCampaignsPage() {
       ) : campaigns.length === 0 ? (
         <p className="text-gray-700">No campaigns found.</p>
       ) : (
-        <TableView
-          data={campaigns}
-          expandedIds={expandedIds}
-          counts={counts}
-          onToggle={toggleExpand}
-          formatDate={formatDate}
-          formatCurrency={formatCurrency}
-        />
+        <div
+          className="p-[1.5px] rounded-lg shadow"
+          style={{
+            backgroundImage: `linear-gradient(to right, ${TABLE_GRADIENT_FROM}, ${TABLE_GRADIENT_TO})`,
+          }}
+        >
+          <div className="overflow-x-auto bg-white rounded-[0.5rem]">
+            <table className="w-full text-sm text-gray-700">
+              <thead
+                className="text-white"
+                style={{
+                  backgroundImage: `linear-gradient(to right, ${TABLE_GRADIENT_FROM}, ${TABLE_GRADIENT_TO})`,
+                }}
+              >
+                <tr>
+                  {[
+                    "Campaign",
+                    "Campaign Type",
+                    "Budget",
+                    "Status",
+                    "Campaign Timeline",
+                    "Active Influencers",
+                    "Actions",
+                  ].map((h) => (
+                    <th
+                      key={h}
+                      className="px-6 py-3 text-center font-semibold whitespace-nowrap transition-colors hover:text-black cursor-default"
+                    >
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+
+              <tbody>
+                {campaigns.map((c, idx) => (
+                  <tr
+                    key={c.id}
+                    className={`${idx % 2 === 0 ? "bg-white" : "bg-gray-50"} transition-colors`}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.backgroundImage = `linear-gradient(to right, ${TABLE_GRADIENT_FROM}11, ${TABLE_GRADIENT_TO}11)`;
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.backgroundImage = "";
+                    }}
+                  >
+                    {/* Campaign Name (CLICKABLE => View Campaign) */}
+                    <td className="px-6 py-4 text-center align-middle">
+                      <Link
+                        href={`/brand/active-campaign/view-campaign?id=${c.id}`}
+                        className="font-semibold text-gray-900 underline-offset-4 transition-colors"
+                        style={{ textDecoration: "none" }}
+                        onMouseEnter={(e) => (e.currentTarget.style.color = TABLE_GRADIENT_TO)}
+                        onMouseLeave={(e) => (e.currentTarget.style.color = "")}
+                        title={c.productOrServiceName}
+                      >
+                        {truncate(c.productOrServiceName, 32)}
+                      </Link>
+                    </td>
+
+                    {/* Campaign Type */}
+                    <td className="px-6 py-4 text-center align-middle">
+                      <span className={c.campaignType ? "text-gray-900" : "text-gray-400"}>
+                        {c.campaignType ? truncate(c.campaignType, 26) : "—"}
+                      </span>
+                    </td>
+
+                    {/* Budget */}
+                    <td className="px-6 py-4 text-center align-middle whitespace-nowrap">
+                      {formatCurrency(c.budget)}
+                    </td>
+
+                    {/* Status */}
+                    <td className="px-6 py-4 text-center align-middle whitespace-nowrap">
+                      <span
+                        className={`inline-flex items-center justify-center px-3 py-1 text-xs font-semibold rounded-full ${c.isActive === 1
+                          ? "text-white"
+                          : "bg-red-100 text-red-800"
+                          }`}
+                        style={
+                          c.isActive === 1
+                            ? {
+                              backgroundImage: `linear-gradient(to right, ${TABLE_GRADIENT_FROM}, ${TABLE_GRADIENT_TO})`,
+                            }
+                            : undefined
+                        }
+                      >
+                        {c.isActive === 1 ? "Active" : "Inactive"}
+                      </span>
+                    </td>
+
+                    {/* Timeline */}
+                    <td className="px-6 py-4 text-center align-middle whitespace-nowrap">
+                      {formatDate(c.timeline?.startDate)} – {formatDate(c.timeline?.endDate)}
+                    </td>
+
+                    {/* Active Influencers (hover text = gradient color) */}
+                    <td className="px-6 py-4 text-center align-middle">
+                      <Link
+                        href={`/brand/active-campaign/active-inf?id=${c.id}&name=${encodeURIComponent(
+                          c.productOrServiceName
+                        )}`}
+                        className="inline-flex items-center justify-center rounded-full bg-gray-100 px-5 py-1.5 text-sm font-bold text-gray-900 transition-colors"
+                        onMouseEnter={(e) => (e.currentTarget.style.color = TABLE_GRADIENT_TO)}
+                        onMouseLeave={(e) => (e.currentTarget.style.color = "")}
+                        title="View active influencers"
+                      >
+                        {c.totalAcceptedMembers ?? 0}
+                      </Link>
+                    </td>
+
+                    {/* Actions (button bg = gradient, hover keeps it) */}
+                    <td className="px-6 py-4 text-center align-middle whitespace-nowrap">
+                      <Link
+                        href={`/brand/created-campaign/applied-inf?id=${c.id}`}
+                        className="inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold text-white transition-transform active:scale-[0.99]"
+                        style={{
+                          backgroundImage: `linear-gradient(to right, ${TABLE_GRADIENT_FROM}, ${TABLE_GRADIENT_TO})`,
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.filter = "brightness(0.97)";
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.filter = "";
+                        }}
+                      >
+                        <HiOutlineUserGroup size={18} />
+                        View Applicants
+                        {c.applicantCount > 0 ? (
+                          <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 text-xs font-bold text-white bg-[#ef2f5b] rounded-full">
+                            {c.applicantCount}
+                          </span>
+                        ) : null}
+                      </Link>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
       )}
 
       <Pagination
@@ -228,183 +338,10 @@ export default function BrandActiveCampaignsPage() {
 function SkeletonTable() {
   return (
     <div className="overflow-x-auto bg-white shadow rounded-lg animate-pulse">
-      <div className="p-6">
-        <div className="h-4 bg-gray-200 rounded w-3/4 mb-4"></div>
-        <div className="h-4 bg-gray-200 rounded w-full"></div>
-      </div>
-    </div>
-  );
-}
-
-const TABLE_GRADIENT_FROM = "#FFA135";
-const TABLE_GRADIENT_TO = "#FF7236";
-
-interface TableViewProps {
-  data: Campaign[];
-  expandedIds: Set<string>;
-  counts: Record<string, number>;
-  onToggle: (campaign: Campaign) => Promise<void> | void;
-  formatDate: (str: string) => string;
-  formatCurrency: (amt: number) => string;
-}
-
-function TableView({ data, formatDate, formatCurrency }: TableViewProps) {
-  const truncate = (value?: string, len = 25) => {
-    if (!value) return "—";
-    const v = value.trim();
-    if (v.length <= len) return v;
-    return v.slice(0, len) + "…";
-  };
-
-  return (
-    <div className="p-[1.5px] rounded-lg bg-gradient-to-r shadow">
-      <div className="overflow-x-auto bg-white rounded-[0.5rem]">
-        <table className="w-full text-sm text-gray-600">
-          <thead
-            className="text-left text-white"
-            style={{
-              backgroundImage: `linear-gradient(to right, ${TABLE_GRADIENT_FROM}, ${TABLE_GRADIENT_TO})`,
-            }}
-          >
-            <tr>
-              {[
-                "Campaign",
-                "Campaign Type",
-                "Budget",
-                "Status",
-                "Compaign Timeline",
-                "Active Influencers",
-                "Actions",
-              ].map((h) => (
-                <th
-                  key={h}
-                  className="px-6 py-3 text-center font-medium whitespace-nowrap"
-                >
-                  {h}
-                </th>
-              ))}
-            </tr>
-          </thead>
-
-          <tbody>
-            {data.map((c, idx) => (
-              <tr
-                key={c.id}
-                className={`${
-                  idx % 2 === 0 ? "bg-white" : "bg-gray-50"
-                } transition-colors hover:bg-transparent`}
-                style={{ backgroundImage: "var(--row-hover-gradient)" }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundImage = `linear-gradient(to right, ${TABLE_GRADIENT_FROM}11, ${TABLE_GRADIENT_TO}11)`;
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundImage = "";
-                }}
-              >
-                {/* Campaign Name */}
-                <td className="px-6 py-4 align-top">
-                  <div className="font-medium text-gray-900 text-center">
-                    {truncate(c.productOrServiceName, 30)}
-                  </div>
-                </td>
-
-                {/* Campaign Type */}
-                <td className="px-6 py-4 align-top text-center">
-                  {c.campaignType ? (
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <span className="cursor-default text-gray-900">
-                          {truncate(c.campaignType, 25)}
-                        </span>
-                      </TooltipTrigger>
-                      <TooltipContent>{c.campaignType}</TooltipContent>
-                    </Tooltip>
-                  ) : (
-                    <span className="text-gray-400">—</span>
-                  )}
-                </td>
-
-                {/* Budget */}
-                <td className="px-6 py-4 text-center whitespace-nowrap align-top">
-                  {formatCurrency(c.budget)}
-                </td>
-
-                {/* Status */}
-                <td className="px-6 py-4 whitespace-nowrap align-top text-center">
-                  <span
-                    className={`inline-flex items-center justify-center px-2 py-1 text-xs font-semibold rounded-full ${
-                      c.isActive === 1
-                        ? "bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white"
-                        : "bg-red-100 text-red-800"
-                    }`}
-                  >
-                    {c.isActive === 1 ? "Active" : "Inactive"}
-                  </span>
-                </td>
-
-                {/* Timeline */}
-                <td className="px-6 py-4 whitespace-nowrap text-center align-top">
-                  {formatDate(c.timeline.startDate)} –{" "}
-                  {formatDate(c.timeline.endDate)}
-                </td>
-
-                {/* ✅ Active Influencers (NOW SAME PILL STYLE AS APPLIED INFLUENCERS) */}
-                <td className="px-6 py-4 text-center align-top">
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Link
-                        href={`/brand/active-campaign/active-inf?id=${c.id}&name=${encodeURIComponent(
-                          c.productOrServiceName
-                        )}`}
-                        className="inline-flex items-center justify-center rounded-full bg-gray-100 px-4 py-1 text-sm font-bold text-gray-900 hover:bg-gray-200 transition"
-                        title="View active influencers"
-                      >
-                        {c.totalAcceptedMembers ?? 0}
-                      </Link>
-                    </TooltipTrigger>
-                    <TooltipContent>View Influencers</TooltipContent>
-                  </Tooltip>
-                </td>
-
-                {/* Actions */}
-                <td className="px-6 py-4 whitespace-nowrap items-center align-top">
-                  <div className="flex items-center justify-center space-x-2">
-                    {/* View Campaign */}
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Link
-                          href={`/brand/active-campaign/view-campaign?id=${c.id}`}
-                          className="p-2 bg-gray-100 text-gray-800 rounded-full hover:bg-gray-200 focus:outline-none"
-                        >
-                          <HiOutlineEye size={18} />
-                        </Link>
-                      </TooltipTrigger>
-                      <TooltipContent>View Campaign</TooltipContent>
-                    </Tooltip>
-
-                    {/* Applicants icon */}
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Link
-                          href={`/brand/created-campaign/applied-inf?id=${c.id}&createdPage=true`}
-                          className="relative flex items-center p-2 bg-gray-100 text-gray-800 rounded-full hover:bg-gray-200 focus:outline-none"
-                        >
-                          <HiOutlineUserGroup size={18} />
-                          {c.applicantCount > 0 && (
-                            <span className="absolute -top-1 -right-1 inline-flex items-center justify-center w-4 h-4 text-xs font-semibold text-white bg-[#ef2f5b] rounded-full">
-                              {c.applicantCount}
-                            </span>
-                          )}
-                        </Link>
-                      </TooltipTrigger>
-                      <TooltipContent>View Applicants</TooltipContent>
-                    </Tooltip>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <div className="p-6 space-y-3">
+        <div className="h-4 bg-gray-200 rounded w-2/3" />
+        <div className="h-4 bg-gray-200 rounded w-full" />
+        <div className="h-4 bg-gray-200 rounded w-5/6" />
       </div>
     </div>
   );
@@ -422,21 +359,25 @@ function Pagination({
   onNext: () => void;
 }) {
   return (
-    <div className="flex justify-end items-center p-4 space-x-2">
+    <div className="flex justify-end items-center p-2 space-x-3">
       <button
         onClick={onPrev}
         disabled={currentPage === 1}
-        className="p-2 bg-gray-100 rounded-full hover:bg-gray-200 disabled:opacity-50"
+        className="p-2 bg-gray-100 rounded-full hover:bg-gray-200 disabled:opacity-50 disabled:hover:bg-gray-100 transition"
+        aria-label="Previous page"
       >
         <HiChevronLeft size={20} />
       </button>
-      <span className="text-gray-700">
-        Page {currentPage} of {totalPages}
+
+      <span className="text-gray-700 text-sm">
+        Page <strong>{currentPage}</strong> of <strong>{totalPages}</strong>
       </span>
+
       <button
         onClick={onNext}
         disabled={currentPage === totalPages}
-        className="p-2 bg-gray-100 rounded-full hover:bg-gray-200 disabled:opacity-50"
+        className="p-2 bg-gray-100 rounded-full hover:bg-gray-200 disabled:opacity-50 disabled:hover:bg-gray-100 transition"
+        aria-label="Next page"
       >
         <HiChevronRight size={20} />
       </button>

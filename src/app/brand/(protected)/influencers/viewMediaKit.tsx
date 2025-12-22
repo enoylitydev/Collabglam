@@ -155,21 +155,6 @@ export default function MediaKitPage() {
           <p className="text-red-600 font-medium">
             {error ?? "No influencer ID available to load the MediaKit."}
           </p>
-          <button
-            onClick={() => {
-              const urlId = searchParams?.get("id");
-              if (urlId) {
-                setResolvedId(urlId);
-                setError(null);
-                setLoading(true);
-              } else {
-                setError("No influencer ID found in URL.");
-              }
-            }}
-            className="w-full px-4 py-3 rounded-xl bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white font-semibold"
-          >
-            Retry with URL ID
-          </button>
         </div>
       </div>
     );

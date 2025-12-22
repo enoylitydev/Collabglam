@@ -66,9 +66,9 @@ async function listInvitations(
 const prettyDate = (iso: string) =>
   iso
     ? new Date(iso).toLocaleString(undefined, {
-        dateStyle: 'medium',
-        timeStyle: 'short',
-      })
+      dateStyle: 'medium',
+      timeStyle: 'short',
+    })
     : '';
 
 const truncateText = (value: string, max = 60) =>
@@ -171,8 +171,8 @@ export default function InvitedInfluencersPage() {
         console.error(err);
         setError(
           err?.response?.data?.message ||
-            err?.message ||
-            'Failed to load invited handles'
+          err?.message ||
+          'Failed to load invited handles'
         );
       } finally {
         setLoading(false);
@@ -189,8 +189,8 @@ export default function InvitedInfluencersPage() {
     setComposeBody('');
     setComposeAttachments([]);
     setComposeError(null);
-    setSelectedEligibility(null);
   };
+
 
   // ✅ Call backend eligibility endpoint & cache result
   const fetchEligibility = async (
@@ -257,25 +257,33 @@ export default function InvitedInfluencersPage() {
       return;
     }
 
-    // ✅ enforce rule BEFORE opening compose
+    // ✅ Check eligibility BEFORE opening compose
     const eligibility =
       eligibilityByInvitationId[inv.invitationId] ||
       (await fetchEligibility(inv.invitationId));
 
-    if (eligibility) {
-      setSelectedEligibility(eligibility);
+    // store eligibility to show banner in modal
+    setSelectedEligibility(eligibility || null);
 
-      if (!eligibility.canSend) {
-        setError(eligibility.reason);
-        return;
-      }
+    if (eligibility && !eligibility.canSend) {
+      setError(eligibility.reason);
+      return;
     }
 
+    // ✅ Open compose
     setSelectedInvitation(inv);
     resetComposeState();
     setIsComposeOpen(true);
 
-    // If there's no campaign, fall back to simple template
+    // ✅ IMPORTANT: If already sent 1 email, DO NOT prefill subject/body
+    // This ensures second mail opens blank (no template/preview shown)
+    const outgoingCount = eligibility?.outgoingCount ?? 0;
+    if (outgoingCount >= 1) {
+      // Keep subject & body empty
+      return;
+    }
+
+    // ✅ First email only → prefill using campaign template OR fallback template
     if (!inv.campaignId) {
       const subjectBase = 'Collaboration opportunity';
       const subject = inv.campaignName
@@ -286,9 +294,8 @@ export default function InvitedInfluencersPage() {
 
       const bodyTemplate = `Hi ${inv.handle},
 
-We’re excited about your content and would love to collaborate${
-        inv.campaignName ? ` on our "${inv.campaignName}" campaign` : ''
-      }.
+We’re excited about your content and would love to collaborate${inv.campaignName ? ` on our "${inv.campaignName}" campaign` : ''
+        }.
 
 [Add your brief, deliverables, timelines, and budget details here]
 
@@ -314,6 +321,7 @@ CollabGlam Brand Team
       setComposeBody(res.textBody || '');
     } catch (err: any) {
       console.error('Failed to fetch invitation template:', err);
+
       const subjectBase = 'Collaboration opportunity';
       const subject = inv.campaignName
         ? `${subjectBase} – ${inv.campaignName}`
@@ -323,9 +331,8 @@ CollabGlam Brand Team
 
       const bodyTemplate = `Hi ${inv.handle},
 
-We’re excited about your content and would love to collaborate${
-        inv.campaignName ? ` on our "${inv.campaignName}" campaign` : ''
-      }.
+We’re excited about your content and would love to collaborate${inv.campaignName ? ` on our "${inv.campaignName}" campaign` : ''
+        }.
 
 [Add your brief, deliverables, timelines, and budget details here]
 
@@ -335,6 +342,7 @@ CollabGlam Brand Team
       setComposeBody(bodyTemplate);
     }
   };
+
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
@@ -588,13 +596,12 @@ CollabGlam Brand Team
                             {inv.missingEmailId ? (
                               elig ? (
                                 <span
-                                  className={`mt-0.5 text-[11px] ${
-                                    elig.state === 'allowed'
-                                      ? 'text-emerald-600'
-                                      : elig.state === 'cooldown'
-                                        ? 'text-amber-600'
-                                        : 'text-rose-600'
-                                  }`}
+                                  className={`mt-0.5 text-[11px] ${elig.state === 'allowed'
+                                    ? 'text-emerald-600'
+                                    : elig.state === 'cooldown'
+                                      ? 'text-amber-600'
+                                      : 'text-rose-600'
+                                    }`}
                                   title={elig.reason}
                                 >
                                   {elig.state === 'allowed'
@@ -672,10 +679,9 @@ CollabGlam Brand Team
                             className={`
                               inline-flex items-center gap-1.5 rounded-full border border-orange-200 px-3 py-1 
                               text-xs font-medium transition-colors
-                              ${
-                                disabled
-                                  ? 'bg-orange-50 text-orange-300 cursor-not-allowed opacity-60'
-                                  : 'bg-orange-50 text-orange-700 hover:bg-orange-100 cursor-pointer'
+                              ${disabled
+                                ? 'bg-orange-50 text-orange-300 cursor-not-allowed opacity-60'
+                                : 'bg-orange-50 text-orange-700 hover:bg-orange-100 cursor-pointer'
                               }
                             `}
                           >
@@ -778,9 +784,6 @@ CollabGlam Brand Team
                   readOnly
                   className="w-full text-xs px-3 py-2 rounded-lg border border-gray-200 bg-gray-50 text-gray-700"
                 />
-                <p className="text-[10px] text-gray-400">
-                  Backend uses invitationId to resolve the recipient email.
-                </p>
               </div>
 
               {/* Subject */}

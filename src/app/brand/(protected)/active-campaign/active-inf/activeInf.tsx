@@ -597,7 +597,7 @@ export default function ActiveInfluencersPage() {
 
       // 2️⃣ Open Razorpay Checkout
       const rzp = new window.Razorpay({
-        key: "rzp_live_Rroqo7nHdOmQco", // or process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID
+        key: "rzp_test_2oIQzZ7i0uQ6sn", // or process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID
         amount,
         currency,
         name: "CollabGlam",

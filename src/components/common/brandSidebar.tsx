@@ -22,6 +22,7 @@ import {
   HiArchiveBox,
 } from 'react-icons/hi2';
 import { useBrandSidebar } from './brand-sidebar-context';
+import { HiClock } from 'react-icons/hi';
 
 interface MenuItem {
   name: string;
@@ -35,7 +36,7 @@ const BASE_MENU_ITEMS: MenuItem[] = [
   { name: 'Create New Campaign', href: '/brand/add-edit-campaign', icon: HiPlusCircle },
   { name: 'Created Campaign', href: '/brand/created-campaign', icon: HiPlayCircle },
   { name: 'Active Campaign', href: '/brand/active-campaign', icon: HiCheckCircle },
-  { name: 'Previous Campaigns', href: '/brand/prev-campaign', icon: HiArchiveBox },
+  { name: 'Campaign History', href: '/brand/campaign-history', icon: HiClock },
   { name: 'Browse Influencers', href: '/brand/browse-influencer', icon: HiUserGroup },
 
   { name: 'Invited Influencers', href: '/brand/invited', icon: HiUserPlus },
