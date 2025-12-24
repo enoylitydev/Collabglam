@@ -147,12 +147,9 @@ export function LoginForm({ role, onForgotPassword, onSuccess }: LoginFormProps)
     <form onSubmit={handleLogin} className="space-y-5">
       <div className="text-center space-y-2">
         <div className="flex justify-center">
-          <div className="w-16 h-16 rounded-2xl flex items-center justify-center">
-            <img src="./logo.png" />
-          </div>
         </div>
-        <h2 className="text-3xl font-bold text-gray-900">Welcome back</h2>
-        <p className="text-gray-600">
+        <h2 className="text-3xl font-bold text-gray-900 text-left">Welcome back</h2>
+        <p className="text-gray-600 text-left">
           Sign in to your {role === 'brand' ? 'brand' : 'influencer'} account
         </p>
       </div>
@@ -187,11 +184,10 @@ export function LoginForm({ role, onForgotPassword, onSuccess }: LoginFormProps)
             type="checkbox"
             checked={showPassword}
             onChange={(e) => setShowPassword(e.target.checked)}
-            className={`rounded border-gray-300 ${
-              role === 'brand'
-                ? 'text-orange-600 focus:ring-orange-500'
-                : 'text-yellow-600 focus:ring-yellow-500'
-            }`}
+            className={`rounded border-gray-300 ${role === 'brand'
+              ? 'text-orange-600 focus:ring-orange-500'
+              : 'text-yellow-600 focus:ring-yellow-500'
+              }`}
           />
           <span className="text-gray-600 group-hover:text-gray-900">
             Show password
@@ -201,11 +197,10 @@ export function LoginForm({ role, onForgotPassword, onSuccess }: LoginFormProps)
         <button
           type="button"
           onClick={onForgotPassword}
-          className={`font-semibold ${
-            role === 'brand'
-              ? 'text-orange-600 hover:text-orange-700'
-              : 'text-yellow-600 hover:text-yellow-700'
-          }`}
+          className={`font-semibold ${role === 'brand'
+            ? 'text-orange-600 hover:text-orange-700'
+            : 'text-yellow-600 hover:text-yellow-700'
+            }`}
         >
           Forgot password?
         </button>

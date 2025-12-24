@@ -150,7 +150,7 @@ const PromptOption = (props: PromptOptionProps) => {
 };
 
 // =========================
-export default function InfluencerSignup({ onSuccess, onStepChange }: { onSuccess: () => void; onStepChange?: (currentStep: number) => void }) {
+export default function InfluencerSignup({ onSuccess, onStepChange }: { onSuccess: () => void; onStepChange?: (currentStep: number) => void; }) {
   const router = useRouter();
   // Start at BASIC for a natural flow
   const [step, setStep] = useState<Step>('basic');
