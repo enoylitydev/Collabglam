@@ -187,7 +187,12 @@ const EmailPage: React.FC = () => {
   };
 
   // ✅ Eligibility calculator (your rule)
+  // COMMENTED OUT FOR TESTING - Always allow sending
   const getEligibility = (influencerId: string): Eligibility => {
+    // TESTING: Always return allowed
+    return { allowed: true, state: 'allowed', reason: 'Testing mode - messaging rules disabled.' };
+    
+    /* ORIGINAL CODE - COMMENTED OUT FOR TESTING
     const threadId = resolveThreadIdForInfluencer(influencerId);
 
     // If we don't even have a thread yet → first message allowed
@@ -234,6 +239,7 @@ const EmailPage: React.FC = () => {
       state: 'blocked',
       reason: 'You already sent 2 emails without a reply. You can message again only after the influencer replies.',
     };
+    */
   };
 
   // 2) Load threads + messages → flatten into Mail[]
@@ -610,6 +616,8 @@ const EmailPage: React.FC = () => {
     }
 
     // ✅ Apply rule BEFORE sending
+    // COMMENTED OUT FOR TESTING - Allow all recipients
+    /* ORIGINAL CODE - COMMENTED OUT FOR TESTING
     const blocked = composeRecipientStatuses.filter((x) => !x.eligibility.allowed);
     const allowed = composeRecipientStatuses.filter((x) => x.eligibility.allowed);
 
@@ -632,6 +640,9 @@ const EmailPage: React.FC = () => {
     } else {
       setComposeError(null);
     }
+    */
+    // TESTING: Clear any errors and allow sending
+    setComposeError(null);
 
     let attachmentsPayload: AttachmentPayload[] = [];
     try {
@@ -653,7 +664,9 @@ const EmailPage: React.FC = () => {
       const failures: string[] = [];
 
       // ✅ send only to allowed recipients
-      for (const influencerId of allowed.map((x) => x.id)) {
+      // Use allowedRecipientIds if available, otherwise fall back to all composeInfluencerIds (testing mode)
+      const recipientIds = allowedRecipientIds.length > 0 ? allowedRecipientIds : composeInfluencerIds;
+      for (const influencerId of recipientIds) {
         try {
           const data = await post<any>('/emails/brand-to-influencer', {
             brandId,
@@ -814,8 +827,8 @@ const EmailPage: React.FC = () => {
     isSending ||
     !composeSubject.trim() ||
     !composeBody.trim() ||
-    !composeInfluencerIds.length ||
-    allowedRecipientIds.length === 0;
+    !composeInfluencerIds.length;
+    // TESTING: Removed eligibility check || allowedRecipientIds.length === 0;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#FFF9F2] via-white to-[#FFE7CF]">

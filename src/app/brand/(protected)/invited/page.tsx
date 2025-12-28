@@ -258,6 +258,8 @@ export default function InvitedInfluencersPage() {
     }
 
     // ✅ Check eligibility BEFORE opening compose
+    // COMMENTED OUT FOR TESTING - Allow opening compose regardless of eligibility
+    /* ORIGINAL CODE - COMMENTED OUT FOR TESTING
     const eligibility =
       eligibilityByInvitationId[inv.invitationId] ||
       (await fetchEligibility(inv.invitationId));
@@ -269,6 +271,9 @@ export default function InvitedInfluencersPage() {
       setError(eligibility.reason);
       return;
     }
+    */
+    // TESTING: Clear eligibility check
+    setSelectedEligibility(null);
 
     // ✅ Open compose
     setSelectedInvitation(inv);
@@ -429,12 +434,15 @@ CollabGlam Brand Team
     }
 
     // ✅ Re-check eligibility right before sending (fresh)
+    // COMMENTED OUT FOR TESTING - Allow sending regardless of eligibility
+    /* ORIGINAL CODE - COMMENTED OUT FOR TESTING
     const eligibility = await fetchEligibility(selectedInvitation.invitationId);
     if (eligibility && !eligibility.canSend) {
       setComposeError(eligibility.reason);
       setSelectedEligibility(eligibility);
       return;
     }
+    */
 
     setIsSending(true);
     setComposeError(null);
@@ -879,7 +887,7 @@ CollabGlam Brand Team
                 <button
                   type="button"
                   onClick={handleSend}
-                  disabled={isSending || (selectedEligibility ? !selectedEligibility.canSend : false)}
+                  disabled={isSending /* TESTING: Removed eligibility check || (selectedEligibility ? !selectedEligibility.canSend : false) */}
                   className="inline-flex items-center gap-1.5 text-xs px-4 py-1.5 rounded-full bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white shadow-sm hover:shadow-md disabled:opacity-60 disabled:cursor-not-allowed"
                   title={selectedEligibility?.reason}
                 >
