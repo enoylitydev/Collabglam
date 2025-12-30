@@ -2,7 +2,7 @@
 
 import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import Link from "next/link";
-import { HiSearch, HiChevronDown, HiChevronUp, HiAdjustments } from "react-icons/hi";
+import { HiSearch, HiChevronDown, HiChevronUp, HiAdjustments, HiOutlineUsers, HiChevronRight } from "react-icons/hi";
 import { get, post } from "@/lib/api";
 
 // ---- Types ----
@@ -672,23 +672,42 @@ export default function BrandCampaignHistoryPage() {
                           {formatDate(c.timeline.startDate)} – {formatDate(c.timeline.endDate)}
                         </td>
 
-                        {/* Total Influencers (CENTER) + gradient hover */}
+                        {/* Applicants (CENTER) */}
                         <td className="px-6 py-4 align-middle text-center">
-                          <Link
-                            href={`/brand/campaign-history/view-inf?id=${c.id}&name=${encodeURIComponent(
-                              c.productOrServiceName
-                            )}`}
-                            onClick={(e) => e.stopPropagation()}
-                            className={[
-                              "inline-flex items-center justify-center rounded-full px-4 py-1 text-sm font-extrabold transition-all",
-                              "bg-gray-100 text-gray-900 hover:text-white",
-                              "hover:bg-gradient-to-r hover:from-[#FFA135] hover:to-[#FF7236]",
-                              "focus:outline-none focus:ring-2 focus:ring-[#FF7236]/40 focus:ring-offset-2",
-                            ].join(" ")}
-                            title="View influencers"
-                          >
-                            {appliedCount}
-                          </Link>
+                          {appliedCount > 0 ? (
+                            <Link
+                              href={`/brand/campaign-history/view-inf?id=${c.id}&name=${encodeURIComponent(
+                                c.productOrServiceName
+                              )}`}
+                              onClick={(e) => e.stopPropagation()}
+                              className="group inline-flex items-center gap-2 rounded-full border border-gray-200 bg-gray-50 px-4 py-2 text-sm font-semibold text-gray-900
+                 hover:border-[#FF7236] hover:bg-white hover:shadow-sm transition
+                 focus:outline-none focus:ring-2 focus:ring-[#FF7236]/40 focus:ring-offset-2"
+                              title="View influencers"
+                              aria-label={`View influencers (${appliedCount})`}
+                            >
+                              <HiOutlineUsers size={18} className="opacity-70 group-hover:text-[#FF7236]" />
+                              <span className="group-hover:underline underline-offset-2">Influencers</span>
+
+                              <span className="ml-1 inline-flex min-w-[2rem] justify-center rounded-full bg-gray-900 px-2 py-0.5 text-xs font-bold text-white group-hover:bg-[#FF7236]">
+                                {appliedCount}
+                              </span>
+
+                              <HiChevronRight size={18} className="opacity-60 group-hover:opacity-100" />
+                            </Link>
+                          ) : (
+                            <span
+                              className="inline-flex items-center gap-2 rounded-full bg-gray-100 px-4 py-2 text-sm font-semibold text-gray-400"
+                              title="No influencers yet"
+                              aria-label="No influencers yet"
+                            >
+                              <HiOutlineUsers size={18} className="opacity-60" />
+                              <span>Influencers</span>
+                              <span className="ml-1 inline-flex min-w-[2rem] justify-center rounded-full bg-gray-300 px-2 py-0.5 text-xs font-bold text-white">
+                                0
+                              </span>
+                            </span>
+                          )}
                         </td>
 
                         {/* Created (CENTER) */}
@@ -705,17 +724,6 @@ export default function BrandCampaignHistoryPage() {
                               <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
                                 <div>
                                   <div className="text-sm font-semibold text-gray-900">Campaign Details</div>
-                                  <div className="text-xs text-gray-500 mt-0.5">
-                                    Influencers:{" "}
-                                    <span className="font-semibold text-gray-900">
-                                      {typeof counts[c.id] === "number" ? counts[c.id] : "—"}
-                                    </span>
-                                    {c.influencerWorking ? (
-                                      <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full bg-purple-100 text-purple-800 font-bold">
-                                        Working
-                                      </span>
-                                    ) : null}
-                                  </div>
                                 </div>
 
                                 <div className="flex flex-wrap items-center gap-2">

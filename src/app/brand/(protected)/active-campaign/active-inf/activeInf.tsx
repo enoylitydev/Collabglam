@@ -153,10 +153,10 @@ const toRow = (doc: RawInfluencer): InfluencerRow => {
       doc.primaryPlatform === "instagram"
         ? "Instagram"
         : doc.primaryPlatform === "youtube"
-        ? "YouTube"
-        : doc.primaryPlatform === "tiktok"
-        ? "TikTok"
-        : doc.primaryPlatform || undefined,
+          ? "YouTube"
+          : doc.primaryPlatform === "tiktok"
+            ? "TikTok"
+            : doc.primaryPlatform || undefined,
     categoryNames,
     followers,
     updatedAt: doc.updatedAt ?? null,
@@ -197,6 +197,7 @@ export default function ActiveInfluencersPage() {
   const [sortField, setSortField] = useState<SortKey>("updatedAt");
   const [sortOrder, setSortOrder] = useState<1 | 0>(1); // 1=desc, 0=asc
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
+  const [milestoneCountByInfluencer, setMilestoneCountByInfluencer] = useState<Record<string, number>>({});
 
   const [openingContractFor, setOpeningContractFor] = useState<string | null>(
     null
@@ -285,8 +286,8 @@ export default function ActiveInfluencersPage() {
       const finalTotal = !Number.isNaN(totalFromMeta)
         ? totalFromMeta
         : !Number.isNaN(totalFromRoot)
-        ? totalFromRoot
-        : listLen;
+          ? totalFromRoot
+          : listLen;
 
       setAppliedCount(finalTotal);
     } catch (e) {
@@ -375,8 +376,8 @@ export default function ActiveInfluencersPage() {
       const token =
         typeof window !== "undefined"
           ? localStorage.getItem("token") ||
-            localStorage.getItem("accessToken") ||
-            localStorage.getItem("authToken")
+          localStorage.getItem("accessToken") ||
+          localStorage.getItem("authToken")
           : null;
 
       const r = await fetch(url, {
@@ -416,7 +417,6 @@ export default function ActiveInfluencersPage() {
       )
     ) : null;
 
-  // fetch budget + milestone total for this campaign/brand
   const refreshBudgetAndTotals = useCallback(async () => {
     if (!campaignId) return;
 
@@ -426,31 +426,47 @@ export default function ActiveInfluencersPage() {
 
       const [campaignResp, milestoneResp] = await Promise.all([
         get<any>(`/campaign/id?id=${campaignId}`),
-        post<{ milestones: { amount: number; brandId: string }[] }>(
-          "milestone/byCampaign",
-          { campaignId }
-        ),
+        post<any>("milestone/byCampaign", { campaignId }),
       ]);
 
       const rawBudget = Number(campaignResp?.budget);
       const budget = !Number.isNaN(rawBudget) ? rawBudget : null;
       setCampaignBudget(budget);
 
-      const list = Array.isArray(milestoneResp.milestones)
+      const list = Array.isArray(milestoneResp?.milestones)
         ? milestoneResp.milestones
         : [];
 
+      // ✅ totals (your existing behavior)
       let sum = 0;
-      list.forEach((m) => {
-        if (!brandId || m.brandId === brandId) {
-          sum += Number(m.amount) || 0;
+
+      // ✅ NEW: per-influencer milestone count
+      const counts: Record<string, number> = {};
+
+      list.forEach((m: any) => {
+        // ✅ only count this brand's milestones (same logic you used for sum)
+        if (brandId && m.brandId !== brandId) return;
+
+        sum += Number(m.amount) || 0;
+
+        // ✅ influencerId key (support common backend shapes)
+        const infId =
+          m.influencerId ||
+          m.influencerID ||
+          m.influencer_id ||
+          m.influencer?.influencerId ||
+          m.influencer?._id;
+
+        if (infId) {
+          const key = String(infId);
+          counts[key] = (counts[key] || 0) + 1;
         }
       });
 
       setCampaignMilestoneTotal(sum);
+      setMilestoneCountByInfluencer(counts);
 
-      if (budget != null && sum >= budget) setIsBudgetLocked(true);
-      else setIsBudgetLocked(false);
+      setIsBudgetLocked(budget != null && sum >= budget);
     } catch (e) {
       console.error("Failed to refresh campaign budget / milestones", e);
     }
@@ -734,9 +750,8 @@ export default function ActiveInfluencersPage() {
       const baseRow = (
         <TableRow
           key={rowKey}
-          className={`${
-            idx % 2 === 0 ? "bg-white" : "bg-gray-50"
-          } transition-colors`}
+          className={`${idx % 2 === 0 ? "bg-white" : "bg-gray-50"
+            } transition-colors`}
           onMouseEnter={(e) =>
             (e.currentTarget.style.backgroundImage = hoverGradient)
           }
@@ -799,8 +814,12 @@ export default function ActiveInfluencersPage() {
 
           {/* Status */}
           <TableCell className="text-center">
-            {inf.isAccepted === 1 ? (
-              <p>Working</p>
+            {inf.influencerId ? (
+              (milestoneCountByInfluencer[String(inf.influencerId)] || 0) > 0 ? (
+                <p>Working</p>
+              ) : (
+                <p>Awaiting Milestone</p>
+              )
             ) : inf.isAssigned === 1 ? (
               <p>Contract Sent</p>
             ) : (
@@ -831,8 +850,8 @@ export default function ActiveInfluencersPage() {
                 !inf.influencerId
                   ? "Missing influencerId"
                   : isBudgetLocked
-                  ? "Campaign budget already fully allocated in milestones"
-                  : "Add milestone"
+                    ? "Campaign budget already fully allocated in milestones"
+                    : "Add milestone"
               }
             >
               Add Milestone
@@ -936,9 +955,9 @@ export default function ActiveInfluencersPage() {
               <strong>
                 {remainingBudget != null
                   ? remainingBudget.toLocaleString(undefined, {
-                      style: "currency",
-                      currency: "USD",
-                    })
+                    style: "currency",
+                    currency: "USD",
+                  })
                   : "—"}
               </strong>
             </p>
@@ -1140,9 +1159,9 @@ export default function ActiveInfluencersPage() {
                   <strong>
                     {remainingBudget != null
                       ? remainingBudget.toLocaleString(undefined, {
-                          style: "currency",
-                          currency: "USD",
-                        })
+                        style: "currency",
+                        currency: "USD",
+                      })
                       : "—"}
                   </strong>
                 </p>
@@ -1267,10 +1286,10 @@ export default function ActiveInfluencersPage() {
                   {isBudgetLocked
                     ? "Budget Reached"
                     : isSavingMilestone
-                    ? "Processing..."
-                    : amountNum > 0
-                    ? `Pay ${totalWithFee.toFixed(2)} (incl. fee)`
-                    : "Add Milestone"}
+                      ? "Processing..."
+                      : amountNum > 0
+                        ? `Pay ${totalWithFee.toFixed(2)} (incl. fee)`
+                        : "Add Milestone"}
                 </Button>
               </div>
             </div>

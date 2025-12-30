@@ -840,7 +840,7 @@ export default function AppliedInfluencersPage() {
           search: (search ?? searchTerm).trim(),
           sortField,
           sortOrder,
-           createdPage,
+          createdPage,
         };
         const res: any = await post("/apply/list", payload);
         const influencersList =
@@ -1843,6 +1843,25 @@ export default function AppliedInfluencersPage() {
           nowrap ? "inline-flex flex-nowrap" : "flex flex-wrap justify-center",
         ].join(" ")}
       >
+
+        {/* Awaiting CollabGlam signature → allow Add Milestone */}
+        {hasContract && !rejected && !locked && awaitingCG && (
+          <ActionButton
+            title="Add milestones for this influencer"
+            variant="outline"
+            onClick={() =>
+              router.push(
+                `/brand/active-campaign/active-inf?id=${encodeURIComponent(
+                  campaignId || ""
+                )}&infId=${encodeURIComponent(inf.influencerId)}${meta?.contractId ? `&contractId=${encodeURIComponent(meta.contractId)}` : ""
+                }`
+              )
+            }
+          >
+            Add Milestone
+          </ActionButton>
+        )}
+
         <ActionButton
           title="View Influencer"
           variant="outline"

@@ -819,7 +819,7 @@ export default function BrandSubscriptionPage() {
         <p className="text-center text-gray-500 text-sm mt-12">
           All paid plans include a 7-day Money-Back Guarantee • No setup fees • Cancel any time •{" "}
           <Link
-            href="/policy/terms-of-service"
+            href="/terms"
             className="underline underline-offset-2 hover:text-gray-700"
             target="_blank"
             rel="noopener noreferrer"

@@ -8,6 +8,7 @@ import {
   HiChevronRight,
   HiOutlineUserAdd,
   HiOutlinePencil,
+  HiOutlineUsers
 } from "react-icons/hi";
 import { get, post } from "@/lib/api";
 
@@ -287,7 +288,7 @@ function TableView({
                   "Type",
                   "Budget",
                   "Campaign Timeline",
-                  "Influencers Applied",
+                  "Influencers List",
                   "Status",
                   "Actions",
                 ].map((h) => (
@@ -349,15 +350,38 @@ function TableView({
                       {formatDate(c.timeline.endDate)}
                     </td>
 
-                    {/* Influencers Applied (same pill style) */}
                     <td className="px-6 py-4 align-top text-center">
-                      <Link
-                        href={`/brand/created-campaign/applied-inf?id=${c.id}`}
-                        className="inline-flex items-center justify-center rounded-full bg-gray-100 px-4 py-1 text-sm font-bold text-gray-900 hover:bg-gray-200 transition"
-                        title="View applied influencers"
-                      >
-                        {c.applicantCount ?? 0}
-                      </Link>
+                      {(c.applicantCount ?? 0) > 0 ? (
+                        <Link
+                          href={`/brand/created-campaign/applied-inf?id=${c.id}`}
+                          className="group inline-flex items-center gap-2 rounded-full border border-gray-200 bg-gray-50 px-4 py-2 text-sm font-semibold text-gray-900
+                 hover:border-[#FF7236] hover:bg-white hover:shadow-sm transition
+                 focus:outline-none focus:ring-2 focus:ring-[#FF7236]"
+                          title="View influencers"
+                          aria-label={`View influencers (${c.applicantCount ?? 0})`}
+                        >
+                          <HiOutlineUsers size={18} className="opacity-70 group-hover:text-[#FF7236]" />
+                          <span className="group-hover:underline underline-offset-2">Influencers</span>
+
+                          <span className="ml-1 inline-flex min-w-[2rem] justify-center rounded-full bg-gray-900 px-2 py-0.5 text-xs font-bold text-white group-hover:bg-[#FF7236]">
+                            {c.applicantCount ?? 0}
+                          </span>
+
+                          <HiChevronRight size={18} className="opacity-60 group-hover:opacity-100" />
+                        </Link>
+                      ) : (
+                        <span
+                          className="inline-flex items-center gap-2 rounded-full bg-gray-100 px-4 py-2 text-sm font-semibold text-gray-400"
+                          title="No influencers yet"
+                          aria-label="No influencers yet"
+                        >
+                          <HiOutlineUsers size={18} className="opacity-60" />
+                          <span>Influencers</span>
+                          <span className="ml-1 inline-flex min-w-[2rem] justify-center rounded-full bg-gray-300 px-2 py-0.5 text-xs font-bold text-white">
+                            0
+                          </span>
+                        </span>
+                      )}
                     </td>
 
                     {/* Status (open/paused) */}

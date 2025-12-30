@@ -254,7 +254,7 @@ export default function Login() {
                   <p className="mt-6 text-center text-sm text-gray-500">
                     By continuing, you agree to our{' '}
                     <a
-                      href="/policy/terms-of-service"
+                      href="/terms"
                       target="_blank"
                       className={`font-semibold ${role === 'brand'
                         ? 'text-orange-600 hover:text-orange-700'
@@ -265,7 +265,7 @@ export default function Login() {
                     </a>{' '}
                     and{' '}
                     <a
-                      href="/policy/privacy"
+                      href="/privacy-policy"
                       target="_blank"
                       className={`font-semibold ${role === 'brand'
                         ? 'text-orange-600 hover:text-orange-700'

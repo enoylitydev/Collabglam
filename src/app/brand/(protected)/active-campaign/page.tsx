@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
-import { HiSearch, HiChevronLeft, HiChevronRight, HiOutlineUserGroup } from "react-icons/hi";
+import { HiSearch, HiChevronLeft, HiChevronRight, HiOutlineUserGroup, HiOutlineUsers } from "react-icons/hi";
 import { post } from "@/lib/api";
 
 // ✅ Theme
@@ -200,10 +200,9 @@ export default function BrandActiveCampaignsPage() {
                     "Campaign",
                     "Campaign Type",
                     "Budget",
-                    "Status",
                     "Campaign Timeline",
-                    "Active Influencers",
-                    "Actions",
+                    "Working Influencers",
+                    "Total Influencers Applied",
                   ].map((h) => (
                     <th
                       key={h}
@@ -253,44 +252,47 @@ export default function BrandActiveCampaignsPage() {
                       {formatCurrency(c.budget)}
                     </td>
 
-                    {/* Status */}
-                    <td className="px-6 py-4 text-center align-middle whitespace-nowrap">
-                      <span
-                        className={`inline-flex items-center justify-center px-3 py-1 text-xs font-semibold rounded-full ${c.isActive === 1
-                          ? "text-white"
-                          : "bg-red-100 text-red-800"
-                          }`}
-                        style={
-                          c.isActive === 1
-                            ? {
-                              backgroundImage: `linear-gradient(to right, ${TABLE_GRADIENT_FROM}, ${TABLE_GRADIENT_TO})`,
-                            }
-                            : undefined
-                        }
-                      >
-                        {c.isActive === 1 ? "Active" : "Inactive"}
-                      </span>
-                    </td>
-
                     {/* Timeline */}
                     <td className="px-6 py-4 text-center align-middle whitespace-nowrap">
                       {formatDate(c.timeline?.startDate)} – {formatDate(c.timeline?.endDate)}
                     </td>
 
-                    {/* Active Influencers (hover text = gradient color) */}
-                    <td className="px-6 py-4 text-center align-middle">
-                      <Link
-                        href={`/brand/active-campaign/active-inf?id=${c.id}&name=${encodeURIComponent(
-                          c.productOrServiceName
-                        )}`}
-                        className="inline-flex items-center justify-center rounded-full bg-gray-100 px-5 py-1.5 text-sm font-bold text-gray-900 transition-colors"
-                        onMouseEnter={(e) => (e.currentTarget.style.color = TABLE_GRADIENT_TO)}
-                        onMouseLeave={(e) => (e.currentTarget.style.color = "")}
-                        title="View active influencers"
-                      >
-                        {c.totalAcceptedMembers ?? 0}
-                      </Link>
+                    <td className="px-6 py-4 align-top text-center">
+                      {(c.applicantCount ?? 0) > 0 ? (
+                        <Link
+                          href={`/brand/active-campaign/active-inf?id=${c.id}&name=${encodeURIComponent(
+                            c.productOrServiceName
+                          )}`}
+                          className="group inline-flex items-center gap-2 rounded-full border border-gray-200 bg-gray-50 px-4 py-2 text-sm font-semibold text-gray-900
+                 hover:border-[#FF7236] hover:bg-white hover:shadow-sm transition
+                 focus:outline-none focus:ring-2 focus:ring-[#FF7236]"
+                          title="View influencers"
+                          aria-label={`View influencers (${c.applicantCount ?? 0})`}
+                        >
+                          <HiOutlineUsers size={18} className="opacity-70 group-hover:text-[#FF7236]" />
+                          <span className="group-hover:underline underline-offset-2">Influencers</span>
+
+                          <span className="ml-1 inline-flex min-w-[2rem] justify-center rounded-full bg-gray-900 px-2 py-0.5 text-xs font-bold text-white group-hover:bg-[#FF7236]">
+                            {c.applicantCount ?? 0}
+                          </span>
+
+                          <HiChevronRight size={18} className="opacity-60 group-hover:opacity-100" />
+                        </Link>
+                      ) : (
+                        <span
+                          className="inline-flex items-center gap-2 rounded-full bg-gray-100 px-4 py-2 text-sm font-semibold text-gray-400"
+                          title="No influencers yet"
+                          aria-label="No influencers yet"
+                        >
+                          <HiOutlineUsers size={18} className="opacity-60" />
+                          <span>Influencers</span>
+                          <span className="ml-1 inline-flex min-w-[2rem] justify-center rounded-full bg-gray-300 px-2 py-0.5 text-xs font-bold text-white">
+                            0
+                          </span>
+                        </span>
+                      )}
                     </td>
+
 
                     {/* Actions (button bg = gradient, hover keeps it) */}
                     <td className="px-6 py-4 text-center align-middle whitespace-nowrap">
