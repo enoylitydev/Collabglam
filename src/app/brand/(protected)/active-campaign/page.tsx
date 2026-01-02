@@ -258,7 +258,7 @@ export default function BrandActiveCampaignsPage() {
                     </td>
 
                     <td className="px-6 py-4 align-top text-center">
-                      {(c.applicantCount ?? 0) > 0 ? (
+                      {(c.totalAcceptedMembers ?? 0) > 0 ? (
                         <Link
                           href={`/brand/active-campaign/active-inf?id=${c.id}&name=${encodeURIComponent(
                             c.productOrServiceName
@@ -267,13 +267,13 @@ export default function BrandActiveCampaignsPage() {
                  hover:border-[#FF7236] hover:bg-white hover:shadow-sm transition
                  focus:outline-none focus:ring-2 focus:ring-[#FF7236]"
                           title="View influencers"
-                          aria-label={`View influencers (${c.applicantCount ?? 0})`}
+                          aria-label={`View influencers (${c.totalAcceptedMembers ?? 0})`}
                         >
                           <HiOutlineUsers size={18} className="opacity-70 group-hover:text-[#FF7236]" />
                           <span className="group-hover:underline underline-offset-2">Influencers</span>
 
                           <span className="ml-1 inline-flex min-w-[2rem] justify-center rounded-full bg-gray-900 px-2 py-0.5 text-xs font-bold text-white group-hover:bg-[#FF7236]">
-                            {c.applicantCount ?? 0}
+                            {c.totalAcceptedMembers ?? 0}
                           </span>
 
                           <HiChevronRight size={18} className="opacity-60 group-hover:opacity-100" />
