@@ -639,20 +639,24 @@ export default function BrandCampaignHistoryPage() {
                         {/* Campaign (LEFT aligned) */}
                         <td className="px-6 py-4 align-middle text-left">
                           <div className="flex items-start gap-3">
-                            <div className="min-w-0">
+                            <div className="min-w-0 inline-flex items-center gap-2">
+
                               <Link
                                 href={`/brand/campaign-history/view-campaign?id=${c.id}`}
                                 onClick={(e) => e.stopPropagation()}
-                                className="inline-flex items-center gap-2 group"
                                 title={c.productOrServiceName}
                               >
-                                <span className="font-bold text-gray-900 group-hover:text-[#FF7236] group-hover:underline underline-offset-4">
+                                {/* Text hover only */}
+                                <span className="font-bold text-gray-900 hover:text-[#FF7236] hover:underline underline-offset-4">
                                   {sliceText(c.productOrServiceName, 48)}
                                 </span>
-                                <span className="text-gray-400 group-hover:text-[#FF7236]">
-                                  {isExpanded ? <HiChevronUp size={18} /> : <HiChevronDown size={18} />}
-                                </span>
                               </Link>
+
+                              {/* Chevron hover only */}
+                              <span className="text-gray-400 hover:text-[#FF7236] cursor-pointer">
+                                {isExpanded ? <HiChevronUp size={18} /> : <HiChevronDown size={18} />}
+                              </span>
+
                             </div>
                           </div>
                         </td>

@@ -1847,7 +1847,9 @@ export default function AppliedInfluencersPage() {
                 `/brand/active-campaign/active-inf?id=${encodeURIComponent(
                   campaignId || ""
                 )}&infId=${encodeURIComponent(inf.influencerId)}${meta?.contractId ? `&contractId=${encodeURIComponent(meta.contractId)}` : ""
-                }`
+                }&name=${encodeURIComponent(
+                  campaignTitle || ""
+                )}`
               )
             }
           >
@@ -1877,7 +1879,7 @@ export default function AppliedInfluencersPage() {
             Sign as Brand
           </ActionButton>
         )}
-        
+
         <ActionButton
           title="View Influencer"
           variant="outline"

@@ -6,11 +6,28 @@ import type { Role } from './types';
 import { post } from '@/lib/api';
 
 interface ForgotPasswordModalProps {
-  role: Role;
+  role: Role; // 'brand' | 'influencer'
   onClose: () => void;
 }
 
 type Step = 'email' | 'otp' | 'reset';
+
+const API = {
+  brand: {
+    sendOtp: '/brand/resetotp',
+    verifyOtp: '/brand/resetVerify',
+    resetPassword: '/brand/updatePassword',
+  },
+  influencer: {
+    // ✅ IMPORTANT: use reset endpoints (not signup /sendOtp)
+    sendOtp: '/influencer/resetotp',
+    verifyOtp: '/influencer/resetVerify',
+    resetPassword: '/influencer/updatePassword',
+  },
+} as const;
+
+const emailLooksValid = (email: string) =>
+  /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 
 export function ForgotPasswordModal({ role, onClose }: ForgotPasswordModalProps) {
   const [step, setStep] = useState<Step>('email');
@@ -22,12 +39,25 @@ export function ForgotPasswordModal({ role, onClose }: ForgotPasswordModalProps)
     email: '',
     otp: '',
     newPassword: '',
-    confirmPassword: ''
+    confirmPassword: '',
   });
 
+  const normalizedEmail = formData.email.trim().toLowerCase();
+
+  const goToEmailStep = () => {
+    setStep('email');
+    setError('');
+    setResetToken(null);
+    setFormData((p) => ({ ...p, otp: '', newPassword: '', confirmPassword: '' }));
+  };
+
   const sendOTP = async () => {
-    if (!formData.email) {
+    if (!normalizedEmail) {
       setError('Please enter your email');
+      return;
+    }
+    if (!emailLooksValid(normalizedEmail)) {
+      setError('Please enter a valid email');
       return;
     }
 
@@ -35,11 +65,11 @@ export function ForgotPasswordModal({ role, onClose }: ForgotPasswordModalProps)
     setError('');
 
     try {
-      // NOTE: matches your previous AuthPage.tsx endpoints (naming is intentionally inconsistent)
-      const endpoint = role === 'brand' ? '/brand/resetotp' : '/influencer/sendOtp';
-      await post(endpoint, { email: formData.email });
+      const endpoint = API[role].sendOtp;
+      await post(endpoint, { email: normalizedEmail });
       setStep('otp');
     } catch (err: any) {
+      // ✅ if backend returns 404 "Influencer/Brand does not exist..."
       setError(err?.response?.data?.message || err?.message || 'Failed to send OTP');
     } finally {
       setLoading(false);
@@ -51,15 +81,18 @@ export function ForgotPasswordModal({ role, onClose }: ForgotPasswordModalProps)
       setError('Please enter the OTP');
       return;
     }
+    if (formData.otp.length !== 6) {
+      setError('OTP must be 6 digits');
+      return;
+    }
 
     setLoading(true);
     setError('');
 
     try {
-      const endpoint = role === 'brand' ? '/brand/resetVerify' : '/influencer/verifyOtp';
-      const res = await post(endpoint, { email: formData.email, otp: formData.otp });
+      const endpoint = API[role].verifyOtp;
+      const res = await post(endpoint, { email: normalizedEmail, otp: formData.otp });
 
-      // Expect resetToken in response (per your old code)
       const token =
         res?.resetToken ??
         res?.data?.resetToken ??
@@ -93,11 +126,11 @@ export function ForgotPasswordModal({ role, onClose }: ForgotPasswordModalProps)
     setError('');
 
     try {
-      const endpoint = role === 'brand' ? '/brand/updatePassword' : '/influencer/updatePassword';
+      const endpoint = API[role].resetPassword;
       await post(endpoint, {
         resetToken,
         newPassword: formData.newPassword,
-        confirmPassword: formData.confirmPassword
+        confirmPassword: formData.confirmPassword,
       });
       onClose();
     } catch (err: any) {
@@ -112,10 +145,7 @@ export function ForgotPasswordModal({ role, onClose }: ForgotPasswordModalProps)
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-8 space-y-6 animate-slideUp">
         <div className="flex items-center justify-between">
           <h3 className="text-2xl font-bold text-gray-900">Reset Password</h3>
-          <button
-            onClick={onClose}
-            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-          >
+          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
             <X className="w-5 h-5 text-gray-500" />
           </button>
         </div>
@@ -129,16 +159,16 @@ export function ForgotPasswordModal({ role, onClose }: ForgotPasswordModalProps)
         {step === 'email' && (
           <div className="space-y-5">
             <div className="text-center">
-              <div className={`w-16 h-16 rounded-2xl mx-auto ${
-                role === 'brand'
-                  ? 'bg-gradient-to-br from-orange-400 to-pink-500'
-                  : 'bg-gradient-to-br from-yellow-400 to-amber-500'
-              } flex items-center justify-center shadow-lg mb-4`}>
+              <div
+                className={`w-16 h-16 rounded-2xl mx-auto ${
+                  role === 'brand'
+                    ? 'bg-gradient-to-br from-orange-400 to-pink-500'
+                    : 'bg-gradient-to-br from-yellow-400 to-amber-500'
+                } flex items-center justify-center shadow-lg mb-4`}
+              >
                 <Mail className="w-8 h-8 text-white" />
               </div>
-              <p className="text-gray-600">
-                Enter your email and we'll send you a verification code
-              </p>
+              <p className="text-gray-600">Enter your email and we'll send you a verification code</p>
             </div>
 
             <FloatingLabelInput
@@ -158,20 +188,20 @@ export function ForgotPasswordModal({ role, onClose }: ForgotPasswordModalProps)
 
         {step === 'otp' && (
           <div className="space-y-5">
-            <div className={`text-center p-4 rounded-lg border ${
-              role === 'brand'
-                ? 'bg-orange-50 border-orange-200'
-                : 'bg-yellow-50 border-yellow-200'
-            }`}>
-              <CheckCircle2 className={`w-8 h-8 mx-auto mb-2 ${
-                role === 'brand' ? 'text-orange-600' : 'text-yellow-600'
-              }`} />
+            <div
+              className={`text-center p-4 rounded-lg border ${
+                role === 'brand' ? 'bg-orange-50 border-orange-200' : 'bg-yellow-50 border-yellow-200'
+              }`}
+            >
+              <CheckCircle2
+                className={`w-8 h-8 mx-auto mb-2 ${
+                  role === 'brand' ? 'text-orange-600' : 'text-yellow-600'
+                }`}
+              />
               <p className="text-sm text-gray-700">
-                We sent a code to <strong>{formData.email}</strong>
+                We sent a code to <strong>{normalizedEmail}</strong>
               </p>
-              <p className="text-xs text-gray-500 mt-1">
-                If you don't see it, check spam or resend in 30s
-              </p>
+              <p className="text-xs text-gray-500 mt-1">If you don't see it, check spam or resend</p>
             </div>
 
             <FloatingLabelInput
@@ -180,7 +210,9 @@ export function ForgotPasswordModal({ role, onClose }: ForgotPasswordModalProps)
               type="text"
               maxLength={6}
               value={formData.otp}
-              onChange={(e) => setFormData({ ...formData, otp: e.target.value.replace(/\D/g, '') })}
+              onChange={(e) =>
+                setFormData({ ...formData, otp: e.target.value.replace(/\D/g, '').slice(0, 6) })
+              }
               required
             />
 
@@ -189,10 +221,7 @@ export function ForgotPasswordModal({ role, onClose }: ForgotPasswordModalProps)
             </Button>
 
             <div className="flex justify-between text-sm">
-              <button
-                onClick={() => setStep('email')}
-                className="text-gray-600 hover:text-gray-900"
-              >
+              <button onClick={goToEmailStep} className="text-gray-600 hover:text-gray-900">
                 Change email
               </button>
               <button
@@ -212,16 +241,16 @@ export function ForgotPasswordModal({ role, onClose }: ForgotPasswordModalProps)
         {step === 'reset' && (
           <div className="space-y-5">
             <div className="text-center">
-              <div className={`w-16 h-16 rounded-2xl mx-auto ${
-                role === 'brand'
-                  ? 'bg-gradient-to-br from-orange-400 to-pink-500'
-                  : 'bg-gradient-to-br from-yellow-400 to-amber-500'
-              } flex items-center justify-center shadow-lg mb-4`}>
+              <div
+                className={`w-16 h-16 rounded-2xl mx-auto ${
+                  role === 'brand'
+                    ? 'bg-gradient-to-br from-orange-400 to-pink-500'
+                    : 'bg-gradient-to-br from-yellow-400 to-amber-500'
+                } flex items-center justify-center shadow-lg mb-4`}
+              >
                 <Lock className="w-8 h-8 text-white" />
               </div>
-              <p className="text-gray-600">
-                Create a new password for your account
-              </p>
+              <p className="text-gray-600">Create a new password for your account</p>
             </div>
 
             <FloatingLabelInput
