@@ -1855,6 +1855,29 @@ export default function AppliedInfluencersPage() {
           </ActionButton>
         )}
 
+        {/* Influencer accepted → brand accepts */}
+        {hasContract && !rejected && !locked && brandNeedsAccept && (
+          <ActionButton
+            icon={HiCheck}
+            title="Brand Accept"
+            variant="outline"
+            onClick={() => handleBrandAccept(inf)}
+          >
+            Brand Accept
+          </ActionButton>
+        )}
+
+        {/* Both accepted → sign */}
+        {hasContract && !rejected && !locked && signAllowed && !brandSigned && (
+          <ActionButton
+            title="Sign as Brand"
+            variant="grad"
+            onClick={() => openSignModal(meta)}
+          >
+            Sign as Brand
+          </ActionButton>
+        )}
+        
         <ActionButton
           title="View Influencer"
           variant="outline"
@@ -1907,29 +1930,6 @@ export default function AppliedInfluencersPage() {
             onClick={() => openSidebar(inf, "edit")}
           >
             Edit Contract
-          </ActionButton>
-        )}
-
-        {/* Influencer accepted → brand accepts */}
-        {hasContract && !rejected && !locked && brandNeedsAccept && (
-          <ActionButton
-            icon={HiCheck}
-            title="Brand Accept"
-            variant="outline"
-            onClick={() => handleBrandAccept(inf)}
-          >
-            Brand Accept
-          </ActionButton>
-        )}
-
-        {/* Both accepted → sign */}
-        {hasContract && !rejected && !locked && signAllowed && !brandSigned && (
-          <ActionButton
-            title="Sign as Brand"
-            variant="grad"
-            onClick={() => openSignModal(meta)}
-          >
-            Sign as Brand
           </ActionButton>
         )}
       </div>
