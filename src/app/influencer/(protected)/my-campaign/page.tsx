@@ -167,7 +167,7 @@ export type ContractMeta = {
 
   confirmations?: { brand?: PartyConfirm; influencer?: PartyConfirm };
   acceptances?: any; // optional, if you ever want to use it
-  signatures?: { brand?: PartySign; influencer?: PartySign; collabglam?: PartySign };
+  signatures?: { brand?: PartySign; influencer?: PartySign } & Record<string, any>;
 
   lockedAt?: string | null;
   editsLockedAt?: string | null;
@@ -212,22 +212,20 @@ const signingStatusLabel = (meta?: ContractMeta | null) => {
 
   const b = !!meta.signatures?.brand?.signed;
   const i = !!meta.signatures?.influencer?.signed;
-  const c = !!meta.signatures?.collabglam?.signed;
 
-  // if UI ever sees "all signed" before backend flips status to CONTRACT_SIGNED
-  if (b && i && c) return "Signed";
+  if (b && i) return "Signed";
 
-  // Prefer backend "awaitingRole" when present (single source of truth)
+  // Prefer backend "awaitingRole" when present
   const awaiting = String(meta.awaitingRole || "").toLowerCase();
   if (awaiting === "brand") return "Awaiting brand signature";
   if (awaiting === "influencer") return "Awaiting influencer signature";
-  if (awaiting === "collabglam") return "Awaiting CollabGlam signature";
 
-  // Fallback inference (for older records that don't have awaitingRole)
+  if (awaiting === "collabglam") return "Ready to sign";
+
+  // Fallback inference
   if (!b && !i) return "Ready to sign";
   if (b && !i) return "Awaiting influencer signature";
   if (!b && i) return "Awaiting brand signature";
-  if (b && i && !c) return "Awaiting CollabGlam signature";
 
   return null;
 };
@@ -680,7 +678,7 @@ function InfluencerContractModal({
 
   const brandSigned = !!meta?.signatures?.brand?.signed;
   const influencerSigned = !!meta?.signatures?.influencer?.signed;
-  const anyoneSigned = brandSigned || influencerSigned || !!meta?.signatures?.collabglam?.signed;
+  const anyoneSigned = brandSigned || influencerSigned;
 
   const isReadyToSign = st === CONTRACT_STATUS.READY_TO_SIGN || !!meta?.editsLockedAt;
   const isLocked =

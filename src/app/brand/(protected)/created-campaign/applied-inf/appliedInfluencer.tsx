@@ -185,7 +185,6 @@ interface ContractMeta {
   signatures?: {
     brand?: PartySign;
     influencer?: PartySign;
-    collabglam?: PartySign;
   };
 
   resendIteration?: number;
@@ -289,16 +288,6 @@ const isRejectedMeta = (meta?: any) => {
   );
 };
 
-const isAwaitingCollabglam = (meta?: ContractMeta | null) => {
-  const s = String(meta?.status || "");
-  return (
-    s === CONTRACT_STATUS.READY_TO_SIGN &&
-    !!meta?.signatures?.brand?.signed &&
-    !!meta?.signatures?.influencer?.signed &&
-    !meta?.signatures?.collabglam?.signed
-  );
-};
-
 const signingStatusLabel = (meta?: ContractMeta | null) => {
   if (!meta) return null;
   const s = String(meta.status || "");
@@ -306,13 +295,11 @@ const signingStatusLabel = (meta?: ContractMeta | null) => {
 
   const b = !!meta.signatures?.brand?.signed;
   const i = !!meta.signatures?.influencer?.signed;
-  const c = !!meta.signatures?.collabglam?.signed;
 
-  if (b && i && !c) return "Awaiting CollabGlam signature";
   if (b && !i) return "Awaiting influencer signature";
   if (!b && i) return "Awaiting brand signature";
   if (!b && !i) return "Ready to sign";
-  if (b && i && c) return "Signed";
+  if (b && i) return "Signed"; // ✅ fully signed now (no CollabGlam)
   return null;
 };
 
@@ -1831,9 +1818,15 @@ export default function AppliedInfluencersPage() {
     const signAllowed = canSignNow(statusStr);
     const brandSigned = !!meta?.signatures?.brand?.signed;
     const influencerSigned = !!meta?.signatures?.influencer?.signed;
-    const collabglamSigned = !!meta?.signatures?.collabglam?.signed;
 
-    const awaitingCG = isAwaitingCollabglam(meta);
+    const milestonesAllowed =
+      hasContract &&
+      !rejected &&
+      statusStr !== CONTRACT_STATUS.MILESTONES_CREATED &&
+      (
+        statusStr === CONTRACT_STATUS.CONTRACT_SIGNED ||
+        (statusStr === CONTRACT_STATUS.READY_TO_SIGN && brandSigned && influencerSigned)
+      );
 
     return (
       <div
@@ -1844,8 +1837,8 @@ export default function AppliedInfluencersPage() {
         ].join(" ")}
       >
 
-        {/* Awaiting CollabGlam signature → allow Add Milestone */}
-        {hasContract && !rejected && !locked && awaitingCG && (
+        {/* Fully signed (Brand + Influencer) → allow Add Milestone */}
+        {milestonesAllowed && (
           <ActionButton
             title="Add milestones for this influencer"
             variant="outline"
