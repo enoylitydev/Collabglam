@@ -689,13 +689,6 @@ function InfluencerContractModal({
   const isRejected = st === CONTRACT_STATUS.REJECTED;
   const isSuperseded = st === CONTRACT_STATUS.SUPERSEDED;
 
-  const canSign =
-    !isLocked &&
-    isReadyToSign &&
-    influencerConfirmed &&
-    brandConfirmed &&
-    !influencerSigned;
-
   const canEdit = useMemo(() => {
     if (readOnly) return false;
     if (isLocked || isReadyToSign) return false;

@@ -255,12 +255,15 @@ const EmailPage: React.FC = () => {
           const threadId: string = thread.threadId;
 
           // NOTE: /threads/brand currently populates influencer with only name+email
-          // so this is usually influencer._id
+          const rawInf = thread.influencer;
+
           const influencerId: string =
-            thread.influencer?._id || thread.influencer || '';
+            typeof rawInf === 'string'
+              ? rawInf
+              : String(rawInf?.influencerId || rawInf?._id || rawInf?.id || '').trim();
 
           const influencerName: string =
-            thread.influencer?.name ||
+            (typeof rawInf === 'object' ? rawInf?.name : '') ||
             thread.influencerSnapshot?.name ||
             'Creator';
 
@@ -302,13 +305,13 @@ const EmailPage: React.FC = () => {
 
             const attachments: MailAttachment[] = Array.isArray(msg.attachments)
               ? msg.attachments.map((att: any) => ({
-                  _id: att._id,
-                  filename: att.filename,
-                  contentType: att.contentType,
-                  size: att.size,
-                  url: att.url,
-                  storageKey: att.storageKey,
-                }))
+                _id: att._id,
+                filename: att.filename,
+                contentType: att.contentType,
+                size: att.size,
+                url: att.url,
+                storageKey: att.storageKey,
+              }))
               : [];
 
             const mail: Mail = {
@@ -819,7 +822,7 @@ const EmailPage: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#FFF9F2] via-white to-[#FFE7CF]">
-<div className="max-w-6xl mx-auto px-4 py-6 md:py-10">
+      <div className="max-w-6xl mx-auto px-4 py-6 md:py-10">
         {/* Header */}
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-7">
           <div className="space-y-2">
@@ -1359,13 +1362,12 @@ const EmailPage: React.FC = () => {
                           {r.name}
                         </span>
                         <span
-                          className={`text-[10px] px-2 py-0.5 rounded-full border shrink-0 ${
-                            r.eligibility.allowed
+                          className={`text-[10px] px-2 py-0.5 rounded-full border shrink-0 ${r.eligibility.allowed
                               ? 'bg-emerald-50 text-emerald-700 border-emerald-100'
                               : r.eligibility.state === 'cooldown'
                                 ? 'bg-amber-50 text-amber-700 border-amber-100'
                                 : 'bg-rose-50 text-rose-700 border-rose-100'
-                          }`}
+                            }`}
                           title={r.eligibility.reason}
                         >
                           {r.eligibility.allowed
