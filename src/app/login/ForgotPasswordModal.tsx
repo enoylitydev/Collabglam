@@ -20,8 +20,8 @@ const API = {
   },
   influencer: {
     // ✅ IMPORTANT: use reset endpoints (not signup /sendOtp)
-    sendOtp: '/influencer/resetotp',
-    verifyOtp: '/influencer/resetVerify',
+    sendOtp: '/influencer/sendOtp',
+    verifyOtp: '/influencer/verifyOtp',
     resetPassword: '/influencer/updatePassword',
   },
 } as const;

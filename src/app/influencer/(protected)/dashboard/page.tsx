@@ -140,7 +140,6 @@ const formatDate = (d: string) => new Intl.DateTimeFormat('en-US', { month: 'sho
 const formatCurrency = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(n);
 
 export default function MyCampaignsPage() {
-  // Campaign list search (existing)
   const [search, setSearch] = useState('');
 
   // Brand search UI state (the one you asked to update)
@@ -336,10 +335,8 @@ export default function MyCampaignsPage() {
               {brandResults.map((res) => (
                 <li
                   key={res.brandId}
-                  className="px-4 py-3 hover:bg-gray-100 cursor-pointer"
+                  className="px-4 py-3 hover:bg-gray-100 cursor-pointer" 
                   onClick={() => {
-                    // navigate or do something with brandId
-                    // Example:
                     window.location.href = `/brand/profile?id=${res.brandId}`;
                     setSearchOpen(false);
                   }}
