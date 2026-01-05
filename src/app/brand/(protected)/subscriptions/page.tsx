@@ -3,6 +3,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { get, post } from "@/lib/api";
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   CheckCircle,
   XCircle,
@@ -16,7 +17,6 @@ import {
   Heart,
   Mail,
   Plus,
-  Info,
 } from "lucide-react";
 
 /** Types */
@@ -70,17 +70,14 @@ interface BrandData {
 
 type PaymentStatus = "idle" | "processing" | "success" | "failed";
 
-declare global {
-  interface Window {
-    Razorpay: any;
-  }
-}
-
 /** Helpers */
 
-const capitalize = (s: string) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : "");
-const nice = (s: string) => s.replace(/_/g, " ").replace(/^\w/, (c) => c.toUpperCase());
-const currencySymbol = (c?: string) => (c === "INR" ? "₹" : c === "EUR" ? "€" : "$");
+const capitalize = (s: string) =>
+  s ? s.charAt(0).toUpperCase() + s.slice(1) : "";
+const nice = (s: string) =>
+  s.replace(/_/g, " ").replace(/^\w/, (c) => c.toUpperCase());
+const currencySymbol = (c?: string) =>
+  c === "INR" ? "₹" : c === "EUR" ? "€" : "$";
 
 const LABELS: Record<string, string> = {
   // Brand (new keys)
@@ -210,24 +207,18 @@ const isPositive = (key: string, v: FeatureValue) => {
   return Boolean(v);
 };
 
-const isEnterpriseBrand = (p: Plan) => p.role === "Brand" && p.name?.toLowerCase() === "enterprise";
-const computedLabel = (plan: Plan) => plan.label || (plan.name === "growth" ? "Popular" : undefined);
-
-const loadScript = (src: string) =>
-  new Promise<boolean>((res) => {
-    const existing = document.querySelector(`script[src="${src}"]`);
-    if (existing) return res(true);
-
-    const s = document.createElement("script");
-    s.src = src;
-    s.onload = () => res(true);
-    s.onerror = () => res(false);
-    document.body.appendChild(s);
-  });
+const isEnterpriseBrand = (p: Plan) =>
+  p.role === "Brand" && p.name?.toLowerCase() === "enterprise";
+const computedLabel = (plan: Plan) =>
+  plan.label || (plan.name === "growth" ? "Popular" : undefined);
 
 /** Component */
+const STRIPE_HANDLED_KEY = "stripe_subscription_handled_session";
 
 export default function BrandSubscriptionPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
   const [plans, setPlans] = useState<Plan[]>([]);
   const [currentPlan, setCurrentPlan] = useState<string | null>(null);
   const [expiresAt, setExpiresAt] = useState<string | null>(null);
@@ -245,10 +236,11 @@ export default function BrandSubscriptionPage() {
   // contact-us modal
   const [showContactModal, setShowContactModal] = useState(false);
   const [contactSubmitting, setContactSubmitting] = useState(false);
-  const [contactToast, setContactToast] = useState<{ type: "idle" | "success" | "failed"; message: string }>({
-    type: "idle",
-    message: "",
-  });
+  const [contactToast, setContactToast] = useState<{
+    type: "idle" | "success" | "failed";
+    message: string;
+  }>({ type: "idle", message: "" });
+
   const [contactForm, setContactForm] = useState({
     name: "",
     email: "",
@@ -256,15 +248,116 @@ export default function BrandSubscriptionPage() {
     message: "",
   });
 
+  // ✅ Handle Stripe redirect back (success/cancel)
+  const stripStripeParamsFromUrl = () => {
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    url.searchParams.delete("stripe_success");
+    url.searchParams.delete("stripe_cancel");
+    url.searchParams.delete("session_id");
+    window.history.replaceState({}, "", url.toString());
+  };
+
+  useEffect(() => {
+    const stripeSuccess = searchParams.get("stripe_success");
+    const stripeCancel = searchParams.get("stripe_cancel");
+    const sessionId = searchParams.get("session_id");
+
+    // ✅ Cancel case
+    if (stripeCancel) {
+      stripStripeParamsFromUrl(); // remove query instantly
+      setPaymentStatus("failed");
+      setPaymentMessage("Payment cancelled.");
+      // optional: router.replace(window.location.pathname);
+      return;
+    }
+
+    // ✅ Success case
+    if (stripeSuccess && sessionId) {
+      // ✅ Guard against StrictMode double-run + accidental repeats
+      if (typeof window !== "undefined") {
+        const handled = sessionStorage.getItem(STRIPE_HANDLED_KEY);
+        if (handled === sessionId) {
+          // already processed this session, just clean URL
+          stripStripeParamsFromUrl();
+          return;
+        }
+        sessionStorage.setItem(STRIPE_HANDLED_KEY, sessionId);
+      }
+
+      // ✅ Remove params immediately to prevent reload loops
+      stripStripeParamsFromUrl();
+
+      (async () => {
+        setPaymentStatus("processing");
+        setPaymentMessage("Verifying payment…");
+
+        try {
+          const verifyResp = await post<{
+            success: boolean;
+            message?: string;
+            planId?: string;
+            planName?: string;
+          }>("/payment/verify", { sessionId });
+
+          if (!verifyResp?.success) {
+            throw new Error(verifyResp?.message || "Payment not verified.");
+          }
+
+          const brandId = localStorage.getItem("brandId");
+          const planId =
+            verifyResp.planId || localStorage.getItem("pendingPlanId") || "";
+
+          if (!brandId || !planId) {
+            throw new Error("Missing brandId/planId for subscription assignment.");
+          }
+
+          await post("/subscription/assign", {
+            userType: "Brand",
+            userId: brandId,
+            planId,
+          });
+
+          const planName =
+            verifyResp.planName || localStorage.getItem("pendingPlanName") || "";
+
+          setCurrentPlan(planName || null);
+          setExpiresAt(new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString());
+
+          localStorage.setItem("brandPlanId", planId);
+          if (planName) localStorage.setItem("brandPlanName", planName);
+
+          localStorage.removeItem("pendingPlanId");
+          localStorage.removeItem("pendingPlanName");
+
+          setPaymentStatus("success");
+          setPaymentMessage("Subscription updated successfully!");
+
+          // ✅ DO NOT reload the page
+          // If you need a data refresh, use router.refresh() in Next 13+
+          router.refresh?.();
+        } catch (e: any) {
+          console.error(e);
+          setPaymentStatus("failed");
+          setPaymentMessage(e?.message || "Payment verification failed. Please contact support.");
+        }
+      })();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
+
   useEffect(() => {
     (async () => {
       try {
         // Plans for Brand, sorted like pricing page
-        const { plans: fetched } = await post<{ message: string; plans: Plan[] }>("/subscription/list", {
-          role: "Brand",
-        });
+        const { plans: fetched } = await post<{ message: string; plans: Plan[] }>(
+          "/subscription/list",
+          { role: "Brand" }
+        );
 
-        const sorted = (fetched || []).slice().sort((a, b) => (a.sortOrder ?? 999) - (b.sortOrder ?? 999));
+        const sorted = (fetched || [])
+          .slice()
+          .sort((a, b) => (a.sortOrder ?? 999) - (b.sortOrder ?? 999));
 
         const ORDER = ORDER_BY_ROLE_BRAND;
         const withOrdered = sorted.map((p) => {
@@ -289,7 +382,7 @@ export default function BrandSubscriptionPage() {
           setContactForm((p) => ({
             ...p,
             name: brand.name || "",
-            email: brand.email || "", // or: brand.brandAliasEmail || brand.email || ""
+            email: brand.email || "",
           }));
 
           if (brand.subscription?.planName) {
@@ -317,7 +410,10 @@ export default function BrandSubscriptionPage() {
 
     const mapNew = new Map(selectedPlan.features.map((f) => [f.key, f.value]));
     const union = Array.from(
-      new Set([...currentPlanObj.features.map((f) => f.key), ...selectedPlan.features.map((f) => f.key)])
+      new Set([
+        ...currentPlanObj.features.map((f) => f.key),
+        ...selectedPlan.features.map((f) => f.key),
+      ])
     );
 
     return union
@@ -357,7 +453,6 @@ export default function BrandSubscriptionPage() {
     setContactToast({ type: "idle", message: "" });
 
     try {
-      // ✅ Change this URL if your route differs
       await post("/contact/send", { name, email, subject, message });
 
       setContactToast({ type: "success", message: "Message sent successfully!" });
@@ -376,7 +471,8 @@ export default function BrandSubscriptionPage() {
     setContactForm((p) => ({
       ...p,
       subject: p.subject || "Enterprise plan enquiry",
-      message: p.message || "Hi CollabGlam team, we want a custom plan for our brand. Please share details.",
+      message:
+        p.message || "Hi CollabGlam team, we want a custom plan for our brand. Please share details.",
     }));
     setShowContactModal(true);
   };
@@ -384,13 +480,13 @@ export default function BrandSubscriptionPage() {
   const handleSelect = async (plan: Plan) => {
     if (processing || plan.name.toLowerCase() === currentPlan?.toLowerCase()) return;
 
-    // ✅ Enterprise Contact Us opens modal
+    // ✅ Enterprise → Contact modal
     if (isEnterpriseBrand(plan) || plan.name.toLowerCase() === "enterprise") {
       openContactModal();
       return;
     }
 
-    // Free or downgrade plan → show downgrade confirmation modal
+    // Free or downgrade plan → show downgrade modal (unchanged)
     if (plan.monthlyCost <= 0) {
       setSelectedPlan(plan);
       setShowDowngradeModal(true);
@@ -401,73 +497,40 @@ export default function BrandSubscriptionPage() {
 
     setProcessing(plan.name);
     setPaymentStatus("processing");
-    setPaymentMessage("");
+    setPaymentMessage("Redirecting to secure checkout…");
 
-    const ok = await loadScript("https://checkout.razorpay.com/v1/checkout.js");
-    if (!ok) {
-      setPaymentStatus("failed");
-      setPaymentMessage("Payment SDK failed to load.");
-      setProcessing(null);
-      return;
-    }
-
-    const brandId = localStorage.getItem("brandId");
     try {
-      const orderResp = await post<any>("/payment/Order", {
+      const brandId = localStorage.getItem("brandId");
+      if (!brandId) throw new Error("Missing brandId.");
+
+      // Save pending info for after redirect
+      localStorage.setItem("pendingPlanId", plan.planId);
+      localStorage.setItem("pendingPlanName", plan.name);
+
+      // ✅ Create Stripe Checkout Session (backend returns { url, sessionId })
+      const resp = await post<{
+        success: boolean;
+        url?: string;
+        sessionId?: string;
+        message?: string;
+      }>("/payment/Order", {
         planId: plan.planId,
         amount: plan.monthlyCost,
+        currency: plan.currency || "USD",
         userId: brandId,
         role: "Brand",
       });
 
-      const { id: order_id, amount, currency } = orderResp.order;
+      if (!resp?.success || !resp?.url) {
+        throw new Error(resp?.message || "Failed to start checkout.");
+      }
 
-      const rzp = new window.Razorpay({
-        key: "rzp_live_Rroqo7nHdOmQco",
-        amount,
-        currency,
-        name: "CollabGlam",
-        description: `${capitalize(plan.name)} Plan`,
-        order_id,
-        handler: async (response: any) => {
-          try {
-            await post("/payment/verify", { ...response, planId: plan.planId, brandId });
-
-            await post("/subscription/assign", {
-              userType: "Brand",
-              userId: brandId,
-              planId: plan.planId,
-            });
-
-            setCurrentPlan(plan.name);
-            setExpiresAt(new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString());
-
-            localStorage.setItem("brandPlanName", plan.name);
-            localStorage.setItem("brandPlanId", plan.planId);
-
-            setPaymentStatus("success");
-            setPaymentMessage("Subscription updated successfully!");
-            window.location.reload();
-          } catch {
-            setPaymentStatus("failed");
-            setPaymentMessage("Payment verified but failed to assign subscription. Please contact support.");
-          }
-        },
-        prefill: { name: "", email: "", contact: "" },
-        theme: { color: "#FFA135" },
-      });
-
-      rzp.on("payment.failed", (resp: any) => {
-        setPaymentStatus("failed");
-        setPaymentMessage(`Payment Failed: ${resp.error.description}`);
-      });
-
-      rzp.open();
-    } catch (e) {
+      // Redirect to Stripe Checkout
+      window.location.href = resp.url;
+    } catch (e: any) {
       console.error(e);
       setPaymentStatus("failed");
-      setPaymentMessage("Failed to initiate payment. Try again later.");
-    } finally {
+      setPaymentMessage(e?.message || "Failed to initiate payment. Try again later.");
       setProcessing(null);
     }
   };
@@ -524,7 +587,9 @@ export default function BrandSubscriptionPage() {
             <Crown className="w-8 h-8 text-orange-500" />
             <h2 className="text-4xl lg:text-5xl font-bold text-gray-900">Brand Subscription</h2>
           </div>
-          <p className="text-lg text-gray-600 mt-3">Simple, transparent pricing. Start free, upgrade as you grow.</p>
+          <p className="text-lg text-gray-600 mt-3">
+            Simple, transparent pricing. Start free, upgrade as you grow.
+          </p>
         </div>
 
         {/* Current plan */}
@@ -533,7 +598,9 @@ export default function BrandSubscriptionPage() {
             <div className="bg-white rounded-2xl border border-gray-200 shadow p-6 text-center">
               <div className="flex items-center justify-center gap-2 mb-2">
                 <CheckCircle className="w-5 h-5 text-emerald-600" />
-                <span className="text-sm font-medium text-gray-600 uppercase tracking-wide">Current Plan</span>
+                <span className="text-sm font-medium text-gray-600 uppercase tracking-wide">
+                  Current Plan
+                </span>
               </div>
               <h3 className="text-2xl font-bold text-gray-900">
                 {currentPlanObj?.displayName || capitalize(currentPlan)}
@@ -562,12 +629,13 @@ export default function BrandSubscriptionPage() {
         {paymentStatus !== "idle" && (
           <div className="max-w-md mx-auto mb-8">
             <div
-              className={`p-4 rounded-2xl border flex items-center justify-center gap-3 ${paymentStatus === "success"
-                ? "bg-emerald-50 border-emerald-200 text-emerald-800"
-                : paymentStatus === "processing"
+              className={`p-4 rounded-2xl border flex items-center justify-center gap-3 ${
+                paymentStatus === "success"
+                  ? "bg-emerald-50 border-emerald-200 text-emerald-800"
+                  : paymentStatus === "processing"
                   ? "bg-orange-50 border-orange-200 text-orange-800"
                   : "bg-red-50 border-red-200 text-red-800"
-                }`}
+              }`}
             >
               {paymentStatus === "success" ? (
                 <CheckCircle className="w-6 h-6" />
@@ -631,8 +699,9 @@ export default function BrandSubscriptionPage() {
                       <button
                         onClick={() => handleSelect(plan)}
                         disabled={isActive || isProcessing}
-                        className={`inline-flex items-center justify-center px-6 py-3 text-sm font-semibold rounded-md shadow bg-gradient-to-r from-[#FFA135] to-[#FF7236] hover:from-[#FF8C1A] hover:to-[#FF5C1E] text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-orange-400 ${isActive || isProcessing ? "opacity-70 cursor-not-allowed" : ""
-                          }`}
+                        className={`inline-flex items-center justify-center px-6 py-3 text-sm font-semibold rounded-md shadow bg-gradient-to-r from-[#FFA135] to-[#FF7236] hover:from-[#FF8C1A] hover:to-[#FF5C1E] text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-orange-400 ${
+                          isActive || isProcessing ? "opacity-70 cursor-not-allowed" : ""
+                        }`}
                       >
                         {isActive ? (
                           <>
@@ -731,10 +800,11 @@ export default function BrandSubscriptionPage() {
                   <button
                     onClick={() => handleSelect(plan)}
                     disabled={isActive || isProcessing}
-                    className={`${baseButtonClasses} ${isActive || isProcessing
-                      ? "bg-gray-100 text-gray-500 cursor-not-allowed border border-gray-200"
-                      : "bg-gradient-to-r from-[#FFA135] to-[#FF7236] hover:from-[#FF8C1A] hover:to-[#FF5C1E] text-white"
-                      }`}
+                    className={`${baseButtonClasses} ${
+                      isActive || isProcessing
+                        ? "bg-gray-100 text-gray-500 cursor-not-allowed border border-gray-200"
+                        : "bg-gradient-to-r from-[#FFA135] to-[#FF7236] hover:from-[#FF8C1A] hover:to-[#FF5C1E] text-white"
+                    }`}
                   >
                     {isActive ? (
                       <span className="inline-flex items-center justify-center gap-2">
@@ -764,8 +834,11 @@ export default function BrandSubscriptionPage() {
                     return (
                       <li key={key} className={`flex items-start gap-3 ${ok ? "text-gray-800" : "text-gray-400"}`}>
                         <span
-                          className={`mt-0.5 inline-flex items-center justify-center rounded-sm ring-1 h-5 w-5 flex-shrink-0 ${ok ? "bg-green-50 text-green-600 ring-green-200" : "bg-gray-100 text-gray-400 ring-gray-200"
-                            }`}
+                          className={`mt-0.5 inline-flex items-center justify-center rounded-sm ring-1 h-5 w-5 flex-shrink-0 ${
+                            ok
+                              ? "bg-green-50 text-green-600 ring-green-200"
+                              : "bg-gray-100 text-gray-400 ring-gray-200"
+                          }`}
                         >
                           {ok ? <Check className="h-3.5 w-3.5" /> : <X className="h-3.5 w-3.5" />}
                         </span>
@@ -855,10 +928,11 @@ export default function BrandSubscriptionPage() {
             <form onSubmit={handleSendContact} className="px-8 py-6 space-y-4">
               {contactToast.type !== "idle" && (
                 <div
-                  className={`p-4 rounded-2xl border text-sm ${contactToast.type === "success"
-                    ? "bg-emerald-50 border-emerald-200 text-emerald-800"
-                    : "bg-red-50 border-red-200 text-red-800"
-                    }`}
+                  className={`p-4 rounded-2xl border text-sm ${
+                    contactToast.type === "success"
+                      ? "bg-emerald-50 border-emerald-200 text-emerald-800"
+                      : "bg-red-50 border-red-200 text-red-800"
+                  }`}
                 >
                   {contactToast.message}
                 </div>
@@ -924,10 +998,11 @@ export default function BrandSubscriptionPage() {
                 <button
                   type="submit"
                   disabled={contactSubmitting}
-                  className={`w-48 px-6 py-3 rounded-xl font-semibold text-white transition-colors ${contactSubmitting
-                    ? "bg-gray-400 cursor-not-allowed"
-                    : "bg-gradient-to-r from-[#FFA135] to-[#FF7236] hover:from-[#FF7236] hover:to-[#FFA135] shadow-lg"
-                    }`}
+                  className={`w-48 px-6 py-3 rounded-xl font-semibold text-white transition-colors ${
+                    contactSubmitting
+                      ? "bg-gray-400 cursor-not-allowed"
+                      : "bg-gradient-to-r from-[#FFA135] to-[#FF7236] hover:from-[#FF7236] hover:to-[#FFA135] shadow-lg"
+                  }`}
                 >
                   {contactSubmitting ? (
                     <span className="inline-flex items-center gap-2">
@@ -969,8 +1044,8 @@ export default function BrandSubscriptionPage() {
             <div className="px-8 py-6 space-y-6">
               <p className="text-gray-700">
                 Moving to{" "}
-                <span className="font-semibold text-gray-900">{capitalize(selectedPlan.name)}</span> will reduce or remove
-                some features:
+                <span className="font-semibold text-gray-900">{capitalize(selectedPlan.name)}</span>{" "}
+                will reduce or remove some features:
               </p>
 
               {featureLoss.length > 0 && (
@@ -1042,10 +1117,11 @@ export default function BrandSubscriptionPage() {
               <button
                 onClick={handleConfirmDowngrade}
                 disabled={confirmText.trim().toUpperCase() !== "CANCEL" || submittingDowngrade}
-                className={`px-6 py-3 rounded-xl font-semibold text-white transition-colors ${confirmText.trim().toUpperCase() === "CANCEL" && !submittingDowngrade
-                  ? "bg-gradient-to-r from-[#FFA135] to-[#FF7236] hover:from-[#FF7236] hover:to-[#FFA135] shadow-lg"
-                  : "bg-gray-400 cursor-not-allowed"
-                  }`}
+                className={`px-6 py-3 rounded-xl font-semibold text-white transition-colors ${
+                  confirmText.trim().toUpperCase() === "CANCEL" && !submittingDowngrade
+                    ? "bg-gradient-to-r from-[#FFA135] to-[#FF7236] hover:from-[#FF7236] hover:to-[#FFA135] shadow-lg"
+                    : "bg-gray-400 cursor-not-allowed"
+                }`}
               >
                 {submittingDowngrade ? (
                   <span className="inline-flex items-center gap-2">

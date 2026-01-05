@@ -34,12 +34,18 @@ import {
 
 const TABLE_GRADIENT_FROM = "#FFA135";
 const TABLE_GRADIENT_TO = "#FF7236";
+const PAGE_SIZE = 10;
 
-const toast = (opts: {
-  icon: "success" | "error";
-  title: string;
-  text?: string;
-}) =>
+// Payment gateway fee settings (2%)
+const GATEWAY_FEE_PERCENT = 0.02;
+
+// localStorage key to complete milestone after Stripe redirect
+const PENDING_MILESTONE_KEY = "pendingMilestoneStripe";
+
+// sessionStorage guard key (prevents success effect running twice)
+const STRIPE_MILESTONE_HANDLED_KEY = "stripe_milestone_handled_session";
+
+const toast = (opts: { icon: "success" | "error"; title: string; text?: string }) =>
   Swal.fire({
     showConfirmButton: false,
     timer: 1200,
@@ -97,54 +103,39 @@ interface InfluencerRow {
 }
 
 type SortKey = "name" | "username" | "followers" | "updatedAt";
-const PAGE_SIZE = 10;
-
-/* Razorpay global type */
-declare global {
-  interface Window {
-    Razorpay: any;
-  }
-}
 
 /* --------------------------- Helper functions --------------------------- */
-const formatNumber = (n?: number | null) =>
-  typeof n === "number" ? n.toLocaleString() : "—";
+const formatNumber = (n?: number | null) => (typeof n === "number" ? n.toLocaleString() : "—");
 
-const formatDate = (iso?: string | null) =>
-  iso ? new Date(iso).toLocaleDateString() : "—";
+const formatDate = (iso?: string | null) => (iso ? new Date(iso).toLocaleDateString() : "—");
 
-const buildSocialUrl = (
-  provider: Provider | undefined,
-  username: string
-): string => {
+const buildSocialUrl = (provider: Provider | undefined, username: string): string => {
   const u = username.replace(/^@/, "");
   if (provider === "youtube") return `https://www.youtube.com/@${u}`;
   if (provider === "tiktok") return `https://www.tiktok.com/@${u}`;
-  // default instagram
   return `https://www.instagram.com/${u}`;
 };
 
 const dedupe = <T,>(arr: T[]) => Array.from(new Set(arr));
 
+const safeRowId = () => {
+  const c: any = globalThis.crypto;
+  return c?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+};
+
 const toRow = (doc: RawInfluencer): InfluencerRow => {
   const username = (doc.socialHandle && doc.socialHandle.trim()) || null;
 
-  const socialUrl =
-    username && doc.primaryPlatform
-      ? buildSocialUrl(doc.primaryPlatform, username)
-      : null;
+  const socialUrl = username && doc.primaryPlatform ? buildSocialUrl(doc.primaryPlatform, username) : null;
 
   const categoryNames = dedupe<string>(
-    [doc.onboarding?.categoryName].filter(
-      (x): x is string => typeof x === "string" && !!x.trim()
-    )
+    [doc.onboarding?.categoryName].filter((x): x is string => typeof x === "string" && !!x.trim())
   );
 
-  const followers =
-    typeof doc.audienceSize === "number" ? doc.audienceSize : null;
+  const followers = typeof doc.audienceSize === "number" ? doc.audienceSize : null;
 
   return {
-    _id: (doc._id as string) || doc.influencerId || crypto.randomUUID(),
+    _id: (doc._id as string) || doc.influencerId || safeRowId(),
     influencerId: doc.influencerId,
     name: doc.name || "—",
     username,
@@ -153,10 +144,10 @@ const toRow = (doc: RawInfluencer): InfluencerRow => {
       doc.primaryPlatform === "instagram"
         ? "Instagram"
         : doc.primaryPlatform === "youtube"
-          ? "YouTube"
-          : doc.primaryPlatform === "tiktok"
-            ? "TikTok"
-            : doc.primaryPlatform || undefined,
+        ? "YouTube"
+        : doc.primaryPlatform === "tiktok"
+        ? "TikTok"
+        : doc.primaryPlatform || undefined,
     categoryNames,
     followers,
     updatedAt: doc.updatedAt ?? null,
@@ -166,20 +157,28 @@ const toRow = (doc: RawInfluencer): InfluencerRow => {
   };
 };
 
-const loadScript = (src: string) =>
-  new Promise<boolean>((res) => {
-    const s = document.createElement("script");
-    s.src = src;
-    s.onload = () => res(true);
-    s.onerror = () => res(false);
-    document.body.appendChild(s);
-  });
+const getStoredBrandId = () => {
+  try {
+    return typeof window !== "undefined" ? localStorage.getItem("brandId") : null;
+  } catch {
+    return null;
+  }
+};
+
+const safeJsonParse = <T,>(s: string | null): T | null => {
+  if (!s) return null;
+  try {
+    return JSON.parse(s) as T;
+  } catch {
+    return null;
+  }
+};
 
 /* ============================== Component =============================== */
 export default function ActiveInfluencersPage() {
   const searchParams = useSearchParams();
   const campaignId = searchParams.get("id");
-  const campaignName = searchParams.get("name");
+  const campaignName = searchParams.get("name") || "";
   const router = useRouter();
 
   const [rowsData, setRowsData] = useState<InfluencerRow[]>([]);
@@ -189,6 +188,7 @@ export default function ActiveInfluencersPage() {
     limit: PAGE_SIZE,
     totalPages: 1,
   });
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -196,188 +196,404 @@ export default function ActiveInfluencersPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [sortField, setSortField] = useState<SortKey>("updatedAt");
   const [sortOrder, setSortOrder] = useState<1 | 0>(1); // 1=desc, 0=asc
+
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
   const [milestoneCountByInfluencer, setMilestoneCountByInfluencer] = useState<Record<string, number>>({});
-
-  const [openingContractFor, setOpeningContractFor] = useState<string | null>(
-    null
-  );
+  const [openingContractFor, setOpeningContractFor] = useState<string | null>(null);
 
   const [showMilestoneModal, setShowMilestoneModal] = useState(false);
   const [selectedInf, setSelectedInf] = useState<InfluencerRow | null>(null);
-  const [milestoneForm, setMilestoneForm] = useState({
-    title: "",
-    amount: "",
-    description: "",
-  });
+  const [milestoneForm, setMilestoneForm] = useState({ title: "", amount: "", description: "" });
   const [isSavingMilestone, setIsSavingMilestone] = useState(false);
-
-  // ✅ NEW: Applied influencers count + loading
-  const [appliedCount, setAppliedCount] = useState<number>(0);
-  const [isAppliedCountLoading, setIsAppliedCountLoading] = useState(false);
-
-  // Razorpay fee settings
-  const FEE_PERCENT = 0.02; // 2%
-
-  const amountNum = useMemo(
-    () => Number(milestoneForm.amount) || 0,
-    [milestoneForm.amount]
-  );
-
-  const razorpayFee = useMemo(
-    () => Math.round(amountNum * FEE_PERCENT * 100) / 100,
-    [amountNum]
-  );
-
-  const totalWithFee = useMemo(
-    () => amountNum + razorpayFee,
-    [amountNum, razorpayFee]
-  );
 
   // campaign budget + allocated milestones (for this brand)
   const [campaignBudget, setCampaignBudget] = useState<number | null>(null);
-  const [campaignMilestoneTotal, setCampaignMilestoneTotal] =
-    useState<number>(0);
+  const [campaignMilestoneTotal, setCampaignMilestoneTotal] = useState<number>(0);
   const [isBudgetLocked, setIsBudgetLocked] = useState<boolean>(false);
+
+  const amountNum = useMemo(() => Number(milestoneForm.amount) || 0, [milestoneForm.amount]);
+
+  const gatewayFee = useMemo(
+    () => Math.round(amountNum * GATEWAY_FEE_PERCENT * 100) / 100,
+    [amountNum]
+  );
+
+  const totalWithFee = useMemo(() => amountNum + gatewayFee, [amountNum, gatewayFee]);
 
   const remainingBudget = useMemo(() => {
     if (campaignBudget == null) return null;
     return Math.max(0, campaignBudget - campaignMilestoneTotal);
   }, [campaignBudget, campaignMilestoneTotal]);
 
-  const toggleExpand = (id: string) =>
-    setExpandedRow((cur) => (cur === id ? null : id));
+  const toggleExpand = (id: string) => setExpandedRow((cur) => (cur === id ? null : id));
 
-  const toggleSort = (field: SortKey) => {
-    setPage(1);
-    if (sortField === field) setSortOrder((o) => (o === 1 ? 0 : 1));
-    else {
-      setSortField(field);
-      setSortOrder(1);
-    }
-  };
+  const toggleSort = useCallback(
+    (field: SortKey) => {
+      setPage(1);
+      if (sortField === field) setSortOrder((o) => (o === 1 ? 0 : 1));
+      else {
+        setSortField(field);
+        setSortOrder(1);
+      }
+    },
+    [sortField]
+  );
 
-  // ✅ NEW: Fetch applied influencers count (limit static 100000, campaignId dynamic)
-  const refreshAppliedCount = useCallback(async () => {
+  const SortIndicator = ({ field }: { field: SortKey }) =>
+    sortField === field ? (
+      sortOrder === 1 ? (
+        <HiOutlineChevronDown className="inline ml-1 w-4 h-4" />
+      ) : (
+        <HiOutlineChevronUp className="inline ml-1 w-4 h-4" />
+      )
+    ) : null;
+
+  const refreshBudgetAndTotals = useCallback(async () => {
     if (!campaignId) return;
 
     try {
-      setIsAppliedCountLoading(true);
+      const brandId = getStoredBrandId();
 
-      const resp = await post<any>("apply/list", {
-        campaignId,
-        page: 1,
-        limit: 100000, // ✅ static as requested
-        search: "",
-        sortField: "name",
-        sortOrder: 1,
+      const [campaignResp, milestoneResp] = await Promise.all([
+        get<any>(`/campaign/id?id=${campaignId}`),
+        post<any>("milestone/byCampaign", { campaignId }),
+      ]);
+
+      const rawBudget = Number(campaignResp?.budget);
+      const budget = !Number.isNaN(rawBudget) ? rawBudget : null;
+      setCampaignBudget(budget);
+
+      const list = Array.isArray(milestoneResp?.milestones) ? milestoneResp.milestones : [];
+
+      let sum = 0;
+      const counts: Record<string, number> = {};
+
+      list.forEach((m: any) => {
+        if (brandId && m.brandId !== brandId) return;
+
+        sum += Number(m.amount) || 0;
+
+        const infId =
+          m.influencerId ||
+          m.influencerID ||
+          m.influencer_id ||
+          m.influencer?.influencerId ||
+          m.influencer?._id;
+
+        if (infId) {
+          const key = String(infId);
+          counts[key] = (counts[key] || 0) + 1;
+        }
       });
 
-      const totalFromMeta = Number(resp?.meta?.total);
-      const totalFromRoot = Number(resp?.total ?? resp?.count);
-
-      const listLen =
-        (Array.isArray(resp?.applies) && resp.applies.length) ||
-        (Array.isArray(resp?.applications) && resp.applications.length) ||
-        (Array.isArray(resp?.influencers) && resp.influencers.length) ||
-        (Array.isArray(resp?.data) && resp.data.length) ||
-        0;
-
-      const finalTotal = !Number.isNaN(totalFromMeta)
-        ? totalFromMeta
-        : !Number.isNaN(totalFromRoot)
-          ? totalFromRoot
-          : listLen;
-
-      setAppliedCount(finalTotal);
+      setCampaignMilestoneTotal(sum);
+      setMilestoneCountByInfluencer(counts);
+      setIsBudgetLocked(budget != null && sum >= budget);
     } catch (e) {
-      console.error("Failed to load applied influencers count", e);
-      setAppliedCount(0);
-    } finally {
-      setIsAppliedCountLoading(false);
+      console.error("Failed to refresh campaign budget / milestones", e);
     }
   }, [campaignId]);
 
-  useEffect(() => {
-    refreshAppliedCount();
-  }, [refreshAppliedCount]);
+  /** Clean Stripe params from CURRENT URL */
+  const getCleanUrl = useCallback(() => {
+    if (typeof window === "undefined") return "";
+    const url = new URL(window.location.href);
+    url.searchParams.delete("stripe_success");
+    url.searchParams.delete("stripe_cancel");
+    url.searchParams.delete("session_id");
+    return url.pathname + (url.search ? url.search : "");
+  }, []);
 
-  // ✅ NEW: Applied Influencers button click
-  const handleViewAppliedInfluencers = () => {
-    if (!campaignId) return;
-    router.push(`/brand/created-campaign/applied-inf?id=${campaignId}`);
+  /** Stripe redirect handler (milestones) */
+  useEffect(() => {
+    const stripeSuccess = searchParams.get("stripe_success");
+    const stripeCancel = searchParams.get("stripe_cancel");
+    const sessionId = searchParams.get("session_id");
+
+    if (!stripeSuccess && !stripeCancel) return;
+
+    const cleanUrl = getCleanUrl();
+
+    // Cancel flow
+    if (stripeCancel) {
+      if (typeof window !== "undefined") {
+        sessionStorage.removeItem(STRIPE_MILESTONE_HANDLED_KEY);
+        localStorage.removeItem(PENDING_MILESTONE_KEY);
+      }
+      router.replace(cleanUrl);
+      toast({ icon: "error", title: "Payment cancelled" });
+      return;
+    }
+
+    // Success flow
+    if (stripeSuccess && sessionId) {
+      // Guard (StrictMode / rerender / back-forward cache)
+      if (typeof window !== "undefined") {
+        const handled = sessionStorage.getItem(STRIPE_MILESTONE_HANDLED_KEY);
+        if (handled === sessionId) {
+          router.replace(cleanUrl);
+          return;
+        }
+        sessionStorage.setItem(STRIPE_MILESTONE_HANDLED_KEY, sessionId);
+      }
+
+      // Strip params ASAP (prevents loops)
+      router.replace(cleanUrl);
+
+      (async () => {
+        try {
+          setIsSavingMilestone(true);
+
+          const pending = safeJsonParse<{
+            brandId: string;
+            influencerId: string;
+            campaignId: string;
+            title: string;
+            description: string;
+            amountBase: number;
+            gatewayFee: number;
+            totalPaid: number;
+            currency: string;
+          }>(typeof window !== "undefined" ? localStorage.getItem(PENDING_MILESTONE_KEY) : null);
+
+          if (!pending) throw new Error("Missing milestone data. Please try again.");
+
+          // 1) Verify Stripe session
+          const verifyResp = await post<any>("/payment/milestone-verify", { sessionId });
+          if (!verifyResp?.success) {
+            throw new Error(verifyResp?.message || "Payment verification failed.");
+          }
+
+          // 2) Create milestone after payment success
+          await post("milestone/create", {
+            influencerId: pending.influencerId,
+            campaignId: pending.campaignId,
+            milestoneTitle: pending.title,
+            amount: pending.amountBase, // base amount only
+            milestoneDescription: pending.description,
+            brandId: pending.brandId,
+
+            paymentProvider: "stripe",
+            stripeSessionId: sessionId,
+            stripePaymentIntentId: verifyResp?.paymentIntentId || null,
+            totalPaid: pending.totalPaid,
+            gatewayFee: pending.gatewayFee,
+          });
+
+          Swal.fire({
+            icon: "success",
+            title: "Milestone added",
+            text:
+              "Milestone has been created successfully.\n" +
+              `Base: ${Number(pending.amountBase).toFixed(2)}, Fee: ${Number(pending.gatewayFee).toFixed(2)}, Total: ${Number(
+                pending.totalPaid
+              ).toFixed(2)}`,
+            showConfirmButton: false,
+            timer: 1500,
+            timerProgressBar: true,
+          });
+
+          if (typeof window !== "undefined") localStorage.removeItem(PENDING_MILESTONE_KEY);
+
+          setShowMilestoneModal(false);
+          setMilestoneForm({ title: "", amount: "", description: "" });
+          setPage(1);
+
+          await refreshBudgetAndTotals();
+        } catch (e: any) {
+          console.error(e);
+          toast({
+            icon: "error",
+            title: "Could not finish milestone",
+            text: e?.message || "Something went wrong.",
+          });
+          if (typeof window !== "undefined") localStorage.removeItem(PENDING_MILESTONE_KEY);
+        } finally {
+          setIsSavingMilestone(false);
+        }
+      })();
+    }
+  }, [searchParams, router, getCleanUrl, refreshBudgetAndTotals]);
+
+  /** Fetch influencers accepted for this campaign */
+  useEffect(() => {
+    if (!campaignId) {
+      setError("No campaign selected.");
+      setLoading(false);
+      return;
+    }
+
+    (async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const resp = await post<{ influencers: RawInfluencer[] }>("campaign/accepted-inf", {
+          campaignId,
+          search: searchTerm.trim(),
+          sortBy: sortField,
+          order: sortOrder === 1 ? "desc" : "asc",
+        });
+
+        const list = Array.isArray(resp.influencers) ? resp.influencers : [];
+        const normalized = list.map(toRow);
+
+        setRowsData(normalized);
+
+        const total = normalized.length;
+        const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+
+        setMeta({ total, page: 1, limit: PAGE_SIZE, totalPages });
+        setPage(1);
+      } catch (e) {
+        console.error(e);
+        setError("Failed to load applicants.");
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [campaignId, searchTerm, sortField, sortOrder]);
+
+  /** Fetch budget + milestone totals */
+  useEffect(() => {
+    refreshBudgetAndTotals();
+  }, [refreshBudgetAndTotals]);
+
+  const handleAddMilestone = (inf: InfluencerRow) => {
+    setSelectedInf(inf);
+    setMilestoneForm({ title: "", amount: "", description: "" });
+    setShowMilestoneModal(true);
   };
 
-  const getLatestContractId = useCallback(
-    async (influencerId: string) => {
-      const brandId =
-        typeof window !== "undefined" ? localStorage.getItem("brandId") : null;
+  const handleSaveMilestone = async () => {
+    if (!selectedInf?.influencerId || !campaignId) return;
 
-      if (!brandId || !campaignId) return null;
+    if (!milestoneForm.title.trim()) {
+      toast({ icon: "error", title: "Enter a milestone title" });
+      return;
+    }
 
-      // ⚠️ Adjust endpoint if your route name differs
-      const resp = await post<{ contracts: any[] }>("contract/getContract", {
+    if (Number.isNaN(amountNum) || amountNum <= 0) {
+      toast({ icon: "error", title: "Invalid amount", text: "Please enter a valid positive amount." });
+      return;
+    }
+
+    // client-side budget check
+    if (campaignBudget != null) {
+      if (remainingBudget !== null && remainingBudget <= 0) {
+        setIsBudgetLocked(true);
+        toast({
+          icon: "error",
+          title: "Campaign budget fully allocated",
+          text: "You have already added milestones equal to the campaign budget. You cannot create new milestones.",
+        });
+        return;
+      }
+
+      if (remainingBudget !== null && amountNum > remainingBudget) {
+        toast({
+          icon: "error",
+          title: "Amount exceeds remaining budget",
+          text: `Remaining campaign budget for milestones is ${remainingBudget.toLocaleString()}. Please enter a smaller amount.`,
+        });
+        return;
+      }
+    }
+
+    try {
+      setIsSavingMilestone(true);
+
+      const brandId = getStoredBrandId();
+      if (!brandId) {
+        toast({ icon: "error", title: "Missing brand", text: "Please log in again as a brand." });
+        return;
+      }
+
+      // ✅ ALWAYS return to the same current route
+      const origin = window.location.origin;
+      const pathname = window.location.pathname;
+
+      const basePath = `${pathname}?id=${encodeURIComponent(campaignId)}&name=${encodeURIComponent(campaignName)}`;
+      const successUrl = `${origin}${basePath}&stripe_success=1&session_id={CHECKOUT_SESSION_ID}`;
+      const cancelUrl = `${origin}${basePath}&stripe_cancel=1`;
+
+      // store pending milestone data for after redirect
+      localStorage.setItem(
+        PENDING_MILESTONE_KEY,
+        JSON.stringify({
+          brandId,
+          influencerId: selectedInf.influencerId,
+          campaignId,
+          title: milestoneForm.title,
+          description: milestoneForm.description,
+          amountBase: amountNum,
+          gatewayFee,
+          totalPaid: totalWithFee,
+          currency: "USD",
+        })
+      );
+
+      // Create Stripe checkout session for milestone
+      const sessionResp = await post<any>("/payment/milestone-order", {
+        amount: totalWithFee,
+        currency: "USD",
         brandId,
-        influencerId,
+        influencerId: selectedInf.influencerId,
         campaignId,
+        campaignName, // ✅ optional but useful for backend logging/metadata
+        milestoneTitle: milestoneForm.title,
+        successUrl,
+        cancelUrl,
       });
 
-      const latest = Array.isArray(resp?.contracts) ? resp.contracts[0] : null;
-      return latest?.contractId || null;
-    },
-    [campaignId]
-  );
+      if (!sessionResp?.success || !sessionResp?.url) {
+        throw new Error(sessionResp?.message || "Failed to start checkout.");
+      }
 
-  const openContractPdf = async (contractId: string) => {
-    const base = process.env.NEXT_PUBLIC_API_URL || ""; // same base used by your API wrapper
-    const token =
-      typeof window !== "undefined" ? localStorage.getItem("token") : null; // ⚠️ change key if different
+      window.location.href = sessionResp.url;
+    } catch (err: any) {
+      console.error(err);
 
-    // ⚠️ Adjust endpoint to the exact route wired to `exports.viewContractPdf`
-    const pdfUrl = `${base}/contract/viewContractPdf`;
+      const apiMessage = err?.response?.data?.message || err.message || "Something went wrong";
 
-    const r = await fetch(pdfUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
-      body: JSON.stringify({ contractId }),
-    });
+      if (apiMessage.includes("You have added milestone equal to campaign now not able to add now milestone")) {
+        setIsBudgetLocked(true);
+        toast({ icon: "error", title: "Campaign budget fully allocated", text: apiMessage });
+        await refreshBudgetAndTotals();
+      } else if (apiMessage.includes("Total milestone amount cannot exceed campaign budget")) {
+        toast({ icon: "error", title: "Milestone exceeds campaign budget", text: apiMessage });
+        await refreshBudgetAndTotals();
+      } else {
+        toast({ icon: "error", title: "Error", text: apiMessage });
+      }
 
-    if (!r.ok) throw new Error("Failed to load contract PDF");
+      localStorage.removeItem(PENDING_MILESTONE_KEY);
+    } finally {
+      setIsSavingMilestone(false);
+    }
+  };
 
-    const blob = await r.blob();
-    const objectUrl = URL.createObjectURL(blob);
-
-    window.open(objectUrl, "_blank", "noopener,noreferrer");
-
-    // cleanup
-    setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+  const handleViewDetails = (inf: InfluencerRow) => {
+    if (!inf.influencerId) return;
+    router.push(`/brand/influencers?id=${inf.influencerId}`);
   };
 
   const handleViewContract = async (inf: InfluencerRow) => {
     try {
       if (!inf.contractId) {
-        toast({
-          icon: "error",
-          title: "Contract not found",
-          text: "No contractId found for this influencer.",
-        });
+        toast({ icon: "error", title: "Contract not found", text: "No contractId found for this influencer." });
         return;
       }
 
       setOpeningContractFor(inf.contractId);
 
-      const base = process.env.NEXT_PUBLIC_API_URL || "";
-      const url = `${base}contract/viewPdf`; // ✅ your route
+      const base = (process.env.NEXT_PUBLIC_API_URL || "").replace(/\/$/, "");
+      const url = `${base}/contract/viewPdf`;
 
-      // (optional) if you use Bearer token auth
       const token =
         typeof window !== "undefined"
           ? localStorage.getItem("token") ||
-          localStorage.getItem("accessToken") ||
-          localStorage.getItem("authToken")
+            localStorage.getItem("accessToken") ||
+            localStorage.getItem("authToken")
           : null;
 
       const r = await fetch(url, {
@@ -398,344 +614,13 @@ export default function ActiveInfluencersPage() {
       setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
     } catch (e: any) {
       console.error(e);
-      toast({
-        icon: "error",
-        title: "Could not open contract",
-        text: e?.message || "Something went wrong.",
-      });
+      toast({ icon: "error", title: "Could not open contract", text: e?.message || "Something went wrong." });
     } finally {
       setOpeningContractFor(null);
     }
   };
 
-  const SortIndicator = ({ field }: { field: SortKey }) =>
-    sortField === field ? (
-      sortOrder === 1 ? (
-        <HiOutlineChevronDown className="inline ml-1 w-4 h-4" />
-      ) : (
-        <HiOutlineChevronUp className="inline ml-1 w-4 h-4" />
-      )
-    ) : null;
-
-  const refreshBudgetAndTotals = useCallback(async () => {
-    if (!campaignId) return;
-
-    try {
-      const brandId =
-        typeof window !== "undefined" ? localStorage.getItem("brandId") : null;
-
-      const [campaignResp, milestoneResp] = await Promise.all([
-        get<any>(`/campaign/id?id=${campaignId}`),
-        post<any>("milestone/byCampaign", { campaignId }),
-      ]);
-
-      const rawBudget = Number(campaignResp?.budget);
-      const budget = !Number.isNaN(rawBudget) ? rawBudget : null;
-      setCampaignBudget(budget);
-
-      const list = Array.isArray(milestoneResp?.milestones)
-        ? milestoneResp.milestones
-        : [];
-
-      // ✅ totals (your existing behavior)
-      let sum = 0;
-
-      // ✅ NEW: per-influencer milestone count
-      const counts: Record<string, number> = {};
-
-      list.forEach((m: any) => {
-        // ✅ only count this brand's milestones (same logic you used for sum)
-        if (brandId && m.brandId !== brandId) return;
-
-        sum += Number(m.amount) || 0;
-
-        // ✅ influencerId key (support common backend shapes)
-        const infId =
-          m.influencerId ||
-          m.influencerID ||
-          m.influencer_id ||
-          m.influencer?.influencerId ||
-          m.influencer?._id;
-
-        if (infId) {
-          const key = String(infId);
-          counts[key] = (counts[key] || 0) + 1;
-        }
-      });
-
-      setCampaignMilestoneTotal(sum);
-      setMilestoneCountByInfluencer(counts);
-
-      setIsBudgetLocked(budget != null && sum >= budget);
-    } catch (e) {
-      console.error("Failed to refresh campaign budget / milestones", e);
-    }
-  }, [campaignId]);
-
-  // Fetch influencers accepted for this campaign
-  useEffect(() => {
-    if (!campaignId) {
-      setError("No campaign selected.");
-      setLoading(false);
-      return;
-    }
-    (async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const resp = await post<{ influencers: RawInfluencer[] }>(
-          "campaign/accepted-inf",
-          {
-            campaignId,
-            search: searchTerm.trim(),
-            sortBy: sortField,
-            order: sortOrder === 1 ? "desc" : "asc",
-          }
-        );
-
-        const list = Array.isArray(resp.influencers) ? resp.influencers : [];
-        const normalized = list.map(toRow);
-
-        setRowsData(normalized);
-
-        const total = normalized.length;
-        const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-
-        setMeta({
-          total,
-          page: 1,
-          limit: PAGE_SIZE,
-          totalPages,
-        });
-        setPage(1);
-      } catch (e) {
-        console.error(e);
-        setError("Failed to load applicants.");
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, [campaignId, searchTerm, sortField, sortOrder]);
-
-  // Fetch budget + milestone totals on mount / campaign change
-  useEffect(() => {
-    refreshBudgetAndTotals();
-  }, [refreshBudgetAndTotals]);
-
-  const handleAddMilestone = (inf: InfluencerRow) => {
-    setSelectedInf(inf);
-    setMilestoneForm({ title: "", amount: "", description: "" });
-    setShowMilestoneModal(true);
-  };
-
-  const handleSaveMilestone = async () => {
-    if (!selectedInf?.influencerId || !campaignId) return;
-
-    if (!milestoneForm.title.trim()) {
-      toast({
-        icon: "error",
-        title: "Enter a milestone title",
-      });
-      return;
-    }
-
-    if (Number.isNaN(amountNum) || amountNum <= 0) {
-      toast({
-        icon: "error",
-        title: "Invalid amount",
-        text: "Please enter a valid positive amount.",
-      });
-      return;
-    }
-
-    // client-side budget check
-    if (campaignBudget != null) {
-      if (remainingBudget !== null && remainingBudget <= 0) {
-        setIsBudgetLocked(true);
-        toast({
-          icon: "error",
-          title: "Campaign budget fully allocated",
-          text:
-            "You have already added milestones equal to the campaign budget. You cannot create new milestones.",
-        });
-        return;
-      }
-
-      if (remainingBudget !== null && amountNum > remainingBudget) {
-        toast({
-          icon: "error",
-          title: "Amount exceeds remaining budget",
-          text: `Remaining campaign budget for milestones is ${remainingBudget.toLocaleString()}. Please enter a smaller amount.`,
-        });
-        return;
-      }
-    }
-
-    try {
-      setIsSavingMilestone(true);
-
-      // Load Razorpay SDK
-      const ok = await loadScript("https://checkout.razorpay.com/v1/checkout.js");
-      if (!ok) {
-        toast({
-          icon: "error",
-          title: "Payment error",
-          text: "Payment SDK failed to load. Please try again.",
-        });
-        setIsSavingMilestone(false);
-        return;
-      }
-
-      const brandId =
-        typeof window !== "undefined" ? localStorage.getItem("brandId") : null;
-
-      if (!brandId) {
-        toast({
-          icon: "error",
-          title: "Missing brand",
-          text: "Please log in again as a brand.",
-        });
-        setIsSavingMilestone(false);
-        return;
-      }
-
-      // 1️⃣ Create milestone order on backend (using dedicated endpoint)
-      const orderResp = await post<any>("/payment/milestone-order", {
-        amount: totalWithFee,
-        currency: "USD", // keep consistent with your backend / budget
-        brandId,
-        influencerId: selectedInf.influencerId,
-        campaignId,
-        milestoneTitle: milestoneForm.title,
-      });
-
-      const { id: order_id, amount, currency } = orderResp.order;
-
-      // 2️⃣ Open Razorpay Checkout
-      const rzp = new window.Razorpay({
-        key: "rzp_live_Rroqo7nHdOmQco", // or process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID
-        amount,
-        currency,
-        name: "CollabGlam",
-        description: `Milestone - ${milestoneForm.title}`,
-        order_id,
-        handler: async (response: any) => {
-          try {
-            // 3️⃣ Verify milestone payment
-            await post("/payment/milestone-verify", {
-              razorpay_order_id: order_id,
-              razorpay_payment_id: response.razorpay_payment_id,
-              razorpay_signature: response.razorpay_signature,
-            });
-
-            // 4️⃣ Create milestone AFTER successful payment
-            await post("milestone/create", {
-              influencerId: selectedInf.influencerId,
-              campaignId,
-              milestoneTitle: milestoneForm.title,
-              amount: amountNum, // base amount (for influencer & budget)
-              milestoneDescription: milestoneForm.description,
-              brandId,
-              razorpayOrderId: order_id,
-              razorpayPaymentId: response.razorpay_payment_id,
-            });
-
-            Swal.fire({
-              icon: "success",
-              title: "Milestone added",
-              text:
-                "Milestone has been created successfully for this campaign.\n" +
-                `Base: ${amountNum.toFixed(2)}, Fee: ${razorpayFee.toFixed(
-                  2
-                )}, Total: ${totalWithFee.toFixed(2)}`,
-              showConfirmButton: false,
-              timer: 1500,
-              timerProgressBar: true,
-            });
-
-            setShowMilestoneModal(false);
-            setMilestoneForm({ title: "", amount: "", description: "" });
-            setPage(1);
-            await refreshBudgetAndTotals();
-          } catch (err) {
-            console.error(err);
-            toast({
-              icon: "error",
-              title: "Payment verification failed",
-              text:
-                "Payment was captured but we could not create the milestone. Please contact support with your payment ID.",
-            });
-          } finally {
-            setIsSavingMilestone(false);
-          }
-        },
-        prefill: {
-          name: "",
-          email: "",
-          contact: "",
-        },
-        theme: { color: "#FFA135" },
-        modal: {
-          ondismiss: () => {
-            setIsSavingMilestone(false);
-          },
-        },
-      });
-
-      rzp.on("payment.failed", (resp: any) => {
-        console.error("Razorpay payment failed", resp);
-        toast({
-          icon: "error",
-          title: "Payment failed",
-          text: resp?.error?.description || "Payment was not completed.",
-        });
-        setIsSavingMilestone(false);
-      });
-
-      rzp.open();
-    } catch (err: any) {
-      console.error(err);
-      const apiMessage =
-        err?.response?.data?.message || err.message || "Something went wrong";
-
-      if (
-        apiMessage.includes(
-          "You have added milestone equal to campaign now not able to add now milestone"
-        )
-      ) {
-        setIsBudgetLocked(true);
-        toast({
-          icon: "error",
-          title: "Campaign budget fully allocated",
-          text: apiMessage,
-        });
-        await refreshBudgetAndTotals();
-      } else if (
-        apiMessage.includes("Total milestone amount cannot exceed campaign budget")
-      ) {
-        toast({
-          icon: "error",
-          title: "Milestone exceeds campaign budget",
-          text: apiMessage,
-        });
-        await refreshBudgetAndTotals();
-      } else {
-        toast({
-          icon: "error",
-          title: "Error",
-          text: apiMessage,
-        });
-      }
-      setIsSavingMilestone(false);
-    }
-  };
-
-  const handleViewDetails = (inf: InfluencerRow) => {
-    if (!inf.influencerId) return;
-    router.push(`/brand/influencers?id=${inf.influencerId}`);
-  };
-
-  // pagination
+  /** Pagination */
   const paginatedRows = useMemo(() => {
     const start = (page - 1) * PAGE_SIZE;
     const end = start + PAGE_SIZE;
@@ -750,17 +635,12 @@ export default function ActiveInfluencersPage() {
       const baseRow = (
         <TableRow
           key={rowKey}
-          className={`${idx % 2 === 0 ? "bg-white" : "bg-gray-50"
-            } transition-colors`}
-          onMouseEnter={(e) =>
-            (e.currentTarget.style.backgroundImage = hoverGradient)
-          }
+          className={`${idx % 2 === 0 ? "bg-white" : "bg-gray-50"} transition-colors`}
+          onMouseEnter={(e) => (e.currentTarget.style.backgroundImage = hoverGradient)}
           onMouseLeave={(e) => (e.currentTarget.style.backgroundImage = "")}
         >
-          {/* Name */}
           <TableCell>{inf.name}</TableCell>
 
-          {/* Social Handle */}
           <TableCell>
             {inf.username ? (
               <a
@@ -775,22 +655,13 @@ export default function ActiveInfluencersPage() {
             ) : (
               "—"
             )}
-            {inf.platformName && (
-              <span className="ml-1 text-xs text-gray-500">
-                ({inf.platformName})
-              </span>
-            )}
+            {inf.platformName && <span className="ml-1 text-xs text-gray-500">({inf.platformName})</span>}
           </TableCell>
 
-          {/* Categories */}
           <TableCell className="space-x-1">
             {inf.categoryNames.length ? (
               inf.categoryNames.map((cat, i) => (
-                <Badge
-                  key={`${inf._id}-cat-${i}`}
-                  variant="secondary"
-                  className="capitalize inline-block"
-                >
+                <Badge key={`${inf._id}-cat-${i}`} variant="secondary" className="capitalize inline-block">
                   {cat}
                 </Badge>
               ))
@@ -799,20 +670,17 @@ export default function ActiveInfluencersPage() {
             )}
           </TableCell>
 
-          {/* Audience */}
           <TableCell>
             <div>
               <strong>{formatNumber(inf.followers)}</strong>
             </div>
           </TableCell>
 
-          {/* Updated */}
           <TableCell className="whitespace-nowrap">
             <HiOutlineCalendar className="inline mr-1" />
             {formatDate(inf.updatedAt)}
           </TableCell>
 
-          {/* Status */}
           <TableCell className="text-center">
             {inf.influencerId ? (
               (milestoneCountByInfluencer[String(inf.influencerId)] || 0) > 0 ? (
@@ -827,7 +695,6 @@ export default function ActiveInfluencersPage() {
             )}
           </TableCell>
 
-          {/* Actions */}
           <TableCell className="flex space-x-2 justify-center">
             <Button
               size="sm"
@@ -850,8 +717,8 @@ export default function ActiveInfluencersPage() {
                 !inf.influencerId
                   ? "Missing influencerId"
                   : isBudgetLocked
-                    ? "Campaign budget already fully allocated in milestones"
-                    : "Add milestone"
+                  ? "Campaign budget already fully allocated in milestones"
+                  : "Add milestone"
               }
             >
               Add Milestone
@@ -865,9 +732,7 @@ export default function ActiveInfluencersPage() {
               disabled={!inf.contractId || openingContractFor === inf.contractId}
               title={inf.contractId ? "View contract" : "No contract available"}
             >
-              {openingContractFor === inf.contractId
-                ? "Opening..."
-                : "View Contract"}
+              {openingContractFor === inf.contractId ? "Opening..." : "View Contract"}
             </Button>
 
             <Button
@@ -878,11 +743,7 @@ export default function ActiveInfluencersPage() {
               disabled={!inf.influencerId}
               title={inf.influencerId ? "Toggle history" : "Missing influencerId"}
             >
-              {expandedRow === rowKey ? (
-                <HiOutlineChevronUp className="w-4 h-4" />
-              ) : (
-                <HiOutlineChevronDown className="w-4 h-4" />
-              )}
+              {expandedRow === rowKey ? <HiOutlineChevronUp className="w-4 h-4" /> : <HiOutlineChevronDown className="w-4 h-4" />}
             </Button>
           </TableCell>
         </TableRow>
@@ -894,11 +755,7 @@ export default function ActiveInfluencersPage() {
             <TableCell colSpan={7} className="p-0">
               <MilestoneHistoryCard
                 role="brand"
-                brandId={
-                  typeof window !== "undefined"
-                    ? localStorage.getItem("brandId")
-                    : undefined
-                }
+                brandId={getStoredBrandId() || undefined}
                 influencerId={inf.influencerId}
                 campaignId={campaignId as string}
               />
@@ -906,16 +763,9 @@ export default function ActiveInfluencersPage() {
           </TableRow>
         ) : null;
 
-      return [baseRow, detailsRow].filter(Boolean);
+      return [baseRow, detailsRow].filter(Boolean) as any[];
     });
-  }, [
-    paginatedRows,
-    expandedRow,
-    campaignId,
-    router,
-    isBudgetLocked,
-    openingContractFor,
-  ]);
+  }, [paginatedRows, expandedRow, campaignId, isBudgetLocked, openingContractFor, milestoneCountByInfluencer]);
 
   const totalPages = meta.totalPages;
   const totalAccepted = meta.total;
@@ -925,10 +775,7 @@ export default function ActiveInfluencersPage() {
       {/* Header */}
       <header className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between p-4 rounded-md">
         <div className="space-y-1">
-          <h1
-            className="text-3xl font-bold text-gray-800"
-            title={campaignName || "Unknown Campaign"}
-          >
+          <h1 className="text-3xl font-bold text-gray-800" title={campaignName || "Unknown Campaign"}>
             Campaign:{" "}
             {(campaignName || "Unknown Campaign").length > 20
               ? `${(campaignName || "Unknown Campaign").slice(0, 20)}...`
@@ -938,26 +785,11 @@ export default function ActiveInfluencersPage() {
           {campaignBudget != null && (
             <p className="text-xs text-gray-600">
               Budget:{" "}
-              <strong>
-                {campaignBudget.toLocaleString(undefined, {
-                  style: "currency",
-                  currency: "USD",
-                })}
-              </strong>{" "}
-              · Allocated in milestones:{" "}
-              <strong>
-                {campaignMilestoneTotal.toLocaleString(undefined, {
-                  style: "currency",
-                  currency: "USD",
-                })}
-              </strong>{" "}
-              · Remaining:{" "}
+              <strong>{campaignBudget.toLocaleString(undefined, { style: "currency", currency: "USD" })}</strong> · Allocated in milestones:{" "}
+              <strong>{campaignMilestoneTotal.toLocaleString(undefined, { style: "currency", currency: "USD" })}</strong> · Remaining:{" "}
               <strong>
                 {remainingBudget != null
-                  ? remainingBudget.toLocaleString(undefined, {
-                    style: "currency",
-                    currency: "USD",
-                  })
+                  ? remainingBudget.toLocaleString(undefined, { style: "currency", currency: "USD" })
                   : "—"}
               </strong>
             </p>
@@ -965,11 +797,11 @@ export default function ActiveInfluencersPage() {
 
           {isBudgetLocked && (
             <p className="text-xs font-semibold text-red-600">
-              Milestone total has reached the campaign budget. You cannot create
-              more milestones.
+              Milestone total has reached the campaign budget. You cannot create more milestones.
             </p>
           )}
         </div>
+
         <Button
           size="sm"
           variant="outline"
@@ -980,14 +812,11 @@ export default function ActiveInfluencersPage() {
         </Button>
       </header>
 
-      {/* ✅ Search (Applied Influencers button removed) */}
+      {/* Search */}
       <div className="mb-6 w-full">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
           <div className="relative w-full sm:max-w-md">
-            <HiSearch
-              className="absolute inset-y-0 left-3 my-auto text-gray-400"
-              size={20}
-            />
+            <HiSearch className="absolute inset-y-0 left-3 my-auto text-gray-400" size={20} />
             <input
               type="text"
               placeholder="Search influencers..."
@@ -1017,44 +846,30 @@ export default function ActiveInfluencersPage() {
               }}
             >
               <TableRow>
-                <TableHead
-                  onClick={() => toggleSort("name")}
-                  className="cursor-pointer select-none font-semibold"
-                >
+                <TableHead onClick={() => toggleSort("name")} className="cursor-pointer select-none font-semibold">
                   {totalAccepted} Accepted <SortIndicator field="name" />
                 </TableHead>
-                <TableHead
-                  onClick={() => toggleSort("username")}
-                  className="cursor-pointer select-none font-semibold"
-                >
+                <TableHead onClick={() => toggleSort("username")} className="cursor-pointer select-none font-semibold">
                   Social Handle <SortIndicator field="username" />
                 </TableHead>
                 <TableHead className="font-semibold">Categories</TableHead>
-                <TableHead
-                  onClick={() => toggleSort("followers")}
-                  className="cursor-pointer select-none font-semibold"
-                >
+                <TableHead onClick={() => toggleSort("followers")} className="cursor-pointer select-none font-semibold">
                   Audience <SortIndicator field="followers" />
                 </TableHead>
-                <TableHead
-                  onClick={() => toggleSort("updatedAt")}
-                  className="cursor-pointer select-none font-semibold"
-                >
+                <TableHead onClick={() => toggleSort("updatedAt")} className="cursor-pointer select-none font-semibold">
                   Updated <SortIndicator field="updatedAt" />
                 </TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="text-center">Actions</TableHead>
               </TableRow>
             </TableHeader>
+
             <TableBody>
               {tableRows.length > 0 ? (
                 tableRows
               ) : (
                 <TableRow>
-                  <TableCell
-                    colSpan={7}
-                    className="py-6 text-center text-muted-foreground"
-                  >
+                  <TableCell colSpan={7} className="py-6 text-center text-muted-foreground">
                     No influencers match criteria.
                   </TableCell>
                 </TableRow>
@@ -1067,23 +882,13 @@ export default function ActiveInfluencersPage() {
       {/* Pagination */}
       {totalPages > 1 && (
         <div className="flex justify-center md:justify-end items-center gap-2">
-          <Button
-            variant="outline"
-            size="icon"
-            disabled={page === 1}
-            onClick={() => setPage((p) => Math.max(p - 1, 1))}
-          >
+          <Button variant="outline" size="icon" disabled={page === 1} onClick={() => setPage((p) => Math.max(p - 1, 1))}>
             <HiChevronLeft />
           </Button>
           <span className="text-sm">
             Page <strong>{page}</strong> of {totalPages}
           </span>
-          <Button
-            variant="outline"
-            size="icon"
-            disabled={page === totalPages}
-            onClick={() => setPage((p) => Math.min(p + 1, totalPages))}
-          >
+          <Button variant="outline" size="icon" disabled={page === totalPages} onClick={() => setPage((p) => Math.min(p + 1, totalPages))}>
             <HiChevronRight />
           </Button>
         </div>
@@ -1101,37 +906,29 @@ export default function ActiveInfluencersPage() {
               }}
             >
               <div className="text-white">
-                <p className="text-xs uppercase tracking-wide">
-                  Create milestone
-                </p>
-                <h2 className="text-lg font-semibold mt-1">
-                  {selectedInf.name}
-                </h2>
+                <p className="text-xs uppercase tracking-wide">Create milestone</p>
+                <h2 className="text-lg font-semibold mt-1">{selectedInf.name}</h2>
                 <div className="mt-1 text-xs text-white flex flex-wrap items-center gap-2">
-                  {selectedInf.username && (
-                    <span>@{selectedInf.username.replace(/^@/, "")}</span>
-                  )}
+                  {selectedInf.username && <span>@{selectedInf.username.replace(/^@/, "")}</span>}
                   {selectedInf.platformName && (
                     <span className="rounded-full bg-white/15 px-2 py-0.5 text-[10px] uppercase tracking-wide">
                       {selectedInf.platformName}
                     </span>
                   )}
                   {campaignName && (
-                    <span
-                      className="truncate max-w-[170px]"
-                      title={campaignName}
-                    >
-                      Campaign:{" "}
-                      <span className="font-medium">{campaignName}</span>
+                    <span className="truncate max-w-[170px]" title={campaignName}>
+                      Campaign: <span className="font-medium">{campaignName}</span>
                     </span>
                   )}
                 </div>
               </div>
+
               <button
                 type="button"
                 onClick={() => setShowMilestoneModal(false)}
                 className="ml-3 text-white/90 hover:text-white text-lg leading-none"
                 aria-label="Close"
+                disabled={isSavingMilestone}
               >
                 ✕
               </button>
@@ -1143,25 +940,16 @@ export default function ActiveInfluencersPage() {
                 <p className="text-xs text-gray-600">
                   Budget:{" "}
                   <strong>
-                    {campaignBudget.toLocaleString(undefined, {
-                      style: "currency",
-                      currency: "USD",
-                    })}
+                    {campaignBudget.toLocaleString(undefined, { style: "currency", currency: "USD" })}
                   </strong>{" "}
                   · Allocated:{" "}
                   <strong>
-                    {campaignMilestoneTotal.toLocaleString(undefined, {
-                      style: "currency",
-                      currency: "USD",
-                    })}
+                    {campaignMilestoneTotal.toLocaleString(undefined, { style: "currency", currency: "USD" })}
                   </strong>{" "}
                   · Remaining:{" "}
                   <strong>
                     {remainingBudget != null
-                      ? remainingBudget.toLocaleString(undefined, {
-                        style: "currency",
-                        currency: "USD",
-                      })
+                      ? remainingBudget.toLocaleString(undefined, { style: "currency", currency: "USD" })
                       : "—"}
                   </strong>
                 </p>
@@ -1169,40 +957,26 @@ export default function ActiveInfluencersPage() {
 
               {isBudgetLocked && (
                 <p className="text-xs font-semibold text-red-600">
-                  Milestone total has reached the campaign budget. You cannot
-                  create more milestones.
+                  Milestone total has reached the campaign budget. You cannot create more milestones.
                 </p>
               )}
 
-              {/* Razorpay fee breakdown */}
+              {/* Gateway fee breakdown */}
               {amountNum > 0 && (
                 <div className="mt-2 text-xs text-gray-700 space-y-1 border border-gray-200 rounded-md p-3 bg-gray-50">
                   <p>
                     Milestone amount:{" "}
-                    <strong>
-                      {amountNum.toLocaleString(undefined, {
-                        style: "currency",
-                        currency: "USD",
-                      })}
-                    </strong>
+                    <strong>{amountNum.toLocaleString(undefined, { style: "currency", currency: "USD" })}</strong>
                   </p>
                   <p>
-                    Gateway Charges (2%):{" "}
+                    Payment gateway fee (2%):{" "}
                     <strong className="text-orange-600">
-                      {razorpayFee.toLocaleString(undefined, {
-                        style: "currency",
-                        currency: "USD",
-                      })}
+                      {gatewayFee.toLocaleString(undefined, { style: "currency", currency: "USD" })}
                     </strong>
                   </p>
                   <p>
                     Total payable:{" "}
-                    <strong>
-                      {totalWithFee.toLocaleString(undefined, {
-                        style: "currency",
-                        currency: "USD",
-                      })}
-                    </strong>
+                    <strong>{totalWithFee.toLocaleString(undefined, { style: "currency", currency: "USD" })}</strong>
                   </p>
                 </div>
               )}
@@ -1212,20 +986,16 @@ export default function ActiveInfluencersPage() {
                   id="milestoneTitle"
                   label="Milestone Title"
                   value={milestoneForm.title}
-                  onChange={(e) =>
-                    setMilestoneForm((f) => ({ ...f, title: e.target.value }))
-                  }
+                  onChange={(e) => setMilestoneForm((f) => ({ ...f, title: e.target.value }))}
                 />
 
-                {/* Amount + Razorpay tooltip */}
+                {/* Amount + fee tooltip */}
                 <div className="relative">
                   <FloatingLabelInput
                     id="milestoneAmount"
                     label="Amount"
                     value={milestoneForm.amount}
-                    onChange={(e) =>
-                      setMilestoneForm((f) => ({ ...f, amount: e.target.value }))
-                    }
+                    onChange={(e) => setMilestoneForm((f) => ({ ...f, amount: e.target.value }))}
                     type="number"
                   />
 
@@ -1241,9 +1011,8 @@ export default function ActiveInfluencersPage() {
                         </button>
                       </TooltipTrigger>
                       <TooltipContent className="max-w-xs text-xs bg-gray-800 text-white">
-                        Payment Gateway charges a 2% payment processing fee when
-                        you add milestone funds. This 2% is added on top of the
-                        milestone amount you enter.
+                        Payment gateway applies a 2% processing fee when you add milestone funds. This fee is added on top
+                        of the milestone amount you enter.
                       </TooltipContent>
                     </Tooltip>
                   </TooltipProvider>
@@ -1254,12 +1023,7 @@ export default function ActiveInfluencersPage() {
                 id="milestoneDesc"
                 label="Milestone Description"
                 value={milestoneForm.description}
-                onChange={(e) =>
-                  setMilestoneForm((f) => ({
-                    ...f,
-                    description: e.target.value,
-                  }))
-                }
+                onChange={(e) => setMilestoneForm((f) => ({ ...f, description: e.target.value }))}
               />
             </div>
 
@@ -1274,22 +1038,19 @@ export default function ActiveInfluencersPage() {
                 >
                   Cancel
                 </Button>
+
                 <Button
                   onClick={handleSaveMilestone}
-                  disabled={
-                    !selectedInf?.influencerId ||
-                    isSavingMilestone ||
-                    isBudgetLocked
-                  }
+                  disabled={!selectedInf?.influencerId || isSavingMilestone || isBudgetLocked}
                   className="bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white hover:from-[#FF8A1F] hover:to-[#FF5A2E] focus:outline-none focus:ring-2 focus:ring-[#FFA135]/40 cursor-pointer disabled:opacity-60"
                 >
                   {isBudgetLocked
                     ? "Budget Reached"
                     : isSavingMilestone
-                      ? "Processing..."
-                      : amountNum > 0
-                        ? `Pay ${totalWithFee.toFixed(2)} (incl. fee)`
-                        : "Add Milestone"}
+                    ? "Redirecting..."
+                    : amountNum > 0
+                    ? `Pay ${totalWithFee.toFixed(2)} (incl. fee)`
+                    : "Add Milestone"}
                 </Button>
               </div>
             </div>

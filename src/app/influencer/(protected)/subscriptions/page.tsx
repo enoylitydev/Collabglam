@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { get, post } from "@/lib/api";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   CheckCircle,
   XCircle,
@@ -57,19 +58,13 @@ interface InfluencerLite {
 }
 type PaymentStatus = "idle" | "processing" | "success" | "failed";
 
-declare global {
-  interface Window {
-    Razorpay: any;
-  }
-}
-
 /** Icon sizing (single source of truth) */
 const ICON = {
-  base: 20, // ✅ consistent everywhere
-  hero: 32, // header crown only
+  base: 20,
+  hero: 32,
 } as const;
 
-const iconClass = "shrink-0"; // prevents layout shift in flex rows
+const iconClass = "shrink-0";
 
 /** Helpers */
 const capitalize = (s: string) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : "");
@@ -112,8 +107,6 @@ const FEATURE_LABELS: Record<string, string> = {
   team_manager_tools: "Team manager tools",
   team_manager_tools_managed_creators: "Managed creators",
   dashboard_access: "Dashboard access",
-
-  // Extras
   in_app_messaging: "In-app messaging",
   contract_esign_basic: "Contract e-sign (template)",
   contract_esign_download_pdf: "Download signed PDF",
@@ -160,7 +153,6 @@ const formatValue = (key: string, value: any): string => {
   }
 
   if (BOOLEAN_KEYS.has(key)) return Boolean(value) ? "Included" : "Not included";
-
   if (typeof value === "number") return value.toLocaleString();
   if (typeof value === "boolean") return value ? "Included" : "Not included";
   if (Array.isArray(value)) return value.length ? value.join(", ") : "None";
@@ -178,7 +170,7 @@ const isPositive = (key: string, v: any) => {
   return Boolean(v);
 };
 
-/** Feature order (defined once, not per-render) */
+/** Feature order */
 const FEATURE_ORDER: string[] = [
   "apply_to_campaigns_quota",
   "active_collaborations_limit",
@@ -196,19 +188,14 @@ const FEATURE_ORDER: string[] = [
 ];
 const FEATURE_ORDER_SET = new Set(FEATURE_ORDER);
 
-/** Load Razorpay SDK once */
-const loadRazorpay = () =>
-  new Promise<boolean>((res) => {
-    if (typeof window !== "undefined" && window.Razorpay) return res(true);
-    const s = document.createElement("script");
-    s.src = "https://checkout.razorpay.com/v1/checkout.js";
-    s.onload = () => res(true);
-    s.onerror = () => res(false);
-    document.body.appendChild(s);
-  });
+/** Stripe redirect handling guard key */
+const STRIPE_HANDLED_KEY = "stripe_influencer_handled_session";
 
 /** UI Component */
 export default function InfluencerSubscriptionPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
   const [plans, setPlans] = useState<Plan[]>([]);
   const [currentPlan, setCurrentPlan] = useState<string | null>(null);
   const [expiresAt, setExpiresAt] = useState<string | null>(null);
@@ -223,8 +210,102 @@ export default function InfluencerSubscriptionPage() {
   const [confirming, setConfirming] = useState(false);
 
   const currentPlanKey = (currentPlan ?? "").toLowerCase();
-
   const planTitle = useCallback((p: Plan) => p.displayName || capitalize(p.name), []);
+
+  /** Remove Stripe query params instantly (prevents reload/loop) */
+  const stripStripeParamsFromUrl = useCallback(() => {
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    url.searchParams.delete("stripe_success");
+    url.searchParams.delete("stripe_cancel");
+    url.searchParams.delete("session_id");
+    window.history.replaceState({}, "", url.toString());
+  }, []);
+
+  /** ✅ Handle Stripe redirect back (success/cancel) */
+  useEffect(() => {
+    const stripeSuccess = searchParams.get("stripe_success");
+    const stripeCancel = searchParams.get("stripe_cancel");
+    const sessionId = searchParams.get("session_id");
+
+    // cancel
+    if (stripeCancel) {
+      stripStripeParamsFromUrl();
+      setPaymentStatus("failed");
+      setPaymentMessage("Payment cancelled.");
+      return;
+    }
+
+    // success
+    if (stripeSuccess && sessionId) {
+      // guard: avoid StrictMode double effect + re-processing
+      if (typeof window !== "undefined") {
+        const handled = sessionStorage.getItem(STRIPE_HANDLED_KEY);
+        if (handled === sessionId) {
+          stripStripeParamsFromUrl();
+          return;
+        }
+        sessionStorage.setItem(STRIPE_HANDLED_KEY, sessionId);
+      }
+
+      // IMPORTANT: remove params immediately
+      stripStripeParamsFromUrl();
+
+      (async () => {
+        setPaymentStatus("processing");
+        setPaymentMessage("Verifying payment…");
+
+        try {
+          const verifyResp = await post<{
+            success: boolean;
+            message?: string;
+            planId?: string;
+            planName?: string;
+          }>("/payment/verify", { sessionId });
+
+          if (!verifyResp?.success) {
+            throw new Error(verifyResp?.message || "Payment not verified.");
+          }
+
+          const influencerId = localStorage.getItem("influencerId");
+          const planId = verifyResp.planId || localStorage.getItem("pendingInfluencerPlanId") || "";
+          const planName = verifyResp.planName || localStorage.getItem("pendingInfluencerPlanName") || "";
+
+          if (!influencerId || !planId) {
+            throw new Error("Missing influencerId/planId for subscription assignment.");
+          }
+
+          await post("/subscription/assign", {
+            userType: "Influencer",
+            userId: influencerId,
+            planId,
+          });
+
+          setCurrentPlan(planName || null);
+          setExpiresAt(new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString());
+
+          localStorage.setItem("influencerPlanId", planId);
+          if (planName) localStorage.setItem("influencerPlanName", planName);
+
+          localStorage.removeItem("pendingInfluencerPlanId");
+          localStorage.removeItem("pendingInfluencerPlanName");
+
+          setPaymentStatus("success");
+          setPaymentMessage("Subscription updated successfully!");
+          setProcessing(null);
+
+          // Refresh Next cache data if needed (no full reload)
+          router.refresh?.();
+        } catch (e: any) {
+          console.error(e);
+          setPaymentStatus("failed");
+          setPaymentMessage(e?.message || "Payment verification failed. Please contact support.");
+          setProcessing(null);
+        }
+      })();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams, stripStripeParamsFromUrl]);
 
   /** Load plans + current influencer (lite) */
   useEffect(() => {
@@ -296,7 +377,7 @@ export default function InfluencerSubscriptionPage() {
       .filter(Boolean) as { key: string; from: any; to: any }[];
   }, [currentPlanObj, selectedPlan]);
 
-  /** Checkout / assignment */
+  /** Stripe checkout (paid plans) + downgrade modal (free plan) */
   const handleSelect = useCallback(
     async (plan: Plan) => {
       if (processing || plan.name.toLowerCase() === currentPlanKey) return;
@@ -312,73 +393,39 @@ export default function InfluencerSubscriptionPage() {
 
       setProcessing(plan.name);
       setPaymentStatus("processing");
-      setPaymentMessage("");
+      setPaymentMessage("Redirecting to secure checkout…");
 
-      const ok = await loadRazorpay();
-      if (!ok) {
-        setPaymentStatus("failed");
-        setPaymentMessage("Payment SDK failed to load. Please check your connection.");
-        setProcessing(null);
-        return;
-      }
-
-      const influencerId = localStorage.getItem("influencerId");
       try {
-        const orderResp = await post<any>("/payment/Order", {
+        const influencerId = localStorage.getItem("influencerId");
+        if (!influencerId) throw new Error("Missing influencerId.");
+
+        // store pending plan for redirect return
+        localStorage.setItem("pendingInfluencerPlanId", plan.planId);
+        localStorage.setItem("pendingInfluencerPlanName", plan.name);
+
+        const resp = await post<{
+          success: boolean;
+          url?: string;
+          sessionId?: string;
+          message?: string;
+        }>("/payment/Order", {
           planId: plan.planId,
           amount: plan.monthlyCost,
+          currency: plan.currency || "USD",
           userId: influencerId,
           role: "Influencer",
         });
 
-        const { id: orderId, amount, currency } = orderResp.order;
+        if (!resp?.success || !resp?.url) {
+          throw new Error(resp?.message || "Failed to start checkout.");
+        }
 
-        const rzp = new window.Razorpay({
-          key: "rzp_live_Rroqo7nHdOmQco",
-          amount,
-          currency,
-          name: "CollabGlam",
-          description: `${plan.displayName || capitalize(plan.name)} Plan`,
-          order_id: orderId,
-          handler: async (response: any) => {
-            try {
-              await post("/payment/verify", { ...response, planId: plan.planId, influencerId });
-              await post("/subscription/assign", {
-                userType: "Influencer",
-                userId: influencerId,
-                planId: plan.planId,
-              });
-
-              setCurrentPlan(plan.name);
-              setExpiresAt(new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString());
-
-              localStorage.setItem("influencerPlanName", plan.name);
-              localStorage.setItem("influencerPlanId", plan.planId);
-
-              setPaymentStatus("success");
-              setPaymentMessage("Subscription updated successfully!");
-              // ✅ removed window.location.reload() for better UX/perf
-            } catch (err) {
-              console.error("Subscription assignment failed", err);
-              setPaymentStatus("failed");
-              setPaymentMessage("Payment verified but failed to assign subscription. Please contact support.");
-            }
-          },
-          prefill: { name: "", email: "", contact: "" },
-          theme: { color: "#FFA135" },
-        });
-
-        rzp.on("payment.failed", (resp: any) => {
-          setPaymentStatus("failed");
-          setPaymentMessage(`Payment Failed: ${resp.error.description}`);
-        });
-
-        rzp.open();
-      } catch (err) {
-        console.error("Order creation failed:", err);
+        // redirect to Stripe Checkout
+        window.location.href = resp.url;
+      } catch (err: any) {
+        console.error("Stripe checkout start failed:", err);
         setPaymentStatus("failed");
-        setPaymentMessage("Failed to initiate payment. Try again later.");
-      } finally {
+        setPaymentMessage(err?.message || "Failed to initiate payment. Try again later.");
         setProcessing(null);
       }
     },
@@ -395,7 +442,11 @@ export default function InfluencerSubscriptionPage() {
 
     try {
       const influencerId = localStorage.getItem("influencerId");
-      await post("/subscription/assign", { userType: "Influencer", userId: influencerId, planId: selectedPlan.planId });
+      await post("/subscription/assign", {
+        userType: "Influencer",
+        userId: influencerId,
+        planId: selectedPlan.planId,
+      });
 
       setCurrentPlan(selectedPlan.name);
       setExpiresAt(null);
@@ -438,7 +489,9 @@ export default function InfluencerSubscriptionPage() {
             <Crown size={ICON.hero} className={`${iconClass} text-orange-500`} />
             <h1 className="text-4xl lg:text-5xl font-bold text-gray-900">Influencer Subscription Plans</h1>
           </div>
-          <p className="text-lg text-gray-600 max-w-3xl mx-auto">Unlock more campaign access and showcase a richer media-kit.</p>
+          <p className="text-lg text-gray-600 max-w-3xl mx-auto">
+            Unlock more campaign access and showcase a richer media-kit.
+          </p>
         </div>
 
         {/* Current plan pill */}
@@ -457,7 +510,11 @@ export default function InfluencerSubscriptionPage() {
                   <>
                     Renews on{" "}
                     <span className="font-semibold">
-                      {new Date(expiresAt).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })}
+                      {new Date(expiresAt).toLocaleDateString("en-US", {
+                        year: "numeric",
+                        month: "long",
+                        day: "numeric",
+                      })}
                     </span>
                   </>
                 ) : (
@@ -487,7 +544,9 @@ export default function InfluencerSubscriptionPage() {
               ) : (
                 <XCircle size={ICON.base} className={iconClass} />
               )}
-              <p className="font-medium">{paymentMessage || (paymentStatus === "processing" ? "Working on it…" : null)}</p>
+              <p className="font-medium">
+                {paymentMessage || (paymentStatus === "processing" ? "Working on it…" : null)}
+              </p>
             </div>
           </div>
         )}
@@ -513,7 +572,6 @@ export default function InfluencerSubscriptionPage() {
                   ${highlighted ? "border-yellow-300" : "border-yellow-200"}
                   ${isActive ? "ring-2 ring-yellow-400" : ""}`}
               >
-                {/* Badge */}
                 {highlighted && (
                   <div className="absolute -top-3 left-1/2 -translate-x-1/2">
                     <span className="inline-flex items-center gap-1 text-xs font-bold text-white py-1.5 px-3 rounded-full shadow bg-gradient-to-r from-[#FFA135] to-[#FF7236]">
@@ -522,7 +580,6 @@ export default function InfluencerSubscriptionPage() {
                   </div>
                 )}
 
-                {/* Header & Price */}
                 <div className="px-8 pt-8 pb-4 text-center">
                   <h3 className="text-2xl font-bold text-gray-900 mb-2">{planTitle(plan)}</h3>
 
@@ -547,7 +604,6 @@ export default function InfluencerSubscriptionPage() {
                   {!isFree && <p className="text-sm text-gray-600 mt-1">Billed monthly</p>}
                 </div>
 
-                {/* CTA */}
                 <div className="px-8 pb-2">
                   <button
                     onClick={() => handleSelect(plan)}
@@ -580,7 +636,6 @@ export default function InfluencerSubscriptionPage() {
                   </button>
                 </div>
 
-                {/* Features */}
                 <div className="px-8 pt-5 pb-6 flex-1">
                   <ul className="space-y-4">
                     {features.map((f) => {
@@ -608,7 +663,6 @@ export default function InfluencerSubscriptionPage() {
                       );
                     })}
 
-                    {/* Add-ons */}
                     {plan.addons && plan.addons.length > 0 && (
                       <li className="mt-2">
                         <div className="rounded-2xl border border-orange-200 bg-orange-50/50 p-4">
@@ -639,11 +693,13 @@ export default function InfluencerSubscriptionPage() {
           })}
         </div>
 
-        {/* Footer */}
         <div className="text-center mt-12">
           <p className="text-gray-600">
             Questions about our plans?{" "}
-            <a href="mailto:support@collabglam.com" className="text-orange-600 hover:text-orange-700 font-medium underline">
+            <a
+              href="mailto:support@collabglam.com"
+              className="text-orange-600 hover:text-orange-700 font-medium underline"
+            >
               Contact our support team
             </a>
           </p>
@@ -675,7 +731,8 @@ export default function InfluencerSubscriptionPage() {
 
             <div className="px-8 py-6 space-y-6">
               <p className="text-gray-700">
-                Moving to <span className="font-semibold text-gray-900">{planTitle(selectedPlan)}</span> will reduce or remove some features:
+                Moving to <span className="font-semibold text-gray-900">{planTitle(selectedPlan)}</span> will reduce or remove
+                some features:
               </p>
 
               {featureLoss.length > 0 && (
