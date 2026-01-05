@@ -112,10 +112,16 @@ const MilestoneHistoryCard: React.FC<MilestoneHistoryCardProps> = ({
     // route logic mirrors original, but uses props
     if (role === "brand" && brandId) {
       body.brandId = brandId;
-      if (campaignId) {
+      if (campaignId && !influencerId) {
         endpoint = "/milestone/byCampaign";
         body.campaignId = campaignId;
-      } else {
+      } else if (campaignId && influencerId) {
+        endpoint = "/milestone/getMilestome";
+        body.campaignId = campaignId;
+        body.influencerId = influencerId;
+      }
+      
+      else {
         endpoint = "/milestone/byBrand";
       }
     } else if (role === "influencer" && influencerId) {
