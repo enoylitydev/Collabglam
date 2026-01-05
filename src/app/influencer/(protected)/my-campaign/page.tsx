@@ -207,6 +207,11 @@ const signingStatusLabel = (meta?: ContractMeta | null) => {
   if (!meta) return null;
 
   const st = normStatus(meta.status);
+
+  // ✅ Always prefer final-state labels first
+  if (st === CONTRACT_STATUS.MILESTONES_CREATED) return "Milestone Added";
+  if (st === CONTRACT_STATUS.CONTRACT_SIGNED) return "Awaiting Milestone Creation";
+
   const isSigningPhase = st === CONTRACT_STATUS.READY_TO_SIGN || !!meta.editsLockedAt;
   if (!isSigningPhase) return null;
 
@@ -215,14 +220,11 @@ const signingStatusLabel = (meta?: ContractMeta | null) => {
 
   if (b && i) return "Signed";
 
-  // Prefer backend "awaitingRole" when present
   const awaiting = String(meta.awaitingRole || "").toLowerCase();
   if (awaiting === "brand") return "Awaiting brand signature";
   if (awaiting === "influencer") return "Awaiting influencer signature";
-
   if (awaiting === "collabglam") return "Ready to sign";
 
-  // Fallback inference
   if (!b && !i) return "Ready to sign";
   if (b && !i) return "Awaiting influencer signature";
   if (!b && i) return "Awaiting brand signature";
@@ -1335,8 +1337,8 @@ function CampaignTable({ data, loading, error, emptyMessage, page, totalPages, o
                           st === CONTRACT_STATUS.INFLUENCER_ACCEPTED ? "Awaiting Brand Acceptance" :
                             st === CONTRACT_STATUS.INFLUENCER_EDITED ? "Sent to Brand (Pending)" :
                               st === CONTRACT_STATUS.READY_TO_SIGN ? "Ready to Sign" :
-                                st === CONTRACT_STATUS.CONTRACT_SIGNED ? "Contract Signed" :
-                                  st === CONTRACT_STATUS.MILESTONES_CREATED ? "Milestones Created" :
+                                st === CONTRACT_STATUS.CONTRACT_SIGNED ? "Awaiting Milestone Creation" :
+                                  st === CONTRACT_STATUS.MILESTONES_CREATED ? "Milestone Added" :
                                     st === CONTRACT_STATUS.REJECTED ? "Rejected" :
                                       st === CONTRACT_STATUS.SUPERSEDED ? "Superseded" :
                                         (meta?.status ? String(meta.status) : "Contract"))}
