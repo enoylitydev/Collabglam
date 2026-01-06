@@ -1085,7 +1085,7 @@ export default function InfluencerSignup({ onSuccess, onStepChange }: { onSucces
 function QuickQuestions({
   influencerId,
   email,
-  onComplete
+  onComplete,
 }: {
   influencerId?: string;
   email?: string;
@@ -1097,19 +1097,29 @@ function QuickQuestions({
   type ApiCategoryResponse = { count?: number; categories?: ApiCategory[] };
 
   const formatOptions: Option[] = useMemo(
-    () => ['Reels/Shorts', 'Stories', 'Static', 'Long-form', 'Tutorials', 'Live', 'Reviews', 'Unboxing'].map((f) => ({ value: f, label: f })),
+    () =>
+      ['Reels/Shorts', 'Stories', 'Static', 'Long-form', 'Tutorials', 'Live', 'Reviews', 'Unboxing'].map((f) => ({
+        value: f,
+        label: f,
+      })),
     []
   );
+
   const budgetRanges: BudgetRange[] = ['Below $2k', '$5k–7k', '$7k–10k', 'Above $10k'];
   const budgetOptions: Option[] = useMemo(() => budgetRanges.map((b) => ({ value: b, label: b })), []);
+
   const projectLengthOptions: Option[] = useMemo(
     () => ['One-off (<2 wks)', 'Short (2–8 wks)', 'Long-term (3–6 m)', 'Retainer (6+ m)'].map((p) => ({ value: p, label: p })),
     []
   );
+
   const capacityOptions: Option[] = useMemo(() => ['Light', 'Normal', 'Heavy'].map((c) => ({ value: c, label: c })), []);
 
   const collabTypeStrings = ['Paid', 'Product Gifting', 'Ambassador', 'Event'];
   const cadenceStrings = ['Single Deliverable', 'Weekly Deliverable', 'Monthly Deliverable', 'Quarterly Deliverable'];
+
+  const collabTypeOptions: Option[] = useMemo(() => collabTypeStrings.map((t) => ({ value: t, label: t })), []);
+  const cadenceOptions: Option[] = useMemo(() => cadenceStrings.map((t) => ({ value: t, label: t })), []);
 
   const [qStep, setQStep] = useState<1 | 2 | 3>(1);
   const [saving, setSaving] = useState(false);
@@ -1120,13 +1130,24 @@ function QuickQuestions({
   const [catLoading, setCatLoading] = useState(false);
   const [catError, setCatError] = useState('');
 
+  // ✅ IMPORTANT: this endpoint MUST "PATCH/MERGE" on backend (code provided below)
+  const savePartial = async (payload: any) => {
+    if (!influencerId && !email) return;
+
+    await post('/influencer/onboarding', {
+      influencerId,
+      email,
+      ...payload,
+    });
+  };
+
   useEffect(() => {
     (async () => {
       try {
         setCatLoading(true);
         setCatError('');
         const res = await get<ApiCategoryResponse | ApiCategory[] | any>('/category/categories');
-        const list: ApiCategory[] = Array.isArray(res) ? res : (res?.categories ?? []);
+        const list: ApiCategory[] = Array.isArray(res) ? res : res?.categories ?? [];
         setAllCategories(list);
       } catch (e: any) {
         setCatError(e?.response?.data?.message || e?.message || 'Failed to load categories');
@@ -1138,28 +1159,27 @@ function QuickQuestions({
   }, []);
 
   const [answers, setAnswers] = useState({
-    // STEP 4.1 — Formats/Budget/Working style
+    // STEP 4.1
     formats: [] as string[],
-    budgets: {} as Record<string, BudgetRange>, // key: format
+    budgets: {} as Record<string, BudgetRange>,
     projectLength: '',
     capacity: '',
 
-    // STEP 4.2 — Category/Subcategories/Collab prefs
-    categoryId: '' as string, // single category
-    subcategories: [] as string[], // multiple subcategories
+    // STEP 4.2
+    categoryId: '' as string,
+    subcategories: [] as string[],
     collabTypes: [] as string[],
     allowlisting: false,
     cadences: [] as string[],
 
-    // STEP 4.3 — Creator Story (max 3, max 1 per group)
+    // STEP 4.3
     selectedPrompts: [] as { group: string; prompt: string }[],
-    promptAnswers: {} as Record<string, string>, // key: prompt => answer
+    promptAnswers: {} as Record<string, string>,
   });
 
   const stepCount = 3;
   const progressPct = (qStep / stepCount) * 100;
 
-  // ===== Derived: options and available subcategories =====
   const categoryOptions: Option[] = useMemo(
     () => allCategories.map((c) => ({ value: c._id, label: c.name })).sort((a, b) => a.label.localeCompare(b.label)),
     [allCategories]
@@ -1180,10 +1200,7 @@ function QuickQuestions({
     [availableSubcategories]
   );
 
-  const collabTypeOptions: Option[] = useMemo(() => collabTypeStrings.map((t) => ({ value: t, label: t })), []);
-  const cadenceOptions: Option[] = useMemo(() => cadenceStrings.map((t) => ({ value: t, label: t })), []);
-
-  // prune subcategories if their parent category changed or available set shrank
+  // prune subcategories if category changes
   useEffect(() => {
     if (answers.subcategories.length === 0) return;
     const allowed = new Set(subcategoryOptions.map((s) => s.value));
@@ -1191,7 +1208,8 @@ function QuickQuestions({
       ...prev,
       subcategories: prev.subcategories.filter((id) => allowed.has(id)),
     }));
-  }, [answers.categoryId, subcategoryOptions.length]); // eslint-disable-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [answers.categoryId, subcategoryOptions.length]);
 
   // prune budgets when formats change
   useEffect(() => {
@@ -1205,7 +1223,7 @@ function QuickQuestions({
     });
   }, [answers.formats.join('|')]);
 
-  // ===== Word helpers for prompt answers (max 75 words) =====
+  // ===== Word helpers
   const MAX_WORDS = 75;
   const wordCount = (text: string) => {
     const trimmed = text.trim();
@@ -1218,7 +1236,7 @@ function QuickQuestions({
     return words.slice(0, maxWords).join(' ');
   };
 
-  // ===== Validation per substep =====
+  // ===== Validation
   const validStep1 = useMemo(() => {
     if (answers.formats.length < 1) return false;
     for (const f of answers.formats) {
@@ -1245,24 +1263,74 @@ function QuickQuestions({
     return true;
   }, [answers.selectedPrompts, answers.promptAnswers]);
 
-  const next = () => {
+  // ✅ SAVE ON EVERY PAGE COMPLETE (Next)
+  const next = async () => {
     setErr('');
-    if (qStep === 1 && !validStep1) return setErr('Please complete formats, budgets, project length, and capacity.');
-    if (qStep === 2 && !validStep2) return setErr('Please select a category, at least one subcategory, a collab type, and cadence.');
-    if (qStep < 3) setQStep((s) => (s + 1) as 1 | 2 | 3);
+    if (saving) return;
+
+    // Step 1 save
+    if (qStep === 1) {
+      if (!validStep1) return setErr('Please complete formats, budgets, project length, and capacity.');
+
+      try {
+        setSaving(true);
+        await savePartial({
+          formats: answers.formats,
+          budgets: answers.budgets,
+          projectLength: answers.projectLength,
+          capacity: answers.capacity,
+          onboardingStepCompleted: 1,
+        });
+        setQStep(2);
+      } catch (e: any) {
+        setErr(e?.response?.data?.message || e?.message || 'Failed to save Step 1');
+      } finally {
+        setSaving(false);
+      }
+      return;
+    }
+
+    // Step 2 save
+    if (qStep === 2) {
+      if (!validStep2) return setErr('Please select a category, at least one subcategory, a collab type, and cadence.');
+
+      try {
+        setSaving(true);
+        await savePartial({
+          categoryId: answers.categoryId,
+          subcategories: answers.subcategories,
+          collabTypes: answers.collabTypes,
+          allowlisting: answers.allowlisting,
+          cadences: answers.cadences,
+          onboardingStepCompleted: 2,
+        });
+        setQStep(3);
+      } catch (e: any) {
+        setErr(e?.response?.data?.message || e?.message || 'Failed to save Step 2');
+      } finally {
+        setSaving(false);
+      }
+      return;
+    }
   };
 
-  const back = () => setQStep((s) => (s > 1 ? ((s - 1) as 1 | 2 | 3) : s));
+  const back = () => {
+    if (saving) return;
+    setQStep((s) => (s > 1 ? ((s - 1) as 1 | 2 | 3) : s));
+  };
 
+  // ✅ Final save (Finish)
   const finish = async () => {
     setErr('');
+    if (saving) return;
     if (!validStep3) return setErr(`Please answer each selected prompt in 1–${MAX_WORDS} words.`);
+
     try {
       setSaving(true);
-      await post('/influencer/onboarding', {
-        influencerId,
-        email,
-        ...answers
+      await savePartial({
+        selectedPrompts: answers.selectedPrompts,
+        promptAnswers: answers.promptAnswers,
+        onboardingStepCompleted: 3,
       });
       onComplete(answers);
     } catch (e: any) {
@@ -1272,11 +1340,9 @@ function QuickQuestions({
     }
   };
 
-  // ===== react-select helpers =====
   const theme = rsTheme;
   const styles = rsStyles as any;
 
-  // Prompts (single select per group, textarea appears just below it)
   const storyPrompts: Record<'Content' | 'Audience' | 'Brand', string[]> = {
     Content: [
       'What’s one thing your content always delivers—no exceptions?',
@@ -1295,17 +1361,15 @@ function QuickQuestions({
     ],
   };
 
-  // convenience helpers
   const helperText = 'text-xs text-gray-500';
   const valueFromIds = (options: Option[], ids: string[]) => options.filter((o) => ids.includes(o.value));
   const idsFromValue = (opts: readonly Option[] | null) => (opts ? Array.from(opts).map((o) => o.value) : []);
   const optionFromId = (options: Option[], id: string) => options.find((o) => o.value === id) ?? null;
 
-  // set selection for a specific group, and clean up old answer if changing/clearing
   const setGroupPrompt = (group: 'Content' | 'Audience' | 'Brand', prompt: string) => {
-    setAnswers(prev => {
-      const prevSel = prev.selectedPrompts.find(s => s.group === group)?.prompt;
-      const filtered = prev.selectedPrompts.filter(s => s.group !== group);
+    setAnswers((prev) => {
+      const prevSel = prev.selectedPrompts.find((s) => s.group === group)?.prompt;
+      const filtered = prev.selectedPrompts.filter((s) => s.group !== group);
       const nextSel = prompt ? [...filtered, { group, prompt }] : filtered;
 
       const nextAnswers = { ...prev.promptAnswers };
@@ -1318,15 +1382,15 @@ function QuickQuestions({
 
   const handleAnswerChange = (prompt: string, value: string) => {
     const clamped = clampToWords(value, MAX_WORDS);
-    setAnswers(prev => ({
+    setAnswers((prev) => ({
       ...prev,
-      promptAnswers: { ...prev.promptAnswers, [prompt]: clamped }
+      promptAnswers: { ...prev.promptAnswers, [prompt]: clamped },
     }));
   };
 
   return (
     <div className="space-y-5 animate-fadeIn">
-      {/* Sticky mini-progress (mobile helpful) */}
+      {/* Sticky mini-progress (mobile) */}
       <div className="sticky top-[64px] z-10 bg-white/80 backdrop-blur rounded-lg border p-3 sm:hidden">
         <div className="flex items-center justify-between text-xs text-gray-600 mb-1">
           <span>
@@ -1351,7 +1415,7 @@ function QuickQuestions({
         </div>
       </div>
 
-      {err && <div className="p-3 text-sm rounded-md border border-red-200 bg-red-50 text-red-700" aria-live="polite">{err}</div>}
+      {err && <div className="p-3 text-sm rounded-md border border-red-200 bg-red-50 text-red-700">{err}</div>}
 
       {/* ===== SUBSTEP 1 */}
       {qStep === 1 && (
@@ -1371,20 +1435,15 @@ function QuickQuestions({
             />
             <p className={helperText}>We’ll use this to match you with the right briefs.</p>
           </div>
+
           {answers.formats.length > 0 && (
             <div className="space-y-4">
-              <label className="block text-sm font-medium text-gray-700">
-                Pick a budget range for each selected format
-              </label>
+              <label className="block text-sm font-medium text-gray-700">Pick a budget range for each selected format</label>
 
               <div className="grid md:grid-cols-2 gap-4">
                 {answers.formats.map((f) => (
-                  <div
-                    key={f}
-                    className="rounded-lg border-gray-200 bg-white duration-200"
-                  >
+                  <div key={f} className="rounded-lg border-gray-200 bg-white duration-200">
                     <h3 className="block text-sm font-medium text-gray-700 mb-2">{f}</h3>
-
                     <Select
                       instanceId={`budget-${f}`}
                       options={budgetOptions}
@@ -1392,10 +1451,7 @@ function QuickQuestions({
                       onChange={(opt: SingleValue<Option>) =>
                         setAnswers((prev) => ({
                           ...prev,
-                          budgets: {
-                            ...prev.budgets,
-                            [f]: (opt?.value as any) || ('' as any),
-                          },
+                          budgets: { ...prev.budgets, [f]: (opt?.value as any) || ('' as any) },
                         }))
                       }
                       styles={styles}
@@ -1430,7 +1486,6 @@ function QuickQuestions({
                 Capacity right now
                 <InfoTip title="Capacity" desc="How many projects you can comfortably take on at the moment." />
               </label>
-
               <Select
                 instanceId="capacity"
                 options={capacityOptions}
@@ -1444,16 +1499,13 @@ function QuickQuestions({
           </div>
 
           <div className="flex justify-end">
-            <Button onClick={next} variant="influencer" disabled={!validStep1} className='cursor-pointer'>
+            <Button onClick={next} variant="influencer" disabled={!validStep1 || saving} loading={saving} className="cursor-pointer">
               Next
             </Button>
           </div>
+
           <div className="flex justify-end">
-            <button
-              type="button"
-              onClick={() => onComplete()}
-              className="text-sm text-gray-600 underline hover:text-gray-800 cursor-pointer"
-            >
+            <button type="button" onClick={() => onComplete()} className="text-sm text-gray-600 underline hover:text-gray-800 cursor-pointer">
               Skip for now
             </button>
           </div>
@@ -1488,7 +1540,7 @@ function QuickQuestions({
               theme={theme}
               placeholder={catLoading ? 'Loading…' : 'Select a category'}
             />
-            {catError && <p className="text-sm text-red-600 mt-1" aria-live="polite">{catError}</p>}
+            {catError && <p className="text-sm text-red-600 mt-1">{catError}</p>}
           </div>
 
           <div>
@@ -1514,9 +1566,7 @@ function QuickQuestions({
 
           <div className="grid md:grid-cols-2 gap-4">
             <div>
-              <div className="flex items-center justify-between mb-2">
-                <label className="block text-sm font-medium text-gray-700">Collab types</label>
-              </div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Collab types</label>
               <Select
                 isMulti
                 closeMenuOnSelect={false}
@@ -1525,14 +1575,12 @@ function QuickQuestions({
                 onChange={(opts) => setAnswers((p) => ({ ...p, collabTypes: idsFromValue(opts as any) }))}
                 styles={styles}
                 theme={theme}
-                placeholder={'Select collaboration types'}
+                placeholder="Select collaboration types"
               />
             </div>
 
             <div>
-              <div className="flex items-center justify-between mb-2">
-                <label className="block text-sm font-medium text-gray-700">Product Delivery</label>
-              </div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Product Delivery</label>
               <Select
                 isMulti
                 closeMenuOnSelect={false}
@@ -1541,26 +1589,17 @@ function QuickQuestions({
                 onChange={(opts) => setAnswers((p) => ({ ...p, cadences: idsFromValue(opts as any) }))}
                 styles={styles}
                 theme={theme}
-                placeholder={'Select cadence'}
+                placeholder="Select cadence"
               />
             </div>
           </div>
 
           <div className="flex justify-between items-center gap-4">
-            <Button
-              onClick={back}
-              variant="outline"
-              className="cursor-pointer"
-            >
+            <Button onClick={back} variant="outline" disabled={saving} className="cursor-pointer">
               Back
             </Button>
 
-            <Button
-              onClick={next}
-              variant="influencer"
-              disabled={!validStep2}
-              className="cursor-pointer"
-            >
+            <Button onClick={next} variant="influencer" disabled={!validStep2 || saving} loading={saving} className="cursor-pointer">
               Next
             </Button>
           </div>
@@ -1570,39 +1609,34 @@ function QuickQuestions({
       {/* ===== SUBSTEP 3 */}
       {qStep === 3 && (
         <div className="space-y-6">
-
           <div className="space-y-5">
             {(['Content', 'Audience', 'Brand'] as const).map((grp) => {
               const options: Option[] = storyPrompts[grp].map((t) => ({ value: t, label: t }));
               const selected = answers.selectedPrompts.find((s) => s.group === grp)?.prompt || '';
               const selectedOption: Option | null = options.find((o) => o.value === selected) || null;
 
-              const currentAnswer = selected ? (answers.promptAnswers[selected] || '') : '';
+              const currentAnswer = selected ? answers.promptAnswers[selected] || '' : '';
               const wc = wordCount(currentAnswer);
               const atLimit = wc >= MAX_WORDS;
 
               return (
                 <div key={grp} className="p-4 rounded-xl border border-gray-200 bg-white">
-                  <label className="block text-sm font-semibold text-gray-800 mb-2">
-                    {grp} Prompt
-                  </label>
+                  <label className="block text-sm font-semibold text-gray-800 mb-2">{grp} Prompt</label>
+
                   <Select
                     instanceId={`prompt-${grp}`}
                     options={options}
                     value={selectedOption}
-                    onChange={(opt: SingleValue<Option>) => {
-                      const prompt = opt?.value || '';
-                      setGroupPrompt(grp, prompt);
-                    }}
+                    onChange={(opt: SingleValue<Option>) => setGroupPrompt(grp, opt?.value || '')}
                     styles={styles}
                     theme={theme}
                     placeholder={`Choose a ${grp.toLowerCase()} prompt`}
                     isClearable
-                    components={{ Option: PromptOption }}  // copy-icon option
+                    components={{ Option: PromptOption }}
                   />
+
                   <p className="mt-2 text-xs text-gray-500">Select only one prompt for this category.</p>
 
-                  {/* Answer box appears right below when a prompt is chosen */}
                   {selectedOption && (
                     <div className="mt-3 space-y-1">
                       <textarea
@@ -1612,11 +1646,10 @@ function QuickQuestions({
                         placeholder={`Your short answer (up to ${MAX_WORDS} words)`}
                         aria-invalid={atLimit}
                         className={[
-                          "w-full px-3 py-2 border-2 rounded-lg bg-gray-50 focus:bg-white focus:outline-none text-sm",
-                          atLimit ? "border-red-400 focus:border-red-500" : "border-gray-300 focus:border-yellow-500"
-                        ].join(" ")}
+                          'w-full px-3 py-2 border-2 rounded-lg bg-gray-50 focus:bg-white focus:outline-none text-sm',
+                          atLimit ? 'border-red-400 focus:border-red-500' : 'border-gray-300 focus:border-yellow-500',
+                        ].join(' ')}
                       />
-                      {/* counter turns red at limit */}
                       <div className={`text-xs text-right ${atLimit ? 'text-red-600' : 'text-gray-500'}`}>
                         {wc}/{MAX_WORDS} words
                       </div>
@@ -1628,15 +1661,14 @@ function QuickQuestions({
           </div>
 
           <div className="flex items-center justify-between mt-6">
-            <div className="text-xs text-gray-500">
-              Selected: {answers.selectedPrompts.length} / 3
-            </div>
+            <div className="text-xs text-gray-500">Selected: {answers.selectedPrompts.length} / 3</div>
 
             <div className="flex items-center gap-4">
               <button
                 type="button"
                 onClick={back}
-                className="text-sm text-gray-600 font-semibold underline hover:text-gray-800 transition-colors duration-200 cursor-pointer"
+                disabled={saving}
+                className="text-sm text-gray-600 font-semibold underline hover:text-gray-800 disabled:opacity-60"
               >
                 Back
               </button>
@@ -1644,22 +1676,17 @@ function QuickQuestions({
               <button
                 type="button"
                 onClick={() => onComplete()}
-                className="text-sm text-gray-600 font-semibold underline hover:text-gray-800 transition-colors duration-200 cursor-pointer"
+                disabled={saving}
+                className="text-sm text-gray-600 font-semibold underline hover:text-gray-800 disabled:opacity-60"
               >
                 Skip
               </button>
-              <Button
-                onClick={finish}
-                loading={saving}
-                variant="influencer"
-                disabled={!validStep3}
-                className="cursor-pointer"
-              >
+
+              <Button onClick={finish} loading={saving} variant="influencer" disabled={!validStep3 || saving} className="cursor-pointer">
                 Finish
               </Button>
             </div>
           </div>
-
         </div>
       )}
     </div>
