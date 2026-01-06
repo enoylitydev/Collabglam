@@ -33,13 +33,49 @@ export default function BrandTourModal({
           title: "Enter Dashboard",
           description:
             "Get familiar with your workspace, view your campaigns, influencers, budget, and notifications all in one place.",
-          media: { type: "video", src: "/influencer/step_1.mp4", poster: "/step-1-poster.jpg" },
+          media: { type: "video", src: "/brand/step_1.mp4", poster: "/step-1-poster.jpg" },
         },
         {
-          title: "Create Your First Campaign",
+          title: "Enter Dashboard",
           description:
-            "Set your campaign objective, deliverables, budget, and timelines to begin the collaboration process.",
-          media: { type: "video", src: "/influencer/step_2.mp4", poster: "/step-1-poster.jpg" },
+            "Get familiar with your workspace, view your campaigns, influencers, budget, and notifications all in one place.",
+          media: { type: "video", src: "/brand/step_2.mp4", poster: "/step-1-poster.jpg" },
+        },
+        {
+          title: "Enter Dashboard",
+          description:
+            "Get familiar with your workspace, view your campaigns, influencers, budget, and notifications all in one place.",
+          media: { type: "video", src: "/brand/step_3.mp4", poster: "/step-1-poster.jpg" },
+        },
+        {
+          title: "Enter Dashboard",
+          description:
+            "Get familiar with your workspace, view your campaigns, influencers, budget, and notifications all in one place.",
+          media: { type: "video", src: "/brand/step_4.mp4", poster: "/step-1-poster.jpg" },
+        },
+        {
+          title: "Enter Dashboard",
+          description:
+            "Get familiar with your workspace, view your campaigns, influencers, budget, and notifications all in one place.",
+          media: { type: "video", src: "/brand/step_5.mp4", poster: "/step-1-poster.jpg" },
+        },
+        {
+          title: "Enter Dashboard",
+          description:
+            "Get familiar with your workspace, view your campaigns, influencers, budget, and notifications all in one place.",
+          media: { type: "video", src: "/brand/step_6.mp4", poster: "/step-1-poster.jpg" },
+        },
+        {
+          title: "Enter Dashboard",
+          description:
+            "Get familiar with your workspace, view your campaigns, influencers, budget, and notifications all in one place.",
+          media: { type: "video", src: "/brand/step_7.mp4", poster: "/step-1-poster.jpg" },
+        },
+        {
+          title: "Enter Dashboard",
+          description:
+            "Get familiar with your workspace, view your campaigns, influencers, budget, and notifications all in one place.",
+          media: { type: "video", src: "/brand/step_8.mp4", poster: "/step-1-poster.jpg" },
         },
       ],
     [stepsProp]
