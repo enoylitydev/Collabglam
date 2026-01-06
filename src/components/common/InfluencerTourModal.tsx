@@ -1,3 +1,4 @@
+// InfluencerTourModal.tsx
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
@@ -20,7 +21,7 @@ type Props = {
   startAt?: number;
 };
 
-export default function BrandTourModal({
+export default function InfluencerTourModal({
   open,
   onClose,
   steps: stepsProp,
@@ -33,13 +34,21 @@ export default function BrandTourModal({
           title: "Enter Dashboard",
           description:
             "Get familiar with your workspace, view your campaigns, influencers, budget, and notifications all in one place.",
-          media: { type: "video", src: "/influencer/step_1.mp4", poster: "/step-1-poster.jpg" },
+          media: {
+            type: "video",
+            src: "/influencer/step_1.mp4",
+            poster: "/step-1-poster.jpg",
+          },
         },
         {
           title: "Create Your First Campaign",
           description:
             "Set your campaign objective, deliverables, budget, and timelines to begin the collaboration process.",
-          media: { type: "video", src: "/influencer/step_2.mp4", poster: "/step-1-poster.jpg" },
+          media: {
+            type: "video",
+            src: "/influencer/step_2.mp4",
+            poster: "/step-1-poster.jpg",
+          },
         },
       ],
     [stepsProp]
@@ -98,7 +107,7 @@ export default function BrandTourModal({
         </div>
 
         {/* media block */}
-        <div className="relative overflow-hidden bg-[radial-gradient(104.07%_104.07%_at_50%_0%,_#FF8C00_23.71%,_#FFF_97.6%)]">
+        <div className="relative overflow-hidden bg-[radial-gradient(104.07%_104.07%_at_50%_0%,_#FFBF00_23.71%,_#FFF_97.6%)]">
           <div className="mx-auto w-full max-w-4xl px-8 pt-16">
             <div className="relative w-full overflow-hidden rounded-2xl bg-white/60 backdrop-blur-sm border-[8px] border-white/2 shadow-[0_18px_40px_-28px_rgba(0,0,0,0.45)]">
               <div className="relative w-full aspect-video overflow-hidden">
@@ -110,7 +119,7 @@ export default function BrandTourModal({
                     autoPlay
                     muted
                     playsInline
-                    loop={true}                 // important: allow "ended"
+                    loop
                   />
                 ) : (
                   <img
@@ -127,7 +136,6 @@ export default function BrandTourModal({
 
         {/* content + footer */}
         <div className="relative z-10 -mt-10 bg-white shadow-[0_-18px_30px_-20px_rgba(0,0,0,0.35)]">
-          {/* content */}
           <div className="px-8 pt-8 pb-6">
             <h2 className="text-4xl font-bold text-gray-900 leading-tight">
               {step.title}
@@ -137,17 +145,13 @@ export default function BrandTourModal({
             </p>
           </div>
 
-          {/* footer */}
           <div className="px-8 pb-8 flex items-center justify-between">
             <div />
-
             <div className="flex items-center gap-2">
               {!isFirst && (
                 <button
                   onClick={goPrev}
-                  className={[
-                    "w-32 px-8 py-3 rounded-md text-base font-semibold transition-colors inline-flex items-center justify-center text-black hover:bg-[#ededed] cursor-pointer",
-                  ].join(" ")}
+                  className="w-32 px-8 py-3 rounded-md text-base font-semibold transition-colors inline-flex items-center justify-center text-black hover:bg-[#ededed] cursor-pointer"
                 >
                   Previous
                 </button>
@@ -155,7 +159,7 @@ export default function BrandTourModal({
 
               <button
                 onClick={goNext}
-                className="w-32 px-8 py-3 rounded-md text-base font-semibold bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white hover:opacity-90 transition-opacity inline-flex items-center justify-center gap-2 cursor-pointer"
+                className="w-32 px-8 py-3 rounded-md text-base font-semibold bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-black hover:opacity-90 transition-opacity inline-flex items-center justify-center gap-2 cursor-pointer"
               >
                 {isLast ? "Done" : "Next"}
                 {!isLast && <ChevronRight className="h-5 w-5" />}

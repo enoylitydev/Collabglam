@@ -6,7 +6,15 @@ import Footer from "@/components/common/Footer";
 import { FloatingLabelInput } from "@/components/common/FloatingLabelInput";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { post } from "@/lib/api";
+import { CheckCircle2, X } from "lucide-react";
 
 type FormState = {
   name: string;
@@ -15,7 +23,6 @@ type FormState = {
   message: string;
 };
 
-// 🔹 Move this OUTSIDE the component
 const TITLE_BOX =
   "bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white " +
   "inline-block rounded-2xl px-8 py-5 shadow " +
@@ -23,14 +30,35 @@ const TITLE_BOX =
   "hover:shadow-2xl hover:scale-[1.03] hover:saturate-125 " +
   "outline-none focus:ring-0 focus-visible:ring-0";
 
-// 🔹 Also move GradientBorder OUTSIDE so it doesn't remount every render
-const GradientBorder: React.FC<{ children: React.ReactNode; className?: string }> = ({
-  children,
-  className = "",
-}) => (
-  <div className="relative group">
-    <div className="p-[2px] rounded-2xl bg-gradient-to-r from-[#FFA135] to-[#FF7236] transition-transform duration-300 group-hover:scale-[1.01]">
-      <div className={`rounded-2xl bg-white p-6 shadow ${className}`}>{children}</div>
+/** ✅ Updated: whole card scales + lifts on hover */
+const GradientCard: React.FC<{
+  children: React.ReactNode;
+  className?: string;
+}> = ({ children, className = "" }) => (
+  <div
+    className="
+      relative group
+      transition-transform duration-300 will-change-transform
+      sm:hover:scale-[1.02] sm:hover:-translate-y-0.5
+    "
+  >
+    <div
+      className="
+        p-[2px] rounded-2xl bg-gradient-to-r from-[#FFA135] to-[#FF7236]
+        transition-shadow duration-300
+        sm:group-hover:shadow-2xl
+      "
+    >
+      <div
+        className={`
+          rounded-2xl bg-white p-6 shadow
+          transition-shadow duration-300
+          sm:group-hover:shadow-xl
+          ${className}
+        `}
+      >
+        {children}
+      </div>
     </div>
   </div>
 );
@@ -42,36 +70,42 @@ export default function ContactUs() {
     subject: "",
     message: "",
   });
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState(false);
 
-  // field-based change handler
+  /** ✅ New: banner success message shown ABOVE cards */
+  const [successBanner, setSuccessBanner] = useState<string | null>(null);
+
+  /** Existing popup */
+  const [successOpen, setSuccessOpen] = useState(false);
+
   const handleFieldChange =
     (field: keyof FormState) =>
     (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
       const { value } = e.target;
-      setForm((prev) => ({
-        ...prev,
-        [field]: value,
-      }));
+      setForm((prev) => ({ ...prev, [field]: value }));
     };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError(null);
-    setSuccess(false);
+    setSuccessBanner(null);
+    setSuccessOpen(false);
 
     try {
       await post<{ message: string }>("/contact/send", form);
-      setSuccess(true);
+
+      // ✅ Clear + obvious success feedback (banner + popup)
+      setSuccessBanner("Thanks for reaching out. Our team will get back to you soon.");
+      setSuccessOpen(true);
+
       setForm({ name: "", email: "", subject: "", message: "" });
     } catch (err: any) {
       console.error(err);
       setError(
-        err?.response?.data?.error ||
-          "Something went wrong. Please try again later."
+        err?.response?.data?.error || "Something went wrong. Please try again later."
       );
     } finally {
       setLoading(false);
@@ -80,13 +114,56 @@ export default function ContactUs() {
 
   return (
     <div className="flex flex-col min-h-screen bg-white text-black">
-      {/* Site Header */}
+      {/* ✅ POPUP: More noticeable + animated */}
+      <Dialog open={successOpen} onOpenChange={setSuccessOpen}>
+        <DialogContent
+          className="
+            bg-white rounded-2xl border-0 p-0 shadow-2xl sm:max-w-md
+            data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95
+            data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95
+          "
+        >
+          <div className="rounded-2xl bg-white p-6">
+            <div className="rounded-2xl bg-gradient-to-r from-[#FFA135] to-[#FF7236] p-[2px]">
+              <div className="rounded-[14px] bg-white p-6 text-center">
+                <div
+                  className="
+                    mx-auto mb-3 flex h-12 w-12 items-center justify-center
+                    rounded-full bg-gradient-to-r from-[#FFA135]/15 to-[#FF7236]/15
+                  "
+                >
+                  <CheckCircle2 className="h-7 w-7 text-[#FF7236]" />
+                </div>
+
+                <DialogHeader>
+                  <DialogTitle className="text-xl">Message sent</DialogTitle>
+                  <DialogDescription className="mt-1">
+                    We’ve received your request. Our team will get back to you soon.
+                  </DialogDescription>
+                </DialogHeader>
+
+                <Button
+                  type="button"
+                  onClick={() => setSuccessOpen(false)}
+                  className="
+                    mt-5 w-full rounded-md font-medium text-white
+                    bg-gradient-to-r from-[#FFA135] to-[#FF7236]
+                    transition-all duration-200 hover:opacity-90 active:opacity-95
+                    focus:outline-none focus:ring-0 focus-visible:ring-0
+                  "
+                >
+                  Done
+                </Button>
+              </div>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       <Header />
 
-      {/* Spacer below header */}
       <div className="h-16 md:h-24" aria-hidden />
 
-      {/* Title Section — gradient pill centered (same hover) */}
       <section className="bg-white text-center px-6 pt-2 pb-8">
         <div className="max-w-7xl mx-auto">
           <div className={TITLE_BOX}>
@@ -98,23 +175,38 @@ export default function ContactUs() {
         </div>
       </section>
 
-      {/* Main Content */}
       <main className="flex-1 overflow-auto px-6 py-12">
-        <div className="max-w-3xl mx-auto space-y-8">
-          {/* Contact Form — with matching gradient border card */}
-          <GradientBorder>
+        <div className="max-w-3xl mx-auto space-y-6">
+          {/* ✅ Success banner is OUTSIDE the form card (clear + noticeable) */}
+          {successBanner && (
+            <div
+              role="status"
+              className="rounded-2xl bg-gradient-to-r from-[#FFA135] to-[#FF7236] p-[2px]"
+            >
+              <div className="rounded-[14px] bg-white p-4 flex items-start gap-3">
+                <CheckCircle2 className="h-5 w-5 mt-0.5 text-[#FF7236]" />
+                <div className="flex-1">
+                  <p className="font-semibold">Request sent successfully</p>
+                  <p className="text-sm text-gray-600">{successBanner}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSuccessBanner(null)}
+                  className="rounded-md p-1 hover:bg-gray-100 transition"
+                  aria-label="Dismiss success message"
+                >
+                  <X className="h-4 w-4 text-gray-600" />
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* ✅ Form Card (now hover-scales) */}
+          <GradientCard>
             {error && (
               <Alert variant="destructive" className="mb-4">
                 <AlertTitle>Error</AlertTitle>
                 <AlertDescription>{error}</AlertDescription>
-              </Alert>
-            )}
-            {success && (
-              <Alert className="mb-4">
-                <AlertTitle>Sent!</AlertTitle>
-                <AlertDescription>
-                  Thank you for reaching out. We’ll be in touch soon.
-                </AlertDescription>
               </Alert>
             )}
 
@@ -152,7 +244,6 @@ export default function ContactUs() {
                 required
               />
 
-              {/* MESSAGE — gradient border on focus (matches inputs) */}
               <div className="space-y-1">
                 <label htmlFor="message" className="block">
                   Message
@@ -183,7 +274,6 @@ export default function ContactUs() {
                 </div>
               </div>
 
-              {/* Gradient button — site palette */}
               <Button
                 type="submit"
                 disabled={loading}
@@ -198,10 +288,10 @@ export default function ContactUs() {
                 {loading ? "Sending…" : "Send Message"}
               </Button>
             </form>
-          </GradientBorder>
+          </GradientCard>
 
-          {/* Contact Details — Gradient Border Card */}
-          <GradientBorder>
+          {/* ✅ Details Card (now hover-scales) */}
+          <GradientCard>
             <div className="inline-block rounded-full px-4 py-1 text-sm font-semibold text-white bg-gradient-to-r from-[#FFA135] to-[#FF7236] mb-4">
               Get in Touch
             </div>
@@ -223,11 +313,10 @@ export default function ContactUs() {
               <br />
               USA
             </p>
-          </GradientBorder>
+          </GradientCard>
         </div>
       </main>
 
-      {/* Footer */}
       <Footer />
     </div>
   );

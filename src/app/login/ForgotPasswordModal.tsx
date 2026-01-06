@@ -8,6 +8,7 @@ import { post } from '@/lib/api';
 interface ForgotPasswordModalProps {
   role: Role; // 'brand' | 'influencer'
   onClose: () => void;
+  onSuccess?: () => void;
 }
 
 type Step = 'email' | 'otp' | 'reset';
@@ -29,7 +30,7 @@ const API = {
 const emailLooksValid = (email: string) =>
   /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 
-export function ForgotPasswordModal({ role, onClose }: ForgotPasswordModalProps) {
+export function ForgotPasswordModal({ role, onClose, onSuccess }: ForgotPasswordModalProps) {
   const [step, setStep] = useState<Step>('email');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -132,6 +133,7 @@ export function ForgotPasswordModal({ role, onClose }: ForgotPasswordModalProps)
         newPassword: formData.newPassword,
         confirmPassword: formData.confirmPassword,
       });
+      onSuccess?.();
       onClose();
     } catch (err: any) {
       setError(err?.response?.data?.message || err?.message || 'Failed to reset password');

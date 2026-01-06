@@ -3845,6 +3845,9 @@ function SignatureModal({
   const [fileSize, setFileSize] = useState<number | null>(null);
   const [isDragging, setIsDragging] = useState(false);
 
+  // ✅ NEW: prevent multiple clicks / double submits
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
   const dropRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -3854,17 +3857,20 @@ function SignatureModal({
       setFileName("");
       setFileSize(null);
       setIsDragging(false);
+      setIsSubmitting(false); // ✅ reset
     }
   }, [isOpen]);
 
   useEffect(() => {
     if (!isOpen) return;
+
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape" && !isSubmitting) onClose(); // ✅ don't close while submitting
     };
+
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [isOpen, onClose]);
+  }, [isOpen, onClose, isSubmitting]);
 
   const formatSize = (size: number | null) => {
     if (!size) return "";
@@ -3874,6 +3880,8 @@ function SignatureModal({
   };
 
   const handleFile = (file?: File | null) => {
+    if (isSubmitting) return; // ✅ block changes during submit
+
     setError("");
     setIsDragging(false);
     if (!file) return;
@@ -3892,9 +3900,7 @@ function SignatureModal({
     }
 
     const reader = new FileReader();
-    reader.onload = () => {
-      setSigDataUrl(reader.result as string);
-    };
+    reader.onload = () => setSigDataUrl(reader.result as string);
     reader.readAsDataURL(file);
   };
 
@@ -3904,26 +3910,28 @@ function SignatureModal({
     if (!el) return;
 
     const onDragOver = (e: DragEvent) => {
+      if (isSubmitting) return;
       e.preventDefault();
       e.stopPropagation();
       setIsDragging(true);
     };
 
     const onDragEnter = (e: DragEvent) => {
+      if (isSubmitting) return;
       e.preventDefault();
       e.stopPropagation();
       setIsDragging(true);
     };
 
     const onDragLeave = (e: DragEvent) => {
+      if (isSubmitting) return;
       e.preventDefault();
       e.stopPropagation();
-      if (e.target === el) {
-        setIsDragging(false);
-      }
+      if (e.target === el) setIsDragging(false);
     };
 
     const onDrop = (e: DragEvent) => {
+      if (isSubmitting) return;
       e.preventDefault();
       e.stopPropagation();
       setIsDragging(false);
@@ -3942,24 +3950,35 @@ function SignatureModal({
       el.removeEventListener("dragleave", onDragLeave);
       el.removeEventListener("drop", onDrop);
     };
-  }, [isOpen]);
+  }, [isOpen, isSubmitting]); // ✅ include isSubmitting
 
   if (!isOpen) return null;
 
-  const handleSignClick = () => {
+  const handleSignClick = async () => {
+    if (isSubmitting) return; // ✅ double-click guard
+
     if (!sigDataUrl) {
       setError("Please select a signature image first.");
       return;
     }
-    onSigned(sigDataUrl);
+
+    try {
+      setIsSubmitting(true); // ✅ lock UI
+      await onSigned(sigDataUrl);
+      // ✅ parent will close modal on success; we don't force close here
+    } finally {
+      // ✅ if parent throws error and modal stays open, unlock
+      setIsSubmitting(false);
+    }
   };
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center">
       <div
-        className="absolute inset-0 bg-black/50 backdrop-blur-[2px]"
-        onClick={onClose}
+        className={`absolute inset-0 bg-black/50 backdrop-blur-[2px] ${isSubmitting ? "pointer-events-none" : ""}`}
+        onClick={() => !isSubmitting && onClose()} // ✅ prevent closing while submitting
       />
+
       <div className="relative z-[61] w-[96%] max-w-xl rounded-2xl bg-white shadow-2xl border border-gray-100 overflow-hidden">
         <div className="relative h-24">
           <div
@@ -3982,11 +4001,14 @@ function SignatureModal({
                 </span>
               </div>
             </div>
+
             <button
-              className="w-9 h-9 rounded-full bg-white/20 hover:bg-white/30 backdrop-blur-sm flex items-center justify-center text-lg"
-              onClick={onClose}
+              className={`w-9 h-9 rounded-full bg-white/20 hover:bg-white/30 backdrop-blur-sm flex items-center justify-center text-lg ${isSubmitting ? "opacity-50 cursor-not-allowed" : ""
+                }`}
+              onClick={() => !isSubmitting && onClose()}
               aria-label="Close"
               title="Close"
+              disabled={isSubmitting as any}
             >
               ✕
             </button>
@@ -4041,33 +4063,31 @@ function SignatureModal({
             <input
               type="file"
               accept="image/png,image/jpeg"
+              disabled={isSubmitting} // ✅ disable file picker
               onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                 handleFile(e.target.files?.[0])
               }
-              className="block w-full text-xs sm:text-sm text-gray-700 file:mr-3 file:rounded-md file:border-0 file:bg-gray-900 file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-white hover:file:bg-black"
+              className="block w-full text-xs sm:text-sm text-gray-700 file:mr-3 file:rounded-md file:border-0 file:bg-gray-900 file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-white hover:file:bg-black disabled:opacity-60 disabled:cursor-not-allowed"
             />
+
             <div className="flex justify-between items-center text-[11px] text-gray-500">
               <span>Allowed: PNG, JPG · Max size: 50 KB</span>
               {fileSize !== null && (
                 <span>
                   Selected size:{" "}
-                  <span
-                    className={
-                      fileSize > 50 * 1024
-                        ? "text-red-600 font-medium"
-                        : ""
-                    }
-                  >
+                  <span className={fileSize > 50 * 1024 ? "text-red-600 font-medium" : ""}>
                     {formatSize(fileSize)}
                   </span>
                 </span>
               )}
             </div>
+
             {fileName && (
               <div className="text-[11px] text-gray-600 truncate">
                 File: <span className="font-medium">{fileName}</span>
               </div>
             )}
+
             {error && (
               <div className="text-xs text-red-600 flex items-center gap-1 mt-1">
                 <span>⚠️</span>
@@ -4083,19 +4103,23 @@ function SignatureModal({
                   <div className="text-xs font-semibold text-gray-700">
                     Signature preview
                   </div>
+
                   <button
                     type="button"
+                    disabled={isSubmitting} // ✅ disable clear
                     onClick={() => {
+                      if (isSubmitting) return;
                       setSigDataUrl("");
                       setFileName("");
                       setFileSize(null);
                       setError("");
                     }}
-                    className="text-[11px] text-gray-500 hover:text-gray-700 underline"
+                    className="text-[11px] text-gray-500 hover:text-gray-700 underline disabled:opacity-60 disabled:cursor-not-allowed"
                   >
                     Clear
                   </button>
                 </div>
+
                 <div className="flex items-center justify-center rounded-lg border bg-white px-3 py-2">
                   <img
                     src={sigDataUrl}
@@ -4111,23 +4135,26 @@ function SignatureModal({
         <div className="px-5 pb-5 pt-1 flex flex-col sm:flex-row justify-end gap-3">
           <Button
             variant="outline"
-            className="text-gray-800 border-gray-300 hover:bg-gray-100"
-            onClick={onClose}
+            className="text-gray-800 border-gray-300 hover:bg-gray-100 disabled:opacity-60 disabled:cursor-not-allowed"
+            onClick={() => !isSubmitting && onClose()}
+            disabled={isSubmitting} // ✅ disable cancel while submitting
           >
             Cancel
           </Button>
+
           <Button
             className="bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white hover:from-[#FF7236] hover:to-[#FFA135] shadow-none disabled:opacity-60 disabled:cursor-not-allowed"
             onClick={handleSignClick}
-            disabled={!sigDataUrl}
+            disabled={!sigDataUrl || isSubmitting} // ✅ key line
           >
-            Sign & continue
+            {isSubmitting ? "Signing..." : "Sign & continue"}
           </Button>
         </div>
       </div>
     </div>
   );
 }
+
 
 function SidebarSection({ title, children, icon }: any) {
   return (

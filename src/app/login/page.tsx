@@ -27,6 +27,13 @@ export default function Login() {
     setPanelKey((k) => k + 1);
   }, [activeTab, role]);
 
+  const [toast, setToast] = useState<null | { title: string; message: string; role: Role }>(null);
+
+  const showToast = (title: string, message: string, toastRole: Role) => {
+    setToast({ title, message, role: toastRole });
+    setTimeout(() => setToast(null), 3000);
+  };
+
   // ✅ hero should appear ONLY on login tab
   const showHero = activeTab === 'login';
 
@@ -60,11 +67,11 @@ export default function Login() {
   };
 
   const handleSignupSuccess = () => {
-    setShowSuccessMessage(true);
+    showToast('Account created successfully!', 'You can now sign in to your account', role);
+
     setTimeout(() => {
-      setShowSuccessMessage(false);
       startTransition(() => {
-        setActiveTab('login'); // ✅ always back to login
+        setActiveTab('login');
         setSignupStep(1);
       });
     }, 3000);
@@ -102,23 +109,22 @@ export default function Login() {
         </div>
       </header>
 
-      {/* Success toast */}
-      {showSuccessMessage && (
+      {toast && (
         <div className="fixed top-24 inset-x-0 z-50 flex justify-center px-4 animate-slideDown">
           <div
-            className={`max-w-md w-full p-4 rounded-xl shadow-2xl border-2 ${role === 'brand'
+            className={`max-w-md w-full p-4 rounded-xl shadow-2xl border-2 ${toast.role === 'brand'
               ? 'bg-orange-50 border-orange-500'
               : 'bg-yellow-50 border-yellow-500'
               }`}
           >
             <div className="flex items-center space-x-3">
               <CheckCircle2
-                className={`w-6 h-6 flex-shrink-0 ${role === 'brand' ? 'text-orange-600' : 'text-yellow-600'
+                className={`w-6 h-6 flex-shrink-0 ${toast.role === 'brand' ? 'text-orange-600' : 'text-yellow-600'
                   }`}
               />
               <div>
-                <p className="font-semibold text-gray-900">Account created successfully!</p>
-                <p className="text-sm text-gray-600">You can now sign in to your account</p>
+                <p className="font-semibold text-gray-900">{toast.title}</p>
+                <p className="text-sm text-gray-600">{toast.message}</p>
               </div>
             </div>
           </div>
@@ -284,7 +290,14 @@ export default function Login() {
       </main>
 
       {showForgotPassword && (
-        <ForgotPasswordModal role={role} onClose={() => setShowForgotPassword(false)} />
+        <ForgotPasswordModal
+          role={role}
+          onClose={() => setShowForgotPassword(false)}
+          onSuccess={() => {
+            showToast('Password reset successful!', 'You can now log in with your new password', role);
+            startTransition(() => setActiveTab('login')); // optional, but nice
+          }}
+        />
       )}
 
       <style>{`

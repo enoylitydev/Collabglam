@@ -359,6 +359,9 @@ function SignatureModal({
   const [fileSize, setFileSize] = useState<number | null>(null);
   const [isDragging, setIsDragging] = useState(false);
 
+  // ✅ NEW: prevent multiple clicks / double submits
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
   const dropRef = useRef<HTMLDivElement | null>(null);
 
   // Reset when closed
@@ -369,18 +372,19 @@ function SignatureModal({
       setFileName("");
       setFileSize(null);
       setIsDragging(false);
+      setIsSubmitting(false); // ✅ reset
     }
   }, [open]);
 
-  // Close with ESC
+  // Close with ESC (disabled while submitting)
   useEffect(() => {
     if (!open) return;
     const handler = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape" && !isSubmitting) onClose();
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [open, onClose]);
+  }, [open, onClose, isSubmitting]);
 
   const formatSize = (size: number | null) => {
     if (!size) return "";
@@ -390,6 +394,8 @@ function SignatureModal({
   };
 
   const onFile = (f?: File) => {
+    if (isSubmitting) return; // ✅ block changes during submit
+
     setErr("");
     setIsDragging(false);
     if (!f) return;
@@ -411,28 +417,32 @@ function SignatureModal({
     r.readAsDataURL(f);
   };
 
-  // Drag & drop behavior
+  // Drag & drop behavior (disabled while submitting)
   useEffect(() => {
     if (!open) return;
     const el = dropRef.current;
     if (!el) return;
 
     const onDragOver = (e: DragEvent) => {
+      if (isSubmitting) return;
       e.preventDefault();
       e.stopPropagation();
       setIsDragging(true);
     };
     const onDragEnter = (e: DragEvent) => {
+      if (isSubmitting) return;
       e.preventDefault();
       e.stopPropagation();
       setIsDragging(true);
     };
     const onDragLeave = (e: DragEvent) => {
+      if (isSubmitting) return;
       e.preventDefault();
       e.stopPropagation();
       if (e.target === el) setIsDragging(false);
     };
     const onDrop = (e: DragEvent) => {
+      if (isSubmitting) return;
       e.preventDefault();
       e.stopPropagation();
       setIsDragging(false);
@@ -451,24 +461,35 @@ function SignatureModal({
       el.removeEventListener("dragleave", onDragLeave);
       el.removeEventListener("drop", onDrop);
     };
-  }, [open]);
+  }, [open, isSubmitting]);
 
   if (!open) return null;
 
-  const handleSign = () => {
+  const handleSign = async () => {
+    if (isSubmitting) return; // ✅ double click guard
+
     if (!sig) {
       setErr("Please select a signature image first.");
       return;
     }
-    onSubmit(sig);
+
+    try {
+      setIsSubmitting(true); // ✅ lock UI
+      await onSubmit(sig);
+      // parent can close modal on success
+    } finally {
+      // if submit fails and modal stays open, unlock UI
+      setIsSubmitting(false);
+    }
   };
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center">
-      {/* Backdrop */}
+      {/* Backdrop (disable click-to-close while submitting) */}
       <div
-        className="absolute inset-0 bg-black/50 backdrop-blur-[2px]"
-        onClick={onClose}
+        className={`absolute inset-0 bg-black/50 backdrop-blur-[2px] ${isSubmitting ? "pointer-events-none" : ""
+          }`}
+        onClick={() => !isSubmitting && onClose()}
       />
 
       {/* Modal */}
@@ -478,8 +499,7 @@ function SignatureModal({
           <div
             className="absolute inset-0"
             style={{
-              background:
-                "linear-gradient(135deg, #FFBF00 0%, #FFDB58 100%)",
+              background: "linear-gradient(135deg, #FFBF00 0%, #FFDB58 100%)",
             }}
           />
           <div className="relative z-10 h-full px-5 flex items-center justify-between text-gray-900">
@@ -496,11 +516,14 @@ function SignatureModal({
                 </div>
               </div>
             </div>
+
             <button
-              className="w-9 h-9 rounded-full bg-white/40 hover:bg-white flex items-center justify-center text-gray-800 transition"
-              onClick={onClose}
+              className={`w-9 h-9 rounded-full bg-white/40 hover:bg-white flex items-center justify-center text-gray-800 transition ${isSubmitting ? "opacity-50 cursor-not-allowed" : ""
+                }`}
+              onClick={() => !isSubmitting && onClose()}
               aria-label="Close"
               title="Close"
+              disabled={isSubmitting as any}
             >
               ✕
             </button>
@@ -528,10 +551,12 @@ function SignatureModal({
           {/* Drag & Drop Area */}
           <div
             ref={dropRef}
-            className={`rounded-xl border-2 border-dashed p-5 text-center text-sm transition-all cursor-pointer select-none
-              ${isDragging
-                ? "border-amber-400 bg-amber-50 shadow-sm"
-                : "border-gray-300 bg-gray-50 hover:bg-gray-100/80"
+            className={`rounded-xl border-2 border-dashed p-5 text-center text-sm transition-all select-none
+              ${isSubmitting
+                ? "opacity-60 cursor-not-allowed border-gray-300 bg-gray-50"
+                : isDragging
+                  ? "cursor-pointer border-amber-400 bg-amber-50 shadow-sm"
+                  : "cursor-pointer border-gray-300 bg-gray-50 hover:bg-gray-100/80"
               }`}
           >
             <div className="flex flex-col items-center gap-2">
@@ -539,9 +564,11 @@ function SignatureModal({
                 <span className="text-lg">📁</span>
               </div>
               <div className="font-medium text-gray-800">
-                {isDragging
-                  ? "Drop your signature image here"
-                  : "Drag & drop signature image here"}
+                {isSubmitting
+                  ? "Submitting..."
+                  : isDragging
+                    ? "Drop your signature image here"
+                    : "Drag & drop signature image here"}
               </div>
               <div className="text-xs text-gray-500">
                 or use the file picker below
@@ -557,9 +584,11 @@ function SignatureModal({
             <input
               type="file"
               accept="image/png,image/jpeg"
-              onChange={(e) => onFile(e.target.files?.[0])}
-              className="block w-full text-xs sm:text-sm text-gray-700 file:mr-3 file:rounded-md file:border-0 file:bg-gray-900 file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-white hover:file:bg-black"
+              disabled={isSubmitting} // ✅ disable while submitting
+              onChange={(e) => onFile(e.target.files?.[0] as any)}
+              className="block w-full text-xs sm:text-sm text-gray-700 file:mr-3 file:rounded-md file:border-0 file:bg-gray-900 file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-white hover:file:bg-black disabled:opacity-60 disabled:cursor-not-allowed"
             />
+
             <div className="flex justify-between items-center text-[11px] text-gray-500">
               <span>Allowed: PNG, JPG · Max size: 50 KB</span>
               {fileSize !== null && (
@@ -567,9 +596,7 @@ function SignatureModal({
                   Selected:{" "}
                   <span
                     className={
-                      fileSize > 50 * 1024
-                        ? "text-red-600 font-medium"
-                        : ""
+                      fileSize > 50 * 1024 ? "text-red-600 font-medium" : ""
                     }
                   >
                     {formatSize(fileSize)}
@@ -577,11 +604,13 @@ function SignatureModal({
                 </span>
               )}
             </div>
+
             {fileName && (
               <div className="text-[11px] text-gray-600 truncate">
                 File: <span className="font-medium">{fileName}</span>
               </div>
             )}
+
             {err && (
               <div className="text-xs text-red-600 flex items-center gap-1 mt-1">
                 <span>⚠️</span>
@@ -600,13 +629,15 @@ function SignatureModal({
                   </div>
                   <button
                     type="button"
+                    disabled={isSubmitting} // ✅ disable clear
                     onClick={() => {
+                      if (isSubmitting) return;
                       setSig("");
                       setFileName("");
                       setFileSize(null);
                       setErr("");
                     }}
-                    className="text-[11px] text-gray-500 hover:text-gray-700 underline"
+                    className="text-[11px] text-gray-500 hover:text-gray-700 underline disabled:opacity-60 disabled:cursor-not-allowed"
                   >
                     Clear
                   </button>
@@ -627,17 +658,19 @@ function SignatureModal({
         <div className="px-5 pb-5 pt-1 flex justify-end gap-3">
           <Button
             variant="outline"
-            className="text-gray-900 border-gray-300 hover:bg-gray-100"
-            onClick={onClose}
+            className="text-gray-900 border-gray-300 hover:bg-gray-100 disabled:opacity-60 disabled:cursor-not-allowed"
+            onClick={() => !isSubmitting && onClose()}
+            disabled={isSubmitting} // ✅ disable while submitting
           >
             Cancel
           </Button>
+
           <Button
             className="bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-900 hover:from-[#FFDB58] hover:to-[#FFBF00] disabled:opacity-60 disabled:cursor-not-allowed"
             onClick={handleSign}
-            disabled={!sig}
+            disabled={!sig || isSubmitting} // ✅ key line
           >
-            Sign
+            {isSubmitting ? "Signing..." : "Sign"}
           </Button>
         </div>
       </div>
@@ -1178,40 +1211,181 @@ function InfluencerContractModal({
 }
 
 /* ─────────────────────────── Reject button (compact) ───────────────────────── */
-function RejectButton({ contractId, onDone }: { contractId: string; onDone: () => void }) {
+function RejectButton({
+  contractId,
+  onDone,
+}: {
+  contractId: string;
+  onDone: () => void;
+}) {
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+
+  // Focus textarea when modal opens
+  useEffect(() => {
+    if (open) {
+      setTimeout(() => textareaRef.current?.focus(), 0);
+    } else {
+      setReason("");
+      setIsSubmitting(false);
+    }
+  }, [open]);
+
+  // ESC to close (disabled while submitting)
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !isSubmitting) setOpen(false);
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [open, isSubmitting]);
 
   const submit = async () => {
+    if (isSubmitting) return;
+
     try {
-      const influencerId = typeof window !== "undefined" ? localStorage.getItem("influencerId") : null;
+      setIsSubmitting(true);
+
+      const influencerId =
+        typeof window !== "undefined"
+          ? localStorage.getItem("influencerId")
+          : null;
+
       if (!influencerId) throw new Error("No influencer ID.");
-      await post("/contract/reject", { contractId, influencerId, reason: reason.trim() });
-      toast({ icon: "info", title: "Rejected", text: "Contract has been rejected." });
+
+      await post("/contract/reject", {
+        contractId,
+        influencerId,
+        reason: reason.trim(),
+      });
+
+      toast({
+        icon: "info",
+        title: "Rejected",
+        text: "Contract has been rejected.",
+      });
+
       setOpen(false);
       onDone();
     } catch (e: any) {
-      toast({ icon: "error", title: "Error", text: e.message || "Failed to reject contract." });
+      toast({
+        icon: "error",
+        title: "Error",
+        text: e?.message || "Failed to reject contract.",
+      });
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   return (
     <>
-      <Button variant="outline" className="bg-red-600 hover:bg-red-700 text-white" onClick={() => setOpen(true)} title="Reject contract">
+      <Button
+        variant="outline"
+        className="bg-red-600 hover:bg-red-700 text-white"
+        onClick={() => setOpen(true)}
+        title="Reject contract"
+      >
         Reject
       </Button>
+
       {open && (
-        <div className="fixed inset-0 backdrop-blur-sm bg-gray-900/30 flex items-center justify-center z-50">
-          <div className="relative bg-white rounded-lg w-108 p-6 space-y-4">
-            <button onClick={() => setOpen(false)} className="absolute top-2 right-2 p-2 text-gray-600 hover:text-gray-900">
-              <HiX size={24} />
-            </button>
-            <h2 className="text-lg font-semibold">Reject Contract</h2>
-            <p className="text-sm text-gray-700">Let the brand know why you’re rejecting this contract:</p>
-            <textarea value={reason} onChange={(e) => setReason(e.target.value)} className="w-full h-24 p-2 border rounded focus:outline-none focus:ring" placeholder="Your reason (optional)" />
-            <div className="flex justify-end space-x-2">
-              <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-              <Button onClick={submit} className="bg-red-600 hover:bg-red-700 text-white">Submit</Button>
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          {/* Backdrop (disable click while submitting) */}
+          <div
+            className={`absolute inset-0 backdrop-blur-sm bg-gray-900/30 ${isSubmitting ? "pointer-events-none" : ""
+              }`}
+            onClick={() => !isSubmitting && setOpen(false)}
+          />
+
+          {/* Modal */}
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="reject-title"
+            className="relative z-10 w-[92vw] max-w-lg rounded-xl bg-white shadow-2xl border border-gray-200"
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between gap-3 px-4 sm:px-6 py-4 border-b">
+              <div className="min-w-0">
+                <h2
+                  id="reject-title"
+                  className="text-base sm:text-lg font-semibold text-gray-900 truncate"
+                >
+                  Reject Contract
+                </h2>
+                <p className="text-xs sm:text-sm text-gray-600 mt-0.5">
+                  Let the brand know why you’re rejecting this contract.
+                </p>
+              </div>
+
+              <button
+                onClick={() => !isSubmitting && setOpen(false)}
+                disabled={isSubmitting}
+                className={`shrink-0 rounded-md p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 transition ${isSubmitting ? "opacity-50 cursor-not-allowed" : ""
+                  }`}
+                aria-label="Close"
+                title="Close"
+              >
+                <HiX size={22} />
+              </button>
+            </div>
+
+            {/* Body (scroll-safe) */}
+            <div className="px-4 sm:px-6 py-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Reason (optional)
+              </label>
+
+              <textarea
+                ref={textareaRef}
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                disabled={isSubmitting}
+                className="w-full min-h-[110px] max-h-[40vh] resize-y p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-red-400 disabled:opacity-60 disabled:cursor-not-allowed"
+                placeholder="Write your reason..."
+              />
+
+              {/* Small inline loader note (optional but nice) */}
+              {isSubmitting && (
+                <div className="mt-3 flex items-center gap-2 text-sm text-gray-600">
+                  <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-gray-300 border-t-gray-700" />
+                  Processing rejection...
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="px-4 sm:px-6 py-4 border-t bg-gray-50 rounded-b-xl">
+              <div className="flex flex-col-reverse sm:flex-row justify-end gap-2 sm:gap-3">
+                <Button
+                  variant="outline"
+                  onClick={() => setOpen(false)}
+                  disabled={isSubmitting}
+                  className="w-full sm:w-auto"
+                >
+                  Cancel
+                </Button>
+
+                <Button
+                  onClick={submit}
+                  disabled={isSubmitting}
+                  className="w-full sm:w-auto bg-red-600 hover:bg-red-700 text-white disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  {isSubmitting ? (
+                    <span className="inline-flex items-center gap-2">
+                      <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/60 border-t-white" />
+                      Rejecting...
+                    </span>
+                  ) : (
+                    "Reject"
+                  )}
+                </Button>
+              </div>
             </div>
           </div>
         </div>

@@ -1,6 +1,7 @@
+// InfluencerSidebar.tsx
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
@@ -10,7 +11,6 @@ import {
   HiClipboardDocumentList,
   HiXCircle,
   HiScale,
-  HiChatBubbleOvalLeftEllipsis,
   HiEnvelopeOpen,
   HiBanknotes,
   HiChatBubbleBottomCenterText,
@@ -19,6 +19,10 @@ import {
   HiBars3,
   HiXMark,
 } from "react-icons/hi2";
+import InfluencerTourModal from "./InfluencerTourModal";
+
+// ✅ use axios helpers (adjust path if needed)
+import { get, post, getToken } from "@/lib/api";
 
 interface MenuItem {
   name: string;
@@ -31,23 +35,10 @@ const menuItems: MenuItem[] = [
   { name: "Find New Collab", href: "/influencer/new-collab", icon: HiUserGroup },
   { name: "My Media-Kit", href: "/influencer/media-kit", icon: HiDocumentText },
   { name: "My Campaigns", href: "/influencer/my-campaign", icon: HiClipboardDocumentList },
-  {
-    name: "Rejected Campaigns",
-    href: "/influencer/rejected-campaign",
-    icon: HiXCircle,
-  },
+  { name: "Rejected Campaigns", href: "/influencer/rejected-campaign", icon: HiXCircle },
   { name: "Disputes", href: "/influencer/disputes", icon: HiScale },
-  // {
-  //   name: "Messages",
-  //   href: "/influencer/messages",
-  //   icon: HiChatBubbleOvalLeftEllipsis,
-  // },
   { name: "E-Mails", href: "/influencer/email", icon: HiEnvelopeOpen },
-  {
-    name: "Payment Details",
-    href: "/influencer/payment-detail",
-    icon: HiBanknotes,
-  },
+  { name: "Payment Details", href: "/influencer/payment-detail", icon: HiBanknotes },
   {
     name: "Feedback",
     href: "https://docs.google.com/forms/d/e/1FAIpQLSemRB9YO6-YUJhHe4W4Y2QfEygwqUXW2MYW1QCGyHmUZlzyyg/viewform?usp=preview",
@@ -61,21 +52,33 @@ interface InfluencerSidebarProps {
   onClose: () => void;
 }
 
+type InfluencerOnboardingRes = {
+  influencerTourSeen?: boolean;
+  influencerTourSeenAt?: string | null;
+};
+
 export default function InfluencerSidebar({ isOpen, onClose }: InfluencerSidebarProps) {
   // Auto behavior
   const [autoCollapsed, setAutoCollapsed] = useState(false);
   // Manual override: null = follow auto; true/false = user override
   const [userCollapsed, setUserCollapsed] = useState<boolean | null>(null);
 
-  // 🔹 NEW: plan name from localStorage
   const [planName, setPlanName] = useState<string | null>(null);
+
+  // ✅ Tour modal state
+  const [tourOpen, setTourOpen] = useState(false);
+
+  // ✅ Token state (for reliable effect)
+  const [token, setTokenState] = useState<string | null>(null);
+
+  // ✅ avoid duplicate checks (Strict Mode)
+  const didCheckOnboardingRef = useRef(false);
 
   const pathname = usePathname();
   const router = useRouter();
 
-  // Collapse thresholds (hysteresis to avoid flicker)
-  const COLLAPSE_AT = 1280; // collapse below this width
-  const EXPAND_AT = 1440; // expand above this width
+  const COLLAPSE_AT = 1280;
+  const EXPAND_AT = 1440;
 
   useEffect(() => {
     const onResize = () => {
@@ -86,21 +89,49 @@ export default function InfluencerSidebar({ isOpen, onClose }: InfluencerSidebar
         return prev;
       });
     };
-    onResize(); // set initial
+    onResize();
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
   }, []);
 
-  // 🔹 Load subscription plan from localStorage on mount
+  // token from your axios helper (reads localStorage "token")
+  useEffect(() => {
+    setTokenState(getToken());
+  }, []);
+
+  // plan name (keep your logic; optional to move this server-side later)
   useEffect(() => {
     if (typeof window === "undefined") return;
     const storedPlanName =
       localStorage.getItem("influencerPlanName") ||
-      localStorage.getItem("brandPlanName"); // fallback if needed
+      localStorage.getItem("brandPlanName");
     setPlanName(storedPlanName);
   }, []);
 
-  // Effective state: manual override wins; otherwise follow auto
+  // ✅ server-based "show only once" across devices (NO localStorage flags)
+  useEffect(() => {
+    if (!token) return;
+    if (didCheckOnboardingRef.current) return;
+
+    didCheckOnboardingRef.current = true;
+
+    (async () => {
+      try {
+        // You must implement these endpoints in backend (below)
+        const data = await get<InfluencerOnboardingRes>("/influencer/onboarding");
+
+        if (!data?.influencerTourSeen) {
+          setTourOpen(true);
+
+          // mark as seen immediately so it never auto-shows again anywhere
+          post("/influencer/onboarding/influencer-tour/seen").catch(() => {});
+        }
+      } catch {
+        // fail silently; user can open via Guide
+      }
+    })();
+  }, [token]);
+
   const isCollapsed = (userCollapsed ?? autoCollapsed) === true;
 
   const handleToggle = () => {
@@ -108,7 +139,6 @@ export default function InfluencerSidebar({ isOpen, onClose }: InfluencerSidebar
   };
 
   const handleLogout = () => {
-    // Remove role-scoped and legacy tokens + plan info
     localStorage.removeItem("influencer_token");
     localStorage.removeItem("token");
     localStorage.removeItem("influencerPlanName");
@@ -116,12 +146,16 @@ export default function InfluencerSidebar({ isOpen, onClose }: InfluencerSidebar
     router.push("/");
   };
 
-  // 🔹 Filter menu items: hide Disputes for free plan
+  const openGuide = () => {
+    setTourOpen(true);
+    onClose?.();
+  };
+
+  // hide Disputes for free
   const filteredMenuItems = menuItems.filter((item) => {
     if (item.name === "Disputes") {
       const normalized = (planName || "").toLowerCase();
-      if (!normalized || normalized === "free") {
-        // no plan or free plan -> hide Disputes
+      if (!normalized || normalized === "free" || normalized === "influencer_free") {
         return false;
       }
     }
@@ -130,11 +164,10 @@ export default function InfluencerSidebar({ isOpen, onClose }: InfluencerSidebar
 
   const renderLinks = () =>
     filteredMenuItems.map((item) => {
-      const isActive = pathname.startsWith(item.href);
-      const isExternal = item.href.startsWith("http"); // 👈 external link check
+      const isExternal = item.href.startsWith("http");
+      const isActive = !isExternal && pathname.startsWith(item.href);
 
-      const base =
-        "flex items-center py-3 px-4 rounded-md transition-all duration-200";
+      const base = "flex items-center py-3 px-4 rounded-md transition-all duration-200";
       const active = isActive
         ? "bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-800"
         : "text-gray-800 hover:bg-gradient-to-r hover:from-[#FFBF00] hover:to-[#FFDB58]";
@@ -146,8 +179,8 @@ export default function InfluencerSidebar({ isOpen, onClose }: InfluencerSidebar
             className={`${base} ${active}`}
             title={isCollapsed ? item.name : undefined}
             onClick={onClose}
-            target={isExternal ? "_blank" : undefined} // 👈 new tab
-            rel={isExternal ? "noopener noreferrer" : undefined} // 👈 safe
+            target={isExternal ? "_blank" : undefined}
+            rel={isExternal ? "noopener noreferrer" : undefined}
           >
             <item.icon size={20} className="flex-shrink-0" />
             {!isCollapsed && (
@@ -158,7 +191,7 @@ export default function InfluencerSidebar({ isOpen, onClose }: InfluencerSidebar
       );
     });
 
-  const sidebarContent = (
+  const DesktopSidebar = (
     <div
       className={`
         flex flex-col h-full bg-white text-gray-800 shadow-lg
@@ -176,15 +209,10 @@ export default function InfluencerSidebar({ isOpen, onClose }: InfluencerSidebar
           <HiBars3 size={24} className="text-gray-800" />
         </button>
 
-        <Link
-          href="/influencer/dashboard"
-          className="flex items-center space-x-2 ml-2"
-        >
+        <Link href="/influencer/dashboard" className="flex items-center space-x-2 ml-2">
           <img src="/logo.png" alt="CollabGlam logo" className="h-10 w-auto" />
           {!isCollapsed && (
-            <span className="text-2xl font-semibold text-gray-900">
-              CollabGlam
-            </span>
+            <span className="text-2xl font-semibold text-gray-900">CollabGlam</span>
           )}
         </Link>
       </div>
@@ -194,21 +222,68 @@ export default function InfluencerSidebar({ isOpen, onClose }: InfluencerSidebar
         <ul className="flex flex-col space-y-1 px-1">{renderLinks()}</ul>
       </nav>
 
-      {/* Logout */}
-      <div className="border-t border-gray-200 p-4">
+      {/* Footer (Guide + Logout) */}
+      <div className="border-t border-gray-200 p-4 space-y-2">
+        <button
+          onClick={openGuide}
+          className="w-full flex items-center py-2 px-4 rounded-md text-gray-800 hover:bg-gradient-to-r hover:from-[#FFBF00] hover:to-[#FFDB58] transition-colors duration-200"
+          title={isCollapsed ? "Guide" : undefined}
+        >
+          <HiClipboardDocumentList size={20} className="flex-shrink-0" />
+          {!isCollapsed && <span className="ml-3 text-md font-medium">Guide</span>}
+        </button>
+
         <button
           onClick={handleLogout}
-          className="
-            w-full flex items-center py-2 px-4 rounded-md
-            text-gray-800 hover:bg-gradient-to-r hover:from-[#FFBF00] hover:to-[#FFDB58]
-            transition-colors duration-200
-          "
+          className="w-full flex items-center py-2 px-4 rounded-md text-gray-800 hover:bg-gradient-to-r hover:from-[#FFBF00] hover:to-[#FFDB58] transition-colors duration-200"
           title={isCollapsed ? "Logout" : undefined}
         >
           <HiArrowLeftOnRectangle size={20} className="flex-shrink-0" />
-          {!isCollapsed && (
-            <span className="ml-3 text-md font-medium">Logout</span>
-          )}
+          {!isCollapsed && <span className="ml-3 text-md font-medium">Logout</span>}
+        </button>
+      </div>
+    </div>
+  );
+
+  const MobileSidebar = (
+    <div className="relative flex flex-col h-full bg-white text-gray-800 w-64">
+      <div className="flex items-center justify-between h-16 px-4 border-b border-gray-200">
+        <Link href="/influencer/dashboard" className="flex items-center space-x-2">
+          <img src="/logo.png" alt="CollabGlam logo" className="h-8 w-auto" />
+          <span className="text-xl font-semibold text-gray-900">Influencer Hub</span>
+        </Link>
+
+        <button
+          onClick={onClose}
+          className="p-2 rounded-md hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#FFA135]"
+          title="Close Sidebar"
+        >
+          <HiXMark size={24} className="text-gray-800" />
+        </button>
+      </div>
+
+      <nav className="flex-1 overflow-y-auto mt-4">
+        <ul className="flex flex-col space-y-1 px-1">{renderLinks()}</ul>
+      </nav>
+
+      <div className="border-t border-gray-200 p-4 space-y-2">
+        <button
+          onClick={openGuide}
+          className="w-full flex items-center py-2 px-4 rounded-md text-gray-800 hover:bg-gradient-to-r hover:from-[#FFBF00] hover:to-[#FFDB58] transition-colors duration-200"
+        >
+          <HiClipboardDocumentList size={20} className="flex-shrink-0" />
+          <span className="ml-3 text-md font-medium">Guide</span>
+        </button>
+
+        <button
+          onClick={() => {
+            handleLogout();
+            onClose();
+          }}
+          className="w-full flex items-center py-2 px-4 rounded-md text-gray-800 hover:bg-gradient-to-r hover:from-[#FFBF00] hover:to-[#FFDB58] transition-colors duration-200"
+        >
+          <HiArrowLeftOnRectangle size={20} className="flex-shrink-0" />
+          <span className="ml-3 text-md font-medium">Logout</span>
         </button>
       </div>
     </div>
@@ -217,62 +292,19 @@ export default function InfluencerSidebar({ isOpen, onClose }: InfluencerSidebar
   return (
     <>
       {/* Desktop */}
-      <div className="hidden md:flex">{sidebarContent}</div>
+      <div className="hidden md:flex">{DesktopSidebar}</div>
+
+      {/* ✅ Tour modal (controlled) */}
+      <InfluencerTourModal open={tourOpen} onClose={() => setTourOpen(false)} startAt={0} />
 
       {/* Mobile overlay */}
       {isOpen && (
         <div className="fixed inset-0 z-40 flex">
-          {/* Backdrop */}
           <div
             className="fixed inset-0 bg-black bg-opacity-40 backdrop-blur-sm"
             onClick={onClose}
           />
-
-          {/* Sidebar panel */}
-          <div className="relative flex flex-col h-full bg-white text-gray-800 w-64">
-            {/* Header */}
-            <div className="flex items-center justify-between h-16 px-4 border-b border-gray-200">
-              <Link
-                href="/influencer/dashboard"
-                className="flex items-center space-x-2"
-              >
-                <img
-                  src="/logo.png"
-                  alt="CollabGlam logo"
-                  className="h-8 w-auto"
-                />
-                <span className="text-xl font-semibold text-gray-900">
-                  Influencer Hub
-                </span>
-              </Link>
-              <button
-                onClick={onClose}
-                className="p-2 rounded-md hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#FFA135]"
-                title="Close Sidebar"
-              >
-                <HiXMark size={24} className="text-gray-800" />
-              </button>
-            </div>
-
-            {/* Navigation */}
-            <nav className="flex-1 overflow-y-auto mt-4">
-              <ul className="flex flex-col space-y-1 px-1">{renderLinks()}</ul>
-            </nav>
-
-            {/* Logout */}
-            <div className="border-t border-gray-200 p-4">
-              <button
-                onClick={() => {
-                  handleLogout();
-                  onClose();
-                }}
-                className="w-full flex items-center py-2 px-4 rounded-md text-gray-800 hover:bg-gradient-to-r hover:from-[#FFBF00] hover:to-[#FFDB58] transition-colors duration-200"
-              >
-                <HiArrowLeftOnRectangle size={20} className="flex-shrink-0" />
-                <span className="ml-3 text-md font-medium">Logout</span>
-              </button>
-            </div>
-          </div>
+          {MobileSidebar}
         </div>
       )}
     </>
