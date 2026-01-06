@@ -177,30 +177,7 @@ export default function ContactUs() {
 
       <main className="flex-1 overflow-auto px-6 py-12">
         <div className="max-w-3xl mx-auto space-y-6">
-          {/* ✅ Success banner is OUTSIDE the form card (clear + noticeable) */}
-          {successBanner && (
-            <div
-              role="status"
-              className="rounded-2xl bg-gradient-to-r from-[#FFA135] to-[#FF7236] p-[2px]"
-            >
-              <div className="rounded-[14px] bg-white p-4 flex items-start gap-3">
-                <CheckCircle2 className="h-5 w-5 mt-0.5 text-[#FF7236]" />
-                <div className="flex-1">
-                  <p className="font-semibold">Request sent successfully</p>
-                  <p className="text-sm text-gray-600">{successBanner}</p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setSuccessBanner(null)}
-                  className="rounded-md p-1 hover:bg-gray-100 transition"
-                  aria-label="Dismiss success message"
-                >
-                  <X className="h-4 w-4 text-gray-600" />
-                </button>
-              </div>
-            </div>
-          )}
-
+        
           {/* ✅ Form Card (now hover-scales) */}
           <GradientCard>
             {error && (
