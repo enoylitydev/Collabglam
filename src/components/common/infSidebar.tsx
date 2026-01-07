@@ -1,7 +1,6 @@
-// InfluencerSidebar.tsx
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState, useCallback } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
@@ -21,7 +20,6 @@ import {
 } from "react-icons/hi2";
 import InfluencerTourModal from "./InfluencerTourModal";
 
-// ✅ use axios helpers (adjust path if needed)
 import { get, post, getToken } from "@/lib/api";
 
 interface MenuItem {
@@ -57,21 +55,25 @@ type InfluencerOnboardingRes = {
   influencerTourSeenAt?: string | null;
 };
 
-export default function InfluencerSidebar({ isOpen, onClose }: InfluencerSidebarProps) {
-  // Auto behavior
-  const [autoCollapsed, setAutoCollapsed] = useState(false);
-  // Manual override: null = follow auto; true/false = user override
-  const [userCollapsed, setUserCollapsed] = useState<boolean | null>(null);
+const INFLUENCER_TOUR_LS_KEY = "cg_influencerTourSeen_v1";
 
+const lsGet = (k: string) => {
+  try { return window.localStorage.getItem(k); } catch { return null; }
+};
+const lsSet = (k: string, v: string) => {
+  try { window.localStorage.setItem(k, v); } catch {}
+};
+const lsRemove = (k: string) => {
+  try { window.localStorage.removeItem(k); } catch {}
+};
+
+export default function InfluencerSidebar({ isOpen, onClose }: InfluencerSidebarProps) {
+  const [autoCollapsed, setAutoCollapsed] = useState(false);
+  const [userCollapsed, setUserCollapsed] = useState<boolean | null>(null);
   const [planName, setPlanName] = useState<string | null>(null);
 
-  // ✅ Tour modal state
   const [tourOpen, setTourOpen] = useState(false);
-
-  // ✅ Token state (for reliable effect)
   const [token, setTokenState] = useState<string | null>(null);
-
-  // ✅ avoid duplicate checks (Strict Mode)
   const didCheckOnboardingRef = useRef(false);
 
   const pathname = usePathname();
@@ -94,12 +96,10 @@ export default function InfluencerSidebar({ isOpen, onClose }: InfluencerSidebar
     return () => window.removeEventListener("resize", onResize);
   }, []);
 
-  // token from your axios helper (reads localStorage "token")
   useEffect(() => {
     setTokenState(getToken());
   }, []);
 
-  // plan name (keep your logic; optional to move this server-side later)
   useEffect(() => {
     if (typeof window === "undefined") return;
     const storedPlanName =
@@ -108,29 +108,42 @@ export default function InfluencerSidebar({ isOpen, onClose }: InfluencerSidebar
     setPlanName(storedPlanName);
   }, []);
 
-  // ✅ server-based "show only once" across devices (NO localStorage flags)
+  const markLocalSeen = useCallback(() => {
+    lsSet(INFLUENCER_TOUR_LS_KEY, "1");
+  }, []);
+
+  // ✅ server + local fallback
   useEffect(() => {
     if (!token) return;
     if (didCheckOnboardingRef.current) return;
-
     didCheckOnboardingRef.current = true;
 
+    const localSeen = lsGet(INFLUENCER_TOUR_LS_KEY) === "1";
+
     (async () => {
+      if (localSeen) {
+        post("/influencer/onboarding/influencer-tour/seen").catch(() => {});
+        return;
+      }
+
       try {
-        // You must implement these endpoints in backend (below)
         const data = await get<InfluencerOnboardingRes>("/influencer/onboarding");
 
-        if (!data?.influencerTourSeen) {
-          setTourOpen(true);
-
-          // mark as seen immediately so it never auto-shows again anywhere
-          post("/influencer/onboarding/influencer-tour/seen").catch(() => {});
+        if (data?.influencerTourSeen) {
+          markLocalSeen();
+          return;
         }
+
+        setTourOpen(true);
+        markLocalSeen();
+        post("/influencer/onboarding/influencer-tour/seen").catch(() => {});
       } catch {
-        // fail silently; user can open via Guide
+        // fallback: show once locally
+        setTourOpen(true);
+        markLocalSeen();
       }
     })();
-  }, [token]);
+  }, [token, markLocalSeen]);
 
   const isCollapsed = (userCollapsed ?? autoCollapsed) === true;
 
@@ -143,21 +156,21 @@ export default function InfluencerSidebar({ isOpen, onClose }: InfluencerSidebar
     localStorage.removeItem("token");
     localStorage.removeItem("influencerPlanName");
     localStorage.removeItem("influencerPlanId");
+    lsRemove(INFLUENCER_TOUR_LS_KEY); // ✅ so a different influencer on same device can see tour
     router.push("/");
   };
 
   const openGuide = () => {
     setTourOpen(true);
+    markLocalSeen();
+    if (token) post("/influencer/onboarding/influencer-tour/seen").catch(() => {});
     onClose?.();
   };
 
-  // hide Disputes for free
   const filteredMenuItems = menuItems.filter((item) => {
     if (item.name === "Disputes") {
       const normalized = (planName || "").toLowerCase();
-      if (!normalized || normalized === "free" || normalized === "influencer_free") {
-        return false;
-      }
+      if (!normalized || normalized === "free" || normalized === "influencer_free") return false;
     }
     return true;
   });
@@ -183,15 +196,13 @@ export default function InfluencerSidebar({ isOpen, onClose }: InfluencerSidebar
             rel={isExternal ? "noopener noreferrer" : undefined}
           >
             <item.icon size={20} className="flex-shrink-0" />
-            {!isCollapsed && (
-              <span className="ml-3 text-md font-medium">{item.name}</span>
-            )}
+            {!isCollapsed && <span className="ml-3 text-md font-medium">{item.name}</span>}
           </Link>
         </li>
       );
     });
 
-  const DesktopSidebar = (
+  const sidebarContent = (
     <div
       className={`
         flex flex-col h-full bg-white text-gray-800 shadow-lg
@@ -199,7 +210,6 @@ export default function InfluencerSidebar({ isOpen, onClose }: InfluencerSidebar
         transition-[width] duration-300 ease-in-out
       `}
     >
-      {/* Header */}
       <div className="flex items-center h-16 px-4 border-b border-gray-200">
         <button
           onClick={handleToggle}
@@ -211,18 +221,14 @@ export default function InfluencerSidebar({ isOpen, onClose }: InfluencerSidebar
 
         <Link href="/influencer/dashboard" className="flex items-center space-x-2 ml-2">
           <img src="/logo.png" alt="CollabGlam logo" className="h-10 w-auto" />
-          {!isCollapsed && (
-            <span className="text-2xl font-semibold text-gray-900">CollabGlam</span>
-          )}
+          {!isCollapsed && <span className="text-2xl font-semibold text-gray-900">CollabGlam</span>}
         </Link>
       </div>
 
-      {/* Navigation */}
       <nav className="flex-1 overflow-y-auto mt-4">
         <ul className="flex flex-col space-y-1 px-1">{renderLinks()}</ul>
       </nav>
 
-      {/* Footer (Guide + Logout) */}
       <div className="border-t border-gray-200 p-4 space-y-2">
         <button
           onClick={openGuide}
@@ -245,66 +251,63 @@ export default function InfluencerSidebar({ isOpen, onClose }: InfluencerSidebar
     </div>
   );
 
-  const MobileSidebar = (
-    <div className="relative flex flex-col h-full bg-white text-gray-800 w-64">
-      <div className="flex items-center justify-between h-16 px-4 border-b border-gray-200">
-        <Link href="/influencer/dashboard" className="flex items-center space-x-2">
-          <img src="/logo.png" alt="CollabGlam logo" className="h-8 w-auto" />
-          <span className="text-xl font-semibold text-gray-900">Influencer Hub</span>
-        </Link>
-
-        <button
-          onClick={onClose}
-          className="p-2 rounded-md hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#FFA135]"
-          title="Close Sidebar"
-        >
-          <HiXMark size={24} className="text-gray-800" />
-        </button>
-      </div>
-
-      <nav className="flex-1 overflow-y-auto mt-4">
-        <ul className="flex flex-col space-y-1 px-1">{renderLinks()}</ul>
-      </nav>
-
-      <div className="border-t border-gray-200 p-4 space-y-2">
-        <button
-          onClick={openGuide}
-          className="w-full flex items-center py-2 px-4 rounded-md text-gray-800 hover:bg-gradient-to-r hover:from-[#FFBF00] hover:to-[#FFDB58] transition-colors duration-200"
-        >
-          <HiClipboardDocumentList size={20} className="flex-shrink-0" />
-          <span className="ml-3 text-md font-medium">Guide</span>
-        </button>
-
-        <button
-          onClick={() => {
-            handleLogout();
-            onClose();
-          }}
-          className="w-full flex items-center py-2 px-4 rounded-md text-gray-800 hover:bg-gradient-to-r hover:from-[#FFBF00] hover:to-[#FFDB58] transition-colors duration-200"
-        >
-          <HiArrowLeftOnRectangle size={20} className="flex-shrink-0" />
-          <span className="ml-3 text-md font-medium">Logout</span>
-        </button>
-      </div>
-    </div>
-  );
-
   return (
     <>
-      {/* Desktop */}
-      <div className="hidden md:flex">{DesktopSidebar}</div>
+      <div className="hidden md:flex">{sidebarContent}</div>
 
-      {/* ✅ Tour modal (controlled) */}
-      <InfluencerTourModal open={tourOpen} onClose={() => setTourOpen(false)} startAt={0} />
+      <InfluencerTourModal
+        open={tourOpen}
+        onClose={() => {
+          setTourOpen(false);
+          markLocalSeen();
+          if (token) post("/influencer/onboarding/influencer-tour/seen").catch(() => {});
+        }}
+        startAt={0}
+      />
 
-      {/* Mobile overlay */}
       {isOpen && (
         <div className="fixed inset-0 z-40 flex">
-          <div
-            className="fixed inset-0 bg-black bg-opacity-40 backdrop-blur-sm"
-            onClick={onClose}
-          />
-          {MobileSidebar}
+          <div className="fixed inset-0 bg-black bg-opacity-40 backdrop-blur-sm" onClick={onClose} />
+          <div className="relative flex flex-col h-full bg-white text-gray-800 w-64">
+            <div className="flex items-center justify-between h-16 px-4 border-b border-gray-200">
+              <Link href="/influencer/dashboard" className="flex items-center space-x-2">
+                <img src="/logo.png" alt="CollabGlam logo" className="h-8 w-auto" />
+                <span className="text-xl font-semibold text-gray-900">Influencer Hub</span>
+              </Link>
+              <button
+                onClick={onClose}
+                className="p-2 rounded-md hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#FFA135]"
+                title="Close Sidebar"
+              >
+                <HiXMark size={24} className="text-gray-800" />
+              </button>
+            </div>
+
+            <nav className="flex-1 overflow-y-auto mt-4">
+              <ul className="flex flex-col space-y-1 px-1">{renderLinks()}</ul>
+            </nav>
+
+            <div className="border-t border-gray-200 p-4 space-y-2">
+              <button
+                onClick={openGuide}
+                className="w-full flex items-center py-2 px-4 rounded-md text-gray-800 hover:bg-gradient-to-r hover:from-[#FFBF00] hover:to-[#FFDB58] transition-colors duration-200"
+              >
+                <HiClipboardDocumentList size={20} className="flex-shrink-0" />
+                <span className="ml-3 text-md font-medium">Guide</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  handleLogout();
+                  onClose();
+                }}
+                className="w-full flex items-center py-2 px-4 rounded-md text-gray-800 hover:bg-gradient-to-r hover:from-[#FFBF00] hover:to-[#FFDB58] transition-colors duration-200"
+              >
+                <HiArrowLeftOnRectangle size={20} className="flex-shrink-0" />
+                <span className="ml-3 text-md font-medium">Logout</span>
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </>

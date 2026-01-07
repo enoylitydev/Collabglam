@@ -236,7 +236,7 @@ const EmailPage: React.FC = () => {
     };
   };
 
-  // 2) Load threads + messages → flatten into Mail[]
+  // 2) Load inbox (threads + messages) -> flatten into Mail[]
   useEffect(() => {
     if (!brandId) return;
 
@@ -245,40 +245,31 @@ const EmailPage: React.FC = () => {
         setIsLoading(true);
         setLoadError(null);
 
-        const threadsJson = await get<any>(`/emails/threads/brand/${brandId}`);
-        const threads: any[] =
-          threadsJson?.threads || threadsJson?.data || threadsJson || [];
+        // ✅ single call (no N+1)
+        const inboxRes = await post<any>(`/emails/brand/inbox`, {
+          brandId,
+          limit: 200,
+        });
+
+        const payload = inboxRes?.data ?? inboxRes;
+        const conversations: any[] = Array.isArray(payload?.conversations)
+          ? payload.conversations
+          : [];
 
         const allMails: Mail[] = [];
 
-        for (const thread of threads) {
-          const threadId: string = thread.threadId;
+        for (const conv of conversations) {
+          const threadId: string = String(conv.threadId || '');
+          const inf = conv.influencer || {};
+          const influencerId: string = String(inf.influencerId || '').trim();
+          const influencerName: string = inf.name || 'Creator';
 
-          // NOTE: /threads/brand currently populates influencer with only name+email
-          const rawInf = thread.influencer;
-
-          const influencerId: string =
-            typeof rawInf === 'string'
-              ? rawInf
-              : String(rawInf?.influencerId || rawInf?._id || rawInf?.id || '').trim();
-
-          const influencerName: string =
-            (typeof rawInf === 'object' ? rawInf?.name : '') ||
-            thread.influencerSnapshot?.name ||
-            'Creator';
-
-          let messages: any[] = [];
-          try {
-            const msgsJson = await get<any>(`/emails/messages/${threadId}`);
-            messages =
-              msgsJson?.messages || msgsJson?.data || msgsJson || [];
-          } catch (err) {
-            console.error('Failed to fetch messages for thread', threadId, err);
-            continue;
-          }
+          const messages: any[] = Array.isArray(conv.messages) ? conv.messages : [];
 
           for (const msg of messages) {
-            const created = new Date(msg.createdAt);
+            const createdAt = msg.createdAt || msg.sentAt || msg.receivedAt || new Date().toISOString();
+            const created = new Date(createdAt);
+
             const date = created.toLocaleDateString('en-US', {
               month: 'short',
               day: 'numeric',
@@ -289,16 +280,12 @@ const EmailPage: React.FC = () => {
               minute: '2-digit',
             });
 
-            const rawBody: string =
-              msg.textBody || stripHtml(msg.htmlBody || '');
+            const rawBody: string = msg.textBody || stripHtml(msg.htmlBody || '');
             const body = rawBody.trim();
-            const preview =
-              body.slice(0, 120) + (body.length > 120 ? '…' : '');
+            const preview = body.slice(0, 120) + (body.length > 120 ? '…' : '');
 
             const direction: MailDirection =
-              msg.direction === 'brand_to_influencer'
-                ? 'outgoing'
-                : 'incoming';
+              msg.direction === 'brand_to_influencer' ? 'outgoing' : 'incoming';
 
             const fromLabel = direction === 'outgoing' ? 'You' : influencerName;
             const toLabel = direction === 'outgoing' ? influencerName : 'You';
@@ -308,18 +295,18 @@ const EmailPage: React.FC = () => {
                 _id: att._id,
                 filename: att.filename,
                 contentType: att.contentType,
-                size: att.size,
+                size: Number(att.size) || 0,
                 url: att.url,
                 storageKey: att.storageKey,
               }))
               : [];
 
-            const mail: Mail = {
-              id: msg._id,
+            allMails.push({
+              id: String(msg.id || msg._id || `${threadId}-${Date.now()}`), // ✅ controller uses `id`
               direction,
               from: fromLabel,
               to: toLabel,
-              subject: msg.subject,
+              subject: (msg.subject || conv.subject || '').trim(),
               preview,
               body,
               date,
@@ -329,18 +316,14 @@ const EmailPage: React.FC = () => {
               threadId,
               influencerId,
               influencerName,
-              createdAt: msg.createdAt,
+              createdAt: createdAt,
               attachments,
-            };
-
-            allMails.push(mail);
+            });
           }
         }
 
         allMails.sort(
-          (a, b) =>
-            new Date(b.createdAt).getTime() -
-            new Date(a.createdAt).getTime()
+          (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
         );
 
         setMails(allMails);
@@ -348,7 +331,7 @@ const EmailPage: React.FC = () => {
           setSelectedMailId(allMails[0].id);
         }
       } catch (err: any) {
-        console.error('Error loading mails:', err);
+        console.error('Error loading inbox:', err);
         setLoadError(err?.message || 'Failed to load emails');
       } finally {
         setIsLoading(false);
@@ -365,20 +348,14 @@ const EmailPage: React.FC = () => {
 
     const buildFallbackFromMails = (): InfluencerOption[] => {
       const map = new Map<string, InfluencerOption>();
-
       for (const m of mails) {
         const id = String(m.influencerId || '').trim();
         if (!id) continue;
 
         if (!map.has(id)) {
-          map.set(id, {
-            id,
-            name: m.influencerName || 'Creator',
-            threadId: m.threadId,
-          });
+          map.set(id, { id, name: m.influencerName || 'Creator', threadId: m.threadId });
         }
       }
-
       return Array.from(map.values());
     };
 
@@ -387,46 +364,28 @@ const EmailPage: React.FC = () => {
         setIsLoadingInfluencers(true);
         setInfluencerError(null);
 
-        const res = await get<any>(
-          `/emails/influencer/list?brandId=${encodeURIComponent(brandId)}`
-        );
-
+        const res = await get<any>(`/emails/brand/contacts?brandId=${encodeURIComponent(brandId)}`);
         const payload = res?.data ?? res;
 
-        const conversations: any[] = Array.isArray(payload?.conversations)
-          ? payload.conversations
-          : [];
+        const list: any[] = Array.isArray(payload?.influencers) ? payload.influencers : [];
 
-        const map = new Map<string, InfluencerOption>();
+        // ✅ only keep entries that can be emailed via /emails/brand-to-influencer (requires influencerId)
+        const mapped: InfluencerOption[] = list
+          .filter((x) => x?.influencerId) // invited-only rows won't have influencerId
+          .map((x) => ({
+            id: String(x.influencerId),
+            name: x.name || 'Creator',
+            threadId: x.threadId ? String(x.threadId) : undefined, // ✅ used by your cooldown gating
+            handle: x.invitation?.handle || undefined,
+            platform: x.invitation?.platform || undefined,
+          }));
 
-        for (const c of conversations) {
-          const influencerId = String(c?.influencer?.influencerId || '').trim();
-          if (!influencerId) continue;
+        const finalList = mapped.length ? mapped : buildFallbackFromMails();
 
-          const name = c?.influencer?.name || 'Creator';
-          const threadId = String(c?.threadId || '').trim() || undefined;
-
-          if (!map.has(influencerId)) {
-            map.set(influencerId, {
-              id: influencerId,
-              name,
-              threadId, // ✅ store threadId for gating
-            });
-          }
-        }
-
-        let list = Array.from(map.values());
-
-        if (!list.length) {
-          list = buildFallbackFromMails();
-        }
-
-        list.sort((a, b) => a.name.localeCompare(b.name));
-
-        setInfluencers(list);
+        finalList.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+        setInfluencers(finalList);
       } catch (err: any) {
-        console.error('Error loading influencers:', err);
-
+        console.error('Error loading contacts:', err);
         setInfluencers(buildFallbackFromMails());
         setInfluencerError(err?.message || 'Failed to load influencers for compose');
       } finally {
@@ -1363,10 +1322,10 @@ const EmailPage: React.FC = () => {
                         </span>
                         <span
                           className={`text-[10px] px-2 py-0.5 rounded-full border shrink-0 ${r.eligibility.allowed
-                              ? 'bg-emerald-50 text-emerald-700 border-emerald-100'
-                              : r.eligibility.state === 'cooldown'
-                                ? 'bg-amber-50 text-amber-700 border-amber-100'
-                                : 'bg-rose-50 text-rose-700 border-rose-100'
+                            ? 'bg-emerald-50 text-emerald-700 border-emerald-100'
+                            : r.eligibility.state === 'cooldown'
+                              ? 'bg-amber-50 text-amber-700 border-amber-100'
+                              : 'bg-rose-50 text-rose-700 border-rose-100'
                             }`}
                           title={r.eligibility.reason}
                         >

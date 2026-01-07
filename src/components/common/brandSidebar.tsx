@@ -17,13 +17,13 @@ import {
   HiUserPlus,
   HiScale,
   HiChatBubbleBottomCenterText,
-  HiClipboardDocumentList, // ✅ Guide
+  HiClipboardDocumentList,
 } from 'react-icons/hi2';
 import { HiClock } from 'react-icons/hi';
 import { useBrandSidebar } from './brand-sidebar-context';
 import BrandTourModal from './BrandTourModal';
 
-// ✅ use your axios helpers (adjust import path if needed)
+// ✅ axios helpers
 import { get, post, getToken } from '@/lib/api';
 
 interface MenuItem {
@@ -60,23 +60,33 @@ type OnboardingRes = {
   brandTourSeenAt?: string | null;
 };
 
+// ✅ local fallback key (versioned so you can reset later if tour changes)
+const BRAND_TOUR_LS_KEY = 'cg_brandTourSeen_v1';
+
+const lsGet = (k: string) => {
+  try { return window.localStorage.getItem(k); } catch { return null; }
+};
+const lsSet = (k: string, v: string) => {
+  try { window.localStorage.setItem(k, v); } catch {}
+};
+const lsRemove = (k: string) => {
+  try { window.localStorage.removeItem(k); } catch {}
+};
+
 export default function BrandSidebar({ isOpen, onClose }: BrandSidebarProps) {
   const { collapsed, setCollapsed } = useBrandSidebar();
   const pathname = usePathname();
   const router = useRouter();
 
   const [planName, setPlanName] = React.useState<string | null>(null);
-
-  // ✅ modal state
   const [tourOpen, setTourOpen] = React.useState(false);
 
-  // ✅ token state (so useEffect can react when token becomes available after hydration)
+  // ✅ token state
   const [token, setTokenState] = React.useState<string | null>(null);
 
-  // ✅ avoid duplicate checks (important in React Strict Mode)
+  // ✅ avoid duplicate checks (Strict Mode)
   const didCheckOnboardingRef = React.useRef(false);
 
-  // plan name (unchanged)
   React.useEffect(() => {
     try {
       const pn =
@@ -88,33 +98,51 @@ export default function BrandSidebar({ isOpen, onClose }: BrandSidebarProps) {
     }
   }, []);
 
-  // ✅ grab token once on client
   React.useEffect(() => {
     setTokenState(getToken());
   }, []);
 
-  // ✅ server-based "show only once" (across devices) using axios API helpers
+  const markLocalSeen = React.useCallback(() => {
+    lsSet(BRAND_TOUR_LS_KEY, '1');
+  }, []);
+
+  // ✅ server + local fallback
   React.useEffect(() => {
     if (!token) return;
     if (didCheckOnboardingRef.current) return;
-
     didCheckOnboardingRef.current = true;
 
+    const localSeen = lsGet(BRAND_TOUR_LS_KEY) === '1';
+
     (async () => {
+      // 1) If already seen on this device, don't open modal.
+      //    But still try syncing to server (best effort).
+      if (localSeen) {
+        post('/brand/onboarding/brand-tour/seen').catch(() => {});
+        return;
+      }
+
       try {
+        // 2) Ask server (source of truth across devices)
         const data = await get<OnboardingRes>('/brand/onboarding');
 
-        if (!data?.brandTourSeen) {
-          setTourOpen(true);
-
-          // mark as seen immediately so it never auto-shows again on any device
-          post('/brand/onboarding/brand-tour/seen').catch(() => {});
+        if (data?.brandTourSeen) {
+          // Server says seen -> cache locally for fallback
+          markLocalSeen();
+          return;
         }
+
+        // 3) Not seen -> open + mark immediately (server + local)
+        setTourOpen(true);
+        markLocalSeen();
+        post('/brand/onboarding/brand-tour/seen').catch(() => {});
       } catch {
-        // fail silently; user can still open via Guide
+        // 4) Server failed -> fallback: show once locally
+        setTourOpen(true);
+        markLocalSeen();
       }
     })();
-  }, [token]);
+  }, [token, markLocalSeen]);
 
   const menuItems = React.useMemo(() => {
     if (!planName) return BASE_MENU_ITEMS;
@@ -125,12 +153,15 @@ export default function BrandSidebar({ isOpen, onClose }: BrandSidebarProps) {
 
   const handleLogout = () => {
     localStorage.removeItem('token');
+    lsRemove(BRAND_TOUR_LS_KEY); // ✅ so another brand account on same device can see tour
     router.push('/');
   };
 
   const openGuide = () => {
     setTourOpen(true);
-    onClose?.(); // closes mobile overlay behind modal
+    markLocalSeen(); // ✅ so it won't auto-open later if server fails
+    if (token) post('/brand/onboarding/brand-tour/seen').catch(() => {});
+    onClose?.();
   };
 
   const renderLinks = () =>
@@ -155,9 +186,7 @@ export default function BrandSidebar({ isOpen, onClose }: BrandSidebarProps) {
           >
             <item.icon
               size={20}
-              className={`flex-shrink-0 ${
-                isActive ? 'text-white' : 'text-gray-400 group-hover:text-white'
-              }`}
+              className={`flex-shrink-0 ${isActive ? 'text-white' : 'text-gray-400 group-hover:text-white'}`}
             />
             {!collapsed && <span className="ml-3 text-md font-medium">{item.name}</span>}
           </Link>
@@ -167,7 +196,6 @@ export default function BrandSidebar({ isOpen, onClose }: BrandSidebarProps) {
 
   const FooterActions = ({ showLabels }: { showLabels: boolean }) => (
     <div className="border-t border-gray-200 p-4 space-y-2">
-      {/* ✅ Guide above Logout */}
       <button
         onClick={openGuide}
         className="w-full flex items-center py-2 px-4 rounded-md text-gray-800 hover:bg-gradient-to-r hover:from-[#FFA135] hover:to-[#FF7236] hover:text-white transition-colors duration-200"
@@ -190,13 +218,9 @@ export default function BrandSidebar({ isOpen, onClose }: BrandSidebarProps) {
 
   const DesktopSidebar = (
     <div
-      className="
-        flex flex-col h-full bg-white text-gray-800 shadow-lg
-        transition-[width] duration-300 ease-in-out
-      "
+      className="flex flex-col h-full bg-white text-gray-800 shadow-lg transition-[width] duration-300 ease-in-out"
       style={{ width: 'var(--brand-sidebar-w)' }}
     >
-      {/* Header */}
       <div className="flex items-center justify-between h-16 px-4 border-b border-gray-200">
         <button
           onClick={() => setCollapsed(!collapsed)}
@@ -208,20 +232,14 @@ export default function BrandSidebar({ isOpen, onClose }: BrandSidebarProps) {
 
         <Link href="/brand/dashboard" className="flex items-center space-x-2">
           <img src="/logo.png" alt="Collabglam logo" className="h-10 w-auto" />
-          {!collapsed && (
-            <span className="text-2xl font-semibold text-gray-900">
-              CollabGlam Brand
-            </span>
-          )}
+          {!collapsed && <span className="text-2xl font-semibold text-gray-900">CollabGlam Brand</span>}
         </Link>
       </div>
 
-      {/* Navigation */}
       <nav className="flex-1 overflow-y-auto mt-4">
         <ul className="flex flex-col space-y-1 px-1">{renderLinks()}</ul>
       </nav>
 
-      {/* Footer actions */}
       <FooterActions showLabels={!collapsed} />
     </div>
   );
@@ -247,7 +265,6 @@ export default function BrandSidebar({ isOpen, onClose }: BrandSidebarProps) {
         <ul className="flex flex-col space-y-1 px-1">{renderLinks()}</ul>
       </nav>
 
-      {/* Footer actions */}
       <div className="border-t border-gray-200 p-4 space-y-2">
         <button
           onClick={openGuide}
@@ -273,19 +290,22 @@ export default function BrandSidebar({ isOpen, onClose }: BrandSidebarProps) {
 
   return (
     <>
-      {/* Desktop */}
       <div className="hidden md:flex z-40">{DesktopSidebar}</div>
 
-      {/* ✅ Tour modal (controlled) */}
-      <BrandTourModal open={tourOpen} onClose={() => setTourOpen(false)} startAt={0} />
+      {/* ✅ Tour modal */}
+      <BrandTourModal
+        open={tourOpen}
+        onClose={() => {
+          setTourOpen(false);
+          markLocalSeen(); // ✅ if user closes, still don't auto-open again
+          if (token) post('/brand/onboarding/brand-tour/seen').catch(() => {});
+        }}
+        startAt={0}
+      />
 
-      {/* Mobile overlay */}
       {isOpen && (
         <div className="fixed inset-0 z-40 flex">
-          <div
-            className="fixed inset-0 bg-black bg-opacity-40 backdrop-blur-sm"
-            onClick={onClose}
-          />
+          <div className="fixed inset-0 bg-black bg-opacity-40 backdrop-blur-sm" onClick={onClose} />
           {MobileSidebar}
         </div>
       )}

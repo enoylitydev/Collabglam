@@ -31,25 +31,35 @@ export default function InfluencerTourModal({
     () =>
       stepsProp ?? [
         {
-          title: "Enter Dashboard",
+          title: "Influencer Dashboard",
           description:
-            "Get familiar with your workspace, view your campaigns, influencers, budget, and notifications all in one place.",
-          media: {
-            type: "video",
-            src: "/influencer/step_1.mp4",
-            poster: "/step-1-poster.jpg",
-          },
+            "Get a quick view of your active campaigns, invites, earnings, and profile status—all in one place.",
+          media: { type: "video", src: "/influencer/step_1.mp4", poster: "/step_1-poster.jpg" },
         },
         {
-          title: "Create Your First Campaign",
+          title: "Find New Collaborations",
           description:
-            "Set your campaign objective, deliverables, budget, and timelines to begin the collaboration process.",
-          media: {
-            type: "video",
-            src: "/influencer/step_2.mp4",
-            poster: "/step-1-poster.jpg",
-          },
+            "Discover brand campaigns that match your content style, audience, and availability.",
+          media: { type: "video", src: "/influencer/step_2.mp4", poster: "/step_2-poster.jpg" },
         },
+        {
+          title: "Apply or Respond to Brand Invites",
+          description:
+            "Apply to open campaigns or respond to direct brand invites with a single click.",
+          media: { type: "video", src: "/influencer/step_3.mp4", poster: "/step_3-poster.jpg" },
+        },
+        {
+          title: "Review & Accept the Contract",
+          description:
+            "Check deliverables, timelines, usage rights, and payment terms before committing.",
+          media: { type: "video", src: "/influencer/step_4.mp4", poster: "/step_4-poster.jpg" },
+        },
+        {
+          title: "Sign & Confirm Participation",
+          description:
+            "Sign the contract digitally to confirm your participation and start the campaign.",
+          media: { type: "video", src: "/influencer/step_5.mp4", poster: "/step_5-poster.jpg" },
+        }
       ],
     [stepsProp]
   );

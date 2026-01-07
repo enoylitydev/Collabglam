@@ -56,11 +56,15 @@ type AttachmentPayload = {
 
 const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024; // 20MB
 
-// Wrapper for backend: exports.listInvitations → /newinvitations/list
+function unwrap<T>(res: any): T {
+  return (res?.data ?? res) as T;
+}
+
 async function listInvitations(
   body: ListInvitationsRequest
 ): Promise<InvitationListResponse> {
-  return await post<InvitationListResponse>('/newinvitations/list', body);
+  const res = await post<any>('/newinvitations/list', body);
+  return unwrap<InvitationListResponse>(res);
 }
 
 const prettyDate = (iso: string) =>
@@ -192,27 +196,27 @@ export default function InvitedInfluencersPage() {
   };
 
 
-  // ✅ Call backend eligibility endpoint & cache result
   const fetchEligibility = async (
     invitationId: string
   ): Promise<InvitationEligibility | null> => {
     if (!brandId || !invitationId) return null;
 
     try {
-      const res = await post<InvitationEligibility>(
-        '/newinvitations/eligibility',
-        { brandId, invitationId }
-      );
+      const res = await post<any>('/newinvitations/eligibility', {
+        brandId,
+        invitationId,
+      });
+
+      const payload = unwrap<InvitationEligibility>(res);
 
       setEligibilityByInvitationId((prev) => ({
         ...prev,
-        [invitationId]: res,
+        [invitationId]: payload,
       }));
 
-      return res;
+      return payload;
     } catch (err: any) {
       console.error('eligibility check failed', err);
-      // don’t hard-block UI on eligibility API failure; show a soft error
       return null;
     }
   };
@@ -307,18 +311,17 @@ CollabGlam Brand Team
     }
 
     try {
-      const res = await post<{
-        success: boolean;
-        subject: string;
-        textBody: string;
-      }>('/emails/campaign-invitation/preview', {
+      const res = await post<any>('/emails/campaign-invitation/preview', {
         brandId,
         campaignId: inv.campaignId,
         invitationId: inv.invitationId,
       });
 
-      setComposeSubject(res.subject || '');
-      setComposeBody(res.textBody || '');
+      const payload = unwrap<{ success?: boolean; subject?: string; textBody?: string }>(res);
+
+      setComposeSubject(payload.subject || '');
+      setComposeBody(payload.textBody || '');
+
     } catch (err: any) {
       console.error('Failed to fetch invitation template:', err);
 
@@ -577,7 +580,7 @@ CollabGlam Brand Team
                     const disabled = isSending || missingEmail || ruleBlocks;
 
                     let btnLabel = 'Send Email';
-                    if (missingEmail) btnLabel = 'No Email Yet';
+                    if (missingEmail) btnLabel = 'Pending';
                     else if (elig?.state === 'cooldown') btnLabel = `Wait ${formatWaitUntil(elig.nextAllowedAt)}`;
                     else if (elig?.state === 'blocked') btnLabel = 'Blocked';
 
@@ -617,8 +620,9 @@ CollabGlam Brand Team
                               )
                             ) : (
                               <span className="mt-0.5 text-[11px] text-gray-400">
-                                Email not resolved yet
+                                Pending (email resolving)
                               </span>
+
                             )}
                           </div>
                         </Td>
@@ -673,7 +677,7 @@ CollabGlam Brand Team
                             disabled={disabled}
                             title={
                               missingEmail
-                                ? 'No email found yet for this handle'
+                                ? 'Pending: waiting for email to be resolved'
                                 : elig?.reason || undefined
                             }
                             className={`

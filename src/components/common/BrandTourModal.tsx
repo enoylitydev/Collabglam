@@ -30,51 +30,51 @@ export default function BrandTourModal({
     () =>
       stepsProp ?? [
         {
-          title: "Enter Dashboard",
+          title: "Explore Your Dashboard",
           description:
-            "Get familiar with your workspace, view your campaigns, influencers, budget, and notifications all in one place.",
+            "Get a quick snapshot of your campaigns, influencer activity, budget status, and notifications.",
           media: { type: "video", src: "/brand/step_1.mp4", poster: "/step-1-poster.jpg" },
         },
         {
-          title: "Enter Dashboard",
+          title: "Create Your First Campaign",
           description:
-            "Get familiar with your workspace, view your campaigns, influencers, budget, and notifications all in one place.",
+            "Define your campaign goal, content requirements, budget, and timeline in one place.",
           media: { type: "video", src: "/brand/step_2.mp4", poster: "/step-1-poster.jpg" },
         },
         {
-          title: "Enter Dashboard",
+          title: "Browse & Shortlist Influencers",
           description:
-            "Get familiar with your workspace, view your campaigns, influencers, budget, and notifications all in one place.",
+            "Discover creators using filters like category, audience, reach, and engagement to build your shortlist.",
           media: { type: "video", src: "/brand/step_3.mp4", poster: "/step-1-poster.jpg" },
         },
         {
-          title: "Enter Dashboard",
+          title: "Invite Influencers via Campaign",
           description:
-            "Get familiar with your workspace, view your campaigns, influencers, budget, and notifications all in one place.",
+            "Send campaign invites directly from your campaign to selected influencers.",
           media: { type: "video", src: "/brand/step_4.mp4", poster: "/step-1-poster.jpg" },
         },
         {
-          title: "Enter Dashboard",
+          title: "Send Campaign Contract",
           description:
-            "Get familiar with your workspace, view your campaigns, influencers, budget, and notifications all in one place.",
+            "Share deliverables, timelines, payment structure, and brand guidelines in a single agreement.",
           media: { type: "video", src: "/brand/step_5.mp4", poster: "/step-1-poster.jpg" },
         },
         {
-          title: "Enter Dashboard",
+          title: "Influencer Reviews & Accepts",
           description:
-            "Get familiar with your workspace, view your campaigns, influencers, budget, and notifications all in one place.",
+            "The influencer reviews the campaign terms and accepts the collaboration.",
           media: { type: "video", src: "/brand/step_6.mp4", poster: "/step-1-poster.jpg" },
         },
         {
-          title: "Enter Dashboard",
+          title: "Brand Reviews & Confirms",
           description:
-            "Get familiar with your workspace, view your campaigns, influencers, budget, and notifications all in one place.",
+            "Review influencer acceptance and sign to officially activate the campaign.",
           media: { type: "video", src: "/brand/step_7.mp4", poster: "/step-1-poster.jpg" },
         },
         {
-          title: "Enter Dashboard",
+          title: "Define Milestones & Payments",
           description:
-            "Get familiar with your workspace, view your campaigns, influencers, budget, and notifications all in one place.",
+            "Set milestone stages and link them to payments for structured execution and payouts.",
           media: { type: "video", src: "/brand/step_8.mp4", poster: "/step-1-poster.jpg" },
         },
       ],
