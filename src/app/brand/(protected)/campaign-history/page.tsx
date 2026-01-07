@@ -397,7 +397,6 @@ export default function BrandCampaignHistoryPage() {
       <div className="bg-white rounded-2xl shadow p-5 mb-4 border border-gray-100">
         <div className="flex flex-col lg:flex-row lg:items-end gap-4">
           <div className="flex-1">
-            <label className="block text-xs font-semibold text-gray-700 mb-2">Search</label>
             <div className="relative">
               <HiSearch className="absolute inset-y-0 left-3 my-auto text-gray-400" size={20} />
               <input

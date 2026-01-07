@@ -392,7 +392,6 @@ export default function MediaKitPage() {
                 </h1>
                 {primary.username && (
                   <p className="text-xl text-gray-600 flex items-center gap-2 justify-center lg:justify-start">
-                    <span className="text-[#FFBF00]">@</span>
                     {primary.username}
                   </p>
                 )}
@@ -601,7 +600,7 @@ export default function MediaKitPage() {
                     Recent Content
                   </h3>
                   <p className="text-gray-600 mt-1">
-                    Latest posts from @{primary.username}
+                    Latest posts from {primary.username}
                   </p>
                 </div>
                 <div className="p-6">
@@ -859,7 +858,7 @@ export default function MediaKitPage() {
                       primary.provider.charAt(0).toUpperCase() +
                       primary.provider.slice(1)
                     } Profile`}
-                    value={`@${primary.username}`}
+                    value={`${primary.username}`}
                     href={primary.url}
                     external
                   />

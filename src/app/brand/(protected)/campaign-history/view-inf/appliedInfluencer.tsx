@@ -84,6 +84,10 @@ interface Influencer {
   isAssigned: number; // pending
   isAccepted: number; // working
 
+  // ✅ add these
+  isRejected?: number; // rejected
+  rejectedReason?: string | null;
+
   isContracted?: number;
   contractId?: string | null;
 
@@ -100,10 +104,15 @@ interface Meta {
 const PAGE_SIZE_OPTIONS = [10, 20, 50, 100] as const;
 
 function StatusBadge({ inf }: { inf: Influencer }) {
+  if (inf.isRejected === 1)
+    return <Badge className="bg-red-600 text-white">Rejected</Badge>;
+
   if (inf.isAccepted === 1)
     return <Badge className="bg-green-600 text-white">Working</Badge>;
+
   if (inf.isAssigned === 1)
     return <Badge className="bg-amber-500 text-white">Pending</Badge>;
+
   return <Badge variant="secondary">Applied</Badge>;
 }
 

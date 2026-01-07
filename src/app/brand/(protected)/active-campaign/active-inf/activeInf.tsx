@@ -676,10 +676,6 @@ export default function ActiveInfluencersPage() {
             </div>
           </TableCell>
 
-          <TableCell className="whitespace-nowrap">
-            <HiOutlineCalendar className="inline mr-1" />
-            {formatDate(inf.updatedAt)}
-          </TableCell>
 
           <TableCell className="text-center">
             {inf.influencerId ? (
@@ -855,9 +851,6 @@ export default function ActiveInfluencersPage() {
                 <TableHead className="font-semibold">Categories</TableHead>
                 <TableHead onClick={() => toggleSort("followers")} className="cursor-pointer select-none font-semibold">
                   Audience <SortIndicator field="followers" />
-                </TableHead>
-                <TableHead onClick={() => toggleSort("updatedAt")} className="cursor-pointer select-none font-semibold">
-                  Updated <SortIndicator field="updatedAt" />
                 </TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="text-center">Actions</TableHead>
