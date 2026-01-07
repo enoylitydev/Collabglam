@@ -57,7 +57,7 @@ type AttachmentPayload = {
 const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024; // 20MB
 
 function unwrap<T>(res: any): T {
-  return (res?.data ?? res) as T;
+  return (res) as T;
 }
 
 async function listInvitations(
@@ -652,7 +652,7 @@ CollabGlam Brand Team
                               'border',
                             ].join(' ')}
                           >
-                            {inv.status === 'invited' ? 'Pending' : inv.status}
+                            {inv.status === 'invited' ? 'Pending' : inv.status === 'available' ? 'Available' : inv.status}
                           </span>
                         </Td>
 
