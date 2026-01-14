@@ -15,6 +15,9 @@ import {
   HiCalendar,
   HiShieldCheck,
   HiUpload,
+  HiChevronDown,
+  HiEye,
+  HiDownload,
 } from "react-icons/hi";
 
 // shadcn/ui
@@ -85,6 +88,12 @@ const formatDateTime = (iso?: string) => {
 const formatUSD = (n: number) =>
   new Intl.NumberFormat(FIXED_LOCALE, { style: "currency", currency: "USD" }).format(n);
 
+// ✅ Backend invoice generator treats "amount" as cents in PDF (unitPriceCents etc.)
+const formatCurrencyFromCents = (cents: number, currency = "USD") => {
+  const v = (Number(cents) || 0) / 100;
+  return new Intl.NumberFormat(FIXED_LOCALE, { style: "currency", currency }).format(v);
+};
+
 const titleizeFeatureKey = (k: string) =>
   k.replace(/_/g, " ").replace(/\b\w/g, (m) => m.toUpperCase());
 
@@ -147,6 +156,69 @@ type CategoryItem = { _id: string; name: string; id?: number };
 type BusinessTypeItem = { _id: string; name: string };
 type MetaOptions = { categories: CategoryItem[]; businessTypes: BusinessTypeItem[] };
 type SimpleOption = { value: string; label: string };
+
+/* ===================== Payment History types ===================== */
+type PaymentHistoryItem = {
+  _id: string;
+  kind: "plan" | "milestone";
+
+  amount: number;
+  currency?: string;
+
+  createdAt?: string;
+  paidAt?: string;
+
+  invoiceNumber?: string;
+
+  // plan
+  planName?: string;
+
+  // milestone (optional)
+  milestoneTitle?: string;
+  campaignName?: string;
+};
+
+/* ✅ FIX 1: Updated flattenInvoices to correctly parse 
+   the 'invoices.plans' structure from your API response 
+*/
+function flattenInvoices(res: any): PaymentHistoryItem[] {
+  const payload = res?.data ?? res;
+
+  // robustly access the arrays based on your JSON structure
+  const plans = Array.isArray(payload?.invoices?.plans) ? payload.invoices.plans : [];
+  const milestones = Array.isArray(payload?.invoices?.milestones) ? payload.invoices.milestones : [];
+
+  const planRows: PaymentHistoryItem[] = plans.map((p: any) => ({
+    _id: p._id,
+    kind: "plan",
+    amount: Number(p.amount || 0),
+    currency: p.currency || "USD",
+    createdAt: p.createdAt,
+    paidAt: p.paidAt, 
+    invoiceNumber: p.invoiceNumber,
+    // If planName is empty string (like in your JSON for the $299 item), show a fallback or dash
+    planName: p.planName && p.planName.trim() !== "" ? p.planName : "—",
+  }));
+
+  const milestoneRows: PaymentHistoryItem[] = milestones.map((m: any) => ({
+    _id: m._id,
+    kind: "milestone",
+    amount: Number(m.amount || 0),
+    currency: m.currency || "USD",
+    createdAt: m.createdAt,
+    paidAt: m.paidAt,
+    invoiceNumber: m.invoiceNumber,
+    planName: "Milestone",
+  }));
+
+  // Sort by most recent date (paidAt or createdAt)
+  return [...planRows, ...milestoneRows].sort((a, b) => {
+    const ta = new Date(a.paidAt || a.createdAt || 0).getTime();
+    const tb = new Date(b.paidAt || b.createdAt || 0).getTime();
+    return tb - ta;
+  });
+}
+
 
 /* ===================== Small utils ===================== */
 const isEmailEqual = (a = "", b = "") => a.trim().toLowerCase() === b.trim().toLowerCase();
@@ -223,7 +295,11 @@ function normalizeBrand(data: any): BrandData {
       planName: s?.planName ?? brand?.planName ?? "",
       startedAt: s?.startedAt ?? brand?.startedAt ?? "",
       expiresAt: s?.expiresAt ?? brand?.expiresAt ?? "",
-      features: Array.isArray(s?.features) ? s.features : Array.isArray(brand?.features) ? brand.features : [],
+      features: Array.isArray(s?.features)
+        ? s.features
+        : Array.isArray(brand?.features)
+          ? brand.features
+          : [],
     },
     subscriptionExpired: !!brand?.subscriptionExpired,
     walletBalance: Number.isFinite(+brand?.walletBalance) ? +brand.walletBalance : 0,
@@ -409,11 +485,7 @@ const EmailEditorNewEmailOTP = ({
 
           <div className="mt-3 flex items-center gap-2 flex-wrap">
             {needs && valueIsValid ? (
-              <Button
-                onClick={requestCode}
-                disabled={busy}
-                className={`${CG_GRADIENT} text-white disabled:opacity-60`}
-              >
+              <Button onClick={requestCode} disabled={busy} className={`${CG_GRADIENT} text-white disabled:opacity-60`}>
                 {flow === "code_sent"
                   ? resendIn > 0
                     ? `Enter OTP (${resendIn}s)`
@@ -521,6 +593,14 @@ export default function BrandProfilePage() {
   const [selectedLogoFile, setSelectedLogoFile] = useState<File | null>(null);
   const [logoPreviewUrl, setLogoPreviewUrl] = useState<string>("");
 
+  // ✅ Payment history state
+  const [paymentsOpen, setPaymentsOpen] = useState(false);
+  const [paymentsLoading, setPaymentsLoading] = useState(false);
+  const [paymentsFetched, setPaymentsFetched] = useState(false);
+  const [paymentsError, setPaymentsError] = useState<string | null>(null);
+  const [paymentHistory, setPaymentHistory] = useState<PaymentHistoryItem[]>([]);
+  const [invoiceBusy, setInvoiceBusy] = useState<string | null>(null);
+
   useEffect(() => {
     return () => {
       if (logoPreviewUrl) URL.revokeObjectURL(logoPreviewUrl);
@@ -574,7 +654,11 @@ export default function BrandProfilePage() {
       }),
       option: (base: any, state: any) => ({
         ...base,
-        backgroundColor: state.isSelected ? "rgba(255, 114, 54, 0.12)" : state.isFocused ? "rgba(255, 114, 54, 0.08)" : "transparent",
+        backgroundColor: state.isSelected
+          ? "rgba(255, 114, 54, 0.12)"
+          : state.isFocused
+            ? "rgba(255, 114, 54, 0.08)"
+            : "transparent",
         color: "#111827",
       }),
       menuPortal: (base: any) => ({ ...base, zIndex: 50 }),
@@ -657,7 +741,6 @@ export default function BrandProfilePage() {
   // keep form synced to selects
   useEffect(() => {
     if (!form) return;
-
     setForm((prev) =>
       prev
         ? {
@@ -672,7 +755,6 @@ export default function BrandProfilePage() {
 
   useEffect(() => {
     if (!form) return;
-
     setForm((prev) =>
       prev
         ? {
@@ -687,7 +769,9 @@ export default function BrandProfilePage() {
 
   useEffect(() => {
     if (!form) return;
-    setForm((p) => (p ? { ...p, categoryId: selectedCategory?.value || "", categoryName: selectedCategory?.label || "" } : p));
+    setForm((p) =>
+      p ? { ...p, categoryId: selectedCategory?.value || "", categoryName: selectedCategory?.label || "" } : p
+    );
   }, [selectedCategory]);
 
   useEffect(() => {
@@ -733,10 +817,14 @@ export default function BrandProfilePage() {
         }
 
         setSelectedCountry(
-          maps.countryById.get(normalized.countryId) || maps.co.find((o) => o.country.countryName === normalized.country) || null
+          maps.countryById.get(normalized.countryId) ||
+          maps.co.find((o) => o.country.countryName === normalized.country) ||
+          null
         );
         setSelectedCalling(
-          maps.callingById.get(normalized.callingId) || maps.ko.find((o) => o.country.callingCode === normalized.callingCode) || null
+          maps.callingById.get(normalized.callingId) ||
+          maps.ko.find((o) => o.country.callingCode === normalized.callingCode) ||
+          null
         );
 
         setSelectedCategory(
@@ -753,15 +841,18 @@ export default function BrandProfilePage() {
     [maps]
   );
 
-  const onPickLogo = useCallback((file?: File) => {
-    if (!file) return;
+  const onPickLogo = useCallback(
+    (file?: File) => {
+      if (!file) return;
 
-    if (logoPreviewUrl) URL.revokeObjectURL(logoPreviewUrl);
-    setSelectedLogoFile(file);
-    setLogoPreviewUrl(URL.createObjectURL(file));
+      if (logoPreviewUrl) URL.revokeObjectURL(logoPreviewUrl);
+      setSelectedLogoFile(file);
+      setLogoPreviewUrl(URL.createObjectURL(file));
 
-    toast("success", "Logo selected", "Click Save Changes to upload.");
-  }, [logoPreviewUrl]);
+      toast("success", "Logo selected", "Click Save Changes to upload.");
+    },
+    [logoPreviewUrl]
+  );
 
   const saveProfile = useCallback(async () => {
     if (!form || !brand) return;
@@ -799,9 +890,6 @@ export default function BrandProfilePage() {
       // ✅ attach logo only if selected
       if (selectedLogoFile) fd.append("file", selectedLogoFile);
 
-      const token = (typeof window !== "undefined" && localStorage.getItem("token")) || "";
-
-      // ✅ axios post (your wrapper)
       await post("/brand/update", fd);
 
       await refetchBrand(form.brandId);
@@ -826,7 +914,6 @@ export default function BrandProfilePage() {
     }
   }, [brand, emailFlow, form, refetchBrand, selectedLogoFile, logoPreviewUrl]);
 
-
   const daysLeft = useMemo(() => {
     if (!brand?.subscription.expiresAt) return null;
     const end = new Date(brand.subscription.expiresAt).getTime();
@@ -834,8 +921,177 @@ export default function BrandProfilePage() {
     return Math.ceil(diff / (1000 * 60 * 60 * 24));
   }, [brand?.subscription.expiresAt]);
 
+  /* ===================== Payment API helpers (FIX for infinite loading) ===================== */
+  const API_BASE = useMemo(() => {
+    const b = (process.env.NEXT_PUBLIC_API_BASE_URL || process.env.NEXT_PUBLIC_API_URL || "").trim();
+    return b ? b.replace(/\/$/, "") : "";
+  }, []);
+
+  const postJson = useCallback(
+    async <T,>(path: string, body: any, timeoutMs = 15000): Promise<T> => {
+      const token = typeof window !== "undefined" ? localStorage.getItem("token") : "";
+      const url = API_BASE ? `${API_BASE}${path}` : path;
+
+      const controller = new AbortController();
+      const t = setTimeout(() => controller.abort(), timeoutMs);
+
+      try {
+        const resp = await fetch(url, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify(body),
+          signal: controller.signal,
+        });
+
+        if (!resp.ok) {
+          let msg = `Request failed (${resp.status})`;
+          try {
+            const j = await resp.json();
+            msg = j?.message || msg;
+          } catch { }
+          throw new globalThis.Error(msg);
+        }
+
+        return (await resp.json()) as T;
+      } catch (err: any) {
+        if (err?.name === "AbortError") {
+          throw new globalThis.Error("Request timed out. Check API baseURL / route and try again.");
+        }
+        throw err;
+      } finally {
+        clearTimeout(t);
+      }
+    },
+    [API_BASE]
+  );
+
+  /*
+    ✅ FIX 2: Fixed the infinite loop in useEffect 
+    by removing 'paymentsLoading' from dependencies
+  */
+  useEffect(() => {
+    if (!paymentsOpen) return;
+    
+    // If we have already fetched and there is no error, don't fetch again
+    if (paymentsFetched && !paymentsError) return;
+
+    let cancelled = false;
+
+    (async () => {
+      try {
+        setPaymentsLoading(true);
+        setPaymentsError(null);
+
+        const userId =
+          typeof window !== "undefined"
+            ? localStorage.getItem("brandId") || brand?.brandId
+            : brand?.brandId;
+
+        if (!userId) throw new Error("Missing brandId in localStorage.");
+
+        const res = await post<any>("/payment/payment-history", {
+          userId: String(userId),
+          role: "Brand",
+        });
+
+        const payload = res?.data ?? res;
+
+        if (!payload?.success) {
+           throw new Error(payload?.message || "Failed to load payment history.");
+        }
+
+        const rows = flattenInvoices(payload);
+
+        if (cancelled) return;
+
+        setPaymentHistory(rows);
+        setPaymentsFetched(true);
+      } catch (e: any) {
+        if (!cancelled) {
+          console.error("Payment Fetch Error:", e);
+          setPaymentsError(e?.message || "Failed to load payment history.");
+          setPaymentsFetched(true); // Stop trying to fetch
+        }
+      } finally {
+        if (!cancelled) {
+            setPaymentsLoading(false);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paymentsOpen, brand?.brandId]); // removed paymentsLoading
+
+  // ✅ Generate invoice PDF: /payment/generate-invoice (returns PDF)
+  const fetchInvoicePdfBlob = useCallback(
+    async (invoiceNumber: string) => {
+      const token = typeof window !== "undefined" ? localStorage.getItem("token") : "";
+      const url = API_BASE ? `${API_BASE}/payment/generate-invoice` : "/payment/generate-invoice";
+
+      const resp = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ invoiceNumber }),
+      });
+
+      if (!resp.ok) {
+        let msg = "Failed to generate invoice.";
+        try {
+          const j = await resp.json();
+          msg = j?.message || msg;
+        } catch { }
+        throw new globalThis.Error(msg);
+      }
+
+      return await resp.blob();
+    },
+    [API_BASE]
+  );
+
+  const downloadInvoice = useCallback(
+    async (invoiceNumber?: string) => {
+      if (!invoiceNumber) return;
+
+      setInvoiceBusy(invoiceNumber);
+      try {
+        const blob = await fetchInvoicePdfBlob(invoiceNumber);
+        const url = URL.createObjectURL(blob);
+
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `${invoiceNumber}.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+
+        setTimeout(() => URL.revokeObjectURL(url), 10_000);
+      } catch (e: any) {
+        await fire({ icon: "error", title: "Invoice error", text: e?.message || "Please try again." });
+      } finally {
+        setInvoiceBusy(null);
+      }
+    },
+    [fetchInvoicePdfBlob]
+  );
+
+  const retryPayments = useCallback(() => {
+    setPaymentsFetched(false);
+    setPaymentsError(null);
+    setPaymentHistory([]);
+    // This will re-trigger the effect because paymentsFetched becomes false
+  }, []);
+
   if (loading) return <Loader />;
-  if (error) return <Error message={error} />;
+  if (error) return <ErrorPage message={error} />;
 
   const saveDisabled = saving || (emailFlow !== "idle" && emailFlow !== "verified");
   const brandLogoUrl = resolveFileUrl(logoPreviewUrl || form?.logoUrl || brand?.logoUrl);
@@ -862,13 +1118,7 @@ export default function BrandProfilePage() {
                 </Button>
               ) : (
                 <div className="grid grid-cols-2 gap-2 w-full sm:w-auto">
-                  <Button
-                    type="button"
-                    onClick={resetEdits}
-                    disabled={saving}
-                    variant="outline"
-                    className="rounded-xl h-11"
-                  >
+                  <Button type="button" onClick={resetEdits} disabled={saving} variant="outline" className="rounded-xl h-11">
                     <HiX className="w-5 h-5 mr-2" />
                     Cancel
                   </Button>
@@ -922,12 +1172,7 @@ export default function BrandProfilePage() {
                         e.currentTarget.value = "";
                       }}
                     />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      className="rounded-xl h-10"
-                      onClick={() => fileRef.current?.click()}
-                    >
+                    <Button type="button" variant="outline" className="rounded-xl h-10" onClick={() => fileRef.current?.click()}>
                       <HiUpload className="w-4 h-4 mr-2" />
                       {selectedLogoFile ? "Change Logo" : "Select Logo"}
                     </Button>
@@ -967,14 +1212,7 @@ export default function BrandProfilePage() {
               />
 
               {!isEditing ? (
-                <IconField
-                  icon={HiMail}
-                  label="Email Address"
-                  value=""
-                  readValue={brand?.email ?? ""}
-                  onChange={() => { }}
-                  editing={false}
-                />
+                <IconField icon={HiMail} label="Email Address" value="" readValue={brand?.email ?? ""} onChange={() => { }} editing={false} />
               ) : (
                 brand &&
                 form && (
@@ -1022,14 +1260,7 @@ export default function BrandProfilePage() {
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 mt-4 sm:mt-6">
-              <IconField
-                icon={HiMail}
-                label="Brand Alias Email"
-                value=""
-                readValue={brand?.brandAliasEmail ?? ""}
-                onChange={() => { }}
-                editing={false}
-              />
+              <IconField icon={HiMail} label="Brand Alias Email" value="" readValue={brand?.brandAliasEmail ?? ""} onChange={() => { }} editing={false} />
               <div className="hidden lg:block" />
             </div>
 
@@ -1104,9 +1335,10 @@ export default function BrandProfilePage() {
           </CardContent>
         </Card>
 
-        {/* Wallet + Subscription (view mode only) */}
+        {/* Wallet + Subscription + Payment History (view mode only) */}
         {!isEditing && (
           <div className="flex flex-col gap-6 mb-10">
+            {/* Wallet */}
             <Card className="bg-white border border-gray-200 rounded-2xl shadow-sm">
               <CardHeader className="pb-2">
                 <div className="flex items-center gap-3">
@@ -1127,6 +1359,7 @@ export default function BrandProfilePage() {
               </CardContent>
             </Card>
 
+            {/* Subscription */}
             <Card className="bg-white border border-gray-200 rounded-2xl shadow-sm">
               <CardHeader className="pb-3">
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
@@ -1152,9 +1385,7 @@ export default function BrandProfilePage() {
 
               <CardContent className="space-y-5">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-2xl font-bold text-gray-900 capitalize">
-                    {brand?.subscription.planName || "No Plan"}
-                  </span>
+                  <span className="text-2xl font-bold text-gray-900 capitalize">{brand?.subscription.planName || "No Plan"}</span>
                   {!brand?.subscriptionExpired ? (
                     <Badge className="bg-emerald-100 text-emerald-800 border border-emerald-200">Active</Badge>
                   ) : (
@@ -1238,9 +1469,7 @@ export default function BrandProfilePage() {
                         <div className="mt-1 flex items-center justify-between text-xs text-gray-500">
                           <span className="tabular-nums">{unlimited ? "∞" : `${pct}%`}</span>
                           {unlimited ? (
-                            <span className={`tabular-nums px-2 py-0.5 rounded ${CG_GRADIENT} text-white`}>
-                              Unlimited
-                            </span>
+                            <span className={`tabular-nums px-2 py-0.5 rounded ${CG_GRADIENT} text-white`}>Unlimited</span>
                           ) : (
                             <span className="tabular-nums">{Math.max(0, limit - used)} left</span>
                           )}
@@ -1250,6 +1479,131 @@ export default function BrandProfilePage() {
                   })}
                 </div>
               </CardContent>
+            </Card>
+
+            {/* ✅ Payment History (Table + Collapsible) */}
+            <Card className="bg-white border border-gray-200 rounded-2xl shadow-sm">
+              <CardHeader className="pb-3">
+                <button
+                  type="button"
+                  onClick={() => setPaymentsOpen((s) => !s)}
+                  className="w-full flex items-center justify-between gap-3 text-left"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${CG_ICON}`}>
+                      <HiCreditCard className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <CardTitle>Payment History</CardTitle>
+                      <CardDescription>
+                        {paymentsFetched
+                          ? `${paymentHistory.length} invoice${paymentHistory.length === 1 ? "" : "s"}`
+                          : "View your invoices"}
+                      </CardDescription>
+                    </div>
+                  </div>
+
+                  <HiChevronDown
+                    className={`w-6 h-6 text-gray-600 transition-transform ${paymentsOpen ? "rotate-180" : "rotate-0"}`}
+                  />
+                </button>
+              </CardHeader>
+
+              {/* ✅ FIX 3: Updated UI Table Structure 
+              */}
+              {paymentsOpen ? (
+                <CardContent className="space-y-4">
+                  {paymentsLoading ? (
+                    <div className="space-y-3">
+                      <div className="h-4 bg-gray-100 rounded w-2/3 animate-pulse" />
+                      <div className="h-4 bg-gray-100 rounded w-full animate-pulse" />
+                      <div className="h-4 bg-gray-100 rounded w-5/6 animate-pulse" />
+                    </div>
+                  ) : paymentsError ? (
+                    <div className="bg-red-50 border border-red-100 text-red-700 rounded-xl p-4 text-sm flex items-center gap-2">
+                       <HiX className="w-5 h-5" />
+                       {paymentsError}
+                       <button onClick={retryPayments} className="underline ml-auto">Retry</button>
+                    </div>
+                  ) : paymentHistory.length === 0 ? (
+                    <div className="text-sm text-gray-600 p-2">No invoices found.</div>
+                  ) : (
+                    <div className="overflow-hidden border border-gray-200 rounded-2xl">
+                      <table className="min-w-full text-sm text-left">
+                        <thead>
+                          {/* --- Top Header Row (Groups) --- */}
+                          <tr className="bg-gray-100 border-b border-gray-200">
+                            <th
+                              colSpan={4}
+                              className="px-4 py-3 font-bold text-gray-800 uppercase tracking-wider text-xs border-r border-gray-200"
+                            >
+                              Payment Details
+                            </th>
+                            <th className="px-4 py-3 font-bold text-gray-800 uppercase tracking-wider text-xs text-right">
+                              Invoice
+                            </th>
+                          </tr>
+
+                          {/* --- Sub Header Row (Columns) --- */}
+                          <tr className="bg-gray-50 border-b border-gray-200 text-xs font-semibold text-gray-500 uppercase tracking-wide justify-center text-center">
+                            <th className="px-4 py-3">Invoice Number</th>
+                            <th className="px-4 py-3">Plan Name</th>
+                            <th className="px-4 py-3">Amount</th>
+                            <th className="px-4 py-3 border-r border-gray-200">Date</th>
+                            <th className="px-4 py-3 text-center">Action</th>
+                          </tr>
+                        </thead>
+
+                        <tbody className="divide-y divide-gray-200 bg-white text-center">
+                          {paymentHistory.map((inv) => {
+                            const when = inv.paidAt || inv.createdAt;
+                            const busyRow = invoiceBusy === inv.invoiceNumber;
+
+                            return (
+                              <tr key={inv._id} className="hover:bg-gray-50 transition-colors">
+                                {/* Invoice Number */}
+                                <td className="px-4 py-3 font-medium text-gray-900 whitespace-nowrap">
+                                  {inv.invoiceNumber || "—"}
+                                </td>
+
+                                {/* Plan Name */}
+                                <td className="px-4 py-3 text-gray-700 whitespace-nowrap">
+                                  {inv.planName}
+                                </td>
+
+                                {/* Amount */}
+                                <td className="px-4 py-3 text-gray-700 whitespace-nowrap font-medium tabular-nums">
+                                  {formatCurrencyFromCents(inv.amount, inv.currency || "USD")}
+                                </td>
+
+                                {/* Date */}
+                                <td className="px-4 py-3 text-gray-600 whitespace-nowrap border-r border-gray-100">
+                                  {when ? (mounted ? formatDateTime(when) : "—") : "—"}
+                                </td>
+
+                                {/* Action (Download) */}
+                                <td className="px-4 py-3 text-right"> 
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-8 text-xs rounded-lg border-gray-200 hover:bg-orange-50 hover:text-orange-600 hover:border-orange-200 disabled:opacity-50"
+                                    disabled={!inv.invoiceNumber || !!invoiceBusy}
+                                    onClick={() => downloadInvoice(inv.invoiceNumber)}
+                                  >
+                                    <HiDownload className={`w-3 h-3 mr-1.5 ${busyRow ? "animate-bounce" : ""}`} />
+                                    {busyRow ? "Loading..." : "Download"}
+                                  </Button>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </CardContent>
+              ) : null}
             </Card>
           </div>
         )}
@@ -1274,7 +1628,7 @@ function Loader() {
   );
 }
 
-function Error({ message }: { message: string }) {
+function ErrorPage({ message }: { message: string }) {
   useEffect(() => {
     fire({ icon: "error", title: "Error Loading Profile", text: message });
   }, [message]);
@@ -1287,7 +1641,10 @@ function Error({ message }: { message: string }) {
         </div>
         <h2 className="text-xl font-semibold text-gray-900 mb-2">Error Loading Profile</h2>
         <p className="text-red-600 mb-4">{message}</p>
-        <Button onClick={() => window.location.reload()} className={`${CG_GRADIENT} text-white rounded-xl px-6 py-3 shadow hover:opacity-95`}>
+        <Button
+          onClick={() => window.location.reload()}
+          className={`${CG_GRADIENT} text-white rounded-xl px-6 py-3 shadow hover:opacity-95`}
+        >
           Try Again
         </Button>
       </div>
@@ -1372,13 +1729,7 @@ const IconField = React.memo(function IconField({
                   {prefix}
                 </span>
               ) : null}
-              <Input
-                id={id}
-                className={`${inputClass} flex-1`}
-                value={value}
-                onChange={(e) => onChange(e.target.value)}
-                placeholder={placeholder}
-              />
+              <Input id={id} className={`${inputClass} flex-1`} value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} />
             </div>
           ) : (
             <p className="text-lg font-medium text-gray-900 break-words">{readValue || "—"}</p>

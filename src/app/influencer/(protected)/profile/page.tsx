@@ -40,6 +40,8 @@ import {
   Image as ImageIcon,
   Loader2,
   Check as CheckIcon,
+  Download,
+  ChevronDown,
 } from "lucide-react";
 
 /* ===================== Types (aligned to Influencer model) ===================== */
@@ -147,6 +149,73 @@ export type InfluencerData = {
   // Gender string enum (model)
   gender?: GenderStr;
 };
+
+/* ===================== Payment History Types & Helpers ===================== */
+
+type PaymentHistoryItem = {
+  _id: string;
+  kind: "plan" | "milestone";
+  amount: number;
+  currency?: string;
+  createdAt?: string;
+  paidAt?: string;
+  invoiceNumber?: string;
+  planName?: string;
+  milestoneTitle?: string;
+  campaignName?: string;
+};
+
+const FIXED_LOCALE = "en-US";
+const FIXED_TZ = "UTC";
+
+const formatDateTime = (iso?: string) => {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  return new Intl.DateTimeFormat(FIXED_LOCALE, {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: FIXED_TZ,
+  }).format(d);
+};
+
+const formatCurrencyFromCents = (cents: number, currency = "USD") => {
+  const v = (Number(cents) || 0) / 100;
+  return new Intl.NumberFormat(FIXED_LOCALE, { style: "currency", currency }).format(v);
+};
+
+function flattenInvoices(res: any): PaymentHistoryItem[] {
+  const payload = res?.data ?? res;
+  const plans = Array.isArray(payload?.invoices?.plans) ? payload.invoices.plans : [];
+  const milestones = Array.isArray(payload?.invoices?.milestones) ? payload.invoices.milestones : [];
+
+  const planRows: PaymentHistoryItem[] = plans.map((p: any) => ({
+    _id: p._id,
+    kind: "plan",
+    amount: Number(p.amount || 0),
+    currency: p.currency || "USD",
+    createdAt: p.createdAt,
+    paidAt: p.paidAt,
+    invoiceNumber: p.invoiceNumber,
+    planName: p.planName && p.planName.trim() !== "" ? p.planName : "—",
+  }));
+
+  const milestoneRows: PaymentHistoryItem[] = milestones.map((m: any) => ({
+    _id: m._id,
+    kind: "milestone",
+    amount: Number(m.amount || 0),
+    currency: m.currency || "USD",
+    createdAt: m.createdAt,
+    paidAt: m.paidAt,
+    invoiceNumber: m.invoiceNumber,
+    planName: "Milestone",
+  }));
+
+  return [...planRows, ...milestoneRows].sort((a, b) => {
+    const ta = new Date(a.paidAt || a.createdAt || 0).getTime();
+    const tb = new Date(b.paidAt || b.createdAt || 0).getTime();
+    return tb - ta;
+  });
+}
 
 /* ===================== Utilities ===================== */
 const isEmailEqual = (a = "", b = "") => a.trim().toLowerCase() === b.trim().toLowerCase();
@@ -698,6 +767,14 @@ export default function InfluencerProfilePage() {
   // Profile image upload
   const [profileImageFile, setProfileImageFile] = useState<File | null>(null);
 
+  /* ✅ Payment History State */
+  const [paymentsOpen, setPaymentsOpen] = useState(false);
+  const [paymentsLoading, setPaymentsLoading] = useState(false);
+  const [paymentsFetched, setPaymentsFetched] = useState(false);
+  const [paymentsError, setPaymentsError] = useState<string | null>(null);
+  const [paymentHistory, setPaymentHistory] = useState<PaymentHistoryItem[]>([]);
+  const [invoiceBusy, setInvoiceBusy] = useState<string | null>(null);
+
   // Show load error in Swal
   useEffect(() => {
     if (error) {
@@ -1099,6 +1176,93 @@ export default function InfluencerProfilePage() {
       setSaving(false);
     }
   }, [influencer, emailFlow, form, profileImageFile, countryOptions, codeOptions, categories]);
+
+  /* ✅ Payment History Logic */
+  useEffect(() => {
+    if (!paymentsOpen) return;
+    if (paymentsFetched && !paymentsError) return;
+
+    let cancelled = false;
+
+    (async () => {
+      try {
+        setPaymentsLoading(true);
+        setPaymentsError(null);
+
+        const influencerId = localStorage.getItem("influencerId");
+        if (!influencerId) throw new Error("Missing influencerId in localStorage.");
+
+        const res = await post<any>("/payment/payment-history", {
+          userId: String(influencerId),
+          role: "Influencer", 
+        });
+
+        const payload = res?.data ?? res;
+        if (!payload?.success) {
+          throw new Error(payload?.message || "Failed to load payment history.");
+        }
+
+        const rows = flattenInvoices(payload);
+
+        if (cancelled) return;
+        setPaymentHistory(rows);
+        setPaymentsFetched(true);
+      } catch (e: any) {
+        if (!cancelled) {
+          console.error("Payment Fetch Error:", e);
+          setPaymentsError(e?.message || "Failed to load payment history.");
+          setPaymentsFetched(true);
+        }
+      } finally {
+        if (!cancelled) setPaymentsLoading(false);
+      }
+    })();
+
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paymentsOpen]); 
+
+  const downloadInvoice = useCallback(async (invoiceNumber?: string) => {
+    if (!invoiceNumber) return;
+    setInvoiceBusy(invoiceNumber);
+    try {
+      const token = localStorage.getItem("token");
+      const url = "/payment/generate-invoice"; 
+      const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || process.env.NEXT_PUBLIC_API_URL || "";
+      const fullUrl = API_BASE ? `${API_BASE.replace(/\/$/, "")}${url}` : url;
+
+      const resp = await fetch(fullUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ invoiceNumber }),
+      });
+
+      if (!resp.ok) throw new Error("Failed to generate invoice");
+      
+      const blob = await resp.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = blobUrl;
+      a.download = `${invoiceNumber}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
+    } catch (e: any) {
+      await Swal.fire({ icon: "error", title: "Invoice Error", text: e.message });
+    } finally {
+      setInvoiceBusy(null);
+    }
+  }, []);
+  
+  const retryPayments = useCallback(() => {
+    setPaymentsFetched(false);
+    setPaymentsError(null);
+    setPaymentHistory([]);
+  }, []);
 
   if (loading) return <Loader />;
   if (error) return <InlineError message={error} />;
@@ -1586,6 +1750,131 @@ export default function InfluencerProfilePage() {
                 </div>
               </div>
             </CardContent>
+          </Card>
+        )}
+
+        {/* ✅ Payment History (Yellow Theme) */}
+        {!isEditing && (
+          <Card className="bg-white border-amber-200/50">
+            <CardHeader className="py-4 border-b border-amber-100/50">
+               <button
+                  type="button"
+                  onClick={() => setPaymentsOpen((s) => !s)}
+                  className="w-full flex items-center justify-between gap-3 text-left focus:outline-none"
+                >
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 rounded-xl bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-800 flex items-center justify-center shadow-sm">
+                      <CreditCard className="h-6 w-6" />
+                    </div>
+                    <div>
+                      <CardTitle className="text-lg">Payment History</CardTitle>
+                      <p className="text-sm text-muted-foreground font-normal">
+                         {paymentsFetched
+                          ? `${paymentHistory.length} invoice${paymentHistory.length === 1 ? "" : "s"}`
+                          : "View your invoices"}
+                      </p>
+                    </div>
+                  </div>
+
+                  <ChevronDown
+                    className={`w-6 h-6 text-gray-400 transition-transform duration-200 ${paymentsOpen ? "rotate-180" : "rotate-0"}`}
+                  />
+                </button>
+            </CardHeader>
+
+            {paymentsOpen && (
+              <CardContent className="pt-6">
+                 {paymentsLoading ? (
+                    <div className="space-y-3">
+                      <div className="h-4 bg-amber-50 rounded w-2/3 animate-pulse" />
+                      <div className="h-4 bg-amber-50 rounded w-full animate-pulse" />
+                      <div className="h-4 bg-amber-50 rounded w-5/6 animate-pulse" />
+                    </div>
+                  ) : paymentsError ? (
+                    <div className="bg-red-50 border border-red-100 text-red-700 rounded-xl p-4 text-sm flex items-center gap-2">
+                       <X className="w-5 h-5" />
+                       {paymentsError}
+                       <button onClick={retryPayments} className="underline ml-auto hover:text-red-800">Retry</button>
+                    </div>
+                  ) : paymentHistory.length === 0 ? (
+                    <div className="text-sm text-gray-500 italic p-2">No invoices found.</div>
+                  ) : (
+                    <div className="overflow-hidden border border-amber-200 rounded-2xl">
+                      <table className="min-w-full text-sm text-left">
+                        <thead>
+                          {/* --- Top Header Row (Groups) --- */}
+                          <tr className="bg-amber-100 border-b border-amber-200">
+                            <th
+                              colSpan={4}
+                              className="px-4 py-3 font-bold text-amber-900 uppercase tracking-wider text-xs border-r border-amber-200"
+                            >
+                              Payment Details
+                            </th>
+                            <th className="px-4 py-3 font-bold text-amber-900 uppercase tracking-wider text-xs text-right">
+                              Invoice
+                            </th>
+                          </tr>
+
+                          {/* --- Sub Header Row (Columns) --- */}
+                          <tr className="bg-amber-50 border-b border-amber-200 text-xs font-semibold text-amber-800 uppercase tracking-wide">
+                            <th className="px-4 py-3">Invoice Number</th>
+                            <th className="px-4 py-3">Plan Name</th>
+                            <th className="px-4 py-3">Amount</th>
+                            <th className="px-4 py-3 border-r border-amber-200">Date</th>
+                            <th className="px-4 py-3 text-right">Action</th>
+                          </tr>
+                        </thead>
+
+                        <tbody className="divide-y divide-amber-100 bg-white">
+                          {paymentHistory.map((inv) => {
+                            const when = inv.paidAt || inv.createdAt;
+                            const busyRow = invoiceBusy === inv.invoiceNumber;
+
+                            return (
+                              <tr key={inv._id} className="hover:bg-amber-50/50 transition-colors">
+                                {/* Invoice Number */}
+                                <td className="px-4 py-3 font-medium text-gray-900 whitespace-nowrap">
+                                  {inv.invoiceNumber || "—"}
+                                </td>
+
+                                {/* Plan Name */}
+                                <td className="px-4 py-3 text-gray-700 whitespace-nowrap">
+                                  {inv.planName}
+                                </td>
+
+                                {/* Amount */}
+                                <td className="px-4 py-3 text-gray-700 whitespace-nowrap font-medium tabular-nums">
+                                  {formatCurrencyFromCents(inv.amount, inv.currency || "USD")}
+                                </td>
+
+                                {/* Date */}
+                                <td className="px-4 py-3 text-gray-600 whitespace-nowrap border-r border-amber-100">
+                                  {when ? formatDateTime(when) : "—"}
+                                </td>
+
+                                {/* Action (Download) */}
+                                <td className="px-4 py-3 text-right">
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-8 text-xs rounded-lg border-amber-200 text-amber-900 hover:bg-amber-100 hover:border-amber-300 disabled:opacity-50"
+                                    disabled={!inv.invoiceNumber || !!invoiceBusy}
+                                    onClick={() => downloadInvoice(inv.invoiceNumber)}
+                                  >
+                                    <Download className={`w-3 h-3 mr-1.5 ${busyRow ? "animate-bounce" : ""}`} />
+                                    {busyRow ? "Loading..." : "Download"}
+                                  </Button>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+              </CardContent>
+            )}
           </Card>
         )}
 
