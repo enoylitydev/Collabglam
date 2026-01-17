@@ -369,7 +369,8 @@ const isLockedStatus = (status?: string | null) =>
 const isEditableStatus = (status?: string | null) =>
   status === CONTRACT_STATUS.BRAND_SENT_DRAFT ||
   status === CONTRACT_STATUS.BRAND_EDITED ||
-  status === CONTRACT_STATUS.INFLUENCER_EDITED;
+  status === CONTRACT_STATUS.INFLUENCER_EDITED ||
+  status === CONTRACT_STATUS.INFLUENCER_ACCEPTED;
 
 const needsBrandAcceptance = (status?: string | null) =>
   status === CONTRACT_STATUS.INFLUENCER_ACCEPTED;
