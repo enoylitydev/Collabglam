@@ -26,7 +26,6 @@ interface Mail {
   campaignLink?: string | null;
 }
 
-
 type FilterType = 'all' | 'incoming' | 'outgoing';
 
 const InfluencerEmailPage: React.FC = () => {
@@ -48,6 +47,12 @@ const InfluencerEmailPage: React.FC = () => {
 
   const [isLoading, setIsLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+
+  // ✅ Theme tokens (apply your requested grading everywhere)
+  const PRIMARY_BTN =
+    'bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-800';
+  const SECONDARY_BTN =
+    'text-gray-800 hover:bg-gradient-to-r hover:from-[#FFBF00] hover:to-[#FFDB58]';
 
   const stripHtml = (html: string): string => {
     if (!html) return '';
@@ -104,14 +109,14 @@ const InfluencerEmailPage: React.FC = () => {
           const influencerAliasForDisplay: string =
             thread.influencerDisplayAlias ||
             thread.influencerAliasEmail ||
-            `influencer@${process.env.NEXT_PUBLIC_EMAIL_RELAY_DOMAIN || 'collabglam.cloud'
+            `influencer@${
+              process.env.NEXT_PUBLIC_EMAIL_RELAY_DOMAIN || 'collabglam.cloud'
             }`;
 
           let messages: any[] = [];
           try {
             const msgsJson = await get<any>(`/emails/messages/${threadId}`);
-            messages =
-              msgsJson?.messages || msgsJson?.data || msgsJson || [];
+            messages = msgsJson?.messages || msgsJson?.data || msgsJson || [];
           } catch (err) {
             console.error(
               'Failed to fetch messages for thread (influencer view)',
@@ -133,19 +138,15 @@ const InfluencerEmailPage: React.FC = () => {
               minute: '2-digit',
             });
 
-            const rawBody: string =
-              msg.textBody || stripHtml(msg.htmlBody || '');
+            const rawBody: string = msg.textBody || stripHtml(msg.htmlBody || '');
             const body = rawBody.trim();
-            const preview =
-              body.slice(0, 120) + (body.length > 120 ? '…' : '');
+            const preview = body.slice(0, 120) + (body.length > 120 ? '…' : '');
 
             // From influencer perspective:
             // brand_to_influencer -> incoming
             // influencer_to_brand -> outgoing
             const direction: MailDirection =
-              msg.direction === 'brand_to_influencer'
-                ? 'incoming'
-                : 'outgoing';
+              msg.direction === 'brand_to_influencer' ? 'incoming' : 'outgoing';
 
             const from =
               direction === 'incoming'
@@ -167,10 +168,7 @@ const InfluencerEmailPage: React.FC = () => {
               body,
               date,
               time,
-              tags:
-                direction === 'incoming'
-                  ? ['From brand']
-                  : ['Sent by you'],
+              tags: direction === 'incoming' ? ['From brand'] : ['Sent by you'],
               isRead: true,
               threadId,
               influencerId: influencerIdForMail,
@@ -185,8 +183,7 @@ const InfluencerEmailPage: React.FC = () => {
 
         allMails.sort(
           (a, b) =>
-            new Date(b.createdAt).getTime() -
-            new Date(a.createdAt).getTime()
+            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
         );
 
         setMails(allMails);
@@ -236,17 +233,10 @@ const InfluencerEmailPage: React.FC = () => {
   }, [filteredMails, selectedMail]);
 
   const openReplyCompose = (mail: Mail) => {
-    // from influencer perspective:
-    // incoming: from=brand alias, to=influencer alias
-    // outgoing: from=influencer alias, to=brand alias
-    const influencerAlias =
-      mail.direction === 'incoming' ? mail.to : mail.from;
-    const brandAlias =
-      mail.direction === 'incoming' ? mail.from : mail.to;
+    const influencerAlias = mail.direction === 'incoming' ? mail.to : mail.from;
+    const brandAlias = mail.direction === 'incoming' ? mail.from : mail.to;
 
-    const subject = mail.subject.startsWith('Re:')
-      ? mail.subject
-      : `Re: ${mail.subject}`;
+    const subject = mail.subject.startsWith('Re:') ? mail.subject : `Re: ${mail.subject}`;
 
     const quoted = `\n\n---\nOn ${mail.date} at ${mail.time}, ${mail.from} wrote:\n${mail.body}`;
 
@@ -310,10 +300,8 @@ const InfluencerEmailPage: React.FC = () => {
       });
 
       const body = composeBody.trim();
-      const preview =
-        body.slice(0, 120) + (body.length > 120 ? '…' : '');
+      const preview = body.slice(0, 120) + (body.length > 120 ? '…' : '');
 
-      // From/to aliases (UI only)
       const fromAlias =
         data.influencerDisplayAlias ||
         data.influencerAliasEmail ||
@@ -360,13 +348,13 @@ const InfluencerEmailPage: React.FC = () => {
   const totalOutgoing = mails.filter((m) => m.direction === 'outgoing').length;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#FFF6EB] via-white to-[#FFE7DB]">
+    <div className="min-h-screen">
       <div className="max-w-6xl mx-auto px-4 py-6 md:py-8">
         {/* Header */}
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
           <div className="space-y-1">
-            <div className="inline-flex items-center gap-2 rounded-full bg-white/80 px-3 py-1 border border-orange-100 shadow-sm">
-              <span className="inline-flex h-2 w-2 rounded-full bg-[#FF7236] animate-pulse" />
+            <div className="inline-flex items-center gap-2 rounded-full bg-white/80 px-3 py-1 border border-yellow-200 shadow-sm">
+              <span className="inline-flex h-2 w-2 rounded-full bg-[#FFBF00] animate-pulse" />
               <span className="text-xs font-medium text-gray-700">
                 Influencer Inbox — reply to brand outreach
               </span>
@@ -379,41 +367,40 @@ const InfluencerEmailPage: React.FC = () => {
               from your influencer portal.
             </p>
             <div className="flex flex-wrap gap-2 pt-1">
-              <span className="text-xs px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-100">
+              <span className="text-xs px-2.5 py-1 rounded-full bg-white/80 text-gray-800 border border-yellow-200">
                 From brands • {totalIncoming}
               </span>
-              <span className="text-xs px-2.5 py-1 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-100">
+              <span className="text-xs px-2.5 py-1 rounded-full bg-white/80 text-gray-800 border border-yellow-200">
                 Your replies • {totalOutgoing}
               </span>
             </div>
           </div>
 
-          {/* ❌ No "Compose" button here – influencers cannot start new emails */}
-          <div className="text-xs text-gray-500 md:text-right">
+          <div className="text-xs text-gray-700 md:text-right">
             <p className="font-medium">Reply-only mode</p>
             <p>Brands initiate the conversation. You can respond here.</p>
           </div>
         </div>
 
         {/* Main email panel */}
-        <div className="bg-white/90 border border-orange-100/70 shadow-[0_18px_45px_rgba(255,163,53,0.18)] rounded-3xl overflow-hidden flex flex-col md:flex-row">
+        <div className="bg-white/90 border border-yellow-200 shadow-[0_18px_45px_rgba(255,191,0,0.18)] rounded-3xl overflow-hidden flex flex-col md:flex-row">
           {/* Left: list */}
-          <div className="md:w-[38%] border-b md:border-b-0 md:border-r border-gray-100 bg-gradient-to-b from-white to-[#FFF9F2] flex flex-col">
+          <div className="md:w-[38%] border-b md:border-b-0 md:border-r border-gray-100 bg-white/70 flex flex-col">
             {/* Search + Filters */}
             <div className="p-4 border-b border-gray-100 space-y-3">
               <div className="flex items-center gap-2 bg-white rounded-full px-3 py-2 border border-gray-100 shadow-sm">
-                <HiSearch className="w-4 h-4 text-gray-400" />
+                <HiSearch className="w-4 h-4 text-gray-500" />
                 <input
                   type="text"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   placeholder="Search by subject, brand, or text..."
-                  className="w-full bg-transparent outline-none text-sm text-gray-800 placeholder:text-gray-400"
+                  className="w-full bg-transparent outline-none text-sm text-gray-800 placeholder:text-gray-500"
                 />
               </div>
               <div className="flex items-center gap-2 text-xs">
-                <span className="text-gray-500">Filter:</span>
-                <div className="inline-flex bg-gray-50 rounded-full p-1 border border-gray-100">
+                <span className="text-gray-700">Filter:</span>
+                <div className="inline-flex bg-white rounded-full p-1 border border-yellow-200">
                   {(['all', 'incoming', 'outgoing'] as FilterType[]).map((f) => {
                     const isActive = filter === f;
                     const labels: Record<FilterType, string> = {
@@ -426,10 +413,9 @@ const InfluencerEmailPage: React.FC = () => {
                         key={f}
                         type="button"
                         onClick={() => setFilter(f)}
-                        className={`px-3 py-1 rounded-full text-xs font-medium transition-all ${isActive
-                            ? 'bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white shadow-sm'
-                            : 'text-gray-600 hover:bg-white'
-                          }`}
+                        className={`px-3 py-1 rounded-full text-xs font-medium transition-all ${
+                          isActive ? `${PRIMARY_BTN} shadow-sm` : `${SECONDARY_BTN}`
+                        }`}
                       >
                         {labels[f]}
                       </button>
@@ -442,31 +428,27 @@ const InfluencerEmailPage: React.FC = () => {
             {/* Mail list */}
             <div className="flex-1 overflow-y-auto max-h-[60vh] md:max-h-[70vh]">
               {!influencerId ? (
-                <div className="h-full flex flex-col items-center justify-center px-6 py-10 text-center text-gray-500 text-sm">
-                  <HiInboxIn className="w-8 h-8 mb-2 text-gray-300" />
+                <div className="h-full flex flex-col items-center justify-center px-6 py-10 text-center text-gray-700 text-sm">
+                  <HiInboxIn className="w-8 h-8 mb-2 text-gray-500" />
                   <p>Influencer context missing.</p>
                   <p className="text-xs mt-1">
-                    Set{' '}
-                    <code className="font-mono">
-                      NEXT_PUBLIC_INFLUENCER_ID
-                    </code>{' '}
-                    or store{' '}
+                    Set <code className="font-mono">NEXT_PUBLIC_INFLUENCER_ID</code> or store{' '}
                     <code className="font-mono">influencerId</code> in{' '}
                     <code className="font-mono">localStorage</code>.
                   </p>
                 </div>
               ) : isLoading ? (
-                <div className="h-full flex flex-col items-center justify-center px-6 py-10 text-center text-gray-500 text-sm">
-                  <HiInboxIn className="w-8 h-8 mb-2 text-gray-300 animate-pulse" />
+                <div className="h-full flex flex-col items-center justify-center px-6 py-10 text-center text-gray-700 text-sm">
+                  <HiInboxIn className="w-8 h-8 mb-2 text-gray-500 animate-pulse" />
                   <p>Loading your emails…</p>
                 </div>
               ) : loadError ? (
-                <div className="h-full flex flex-col items-center justify-center px-6 py-10 text-center text-red-500 text-sm">
+                <div className="h-full flex flex-col items-center justify-center px-6 py-10 text-center text-red-600 text-sm">
                   <p>{loadError}</p>
                 </div>
               ) : filteredMails.length === 0 ? (
-                <div className="h-full flex flex-col items-center justify-center px-6 py-10 text-center text-gray-500 text-sm">
-                  <HiInboxIn className="w-8 h-8 mb-2 text-gray-300" />
+                <div className="h-full flex flex-col items-center justify-center px-6 py-10 text-center text-gray-700 text-sm">
+                  <HiInboxIn className="w-8 h-8 mb-2 text-gray-500" />
                   <p>No emails yet from brands.</p>
                   <p className="text-xs mt-1">
                     Once a brand contacts you via CollabGlam, the conversation
@@ -483,38 +465,40 @@ const InfluencerEmailPage: React.FC = () => {
                         <button
                           type="button"
                           onClick={() => setSelectedMailId(mail.id)}
-                          className={`w-full text-left px-4 py-3 flex flex-col gap-1 transition-all ${isActive
-                              ? 'bg-gradient-to-r from-[#FFF1DF] to-[#FFE0D0]'
-                              : 'hover:bg-gray-50'
-                            }`}
+                          className={`w-full text-left px-4 py-3 flex flex-col gap-1 transition-all ${
+                            isActive
+                              ? 'bg-gradient-to-r from-[#FFBF00]/25 to-[#FFDB58]/25'
+                              : 'hover:bg-gradient-to-r hover:from-[#FFBF00]/15 hover:to-[#FFDB58]/15'
+                          }`}
                         >
                           <div className="flex items-center justify-between gap-2">
                             <div className="flex items-center gap-2">
                               {!mail.isRead && (
-                                <span className="h-1.5 w-1.5 rounded-full bg-[#FF7236]" />
+                                <span className="h-1.5 w-1.5 rounded-full bg-[#FFBF00]" />
                               )}
                               <p className="text-sm font-semibold text-gray-900 line-clamp-1">
                                 {mail.subject}
                               </p>
                             </div>
-                            <span className="text-[11px] text-gray-500">
+                            <span className="text-[11px] text-gray-600">
                               {mail.time}
                             </span>
                           </div>
                           <div className="flex items-center justify-between gap-2">
-                            <p className="text-xs text-gray-600 line-clamp-1">
+                            <p className="text-xs text-gray-700 line-clamp-1">
                               {isIncoming ? mail.from : mail.to}
                             </p>
                             <span
-                              className={`text-[10px] px-2 py-0.5 rounded-full border ${isIncoming
-                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-100'
-                                  : 'bg-indigo-50 text-indigo-700 border-indigo-100'
-                                }`}
+                              className={`text-[10px] px-2 py-0.5 rounded-full border ${
+                                isIncoming
+                                  ? 'bg-white/70 text-gray-800 border-yellow-200'
+                                  : 'bg-white/70 text-gray-800 border-yellow-200'
+                              }`}
                             >
                               {isIncoming ? 'From brand' : 'You replied'}
                             </span>
                           </div>
-                          <p className="text-xs text-gray-500 line-clamp-2">
+                          <p className="text-xs text-gray-700 line-clamp-2">
                             {mail.preview}
                           </p>
                           {mail.tags && mail.tags.length > 0 && (
@@ -522,7 +506,7 @@ const InfluencerEmailPage: React.FC = () => {
                               {mail.tags.map((tag) => (
                                 <span
                                   key={tag}
-                                  className="text-[10px] px-1.5 py-0.5 rounded-full bg-white/90 border border-gray-100 text-gray-500"
+                                  className="text-[10px] px-1.5 py-0.5 rounded-full bg-white/90 border border-yellow-200 text-gray-700"
                                 >
                                   {tag}
                                 </span>
@@ -545,8 +529,8 @@ const InfluencerEmailPage: React.FC = () => {
                 <div className="px-5 py-4 border-b border-gray-100 flex flex-col gap-2">
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <div className="inline-flex items-center gap-2 rounded-full bg-gray-50 px-2.5 py-1 border border-gray-100 mb-2">
-                        <HiMail className="w-4 h-4 text-[#FF7236]" />
+                      <div className="inline-flex items-center gap-2 rounded-full bg-white px-2.5 py-1 border border-yellow-200 mb-2">
+                        <HiMail className="w-4 h-4 text-gray-800" />
                         <span className="text-[11px] font-medium text-gray-700">
                           {selectedMail.direction === 'incoming'
                             ? 'From brand via CollabGlam'
@@ -557,22 +541,22 @@ const InfluencerEmailPage: React.FC = () => {
                         {selectedMail.subject}
                       </h2>
                     </div>
-                    <div className="text-right text-xs text-gray-500">
+                    <div className="text-right text-xs text-gray-700">
                       <p>{selectedMail.date}</p>
                       <p>{selectedMail.time}</p>
                     </div>
                   </div>
 
-                  <div className="flex flex-wrap items-center gap-2 text-xs text-gray-600 pt-1">
+                  <div className="flex flex-wrap items-center gap-2 text-xs text-gray-700 pt-1">
                     <div className="flex items-center gap-1">
                       <span className="font-semibold">From:</span>
-                      <span className="px-2 py-0.5 rounded-full bg-gray-50 border border-gray-100">
+                      <span className="px-2 py-0.5 rounded-full bg-white border border-yellow-200">
                         {selectedMail.from}
                       </span>
                     </div>
                     <div className="flex items-center gap-1">
                       <span className="font-semibold">To:</span>
-                      <span className="px-2 py-0.5 rounded-full bg-gray-50 border border-gray-100">
+                      <span className="px-2 py-0.5 rounded-full bg-white border border-yellow-200">
                         {selectedMail.to}
                       </span>
                     </div>
@@ -582,12 +566,11 @@ const InfluencerEmailPage: React.FC = () => {
                     <button
                       type="button"
                       onClick={handleReply}
-                      className="inline-flex items-center gap-1.5 rounded-full border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-700 hover:border-[#FF7236] hover:text-[#FF7236] transition-colors"
+                      className={`inline-flex items-center gap-1.5 rounded-full border border-yellow-200 bg-white px-3 py-1.5 text-xs font-medium transition-colors ${SECONDARY_BTN}`}
                     >
                       <CornerUpLeft className="w-3 h-3" />
                       Reply
                     </button>
-                    {/* No Forward / Compose on influencer side */}
                   </div>
                 </div>
 
@@ -595,8 +578,7 @@ const InfluencerEmailPage: React.FC = () => {
                   <div className="px-5 pt-4">
                     <a
                       href={selectedMail.campaignLink}
-                      className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-xs font-semibold
-                 bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-800 shadow-sm hover:shadow-md"
+                      className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-xs font-semibold shadow-sm hover:shadow-md ${PRIMARY_BTN}`}
                     >
                       View Campaign
                     </a>
@@ -604,17 +586,15 @@ const InfluencerEmailPage: React.FC = () => {
                 )}
 
                 <div className="flex-1 overflow-y-auto px-5 py-5">
-                  <div className="bg-gray-50/70 border border-gray-100 rounded-2xl px-4 py-4 text-sm text-gray-800 whitespace-pre-line leading-relaxed shadow-sm">
+                  <div className="bg-white/80 border border-yellow-200 rounded-2xl px-4 py-4 text-sm text-gray-800 whitespace-pre-line leading-relaxed shadow-sm">
                     {selectedMail.body}
                   </div>
                 </div>
               </>
             ) : (
-              <div className="flex-1 flex flex-col items-center justify-center text-center px-6 py-10 text-gray-500">
-                <HiInboxIn className="w-10 h-10 mb-2 text-gray-300" />
-                <p className="text-sm font-medium">
-                  No email selected yet.
-                </p>
+              <div className="flex-1 flex flex-col items-center justify-center text-center px-6 py-10 text-gray-700">
+                <HiInboxIn className="w-10 h-10 mb-2 text-gray-500" />
+                <p className="text-sm font-medium">No email selected yet.</p>
                 <p className="text-xs mt-1">
                   Choose an email from the left to read it or reply.
                 </p>
@@ -627,18 +607,18 @@ const InfluencerEmailPage: React.FC = () => {
       {/* Reply-only compose modal */}
       {isComposeOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm px-4">
-          <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl border border-orange-100 flex flex-col max-h-[90vh]">
+          <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl border border-yellow-200 flex flex-col max-h-[90vh]">
             {/* Header */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
               <div className="flex items-center gap-3">
-                <div className="h-10 w-10 rounded-full bg-gradient-to-tr from-[#FFA135] to-[#FF7236] flex items-center justify-center text-white shadow-md">
+                <div className={`h-10 w-10 rounded-full ${PRIMARY_BTN} flex items-center justify-center shadow-md`}>
                   <HiMail className="w-5 h-5" />
                 </div>
                 <div>
                   <h2 className="text-sm font-semibold text-gray-900">
                     Reply to brand
                   </h2>
-                  <p className="text-xs text-gray-500">
+                  <p className="text-xs text-gray-600">
                     Your reply will be sent via CollabGlam’s email relay. Brands
                     see your reply from a protected address.
                   </p>
@@ -647,7 +627,7 @@ const InfluencerEmailPage: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setIsComposeOpen(false)}
-                className="p-1.5 rounded-full hover:bg-gray-100 text-gray-500"
+                className={`p-1.5 rounded-full border border-yellow-200 bg-white transition-colors ${SECONDARY_BTN}`}
               >
                 <X className="w-4 h-4" />
               </button>
@@ -657,71 +637,71 @@ const InfluencerEmailPage: React.FC = () => {
             <div className="px-6 py-4 space-y-3 overflow-y-auto">
               {/* From */}
               <div className="space-y-1.5">
-                <label className="text-[11px] font-medium text-gray-500">
+                <label className="text-[11px] font-medium text-gray-600">
                   From
                 </label>
                 <input
                   type="email"
                   value={composeFrom || 'influencer@collabglam.cloud'}
                   readOnly
-                  className="w-full text-xs px-3 py-2 rounded-lg border border-gray-200 bg-gray-50 text-gray-700"
+                  className="w-full text-xs px-3 py-2 rounded-lg border border-yellow-200 bg-white/80 text-gray-800"
                 />
               </div>
 
               {/* To */}
               <div className="space-y-1.5">
-                <label className="text-[11px] font-medium text-gray-500">
+                <label className="text-[11px] font-medium text-gray-600">
                   To
                 </label>
                 <input
                   type="email"
                   value={composeTo}
                   readOnly
-                  className="w-full text-xs px-3 py-2 rounded-lg border border-gray-200 bg-gray-50 text-gray-700"
+                  className="w-full text-xs px-3 py-2 rounded-lg border border-yellow-200 bg-white/80 text-gray-800"
                 />
               </div>
 
               {/* Subject */}
               <div className="space-y-1.5">
-                <label className="text-[11px] font-medium text-gray-500">
+                <label className="text-[11px] font-medium text-gray-600">
                   Subject
                 </label>
                 <input
                   type="text"
                   value={composeSubject}
                   onChange={(e) => setComposeSubject(e.target.value)}
-                  className="w-full text-xs px-3 py-2 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#FFA135] focus:border-[#FFA135]"
+                  className="w-full text-xs px-3 py-2 rounded-lg border border-yellow-200 focus:outline-none focus:ring-2 focus:ring-[#FFBF00] focus:border-[#FFBF00]"
                 />
               </div>
 
               {/* Message */}
               <div className="space-y-1.5">
-                <label className="text-[11px] font-medium text-gray-500">
+                <label className="text-[11px] font-medium text-gray-600">
                   Message
                 </label>
                 <textarea
                   value={composeBody}
                   onChange={(e) => setComposeBody(e.target.value)}
                   rows={8}
-                  className="w-full text-xs px-3 py-2 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#FFA135] focus:border-[#FFA135] resize-none"
+                  className="w-full text-xs px-3 py-2 rounded-lg border border-yellow-200 focus:outline-none focus:ring-2 focus:ring-[#FFBF00] focus:border-[#FFBF00] resize-none"
                 />
               </div>
 
               {composeError && (
-                <p className="text-[11px] text-red-500">{composeError}</p>
+                <p className="text-[11px] text-red-600">{composeError}</p>
               )}
             </div>
 
             {/* Footer */}
-            <div className="flex items-center justify-between px-6 py-4 border-t border-gray-100 bg-gray-50/80">
-              <div className="text-[10px] text-gray-400">
+            <div className="flex items-center justify-between px-6 py-4 border-t border-gray-100 bg-white/70">
+              <div className="text-[10px] text-gray-600">
                 Replies are linked to the same thread with the brand.
               </div>
               <div className="flex items-center gap-2">
                 <button
                   type="button"
                   onClick={() => setIsComposeOpen(false)}
-                  className="text-xs px-3 py-1.5 rounded-full border border-gray-200 bg-white hover:bg-gray-100 text-gray-600"
+                  className={`text-xs px-3 py-1.5 rounded-full border border-yellow-200 bg-white transition-colors ${SECONDARY_BTN}`}
                 >
                   Cancel
                 </button>
@@ -729,7 +709,7 @@ const InfluencerEmailPage: React.FC = () => {
                   type="button"
                   onClick={handleSend}
                   disabled={isSending}
-                  className="inline-flex items-center gap-1.5 text-xs px-4 py-1.5 rounded-full bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white shadow-sm hover:shadow-md disabled:opacity-60 disabled:cursor-not-allowed"
+                  className={`inline-flex items-center gap-1.5 text-xs px-4 py-1.5 rounded-full shadow-sm hover:shadow-md disabled:opacity-60 disabled:cursor-not-allowed ${PRIMARY_BTN}`}
                 >
                   <Send className="w-3 h-3" />
                   {isSending ? 'Sending…' : 'Send reply'}
