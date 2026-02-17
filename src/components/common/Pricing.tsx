@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useMemo } from "react";
-import { Check, X, Star } from "lucide-react";
+import { Check, X, Star, CreditCard } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { post } from "@/lib/api";
 import Link from "next/link";
@@ -46,7 +46,7 @@ interface Plan {
   displayName?: string;
 
   monthlyCost: number;
-  annualCost?: number; // annual total (12 months)
+  annualCost?: number;
   currency?: string;
 
   isCustomPricing?: boolean;
@@ -98,7 +98,6 @@ const LABELS: Record<string, string> = {
   dispute_help: "Dispute help",
 };
 
-/** Order per role */
 const ORDER_BY_ROLE: Record<Role, string[]> = {
   Brand: [
     "influencer_search_per_month",
@@ -150,11 +149,8 @@ const BOOLEAN_KEYS = new Set<string>([
 
 type FV = FeatureValue;
 
-const currencySymbol = (c?: string) =>
-  c === "INR" ? "₹" : c === "EUR" ? "€" : "$";
-
-const nice = (s: string) =>
-  s.replace(/_/g, " ").replace(/^\w/, (c) => c.toUpperCase());
+const currencySymbol = (c?: string) => (c === "INR" ? "₹" : c === "EUR" ? "€" : "$");
+const nice = (s: string) => s.replace(/_/g, " ").replace(/^\w/, (c) => c.toUpperCase());
 
 const hasUnlimitedFlag = (v: FV) =>
   !!v &&
@@ -193,16 +189,39 @@ const isPositive = (key: string, v: FV) => {
   return Boolean(v);
 };
 
+const isManagedLikePlan = (plan: Plan) => {
+  const n = (plan.name || "").toLowerCase();
+  const dn = (plan.displayName || "").toLowerCase();
+  const label = String((plan as any)?.label || "").toLowerCase();
+
+  // matches: managed / management / talent_management / talent management / fully managed / enterprise
+  const hay = `${n} ${dn} ${label}`;
+  return /(managed|management|talent_management|talent management|fully managed|enterprise)/i.test(hay);
+};
+
 const computedLabel = (role: Role, plan: Plan) => {
-  if (plan.name === "growth" && role === "Brand") return "Popular";
-  if (plan.name === "creator_plus" && role === "Influencer") return "Popular";
-  if (role === "Brand" && plan.name === "fully_managed") return "Managed";
+  const n = (plan.name || "").toLowerCase();
+
+  if (n === "growth" && role === "Brand") return "Popular";
+  if (n === "creator_plus" && role === "Influencer") return "Popular";
+
+  // ✅ now TALENT MANAGEMENT also gets “Managed”
+  if (isManagedLikePlan(plan)) return "Managed";
+
   return undefined;
+};
+
+const isManagedOrCustomPlan = (_role: Role, plan: Plan) => {
+  // always wide
+  if (plan.isCustomPricing) return true;
+  if (plan.cta?.action === "book_call") return true;
+
+  // ✅ now TALENT MANAGEMENT goes below grid
+  return isManagedLikePlan(plan);
 };
 
 /** Annual helpers */
 const getAnnualTotal = (plan: Plan) => {
-  // Use provided annualCost if available; else fall back to monthly*12 for paid non-custom plans
   if (typeof plan.annualCost === "number" && plan.annualCost > 0) return plan.annualCost;
   if (!plan.isCustomPricing && plan.monthlyCost > 0) return plan.monthlyCost * 12;
   return 0;
@@ -215,7 +234,6 @@ const calcSavings = (plan: Plan) => {
   const annualTotal = getAnnualTotal(plan);
   const monthlyTotal = plan.monthlyCost * 12;
 
-  // only show savings if annualTotal is truly lower than monthlyTotal
   if (!(annualTotal > 0) || !(annualTotal < monthlyTotal)) return null;
 
   const amount = monthlyTotal - annualTotal;
@@ -238,10 +256,9 @@ const Pricing: React.FC = () => {
       setLoading(true);
       setError(null);
       try {
-        const res = await post<{ message: string; plans: Plan[] }>(
-          "/subscription/list",
-          { role: activeRole }
-        );
+        const res = await post<{ message: string; plans: Plan[] }>("/subscription/list", {
+          role: activeRole,
+        });
 
         const list = (res.plans || [])
           .slice()
@@ -272,7 +289,13 @@ const Pricing: React.FC = () => {
     });
   }, [plans, activeRole]);
 
-  // Show a tiny “Save up to X%” near annual toggle (subtle improvement)
+  /** ✅ Split: 3 in grid, managed/custom below */
+  const { gridPlans, belowPlans } = useMemo(() => {
+    const below = orderedPlans.filter((p) => isManagedOrCustomPlan(activeRole, p));
+    const grid = orderedPlans.filter((p) => !isManagedOrCustomPlan(activeRole, p));
+    return { gridPlans: grid, belowPlans: below };
+  }, [orderedPlans, activeRole]);
+
   const maxSavingsPct = useMemo(() => {
     const pcts = plans
       .map((p) => calcSavings(p)?.pct)
@@ -291,7 +314,7 @@ const Pricing: React.FC = () => {
     try {
       const r = await post<{ checkoutUrl?: string }>("/subscription/checkout", {
         planId: plan.planId,
-        billingCycle: billing, // ✅ send billing choice
+        billingCycle: billing,
       });
       if (r?.checkoutUrl) window.location.href = r.checkoutUrl;
       else router.push("/login");
@@ -299,6 +322,20 @@ const Pricing: React.FC = () => {
       router.push("/login");
     }
   };
+
+  const isInfluencerTheme = activeRole === "Influencer";
+
+  const badgeClasses = isInfluencerTheme
+    ? "bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-900"
+    : "bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white";
+
+  const buttonClasses = isInfluencerTheme
+    ? "text-gray-900 bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] hover:from-[#FFCF33] hover:to-[#FFE680] focus-visible:ring-yellow-400"
+    : "text-white bg-gradient-to-r from-[#FFA135] to-[#FF7236] hover:from-[#FF8C1A] hover:to-[#FF5C1E] focus-visible:ring-orange-400";
+
+  const isBrand = activeRole === "Brand";
+  const activeBg = isBrand ? "bg-orange-500" : "bg-yellow-400";
+  const ringColor = isBrand ? "focus-visible:ring-orange-400" : "focus-visible:ring-yellow-400";
 
   return (
     <section id="pricing" className="relative py-20 bg-gray-50 font-lexend">
@@ -310,51 +347,43 @@ const Pricing: React.FC = () => {
             Simple, transparent pricing. Start free, upgrade as you grow.
           </p>
 
-          {/* Role toggle */}
-          <div className="inline-flex mt-8 bg-gray-200 rounded-2xl p-1">
-            {roles.map((role) => (
-              <button
-                key={role}
-                onClick={() => setActiveRole(role)}
-                aria-pressed={activeRole === role}
-                className={`px-6 py-2 rounded-xl font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-orange-400 ${
-                  activeRole === role
-                    ? "bg-white shadow text-gray-900"
-                    : "text-gray-600 hover:text-gray-900"
+          <div className="mt-4 flex items-center justify-end gap-3">
+            <button
+              type="button"
+              onClick={() => setBilling("monthly")}
+              className={`text-sm font-medium transition ${billing === "monthly" ? "text-gray-900" : "text-gray-500 hover:text-gray-700"
                 }`}
-              >
-                {role}s
-              </button>
-            ))}
-          </div>
+              aria-pressed={billing === "monthly"}
+            >
+              Monthly
+            </button>
 
-          {/* Billing toggle (NEW) */}
-          <div className="mt-4 flex items-center justify-center gap-2">
-            <div className="inline-flex bg-gray-200 rounded-2xl p-1">
-              <button
-                onClick={() => setBilling("monthly")}
-                aria-pressed={billing === "monthly"}
-                className={`px-6 py-2 rounded-xl font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-orange-400 ${
-                  billing === "monthly"
-                    ? "bg-white shadow text-gray-900"
-                    : "text-gray-600 hover:text-gray-900"
-                }`}
-              >
-                Monthly
-              </button>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={billing === "annual"}
+              onClick={() => setBilling(billing === "monthly" ? "annual" : "monthly")}
+              className={`relative inline-flex h-8 w-14 items-center rounded-full transition
+      focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2
+      ${ringColor}
+      ${billing === "annual" ? activeBg : "bg-gray-300"}`}
+            >
+              <span className="sr-only">Toggle billing</span>
+              <span
+                className={`inline-block h-6 w-6 transform rounded-full bg-white shadow transition
+        ${billing === "annual" ? "translate-x-7" : "translate-x-1"}`}
+              />
+            </button>
 
-              <button
-                onClick={() => setBilling("annual")}
-                aria-pressed={billing === "annual"}
-                className={`px-6 py-2 rounded-xl font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-orange-400 ${
-                  billing === "annual"
-                    ? "bg-white shadow text-gray-900"
-                    : "text-gray-600 hover:text-gray-900"
+            <button
+              type="button"
+              onClick={() => setBilling("annual")}
+              className={`text-sm font-medium transition ${billing === "annual" ? "text-gray-900" : "text-gray-500 hover:text-gray-700"
                 }`}
-              >
-                Annual
-              </button>
-            </div>
+              aria-pressed={billing === "annual"}
+            >
+              Annual
+            </button>
 
             {maxSavingsPct > 0 && (
               <span className="text-xs font-semibold text-gray-700 bg-white border border-gray-200 rounded-full px-3 py-1 shadow-sm">
@@ -362,12 +391,30 @@ const Pricing: React.FC = () => {
               </span>
             )}
           </div>
+
+          {/* Role toggle */}
+          <div className="inline-flex mt-8 bg-gray-200 rounded-2xl p-1">
+            {roles.map((role) => (
+              <button
+                key={role}
+                onClick={() => setActiveRole(role)}
+                aria-pressed={activeRole === role}
+                className={`px-6 py-2 rounded-xl font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-orange-400 ${activeRole === role
+                  ? "bg-white shadow text-gray-900"
+                  : "text-gray-600 hover:text-gray-900"
+                  }`}
+              >
+                {role}s
+              </button>
+            ))}
+          </div>
+
         </div>
 
-        {/* Grid */}
-        <div className="grid gap-8 grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        {/* ✅ 3-column Grid ONLY */}
+        <div className="grid gap-8 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
           {loading &&
-            [...Array(4)].map((_, i) => (
+            [...Array(3)].map((_, i) => (
               <div
                 key={i}
                 className="h-[560px] bg-white rounded-3xl border border-gray-200 shadow-sm animate-pulse"
@@ -376,29 +423,12 @@ const Pricing: React.FC = () => {
 
           {!loading &&
             !error &&
-            orderedPlans.map((plan) => {
+            gridPlans.map((plan) => {
               const id = plan._id || plan.planId;
               const badge = computedLabel(activeRole, plan);
 
               const isFree = plan.monthlyCost <= 0 && !plan.isCustomPricing;
               const sym = currencySymbol(plan.currency);
-
-              const isInfluencerPlan =
-                plan.role === "Influencer" || activeRole === "Influencer";
-
-              const badgeClasses = isInfluencerPlan
-                ? "bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-900"
-                : "bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white";
-
-              const buttonClasses = isInfluencerPlan
-                ? "text-gray-900 bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] hover:from-[#FFCF33] hover:to-[#FFE680] focus-visible:ring-yellow-400"
-                : "text-white bg-gradient-to-r from-[#FFA135] to-[#FF7236] hover:from-[#FF8C1A] hover:to-[#FF5C1E] focus-visible:ring-orange-400";
-
-              const borderClasses = badge
-                ? isInfluencerPlan
-                  ? "border-yellow-300"
-                  : "border-orange-300"
-                : "border-gray-200";
 
               const ctaText =
                 plan.cta?.text ||
@@ -414,7 +444,6 @@ const Pricing: React.FC = () => {
                 if (isFree) return { kind: "free" as const };
 
                 if (billing === "annual") {
-                  // annual view: show annual total if possible, else fallback to monthly*12
                   const total = annualTotal > 0 ? annualTotal : plan.monthlyCost * 12;
                   return { kind: "annual" as const, value: total };
                 }
@@ -422,10 +451,16 @@ const Pricing: React.FC = () => {
                 return { kind: "monthly" as const, value: plan.monthlyCost };
               })();
 
+              const borderClasses = badge
+                ? isInfluencerTheme
+                  ? "border-yellow-300"
+                  : "border-orange-300"
+                : "border-gray-200";
+
               return (
                 <div
                   key={id}
-                  className={`group relative flex flex-col h-full rounded-3xl bg-white shadow-sm transition-all hover:shadow-xl ${borderClasses}`}
+                  className={`group relative flex flex-col h-full rounded-3xl bg-white shadow-sm transition-all hover:shadow-xl border ${borderClasses}`}
                 >
                   {/* Badge */}
                   {badge && (
@@ -456,21 +491,18 @@ const Pricing: React.FC = () => {
                     )}
                   </div>
 
-                  {/* Divider */}
                   <div className="border-t border-gray-200" />
 
                   {/* Price + CTA */}
                   <div className="px-8 py-6 text-center min-h-[165px] flex flex-col items-center justify-center">
                     {primaryPrice.kind === "starting" ? (
-                      <>
-                        <div className="flex items-baseline justify-center gap-2">
-                          <span className="text-4xl font-extrabold tracking-tight text-gray-900">
-                            {sym}
-                            {plan.monthlyCost.toLocaleString()}
-                          </span>
-                          <span className="text-sm text-gray-500">/month</span>
-                        </div>
-                      </>
+                      <div className="flex items-baseline justify-center gap-2">
+                        <span className="text-4xl font-extrabold tracking-tight text-gray-900">
+                          {sym}
+                          {plan.monthlyCost.toLocaleString()}
+                        </span>
+                        <span className="text-sm text-gray-500">/month</span>
+                      </div>
                     ) : primaryPrice.kind === "custom" ? (
                       <span className="text-4xl font-extrabold tracking-tight text-gray-900">
                         Custom
@@ -503,15 +535,13 @@ const Pricing: React.FC = () => {
                         )}
                       </>
                     ) : (
-                      <>
-                        <div className="flex items-baseline justify-center gap-2">
-                          <span className="text-4xl font-extrabold tracking-tight text-gray-900">
-                            {sym}
-                            {Number(primaryPrice.value).toLocaleString()}
-                          </span>
-                          <span className="text-sm text-gray-500">/month</span>
-                        </div>
-                      </>
+                      <div className="flex items-baseline justify-center gap-2">
+                        <span className="text-4xl font-extrabold tracking-tight text-gray-900">
+                          {sym}
+                          {Number(primaryPrice.value).toLocaleString()}
+                        </span>
+                        <span className="text-sm text-gray-500">/month</span>
+                      </div>
                     )}
 
                     <button
@@ -524,7 +554,7 @@ const Pricing: React.FC = () => {
 
                   {/* Feature list */}
                   <ul className="px-8 pb-8 space-y-3 mb-auto">
-                    {(plan as any)._ordered?.map(({ key, value, note }: Feature) => {
+                    {plan._ordered?.map(({ key, value, note }: Feature) => {
                       const display = formatValue(key, value);
                       const ok = isPositive(key, value);
                       const label = LABELS[key] || nice(key);
@@ -532,16 +562,13 @@ const Pricing: React.FC = () => {
                       return (
                         <li
                           key={key}
-                          className={`flex items-start gap-3 ${
-                            ok ? "text-gray-800" : "text-gray-400"
-                          }`}
+                          className={`flex items-start gap-3 ${ok ? "text-gray-800" : "text-gray-400"}`}
                         >
                           <span
-                            className={`mt-0.5 inline-flex items-center justify-center rounded-sm ring-1 h-5 w-5 flex-shrink-0 ${
-                              ok
-                                ? "bg-green-50 text-green-600 ring-green-200"
-                                : "bg-gray-100 text-gray-400 ring-gray-200"
-                            }`}
+                            className={`mt-0.5 inline-flex items-center justify-center rounded-sm ring-1 h-5 w-5 flex-shrink-0 ${ok
+                              ? "bg-green-50 text-green-600 ring-green-200"
+                              : "bg-gray-100 text-gray-400 ring-gray-200"
+                              }`}
                           >
                             {ok ? <Check className="h-3.5 w-3.5" /> : <X className="h-3.5 w-3.5" />}
                           </span>
@@ -559,16 +586,13 @@ const Pricing: React.FC = () => {
                               </>
                             ) : null}
 
-                            {note && (
-                              <span className="ml-1 text-xs text-gray-500">({note})</span>
-                            )}
+                            {note && <span className="ml-1 text-xs text-gray-500">({note})</span>}
                           </span>
                         </li>
                       );
                     })}
                   </ul>
 
-                  {/* Tiny annual clarity without changing layout */}
                   {showAnnual && (
                     <div className="px-8 pb-6 -mt-2 text-[11px] text-gray-500 text-center">
                       Quotas reset monthly • Billing is annual
@@ -579,13 +603,103 @@ const Pricing: React.FC = () => {
             })}
         </div>
 
+        {/* ✅ FULL-WIDTH “Managed” BELOW */}
+        {!loading && !error && belowPlans.length > 0 && (
+          <div className="mt-10 space-y-8">
+            {belowPlans.map((plan) => {
+              const id = plan._id || plan.planId;
+              const badge = computedLabel(activeRole, plan);
+
+              const borderColor = isInfluencerTheme ? "border-yellow-300" : "border-orange-300";
+
+              return (
+                // ✅ OUTER WRAPPER DOES NOT CLIP
+                <div key={id} className="group relative overflow-visible">
+                  {/* ✅ Badge won’t be clipped now */}
+                  {badge && (
+                    <div className="absolute -top-3 left-1/2 -translate-x-1/2 z-20">
+                      <span
+                        className={`inline-flex items-center gap-1 text-xs font-bold py-1.5 px-3 rounded-full shadow ${badgeClasses}`}
+                      >
+                        <Star className="w-3 h-3 fill-current" /> {badge}
+                      </span>
+                    </div>
+                  )}
+
+                  {/* ✅ INNER CARD CAN CLIP CONTENT FOR ROUNDED CORNERS */}
+                  <div
+                    className={`rounded-3xl bg-white shadow-sm border ${borderColor} lg:flex lg:items-stretch overflow-hidden`}
+                  >
+                    <div className="w-full lg:w-5/12 px-8 py-10 flex flex-col justify-center gap-4">
+                      <h3 className="text-3xl lg:text-4xl font-bold text-gray-900">
+                        {plan.displayName || nice(plan.name)}
+                      </h3>
+
+                      <p className="text-base lg:text-lg text-gray-600">
+                        {plan.mainOutcome ||
+                          plan.bestFor ||
+                          "Best for teams that want us to handle everything end-to-end."}
+                      </p>
+
+                      <div className="mt-4 flex items-center gap-4">
+                        <button
+                          onClick={() => handleSelect(plan)}
+                          className={`inline-flex items-center justify-center px-6 py-3 text-sm font-semibold rounded-md shadow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 ${buttonClasses}`}
+                        >
+                          <CreditCard className="w-4 h-4 mr-2" />
+                          {plan.cta?.text || "Contact Us"}
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="w-full lg:w-7/12 px-8 py-10 border-t lg:border-t-0 lg:border-l border-gray-200">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-10 gap-y-3">
+                        {plan._ordered
+                          ?.filter(({ key, value }) => isPositive(key, value))
+                          .map(({ key, value, note }) => {
+                            const display = formatValue(key, value);
+                            const label = LABELS[key] || nice(key);
+
+                            return (
+                              <div key={key} className="flex items-start gap-2 text-sm text-gray-800">
+                                <Check className="mt-0.5 h-4 w-4 text-emerald-500" />
+                                <span className="leading-6">
+                                  {label}
+                                  {display && display !== "Included" && display !== "Unlimited" && display !== "—" ? (
+                                    <>
+                                      : <strong>{display}</strong>
+                                    </>
+                                  ) : display === "Unlimited" ? (
+                                    <>
+                                      {" "}
+                                      — <strong>Unlimited</strong>
+                                    </>
+                                  ) : display === "Included" ? (
+                                    <>
+                                      {" "}
+                                      — <strong>Included</strong>
+                                    </>
+                                  ) : null}
+                                  {note && <span className="ml-1 text-[11px] text-gray-500">({note})</span>}
+                                </span>
+                              </div>
+                            );
+                          })}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
         {error && <p className="text-center text-red-600 mt-8">{error}</p>}
 
-        {/* Footnote */}
         <p className="text-center text-gray-500 text-sm mt-12">
           All paid plans include a 7-day Money-Back Guarantee • No setup fees • Cancel any time •{" "}
           <Link
-            href="/policy/terms-of-service"
+            href="/terms"
             className="underline underline-offset-2 hover:text-gray-700"
             target="_blank"
             rel="noopener noreferrer"
