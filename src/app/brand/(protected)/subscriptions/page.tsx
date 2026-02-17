@@ -19,7 +19,11 @@ import {
   Plus,
 } from "lucide-react";
 
-/** Types */
+/** =========================
+ * Types
+ * ========================= */
+
+type BillingCycle = "monthly" | "annual";
 
 type FeatureValue =
   | number
@@ -48,14 +52,20 @@ interface Addon {
 interface Plan {
   _id?: string;
   planId: string;
-  role: "Brand" | "Influencer";
+  role: "Brand";
   name: string;
   displayName?: string;
   label?: string;
   overview?: string;
+
   monthlyCost: number;
+  annualCost?: number; // annual total (12 months)
   currency?: string;
+
   isCustomPricing?: boolean;
+  isStartingAt?: boolean;
+  annualBillingNote?: string;
+
   sortOrder?: number;
   features: Feature[];
   addons?: Addon[];
@@ -70,17 +80,18 @@ interface BrandData {
 
 type PaymentStatus = "idle" | "processing" | "success" | "failed";
 
-/** Helpers */
+/** =========================
+ * Helpers
+ * ========================= */
 
-const capitalize = (s: string) =>
-  s ? s.charAt(0).toUpperCase() + s.slice(1) : "";
-const nice = (s: string) =>
-  s.replace(/_/g, " ").replace(/^\w/, (c) => c.toUpperCase());
-const currencySymbol = (c?: string) =>
-  c === "INR" ? "₹" : c === "EUR" ? "€" : "$";
+const STRIPE_HANDLED_KEY = "stripe_subscription_handled_session";
+
+const capitalize = (s: string) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : "");
+const nice = (s: string) => s.replace(/_/g, " ").replace(/^\w/, (c) => c.toUpperCase());
+const currencySymbol = (c?: string) => (c === "INR" ? "₹" : c === "EUR" ? "€" : "$");
 
 const LABELS: Record<string, string> = {
-  // Brand (new keys)
+  // Brand (legacy + your older keys)
   searches_per_month: "Searches / month",
   profile_views_per_month: "Profile views / month",
   invites_per_month: "Influencer Invites",
@@ -110,6 +121,8 @@ const LABELS: Record<string, string> = {
   contracts_access: "Contracts",
   dispute_support: "Dispute support",
   profile_preview_only: "Profile preview only",
+
+  // If you later reuse new plan keys here, it still works (fallback = nice(key))
 };
 
 const ORDER_BY_ROLE_BRAND: string[] = [
@@ -203,25 +216,57 @@ const isPositive = (key: string, v: FeatureValue) => {
   if (typeof v === "boolean") return v;
   if (typeof v === "number") return v > 0;
   if (Array.isArray(v)) return v.length > 0;
-  if (typeof v === "object") return true;
+  if (typeof v === "object" && v) return true;
   return Boolean(v);
 };
 
-const isEnterpriseBrand = (p: Plan) =>
-  p.role === "Brand" && p.name?.toLowerCase() === "enterprise";
-const computedLabel = (plan: Plan) =>
-  plan.label || (plan.name === "growth" ? "Popular" : undefined);
+const isEnterpriseBrand = (p: Plan) => p.role === "Brand" && p.name?.toLowerCase() === "enterprise";
+const computedLabel = (plan: Plan) => plan.label || (plan.name === "growth" ? "Popular" : undefined);
 
-/** Component */
-const STRIPE_HANDLED_KEY = "stripe_subscription_handled_session";
+/** Annual helpers */
+const getAnnualTotal = (plan: Plan) => {
+  if (typeof plan.annualCost === "number" && plan.annualCost > 0) return plan.annualCost;
+  if (!plan.isCustomPricing && plan.monthlyCost > 0) return plan.monthlyCost * 12;
+  return 0;
+};
+
+const calcSavings = (plan: Plan) => {
+  if (plan.isCustomPricing) return null;
+  if (!(plan.monthlyCost > 0)) return null;
+
+  const annualTotal = getAnnualTotal(plan);
+  const monthlyTotal = plan.monthlyCost * 12;
+
+  if (!(annualTotal > 0) || !(annualTotal < monthlyTotal)) return null;
+
+  const amount = monthlyTotal - annualTotal;
+  const pct = Math.round((amount / monthlyTotal) * 100);
+  return { amount, pct };
+};
+
+const stripStripeParamsFromUrl = () => {
+  if (typeof window === "undefined") return;
+  const url = new URL(window.location.href);
+  url.searchParams.delete("stripe_success");
+  url.searchParams.delete("stripe_cancel");
+  url.searchParams.delete("session_id");
+  window.history.replaceState({}, "", url.toString());
+};
+
+/** =========================
+ * Component
+ * ========================= */
 
 export default function BrandSubscriptionPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
+  const [billing, setBilling] = useState<BillingCycle>("monthly");
+
   const [plans, setPlans] = useState<Plan[]>([]);
   const [currentPlan, setCurrentPlan] = useState<string | null>(null);
   const [expiresAt, setExpiresAt] = useState<string | null>(null);
+
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState<string | null>(null);
   const [paymentStatus, setPaymentStatus] = useState<PaymentStatus>("idle");
@@ -248,44 +293,29 @@ export default function BrandSubscriptionPage() {
     message: "",
   });
 
-  // ✅ Handle Stripe redirect back (success/cancel)
-  const stripStripeParamsFromUrl = () => {
-    if (typeof window === "undefined") return;
-    const url = new URL(window.location.href);
-    url.searchParams.delete("stripe_success");
-    url.searchParams.delete("stripe_cancel");
-    url.searchParams.delete("session_id");
-    window.history.replaceState({}, "", url.toString());
-  };
-
+  /** Stripe redirect handler */
   useEffect(() => {
     const stripeSuccess = searchParams.get("stripe_success");
     const stripeCancel = searchParams.get("stripe_cancel");
     const sessionId = searchParams.get("session_id");
 
-    // ✅ Cancel case
     if (stripeCancel) {
-      stripStripeParamsFromUrl(); // remove query instantly
+      stripStripeParamsFromUrl();
       setPaymentStatus("failed");
       setPaymentMessage("Payment cancelled.");
-      // optional: router.replace(window.location.pathname);
       return;
     }
 
-    // ✅ Success case
     if (stripeSuccess && sessionId) {
-      // ✅ Guard against StrictMode double-run + accidental repeats
       if (typeof window !== "undefined") {
         const handled = sessionStorage.getItem(STRIPE_HANDLED_KEY);
         if (handled === sessionId) {
-          // already processed this session, just clean URL
           stripStripeParamsFromUrl();
           return;
         }
         sessionStorage.setItem(STRIPE_HANDLED_KEY, sessionId);
       }
 
-      // ✅ Remove params immediately to prevent reload loops
       stripStripeParamsFromUrl();
 
       (async () => {
@@ -300,17 +330,11 @@ export default function BrandSubscriptionPage() {
             planName?: string;
           }>("/payment/verify", { sessionId });
 
-          if (!verifyResp?.success) {
-            throw new Error(verifyResp?.message || "Payment not verified.");
-          }
+          if (!verifyResp?.success) throw new Error(verifyResp?.message || "Payment not verified.");
 
           const brandId = localStorage.getItem("brandId");
-          const planId =
-            verifyResp.planId || localStorage.getItem("pendingPlanId") || "";
-
-          if (!brandId || !planId) {
-            throw new Error("Missing brandId/planId for subscription assignment.");
-          }
+          const planId = verifyResp.planId || localStorage.getItem("pendingPlanId") || "";
+          if (!brandId || !planId) throw new Error("Missing brandId/planId for subscription assignment.");
 
           await post("/subscription/assign", {
             userType: "Brand",
@@ -318,8 +342,7 @@ export default function BrandSubscriptionPage() {
             planId,
           });
 
-          const planName =
-            verifyResp.planName || localStorage.getItem("pendingPlanName") || "";
+          const planName = verifyResp.planName || localStorage.getItem("pendingPlanName") || "";
 
           setCurrentPlan(planName || null);
           setExpiresAt(new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString());
@@ -332,9 +355,6 @@ export default function BrandSubscriptionPage() {
 
           setPaymentStatus("success");
           setPaymentMessage("Subscription updated successfully!");
-
-          // ✅ DO NOT reload the page
-          // If you need a data refresh, use router.refresh() in Next 13+
           router.refresh?.();
         } catch (e: any) {
           console.error(e);
@@ -346,10 +366,10 @@ export default function BrandSubscriptionPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
 
+  /** Load plans + current brand subscription */
   useEffect(() => {
     (async () => {
       try {
-        // Plans for Brand, sorted like pricing page
         const { plans: fetched } = await post<{ message: string; plans: Plan[] }>(
           "/subscription/list",
           { role: "Brand" }
@@ -370,7 +390,6 @@ export default function BrandSubscriptionPage() {
 
         setPlans(withOrdered);
 
-        // Brand subscription
         const id = localStorage.getItem("brandId");
         if (id) {
           const brand = await get<BrandData>(`/brand?id=${id}`);
@@ -378,7 +397,6 @@ export default function BrandSubscriptionPage() {
           setCurrentPlan(brand.subscription?.planName || null);
           setExpiresAt(brand.subscription?.expiresAt ?? null);
 
-          // ✅ Prefill Contact modal fields
           setContactForm((p) => ({
             ...p,
             name: brand.name || "",
@@ -404,7 +422,6 @@ export default function BrandSubscriptionPage() {
     [plans, currentPlan]
   );
 
-  // Loss preview (for downgrade modal)
   const featureLoss = useMemo(() => {
     if (!currentPlanObj || !selectedPlan) return [] as { key: string; from: any; to: any }[];
 
@@ -435,6 +452,13 @@ export default function BrandSubscriptionPage() {
       })
       .filter(Boolean) as { key: string; from: any; to: any }[];
   }, [currentPlanObj, selectedPlan]);
+
+  const maxSavingsPct = useMemo(() => {
+    const pcts = plans
+      .map((p) => calcSavings(p)?.pct)
+      .filter((v): v is number => typeof v === "number" && v > 0);
+    return pcts.length ? Math.max(...pcts) : 0;
+  }, [plans]);
 
   const handleSendContact = async (e?: React.FormEvent) => {
     e?.preventDefault();
@@ -477,16 +501,21 @@ export default function BrandSubscriptionPage() {
     setShowContactModal(true);
   };
 
+  const getPayAmount = (plan: Plan) => {
+    if (billing === "annual") return getAnnualTotal(plan) || plan.monthlyCost * 12;
+    return plan.monthlyCost;
+  };
+
   const handleSelect = async (plan: Plan) => {
     if (processing || plan.name.toLowerCase() === currentPlan?.toLowerCase()) return;
 
-    // ✅ Enterprise → Contact modal
-    if (isEnterpriseBrand(plan) || plan.name.toLowerCase() === "enterprise") {
+    // Enterprise → Contact modal
+    if (isEnterpriseBrand(plan) || plan.isCustomPricing) {
       openContactModal();
       return;
     }
 
-    // Free or downgrade plan → show downgrade modal (unchanged)
+    // Free/downgrade → downgrade modal
     if (plan.monthlyCost <= 0) {
       setSelectedPlan(plan);
       setShowDowngradeModal(true);
@@ -503,11 +532,13 @@ export default function BrandSubscriptionPage() {
       const brandId = localStorage.getItem("brandId");
       if (!brandId) throw new Error("Missing brandId.");
 
-      // Save pending info for after redirect
+      // pending info for after redirect
       localStorage.setItem("pendingPlanId", plan.planId);
       localStorage.setItem("pendingPlanName", plan.name);
+      localStorage.setItem("pendingBillingCycle", billing);
 
-      // ✅ Create Stripe Checkout Session (backend returns { url, sessionId })
+      const amount = getPayAmount(plan);
+
       const resp = await post<{
         success: boolean;
         url?: string;
@@ -515,17 +546,14 @@ export default function BrandSubscriptionPage() {
         message?: string;
       }>("/payment/Order", {
         planId: plan.planId,
-        amount: plan.monthlyCost,
+        amount, // ✅ monthly or annual depending on toggle
         currency: plan.currency || "USD",
         userId: brandId,
         role: "Brand",
+        billingCycle: billing, // ✅ pass through (backend can ignore safely)
       });
 
-      if (!resp?.success || !resp?.url) {
-        throw new Error(resp?.message || "Failed to start checkout.");
-      }
-
-      // Redirect to Stripe Checkout
+      if (!resp?.success || !resp?.url) throw new Error(resp?.message || "Failed to start checkout.");
       window.location.href = resp.url;
     } catch (e: any) {
       console.error(e);
@@ -582,14 +610,48 @@ export default function BrandSubscriptionPage() {
     <section id="brand-subscription" className="relative py-20 font-lexend min-h-screen">
       <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Header */}
-        <div className="text-center mb-10">
+        <div className="text-center mb-8">
           <div className="flex items-center justify-center gap-2 mb-3">
             <Crown className="w-8 h-8 text-orange-500" />
             <h2 className="text-4xl lg:text-5xl font-bold text-gray-900">Brand Subscription</h2>
           </div>
-          <p className="text-lg text-gray-600 mt-3">
+          <p className="text-lg text-gray-600 mt-2">
             Simple, transparent pricing. Start free, upgrade as you grow.
           </p>
+
+          {/* Billing toggle (NEW) */}
+          <div className="mt-6 flex items-center justify-center gap-2">
+            <div className="inline-flex bg-gray-200 rounded-2xl p-1">
+              <button
+                onClick={() => setBilling("monthly")}
+                aria-pressed={billing === "monthly"}
+                className={`px-6 py-2 rounded-xl font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-orange-400 ${
+                  billing === "monthly"
+                    ? "bg-white shadow text-gray-900"
+                    : "text-gray-600 hover:text-gray-900"
+                }`}
+              >
+                Monthly
+              </button>
+              <button
+                onClick={() => setBilling("annual")}
+                aria-pressed={billing === "annual"}
+                className={`px-6 py-2 rounded-xl font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-orange-400 ${
+                  billing === "annual"
+                    ? "bg-white shadow text-gray-900"
+                    : "text-gray-600 hover:text-gray-900"
+                }`}
+              >
+                Annual
+              </button>
+            </div>
+
+            {maxSavingsPct > 0 && (
+              <span className="text-xs font-semibold text-gray-700 bg-white border border-gray-200 rounded-full px-3 py-1 shadow-sm">
+                Save up to {maxSavingsPct}%
+              </span>
+            )}
+          </div>
         </div>
 
         {/* Current plan */}
@@ -652,10 +714,10 @@ export default function BrandSubscriptionPage() {
         )}
 
         {/* Plans grid */}
-        <div className="grid gap-8 grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        <div className="grid gap-8 grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3">
           {plans.map((plan) => {
             const id = plan._id || plan.planId;
-            const isEnterprise = isEnterpriseBrand(plan);
+            const isEnterprise = isEnterpriseBrand(plan) || !!plan.isCustomPricing;
             const badge = computedLabel(plan);
             const isFree = plan.monthlyCost <= 0 && !plan.isCustomPricing;
             const sym = currencySymbol(plan.currency);
@@ -670,6 +732,11 @@ export default function BrandSubscriptionPage() {
             const borderClasses = badge ? "border-orange-300" : "border-gray-200";
             const activeClasses = isActive ? "border-orange-400 ring-2 ring-orange-300" : "";
 
+            const annualTotal = getAnnualTotal(plan);
+            const savings = calcSavings(plan);
+            const showAnnual = billing === "annual" && !isFree && !isEnterprise;
+
+            /** ENTERPRISE layout */
             if (isEnterprise) {
               return (
                 <div
@@ -746,7 +813,9 @@ export default function BrandSubscriptionPage() {
                                     — <strong>Unlimited</strong>
                                   </>
                                 ) : null}
-                                {note && <span className="ml-1 text-[11px] text-gray-500">({note})</span>}
+                                {note && (
+                                  <span className="ml-1 text-[11px] text-gray-500">({note})</span>
+                                )}
                               </span>
                             </div>
                           );
@@ -757,6 +826,7 @@ export default function BrandSubscriptionPage() {
               );
             }
 
+            /** NORMAL plans */
             return (
               <div
                 key={id}
@@ -773,7 +843,9 @@ export default function BrandSubscriptionPage() {
                 )}
 
                 <div className="px-8 pt-8 pb-6 min-h-[170px] flex flex-col">
-                  <h3 className="text-2xl font-bold text-gray-900">{plan.displayName || nice(plan.name)}</h3>
+                  <h3 className="text-2xl font-bold text-gray-900">
+                    {plan.displayName || nice(plan.name)}
+                  </h3>
                   <p className="text-gray-600 mt-2">
                     {plan.overview ||
                       (isFree
@@ -784,17 +856,51 @@ export default function BrandSubscriptionPage() {
 
                 <div className="border-t border-gray-200" />
 
-                <div className="px-8 py-6 text-center min-h-[140px] flex flex-col items-center justify-center">
+                <div className="px-8 py-6 text-center min-h-[155px] flex flex-col items-center justify-center">
                   {isFree ? (
                     <span className="text-4xl font-extrabold tracking-tight text-gray-900">Free</span>
-                  ) : (
-                    <div className="flex items-baseline justify-center gap-2">
-                      <span className="text-4xl font-extrabold tracking-tight text-gray-900">
+                  ) : billing === "annual" ? (
+                    <>
+                      <div className="flex items-baseline justify-center gap-2">
+                        <span className="text-4xl font-extrabold tracking-tight text-gray-900">
+                          {sym}
+                          {(annualTotal > 0 ? annualTotal : plan.monthlyCost * 12).toLocaleString()}
+                        </span>
+                        <span className="text-sm text-gray-500">/year</span>
+                      </div>
+
+                      <div className="mt-1 text-xs text-gray-500">
                         {sym}
-                        {plan.monthlyCost.toLocaleString()}
-                      </span>
-                      <span className="text-sm text-gray-500">/month</span>
-                    </div>
+                        {Math.round((annualTotal > 0 ? annualTotal : plan.monthlyCost * 12) / 12).toLocaleString()}{" "}
+                        / month billed annually
+                        {plan.annualBillingNote ? ` • ${plan.annualBillingNote}` : ""}
+                      </div>
+
+                      {savings && (
+                        <div className="mt-1 text-xs font-semibold text-emerald-700">
+                          Save {savings.pct}% ({sym}
+                          {Math.round(savings.amount).toLocaleString()} / year)
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      <div className="flex items-baseline justify-center gap-2">
+                        <span className="text-4xl font-extrabold tracking-tight text-gray-900">
+                          {sym}
+                          {plan.monthlyCost.toLocaleString()}
+                        </span>
+                        <span className="text-sm text-gray-500">/month</span>
+                      </div>
+
+                      {plan.annualCost != null && plan.annualCost > 0 && (
+                        <div className="mt-1 text-xs text-gray-500">
+                          Annual: {sym}
+                          {Number(plan.annualCost).toLocaleString()} / year
+                          {plan.annualBillingNote ? ` • ${plan.annualBillingNote}` : ""}
+                        </div>
+                      )}
+                    </>
                   )}
 
                   <button
@@ -832,7 +938,10 @@ export default function BrandSubscriptionPage() {
                     const label = LABELS[key] || nice(key);
 
                     return (
-                      <li key={key} className={`flex items-start gap-3 ${ok ? "text-gray-800" : "text-gray-400"}`}>
+                      <li
+                        key={key}
+                        className={`flex items-start gap-3 ${ok ? "text-gray-800" : "text-gray-400"}`}
+                      >
                         <span
                           className={`mt-0.5 inline-flex items-center justify-center rounded-sm ring-1 h-5 w-5 flex-shrink-0 ${
                             ok
@@ -884,6 +993,12 @@ export default function BrandSubscriptionPage() {
                     </li>
                   )}
                 </ul>
+
+                {showAnnual && (
+                  <div className="px-8 pb-6 -mt-2 text-[11px] text-gray-500 text-center">
+                    Quotas reset monthly • Billing is annual
+                  </div>
+                )}
               </div>
             );
           })}
@@ -912,11 +1027,9 @@ export default function BrandSubscriptionPage() {
           >
             <div className="bg-orange-50 px-8 py-6 border-b border-orange-100">
               <div className="flex items-start justify-between">
-                <div className="flex items-center gap-3">
-                  <div>
-                    <h3 className="text-2xl font-bold text-gray-900">Contact Us</h3>
-                    <p className="text-gray-600 mt-1">Send your details — we’ll reach out ASAP.</p>
-                  </div>
+                <div>
+                  <h3 className="text-2xl font-bold text-gray-900">Contact Us</h3>
+                  <p className="text-gray-600 mt-1">Send your details — we’ll reach out ASAP.</p>
                 </div>
 
                 <button onClick={() => setShowContactModal(false)} className="p-2 rounded-full hover:bg-white/50">
