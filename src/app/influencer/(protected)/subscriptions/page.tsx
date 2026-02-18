@@ -17,6 +17,7 @@ import {
   Plus,
   Info,
 } from "lucide-react";
+import CheckoutAutoStart from "../../../../components/common/CheckoutAutoStart";
 
 /** =========================
  * Types
@@ -544,425 +545,424 @@ export default function InfluencerSubscriptionPage() {
   }
 
   return (
-    <div className="min-h-screen py-12">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        {/* Header */}
-        <div className="text-center mb-10">
-          <div className="flex items-center justify-center gap-2 mb-3">
-            <Crown size={ICON.hero} className={`${iconClass} text-orange-500`} />
-            <h1 className="text-4xl lg:text-5xl font-bold text-gray-900">Influencer Subscription Plans</h1>
-          </div>
-          <p className="text-lg text-gray-600 max-w-3xl mx-auto">
-            Unlock more campaign access and showcase a richer media-kit.
-          </p>
+    <>
+      <CheckoutAutoStart role="Influencer" plans={plans} loading={loading} />
 
-          {/* Billing toggle (NEW) */}
-          <div className="mt-6 flex items-center justify-center gap-2">
-            <div className="inline-flex bg-gray-200 rounded-2xl p-1">
-              <button
-                onClick={() => setBilling("monthly")}
-                aria-pressed={billing === "monthly"}
-                className={`px-6 py-2 rounded-xl font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-orange-400 ${
-                  billing === "monthly"
-                    ? "bg-white shadow text-gray-900"
-                    : "text-gray-600 hover:text-gray-900"
-                }`}
-              >
-                Monthly
-              </button>
-              <button
-                onClick={() => setBilling("annual")}
-                aria-pressed={billing === "annual"}
-                className={`px-6 py-2 rounded-xl font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-orange-400 ${
-                  billing === "annual"
-                    ? "bg-white shadow text-gray-900"
-                    : "text-gray-600 hover:text-gray-900"
-                }`}
-              >
-                Annual
-              </button>
+      <div className="min-h-screen py-12">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          {/* Header */}
+          <div className="text-center mb-10">
+            <div className="flex items-center justify-center gap-2 mb-3">
+              <Crown size={ICON.hero} className={`${iconClass} text-orange-500`} />
+              <h1 className="text-4xl lg:text-5xl font-bold text-gray-900">Influencer Subscription Plans</h1>
             </div>
+            <p className="text-lg text-gray-600 max-w-3xl mx-auto">
+              Unlock more campaign access and showcase a richer media-kit.
+            </p>
 
-            {maxSavingsPct > 0 && (
-              <span className="text-xs font-semibold text-gray-700 bg-white border border-gray-200 rounded-full px-3 py-1 shadow-sm">
-                Save up to {maxSavingsPct}%
-              </span>
-            )}
-          </div>
-        </div>
-
-        {/* Current plan pill */}
-        {currentPlan && (
-          <div className="max-w-2xl mx-auto mb-10">
-            <div className="bg-white rounded-2xl border border-gray-200 shadow p-6 text-center">
-              <div className="flex items-center justify-center gap-2 mb-2">
-                <CheckCircle size={ICON.base} className={`${iconClass} text-emerald-600`} />
-                <span className="text-sm font-medium text-gray-600 uppercase tracking-wide">Current Plan</span>
+            {/* Billing toggle (NEW) */}
+            <div className="mt-6 flex items-center justify-center gap-2">
+              <div className="inline-flex bg-gray-200 rounded-2xl p-1">
+                <button
+                  onClick={() => setBilling("monthly")}
+                  aria-pressed={billing === "monthly"}
+                  className={`px-6 py-2 rounded-xl font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-orange-400 ${billing === "monthly"
+                      ? "bg-white shadow text-gray-900"
+                      : "text-gray-600 hover:text-gray-900"
+                    }`}
+                >
+                  Monthly
+                </button>
+                <button
+                  onClick={() => setBilling("annual")}
+                  aria-pressed={billing === "annual"}
+                  className={`px-6 py-2 rounded-xl font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-orange-400 ${billing === "annual"
+                      ? "bg-white shadow text-gray-900"
+                      : "text-gray-600 hover:text-gray-900"
+                    }`}
+                >
+                  Annual
+                </button>
               </div>
-              <h3 className="text-2xl font-bold text-gray-900">
-                {planTitle(currentPlanObj || ({ name: currentPlan } as Plan))}
-              </h3>
-              <p className="text-gray-600 mt-1">
-                {expiresAt ? (
-                  <>
-                    Renews on{" "}
-                    <span className="font-semibold">
-                      {new Date(expiresAt).toLocaleDateString("en-US", {
-                        year: "numeric",
-                        month: "long",
-                        day: "numeric",
-                      })}
-                    </span>
-                  </>
-                ) : (
-                  "No renewal date set"
-                )}
-              </p>
-            </div>
-          </div>
-        )}
 
-        {/* Status toast */}
-        {paymentStatus !== "idle" && (
-          <div className="max-w-md mx-auto mb-8">
-            <div
-              className={`p-4 rounded-2xl border flex items-center justify-center gap-3 ${
-                paymentStatus === "success"
-                  ? "bg-emerald-50 border-emerald-200 text-emerald-800"
-                  : paymentStatus === "processing"
-                  ? "bg-orange-50 border-orange-200 text-orange-800"
-                  : "bg-red-50 border-red-200 text-red-800"
-              }`}
-            >
-              {paymentStatus === "success" ? (
-                <CheckCircle size={ICON.base} className={iconClass} />
-              ) : paymentStatus === "processing" ? (
-                <Loader2 size={ICON.base} className={`${iconClass} animate-spin`} />
-              ) : (
-                <XCircle size={ICON.base} className={iconClass} />
+              {maxSavingsPct > 0 && (
+                <span className="text-xs font-semibold text-gray-700 bg-white border border-gray-200 rounded-full px-3 py-1 shadow-sm">
+                  Save up to {maxSavingsPct}%
+                </span>
               )}
-              <p className="font-medium">
-                {paymentMessage || (paymentStatus === "processing" ? "Working on it…" : null)}
-              </p>
             </div>
           </div>
-        )}
 
-        {/* Cards */}
-        <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {plans.map((plan) => {
-            const isActive = plan.name.toLowerCase() === currentPlanKey;
-            const isProcessing = processing === plan.name;
-            const isFree = plan.monthlyCost <= 0;
-            const highlighted = ["best value", "popular"].includes((plan.label || "").toLowerCase());
+          {/* Current plan pill */}
+          {currentPlan && (
+            <div className="max-w-2xl mx-auto mb-10">
+              <div className="bg-white rounded-2xl border border-gray-200 shadow p-6 text-center">
+                <div className="flex items-center justify-center gap-2 mb-2">
+                  <CheckCircle size={ICON.base} className={`${iconClass} text-emerald-600`} />
+                  <span className="text-sm font-medium text-gray-600 uppercase tracking-wide">Current Plan</span>
+                </div>
+                <h3 className="text-2xl font-bold text-gray-900">
+                  {planTitle(currentPlanObj || ({ name: currentPlan } as Plan))}
+                </h3>
+                <p className="text-gray-600 mt-1">
+                  {expiresAt ? (
+                    <>
+                      Renews on{" "}
+                      <span className="font-semibold">
+                        {new Date(expiresAt).toLocaleDateString("en-US", {
+                          year: "numeric",
+                          month: "long",
+                          day: "numeric",
+                        })}
+                      </span>
+                    </>
+                  ) : (
+                    "No renewal date set"
+                  )}
+                </p>
+              </div>
+            </div>
+          )}
 
-            const sym = currencySym(plan.currency);
-            const annualTotal = getAnnualTotal(plan);
-            const savings = calcSavings(plan);
-
-            const fmap = new Map(plan.features.map((f) => [f.key, f]));
-            const ordered = FEATURE_ORDER.map((k) => fmap.get(k)).filter(Boolean) as Feature[];
-            const leftovers = plan.features.filter((f) => !FEATURE_ORDER_SET.has(f.key));
-            const features = [...ordered, ...leftovers];
-
-            return (
+          {/* Status toast */}
+          {paymentStatus !== "idle" && (
+            <div className="max-w-md mx-auto mb-8">
               <div
-                key={plan.planId}
-                className={`relative bg-white rounded-3xl border shadow-sm hover:shadow-lg transition-all flex flex-col h-full
+                className={`p-4 rounded-2xl border flex items-center justify-center gap-3 ${paymentStatus === "success"
+                    ? "bg-emerald-50 border-emerald-200 text-emerald-800"
+                    : paymentStatus === "processing"
+                      ? "bg-orange-50 border-orange-200 text-orange-800"
+                      : "bg-red-50 border-red-200 text-red-800"
+                  }`}
+              >
+                {paymentStatus === "success" ? (
+                  <CheckCircle size={ICON.base} className={iconClass} />
+                ) : paymentStatus === "processing" ? (
+                  <Loader2 size={ICON.base} className={`${iconClass} animate-spin`} />
+                ) : (
+                  <XCircle size={ICON.base} className={iconClass} />
+                )}
+                <p className="font-medium">
+                  {paymentMessage || (paymentStatus === "processing" ? "Working on it…" : null)}
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Cards */}
+          <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {plans.map((plan) => {
+              const isActive = plan.name.toLowerCase() === currentPlanKey;
+              const isProcessing = processing === plan.name;
+              const isFree = plan.monthlyCost <= 0;
+              const highlighted = ["best value", "popular"].includes((plan.label || "").toLowerCase());
+
+              const sym = currencySym(plan.currency);
+              const annualTotal = getAnnualTotal(plan);
+              const savings = calcSavings(plan);
+
+              const fmap = new Map(plan.features.map((f) => [f.key, f]));
+              const ordered = FEATURE_ORDER.map((k) => fmap.get(k)).filter(Boolean) as Feature[];
+              const leftovers = plan.features.filter((f) => !FEATURE_ORDER_SET.has(f.key));
+              const features = [...ordered, ...leftovers];
+
+              return (
+                <div
+                  key={plan.planId}
+                  className={`relative bg-white rounded-3xl border shadow-sm hover:shadow-lg transition-all flex flex-col h-full
                   ${highlighted ? "border-yellow-300" : "border-yellow-200"}
                   ${isActive ? "ring-2 ring-yellow-400" : ""}`}
+                >
+                  {highlighted && (
+                    <div className="absolute -top-3 left-1/2 -translate-x-1/2">
+                      <span className="inline-flex items-center gap-1 text-xs font-bold text-white py-1.5 px-3 rounded-full shadow bg-gradient-to-r from-[#FFA135] to-[#FF7236]">
+                        <Star size={ICON.base} className={`${iconClass} fill-current`} /> {plan.label}
+                      </span>
+                    </div>
+                  )}
+
+                  <div className="px-8 pt-8 pb-4 text-center">
+                    <h3 className="text-2xl font-bold text-gray-900 mb-2">{planTitle(plan)}</h3>
+
+                    {plan.overview && (
+                      <p className="text-sm text-gray-600 max-w-md mx-auto mb-3">{plan.overview}</p>
+                    )}
+
+                    {/* Price */}
+                    <div className="flex flex-col items-center justify-center">
+                      {isFree ? (
+                        <div className="flex items-baseline justify-center gap-2">
+                          <span className="text-5xl font-extrabold text-gray-900">Free</span>
+                          <span className="text-sm text-gray-600">(forever)</span>
+                        </div>
+                      ) : billing === "annual" ? (
+                        <>
+                          <div className="flex items-baseline justify-center gap-2">
+                            <span className="text-5xl font-extrabold text-gray-900">
+                              {sym}
+                              {(annualTotal > 0 ? annualTotal : plan.monthlyCost * 12).toLocaleString()}
+                            </span>
+                            <span className="text-lg text-gray-600">/year</span>
+                          </div>
+
+                          <p className="text-sm text-gray-600 mt-1">
+                            {sym}
+                            {Math.round((annualTotal > 0 ? annualTotal : plan.monthlyCost * 12) / 12).toLocaleString()}{" "}
+                            / month billed annually
+                            {plan.annualBillingNote ? ` • ${plan.annualBillingNote}` : ""}
+                          </p>
+
+                          {savings && (
+                            <p className="text-xs font-semibold text-emerald-700 mt-1">
+                              Save {savings.pct}% ({sym}
+                              {Math.round(savings.amount).toLocaleString()} / year)
+                            </p>
+                          )}
+                        </>
+                      ) : (
+                        <>
+                          <div className="flex items-baseline justify-center gap-2">
+                            <span className="text-5xl font-extrabold text-gray-900">
+                              {sym}
+                              {Number(plan.monthlyCost).toLocaleString()}
+                            </span>
+                            <span className="text-xl text-gray-600">/month</span>
+                          </div>
+
+                          {plan.annualCost != null && plan.annualCost > 0 && (
+                            <p className="text-xs text-gray-500 mt-1">
+                              Annual: {sym}
+                              {Number(plan.annualCost).toLocaleString()} / year
+                              {plan.annualBillingNote ? ` • ${plan.annualBillingNote}` : ""}
+                            </p>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="px-8 pb-2">
+                    <button
+                      onClick={() => handleSelect(plan)}
+                      disabled={isActive || isProcessing}
+                      className={`w-full py-4 text-base font-semibold rounded-md flex items-center justify-center gap-2 transition-all cursor-pointer
+                      ${isActive
+                          ? "bg-gray-100 text-gray-500 cursor-not-allowed border border-gray-200"
+                          : isProcessing
+                            ? "bg-yellow-100 text-yellow-700 cursor-not-allowed border border-yellow-200"
+                            : "bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] hover:from-[#FFCF33] hover:to-[#FFE680] text-gray-900 shadow-lg hover:shadow-xl"
+                        }`}
+                    >
+                      {isActive ? (
+                        <>
+                          <CheckCircle size={ICON.base} className={iconClass} />
+                          <span>Current Plan</span>
+                        </>
+                      ) : isProcessing ? (
+                        <>
+                          <Loader2 size={ICON.base} className={`${iconClass} animate-spin`} />
+                          <span>Processing…</span>
+                        </>
+                      ) : (
+                        <>
+                          <CreditCard size={ICON.base} className={iconClass} />
+                          <span>{isFree ? "Start Free" : "Choose Plan"}</span>
+                        </>
+                      )}
+                    </button>
+
+                    {!isFree && billing === "annual" && (
+                      <p className="text-[11px] text-gray-500 text-center mt-2">
+                        Quotas reset monthly • Billing is annual
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="px-8 pt-5 pb-6 flex-1">
+                    <ul className="space-y-4">
+                      {features.map((f) => {
+                        const label = FEATURE_LABELS[f.key] || prettifyKey(f.key);
+                        const val = formatValue(f.key, f.value);
+                        const ok = isPositive(f.key, f.value);
+
+                        return (
+                          <li key={f.key} className="flex items-start gap-3">
+                            {ok ? (
+                              <CheckCircle size={ICON.base} className={`${iconClass} text-emerald-600 mt-0.5`} />
+                            ) : (
+                              <XCircle size={ICON.base} className={`${iconClass} text-red-500 mt-0.5`} />
+                            )}
+                            <div className="text-gray-700">
+                              <span className="font-medium">{label}:</span>{" "}
+                              <span className="font-semibold">{val}</span>
+                              {f.note && (
+                                <span className="ml-2 inline-flex items-center text-xs text-gray-500">
+                                  <Info size={ICON.base} className={`${iconClass} mr-1`} /> {f.note}
+                                </span>
+                              )}
+                            </div>
+                          </li>
+                        );
+                      })}
+
+                      {plan.addons && plan.addons.length > 0 && (
+                        <li className="mt-2">
+                          <div className="rounded-2xl border border-orange-200 bg-orange-50/50 p-4">
+                            <div className="flex items-center mb-2 text-orange-900 font-semibold">
+                              <Plus size={ICON.base} className={`${iconClass} mr-2`} /> Available Add-ons
+                            </div>
+                            <ul className="space-y-2">
+                              {plan.addons.map((a) => {
+                                const symb = currencySym(a.currency);
+                                return (
+                                  <li key={a.key} className="text-sm text-orange-800">
+                                    <span className="font-medium">{a.name}</span>{" "}
+                                    <span className="opacity-80">
+                                      — {symb}
+                                      {Number(a.price).toLocaleString()}{" "}
+                                      {a.type === "one_time" ? "one-time" : "/mo"}
+                                    </span>
+                                  </li>
+                                );
+                              })}
+                            </ul>
+                          </div>
+                        </li>
+                      )}
+                    </ul>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="text-center mt-12">
+            <p className="text-gray-600">
+              Questions about our plans?{" "}
+              <a
+                href="mailto:support@collabglam.com"
+                className="text-orange-600 hover:text-orange-700 font-medium underline"
               >
-                {highlighted && (
-                  <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-                    <span className="inline-flex items-center gap-1 text-xs font-bold text-white py-1.5 px-3 rounded-full shadow bg-gradient-to-r from-[#FFA135] to-[#FF7236]">
-                      <Star size={ICON.base} className={`${iconClass} fill-current`} /> {plan.label}
-                    </span>
+                Contact our support team
+              </a>
+            </p>
+            <p className="text-sm text-gray-500 mt-2">All plans include a 14-day money-back guarantee</p>
+          </div>
+        </div>
+
+        {/* Downgrade modal */}
+        {showDowngradeModal && selectedPlan && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-black/60" onClick={() => setShowDowngradeModal(false)} />
+            <div className="relative bg-white w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden">
+              <div className="bg-orange-50 px-8 py-6 border-b border-orange-100">
+                <div className="flex items-start justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-orange-100 rounded-full">
+                      <AlertTriangle size={ICON.base} className={`${iconClass} text-orange-600`} />
+                    </div>
+                    <div>
+                      <h3 className="text-2xl font-bold text-gray-900">Before you change your plan…</h3>
+                      <p className="text-gray-600 mt-1">Some features may be reduced 😢</p>
+                    </div>
+                  </div>
+                  <button onClick={() => setShowDowngradeModal(false)} className="p-2 rounded-full hover:bg-white/50">
+                    <X size={ICON.base} className={`${iconClass} text-gray-500`} />
+                  </button>
+                </div>
+              </div>
+
+              <div className="px-8 py-6 space-y-6">
+                <p className="text-gray-700">
+                  Moving to <span className="font-semibold text-gray-900">{planTitle(selectedPlan)}</span> will reduce or remove
+                  some features:
+                </p>
+
+                {featureLoss.length > 0 && (
+                  <div className="bg-red-50 border border-red-200 rounded-2xl p-6">
+                    <div className="flex items-center gap-2 mb-4">
+                      <XCircle size={ICON.base} className={`${iconClass} text-red-500`} />
+                      <p className="font-semibold text-red-900">You’ll lose access or limits will be reduced on:</p>
+                    </div>
+                    <ul className="space-y-3">
+                      {featureLoss.map((d) => (
+                        <li key={d.key} className="flex items-center gap-3">
+                          <div className="w-2 h-2 bg-red-400 rounded-full" />
+                          <span className="text-red-800">
+                            <span className="font-medium">{FEATURE_LABELS[d.key] || prettifyKey(d.key)}:</span>
+                            <span className="ml-2 font-semibold">{formatValue(d.key, d.from)}</span>
+                            <span className="mx-2 text-red-600">→</span>
+                            <span className="font-semibold">{formatValue(d.key, d.to)}</span>
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
                   </div>
                 )}
 
-                <div className="px-8 pt-8 pb-4 text-center">
-                  <h3 className="text-2xl font-bold text-gray-900 mb-2">{planTitle(plan)}</h3>
-
-                  {plan.overview && (
-                    <p className="text-sm text-gray-600 max-w-md mx-auto mb-3">{plan.overview}</p>
-                  )}
-
-                  {/* Price */}
-                  <div className="flex flex-col items-center justify-center">
-                    {isFree ? (
-                      <div className="flex items-baseline justify-center gap-2">
-                        <span className="text-5xl font-extrabold text-gray-900">Free</span>
-                        <span className="text-sm text-gray-600">(forever)</span>
-                      </div>
-                    ) : billing === "annual" ? (
-                      <>
-                        <div className="flex items-baseline justify-center gap-2">
-                          <span className="text-5xl font-extrabold text-gray-900">
-                            {sym}
-                            {(annualTotal > 0 ? annualTotal : plan.monthlyCost * 12).toLocaleString()}
-                          </span>
-                          <span className="text-lg text-gray-600">/year</span>
-                        </div>
-
-                        <p className="text-sm text-gray-600 mt-1">
-                          {sym}
-                          {Math.round((annualTotal > 0 ? annualTotal : plan.monthlyCost * 12) / 12).toLocaleString()}{" "}
-                          / month billed annually
-                          {plan.annualBillingNote ? ` • ${plan.annualBillingNote}` : ""}
-                        </p>
-
-                        {savings && (
-                          <p className="text-xs font-semibold text-emerald-700 mt-1">
-                            Save {savings.pct}% ({sym}
-                            {Math.round(savings.amount).toLocaleString()} / year)
-                          </p>
-                        )}
-                      </>
-                    ) : (
-                      <>
-                        <div className="flex items-baseline justify-center gap-2">
-                          <span className="text-5xl font-extrabold text-gray-900">
-                            {sym}
-                            {Number(plan.monthlyCost).toLocaleString()}
-                          </span>
-                          <span className="text-xl text-gray-600">/month</span>
-                        </div>
-
-                        {plan.annualCost != null && plan.annualCost > 0 && (
-                          <p className="text-xs text-gray-500 mt-1">
-                            Annual: {sym}
-                            {Number(plan.annualCost).toLocaleString()} / year
-                            {plan.annualBillingNote ? ` • ${plan.annualBillingNote}` : ""}
-                          </p>
-                        )}
-                      </>
-                    )}
+                <div className="bg-orange-50 border border-orange-200 rounded-2xl p-6">
+                  <div className="flex items-start gap-3">
+                    <Heart size={ICON.base} className={`${iconClass} text-orange-500 mt-0.5`} />
+                    <div>
+                      <p className="text-orange-900 font-medium mb-2">We’d love to keep you!</p>
+                      <p className="text-orange-800 text-sm">
+                        Need a custom plan, a pause, or a startup discount? Email{" "}
+                        <a
+                          className="inline-flex items-center gap-1 font-semibold underline hover:text-orange-900"
+                          href="mailto:support@collabglam.com?subject=Plan%20change%20help"
+                        >
+                          <Mail size={ICON.base} className={iconClass} />
+                          <span>support@collabglam.com</span>
+                        </a>
+                      </p>
+                    </div>
                   </div>
                 </div>
 
-                <div className="px-8 pb-2">
-                  <button
-                    onClick={() => handleSelect(plan)}
-                    disabled={isActive || isProcessing}
-                    className={`w-full py-4 text-base font-semibold rounded-md flex items-center justify-center gap-2 transition-all cursor-pointer
-                      ${
-                        isActive
-                          ? "bg-gray-100 text-gray-500 cursor-not-allowed border border-gray-200"
-                          : isProcessing
-                          ? "bg-yellow-100 text-yellow-700 cursor-not-allowed border border-yellow-200"
-                          : "bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] hover:from-[#FFCF33] hover:to-[#FFE680] text-gray-900 shadow-lg hover:shadow-xl"
-                      }`}
-                  >
-                    {isActive ? (
-                      <>
-                        <CheckCircle size={ICON.base} className={iconClass} />
-                        <span>Current Plan</span>
-                      </>
-                    ) : isProcessing ? (
-                      <>
-                        <Loader2 size={ICON.base} className={`${iconClass} animate-spin`} />
-                        <span>Processing…</span>
-                      </>
-                    ) : (
-                      <>
-                        <CreditCard size={ICON.base} className={iconClass} />
-                        <span>{isFree ? "Start Free" : "Choose Plan"}</span>
-                      </>
-                    )}
-                  </button>
-
-                  {!isFree && billing === "annual" && (
-                    <p className="text-[11px] text-gray-500 text-center mt-2">
-                      Quotas reset monthly • Billing is annual
-                    </p>
-                  )}
-                </div>
-
-                <div className="px-8 pt-5 pb-6 flex-1">
-                  <ul className="space-y-4">
-                    {features.map((f) => {
-                      const label = FEATURE_LABELS[f.key] || prettifyKey(f.key);
-                      const val = formatValue(f.key, f.value);
-                      const ok = isPositive(f.key, f.value);
-
-                      return (
-                        <li key={f.key} className="flex items-start gap-3">
-                          {ok ? (
-                            <CheckCircle size={ICON.base} className={`${iconClass} text-emerald-600 mt-0.5`} />
-                          ) : (
-                            <XCircle size={ICON.base} className={`${iconClass} text-red-500 mt-0.5`} />
-                          )}
-                          <div className="text-gray-700">
-                            <span className="font-medium">{label}:</span>{" "}
-                            <span className="font-semibold">{val}</span>
-                            {f.note && (
-                              <span className="ml-2 inline-flex items-center text-xs text-gray-500">
-                                <Info size={ICON.base} className={`${iconClass} mr-1`} /> {f.note}
-                              </span>
-                            )}
-                          </div>
-                        </li>
-                      );
-                    })}
-
-                    {plan.addons && plan.addons.length > 0 && (
-                      <li className="mt-2">
-                        <div className="rounded-2xl border border-orange-200 bg-orange-50/50 p-4">
-                          <div className="flex items-center mb-2 text-orange-900 font-semibold">
-                            <Plus size={ICON.base} className={`${iconClass} mr-2`} /> Available Add-ons
-                          </div>
-                          <ul className="space-y-2">
-                            {plan.addons.map((a) => {
-                              const symb = currencySym(a.currency);
-                              return (
-                                <li key={a.key} className="text-sm text-orange-800">
-                                  <span className="font-medium">{a.name}</span>{" "}
-                                  <span className="opacity-80">
-                                    — {symb}
-                                    {Number(a.price).toLocaleString()}{" "}
-                                    {a.type === "one_time" ? "one-time" : "/mo"}
-                                  </span>
-                                </li>
-                              );
-                            })}
-                          </ul>
-                        </div>
-                      </li>
-                    )}
-                  </ul>
+                <div>
+                  <label className="block">
+                    <span className="text-sm font-medium text-gray-700 mb-2 block">
+                      Type <span className="font-bold text-gray-900">CANCEL</span> to confirm
+                    </span>
+                    <input
+                      className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-orange-400 focus:border-orange-400 outline-none"
+                      placeholder="Type CANCEL here..."
+                      value={confirmText}
+                      onChange={(e) => setConfirmText(e.target.value)}
+                    />
+                  </label>
                 </div>
               </div>
-            );
-          })}
-        </div>
 
-        <div className="text-center mt-12">
-          <p className="text-gray-600">
-            Questions about our plans?{" "}
-            <a
-              href="mailto:support@collabglam.com"
-              className="text-orange-600 hover:text-orange-700 font-medium underline"
-            >
-              Contact our support team
-            </a>
-          </p>
-          <p className="text-sm text-gray-500 mt-2">All plans include a 14-day money-back guarantee</p>
-        </div>
-      </div>
-
-      {/* Downgrade modal */}
-      {showDowngradeModal && selectedPlan && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/60" onClick={() => setShowDowngradeModal(false)} />
-          <div className="relative bg-white w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden">
-            <div className="bg-orange-50 px-8 py-6 border-b border-orange-100">
-              <div className="flex items-start justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 bg-orange-100 rounded-full">
-                    <AlertTriangle size={ICON.base} className={`${iconClass} text-orange-600`} />
-                  </div>
-                  <div>
-                    <h3 className="text-2xl font-bold text-gray-900">Before you change your plan…</h3>
-                    <p className="text-gray-600 mt-1">Some features may be reduced 😢</p>
-                  </div>
-                </div>
-                <button onClick={() => setShowDowngradeModal(false)} className="p-2 rounded-full hover:bg-white/50">
-                  <X size={ICON.base} className={`${iconClass} text-gray-500`} />
+              <div className="bg-gray-50 px-8 py-6 flex flex-col sm:flex-row gap-3 justify-end">
+                <button
+                  onClick={() => setShowDowngradeModal(false)}
+                  className="px-6 py-3 rounded-xl bg-white border-2 border-gray-200 hover:border-gray-300 text-gray-800 font-semibold"
+                  disabled={confirming}
+                >
+                  Keep my current plan
+                </button>
+                <button
+                  onClick={handleConfirmDowngrade}
+                  disabled={confirmText.trim().toUpperCase() !== "CANCEL" || confirming}
+                  className={`px-6 py-3 rounded-xl font-semibold text-white transition-colors ${confirmText.trim().toUpperCase() === "CANCEL" && !confirming
+                      ? "bg-gradient-to-r from-[#FFA135] to-[#FF7236] hover:from-[#FF7236] hover:to-[#FFA135] shadow-lg"
+                      : "bg-gray-400 cursor-not-allowed"
+                    }`}
+                >
+                  {confirming ? (
+                    <span className="inline-flex items-center gap-2">
+                      <Loader2 size={ICON.base} className={`${iconClass} animate-spin`} /> Applying…
+                    </span>
+                  ) : (
+                    "Confirm change"
+                  )}
                 </button>
               </div>
             </div>
-
-            <div className="px-8 py-6 space-y-6">
-              <p className="text-gray-700">
-                Moving to <span className="font-semibold text-gray-900">{planTitle(selectedPlan)}</span> will reduce or remove
-                some features:
-              </p>
-
-              {featureLoss.length > 0 && (
-                <div className="bg-red-50 border border-red-200 rounded-2xl p-6">
-                  <div className="flex items-center gap-2 mb-4">
-                    <XCircle size={ICON.base} className={`${iconClass} text-red-500`} />
-                    <p className="font-semibold text-red-900">You’ll lose access or limits will be reduced on:</p>
-                  </div>
-                  <ul className="space-y-3">
-                    {featureLoss.map((d) => (
-                      <li key={d.key} className="flex items-center gap-3">
-                        <div className="w-2 h-2 bg-red-400 rounded-full" />
-                        <span className="text-red-800">
-                          <span className="font-medium">{FEATURE_LABELS[d.key] || prettifyKey(d.key)}:</span>
-                          <span className="ml-2 font-semibold">{formatValue(d.key, d.from)}</span>
-                          <span className="mx-2 text-red-600">→</span>
-                          <span className="font-semibold">{formatValue(d.key, d.to)}</span>
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-              <div className="bg-orange-50 border border-orange-200 rounded-2xl p-6">
-                <div className="flex items-start gap-3">
-                  <Heart size={ICON.base} className={`${iconClass} text-orange-500 mt-0.5`} />
-                  <div>
-                    <p className="text-orange-900 font-medium mb-2">We’d love to keep you!</p>
-                    <p className="text-orange-800 text-sm">
-                      Need a custom plan, a pause, or a startup discount? Email{" "}
-                      <a
-                        className="inline-flex items-center gap-1 font-semibold underline hover:text-orange-900"
-                        href="mailto:support@collabglam.com?subject=Plan%20change%20help"
-                      >
-                        <Mail size={ICON.base} className={iconClass} />
-                        <span>support@collabglam.com</span>
-                      </a>
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              <div>
-                <label className="block">
-                  <span className="text-sm font-medium text-gray-700 mb-2 block">
-                    Type <span className="font-bold text-gray-900">CANCEL</span> to confirm
-                  </span>
-                  <input
-                    className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-orange-400 focus:border-orange-400 outline-none"
-                    placeholder="Type CANCEL here..."
-                    value={confirmText}
-                    onChange={(e) => setConfirmText(e.target.value)}
-                  />
-                </label>
-              </div>
-            </div>
-
-            <div className="bg-gray-50 px-8 py-6 flex flex-col sm:flex-row gap-3 justify-end">
-              <button
-                onClick={() => setShowDowngradeModal(false)}
-                className="px-6 py-3 rounded-xl bg-white border-2 border-gray-200 hover:border-gray-300 text-gray-800 font-semibold"
-                disabled={confirming}
-              >
-                Keep my current plan
-              </button>
-              <button
-                onClick={handleConfirmDowngrade}
-                disabled={confirmText.trim().toUpperCase() !== "CANCEL" || confirming}
-                className={`px-6 py-3 rounded-xl font-semibold text-white transition-colors ${
-                  confirmText.trim().toUpperCase() === "CANCEL" && !confirming
-                    ? "bg-gradient-to-r from-[#FFA135] to-[#FF7236] hover:from-[#FF7236] hover:to-[#FFA135] shadow-lg"
-                    : "bg-gray-400 cursor-not-allowed"
-                }`}
-              >
-                {confirming ? (
-                  <span className="inline-flex items-center gap-2">
-                    <Loader2 size={ICON.base} className={`${iconClass} animate-spin`} /> Applying…
-                  </span>
-                ) : (
-                  "Confirm change"
-                )}
-              </button>
-            </div>
           </div>
-        </div>
-      )}
-    </div>
+        )}
+      </div>
+    </>
   );
 }

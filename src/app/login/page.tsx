@@ -1,6 +1,10 @@
+/* ===========================
+   Login.tsx
+   =========================== */
 'use client';
 
-import { useState, useEffect, useTransition } from 'react';
+import { useEffect, useMemo, useState, useTransition } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { CheckCircle2 } from 'lucide-react';
 import { LoginForm } from './LoginForm';
 import { BrandSignup } from './BrandSignup';
@@ -9,23 +13,59 @@ import { ForgotPasswordModal } from './ForgotPasswordModal';
 import type { Role, Tab } from './types';
 
 export default function Login() {
-  // ✅ default tab ALWAYS login
+  const router = useRouter();
+  const params = useSearchParams();
+
+  const next = params.get('next') || '';
+  const roleParam = (params.get('role') || '').toLowerCase();
+
+  // ✅ infer role from "next" first (strongest signal)
+  const forcedRole = useMemo<Role | null>(() => {
+    if (next.startsWith('/brand/')) return 'brand';
+    if (next.startsWith('/influencer/')) return 'influencer';
+    return null;
+  }, [next]);
+
+  const initialRole = useMemo<Role>(() => {
+    if (forcedRole) return forcedRole;
+    if (roleParam === 'influencer') return 'influencer';
+    return 'brand';
+  }, [forcedRole, roleParam]);
+
+  // ✅ default tab always login
   const [activeTab, setActiveTab] = useState<Tab>('login');
-  const [role, setRole] = useState<Role>('brand');
+  const [role, setRole] = useState<Role>(initialRole);
 
   const [mounted, setMounted] = useState(false);
   const [showForgotPassword, setShowForgotPassword] = useState(false);
-  const [showSuccessMessage, setShowSuccessMessage] = useState(false);
   const [signupStep, setSignupStep] = useState<number>(1);
 
-  // ✅ smoother UI transitions
   const [isPending, startTransition] = useTransition();
   const [panelKey, setPanelKey] = useState(0);
 
   useEffect(() => setMounted(true), []);
+  useEffect(() => setPanelKey((k) => k + 1), [activeTab, role]);
+
+  // ✅ if opened with query, enforce role + login tab
   useEffect(() => {
-    setPanelKey((k) => k + 1);
-  }, [activeTab, role]);
+    startTransition(() => {
+      setRole(initialRole);
+      setActiveTab('login');
+      setSignupStep(1);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialRole]);
+
+  const roleLocked = Boolean(forcedRole); // if next forces role, don’t allow switching
+
+  const showHero = activeTab === 'login';
+  const gradientClasses =
+    role === 'brand'
+      ? 'from-orange-50 via-orange-100/50 to-white'
+      : 'from-amber-50 via-yellow-100/50 to-white';
+
+  const heroQuote = role === 'brand' ? '“Every brand starts somewhere”' : '“Every creator starts somewhere”';
+  const isDeepSignupStep = activeTab === 'signup' && signupStep > 1;
 
   const [toast, setToast] = useState<null | { title: string; message: string; role: Role }>(null);
 
@@ -34,22 +74,6 @@ export default function Login() {
     setTimeout(() => setToast(null), 3000);
   };
 
-  // ✅ hero should appear ONLY on login tab
-  const showHero = activeTab === 'login';
-
-  const gradientClasses =
-    role === 'brand'
-      ? 'from-orange-50 via-orange-100/50 to-white'
-      : 'from-amber-50 via-yellow-100/50 to-white';
-
-  const heroQuote =
-    role === 'brand'
-      ? '“Every brand starts somewhere”'
-      : '“Every creator starts somewhere”';
-
-  // if user is in multi-step signup, prevent switching roles mid-way
-  const isDeepSignupStep = activeTab === 'signup' && signupStep > 1;
-
   const switchTab = (tab: Tab) => {
     startTransition(() => {
       setActiveTab(tab);
@@ -57,8 +81,8 @@ export default function Login() {
     });
   };
 
-  // ✅ switches role but ALWAYS stays on login
   const handleHeaderRoleSwitch = () => {
+    if (roleLocked) return; // ✅ do not allow if checkout forced role
     startTransition(() => {
       setRole((r) => (r === 'brand' ? 'influencer' : 'brand'));
       setActiveTab('login');
@@ -68,17 +92,21 @@ export default function Login() {
 
   const handleSignupSuccess = () => {
     showToast('Account created successfully!', 'You can now sign in to your account', role);
-
     setTimeout(() => {
       startTransition(() => {
         setActiveTab('login');
         setSignupStep(1);
       });
-    }, 3000);
+    }, 1500);
   };
 
+  // ✅ IMPORTANT: after login, go to next if present
   const handleLoginSuccess = () => {
-    console.log('Login successful! Redirecting...');
+    if (next) {
+      router.replace(next);
+      return;
+    }
+    router.replace(role === 'brand' ? '/brand/dashboard' : '/influencer/dashboard');
   };
 
   return (
@@ -95,8 +123,8 @@ export default function Login() {
             </span>
           </div>
 
-          {/* Role switch hidden during deep signup */}
-          {!isDeepSignupStep && (
+          {/* Role switch hidden during deep signup OR role locked by next */}
+          {!isDeepSignupStep && !roleLocked && (
             <button
               type="button"
               onClick={handleHeaderRoleSwitch}
@@ -112,15 +140,13 @@ export default function Login() {
       {toast && (
         <div className="fixed top-24 inset-x-0 z-50 flex justify-center px-4 animate-slideDown">
           <div
-            className={`max-w-md w-full p-4 rounded-xl shadow-2xl border-2 ${toast.role === 'brand'
-              ? 'bg-orange-50 border-orange-500'
-              : 'bg-yellow-50 border-yellow-500'
-              }`}
+            className={`max-w-md w-full p-4 rounded-xl shadow-2xl border-2 ${
+              toast.role === 'brand' ? 'bg-orange-50 border-orange-500' : 'bg-yellow-50 border-yellow-500'
+            }`}
           >
             <div className="flex items-center space-x-3">
               <CheckCircle2
-                className={`w-6 h-6 flex-shrink-0 ${toast.role === 'brand' ? 'text-orange-600' : 'text-yellow-600'
-                  }`}
+                className={`w-6 h-6 flex-shrink-0 ${toast.role === 'brand' ? 'text-orange-600' : 'text-yellow-600'}`}
               />
               <div>
                 <p className="font-semibold text-gray-900">{toast.title}</p>
@@ -131,14 +157,15 @@ export default function Login() {
         </div>
       )}
 
-      {/* Main (FULL HEIGHT minus header) */}
+      {/* Main */}
       <main className="pt-24 px-4 sm:px-6 lg:px-8 min-h-[calc(100vh-20rem)] flex">
         <div className="max-w-6xl mx-auto w-full flex">
           <div
-            className={`w-full flex transform transition-all duration-700 delay-200 ${mounted ? 'translate-y-0 opacity-100' : 'translate-y-3 opacity-0'
-              }`}
+            className={`w-full flex transform transition-all duration-700 delay-200 ${
+              mounted ? 'translate-y-0 opacity-100' : 'translate-y-3 opacity-0'
+            }`}
           >
-            {/* Card (FULL HEIGHT) */}
+            {/* Card */}
             <div className="bg-white rounded-3xl shadow-2xl border border-gray-100 overflow-hidden w-full flex-1 min-h-full">
               <div className={`grid h-full ${showHero ? 'lg:grid-cols-2' : 'lg:grid-cols-1'}`}>
                 {/* HERO ONLY ON LOGIN */}
@@ -149,14 +176,16 @@ export default function Login() {
                       <img
                         src="/brand.jpeg"
                         alt="Brand Hero"
-                        className={`absolute inset-0 h-56 w-full object-cover transition-opacity duration-500 ${role === 'brand' ? 'opacity-100' : 'opacity-0'
-                          }`}
+                        className={`absolute inset-0 h-56 w-full object-cover transition-opacity duration-500 ${
+                          role === 'brand' ? 'opacity-100' : 'opacity-0'
+                        }`}
                       />
                       <img
                         src="/inf.jpeg"
                         alt="Influencer Hero"
-                        className={`absolute inset-0 h-56 w-full object-cover transition-opacity duration-500 ${role === 'influencer' ? 'opacity-100' : 'opacity-0'
-                          }`}
+                        className={`absolute inset-0 h-56 w-full object-cover transition-opacity duration-500 ${
+                          role === 'influencer' ? 'opacity-100' : 'opacity-0'
+                        }`}
                       />
                       <div className="relative h-56">
                         <div className="absolute inset-0 bg-gradient-to-tr from-black/50 via-black/10 to-transparent" />
@@ -166,19 +195,21 @@ export default function Login() {
                       </div>
                     </div>
 
-                    {/* Desktop Hero (FULL HEIGHT) */}
+                    {/* Desktop Hero */}
                     <div className="relative hidden lg:block h-full min-h-[calc(100vh-6rem)]">
                       <img
                         src="/brand.jpeg"
                         alt="Brand Hero"
-                        className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-500 ${role === 'brand' ? 'opacity-100' : 'opacity-0'
-                          }`}
+                        className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-500 ${
+                          role === 'brand' ? 'opacity-100' : 'opacity-0'
+                        }`}
                       />
                       <img
                         src="/inf.jpeg"
                         alt="Influencer Hero"
-                        className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-500 ${role === 'influencer' ? 'opacity-100' : 'opacity-0'
-                          }`}
+                        className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-500 ${
+                          role === 'influencer' ? 'opacity-100' : 'opacity-0'
+                        }`}
                       />
                       <div className="absolute inset-0 bg-gradient-to-tr from-black/45 via-black/10 to-transparent" />
                       <div className="absolute bottom-10 left-10 right-10">
@@ -188,9 +219,8 @@ export default function Login() {
                   </>
                 )}
 
-                {/* Form panel (FULL HEIGHT + CENTERED) */}
+                {/* Form panel */}
                 <div className="p-6 sm:p-10 lg:p-12 h-full flex flex-col justify-center">
-
                   {/* Tabs */}
                   <div className="w-full max-w-md mx-auto mb-6">
                     <div className="rounded-full bg-gray-100 p-1 overflow-hidden">
@@ -241,18 +271,12 @@ export default function Login() {
                         <LoginForm
                           role={role}
                           onForgotPassword={() => setShowForgotPassword(true)}
-                          onSuccess={handleLoginSuccess}
+                          onSuccess={handleLoginSuccess} // ✅ redirect to next/dashboard
                         />
                       ) : role === 'brand' ? (
-                        <BrandSignup
-                          onSuccess={handleSignupSuccess}
-                          onStepChange={(n) => setSignupStep(n)}
-                        />
+                        <BrandSignup onSuccess={handleSignupSuccess} onStepChange={(n) => setSignupStep(n)} />
                       ) : (
-                        <InfluencerSignup
-                          onSuccess={handleSignupSuccess}
-                          onStepChange={(n) => setSignupStep(n)}
-                        />
+                        <InfluencerSignup onSuccess={handleSignupSuccess} onStepChange={(n) => setSignupStep(n)} />
                       )}
                     </div>
                   </div>
@@ -262,10 +286,9 @@ export default function Login() {
                     <a
                       href="/terms"
                       target="_blank"
-                      className={`font-semibold ${role === 'brand'
-                        ? 'text-orange-600 hover:text-orange-700'
-                        : 'text-yellow-600 hover:text-yellow-700'
-                        }`}
+                      className={`font-semibold ${
+                        role === 'brand' ? 'text-orange-600 hover:text-orange-700' : 'text-yellow-600 hover:text-yellow-700'
+                      }`}
                     >
                       Terms of Service
                     </a>{' '}
@@ -273,10 +296,9 @@ export default function Login() {
                     <a
                       href="/privacy-policy"
                       target="_blank"
-                      className={`font-semibold ${role === 'brand'
-                        ? 'text-orange-600 hover:text-orange-700'
-                        : 'text-yellow-600 hover:text-yellow-700'
-                        }`}
+                      className={`font-semibold ${
+                        role === 'brand' ? 'text-orange-600 hover:text-orange-700' : 'text-yellow-600 hover:text-yellow-700'
+                      }`}
                     >
                       Privacy Policy
                     </a>
@@ -295,7 +317,7 @@ export default function Login() {
           onClose={() => setShowForgotPassword(false)}
           onSuccess={() => {
             showToast('Password reset successful!', 'You can now log in with your new password', role);
-            startTransition(() => setActiveTab('login')); // optional, but nice
+            startTransition(() => setActiveTab('login'));
           }}
         />
       )}
