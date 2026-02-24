@@ -34,7 +34,9 @@ const navItems = [
   { label: "Invoice Details", href: "/admin/invoiceDetails", icon: DollarSign },
   { label: "Payment Notification", href: "/admin/payment", icon: Bell },
   { label: "Youtube Handle", href: "/admin/youtube", icon: MailCheckIcon },
-  {label:"Modash Data", href:"/admin/modash", icon: MailCheckIcon}
+  {label:"Modash Data", href:"/admin/modash", icon: MailCheckIcon},
+  {label:"Invited Influencer", href:"/admin/invitedInfluencer", icon: MailCheckIcon}
+
 ];
 
 const documentLinks = [
