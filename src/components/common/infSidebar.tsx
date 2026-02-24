@@ -17,6 +17,7 @@ import {
   HiArrowLeftOnRectangle,
   HiBars3,
   HiXMark,
+  HiPaperAirplane,
 } from "react-icons/hi2";
 import InfluencerTourModal from "./InfluencerTourModal";
 
@@ -34,6 +35,7 @@ const menuItems: MenuItem[] = [
   { name: "My Media-Kit", href: "/influencer/media-kit", icon: HiDocumentText },
   { name: "My Campaigns", href: "/influencer/my-campaign", icon: HiClipboardDocumentList },
   { name: "Rejected Campaigns", href: "/influencer/rejected-campaign", icon: HiXCircle },
+  { name: "Campaigns Invite", href: "/influencer/campaigns-invite", icon: HiPaperAirplane },
   { name: "Disputes", href: "/influencer/disputes", icon: HiScale },
   { name: "E-Mails", href: "/influencer/email", icon: HiEnvelopeOpen },
   { name: "Payment Details", href: "/influencer/payment-detail", icon: HiBanknotes },

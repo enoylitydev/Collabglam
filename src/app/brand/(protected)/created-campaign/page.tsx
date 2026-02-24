@@ -8,7 +8,8 @@ import {
   HiChevronRight,
   HiOutlineUserAdd,
   HiOutlinePencil,
-  HiOutlineUsers
+  HiOutlineUsers,
+  HiOutlineDocumentText, // ✅ added
 } from "react-icons/hi";
 import { get, post } from "@/lib/api";
 
@@ -167,7 +168,6 @@ const normalized: Campaign[] = active.map((c: any) => {
         status: next,
       });
 
-      // your api wrapper might return {data: ...} or raw
       return (res as any)?.data ?? res;
     } catch (err: any) {
       const msg =
@@ -284,13 +284,12 @@ function TableView({
   formatCurrency,
 }: {
   data: Campaign[];
-  onChangeStatus: (c: Campaign, next: CampaignStatus) => void;
+  onChangeStatus: (c: Campaign, next: "open" | "paused") => void;
   statusUpdating: Record<string, boolean>;
   formatDate: (d: string) => string;
   formatCurrency: (n: number) => string;
 }) {
   return (
-    // ✅ same clean wrapper as Active Campaign table (no extra left space)
     <div
       className="p-[1.5px] rounded-lg shadow"
       style={{
@@ -328,7 +327,7 @@ function TableView({
 
             <tbody>
               {data.map((c, idx) => {
-                const status = (c.campaignStatus || "open") as CampaignStatus;
+                const status = (c.campaignStatus || "open") as "open" | "paused";
                 const isBusy = !!statusUpdating[c.id];
 
                 return (
@@ -374,6 +373,7 @@ function TableView({
                       {formatDate(c.timeline.endDate)}
                     </td>
 
+                    {/* Influencers List */}
                     <td className="px-6 py-4 align-top text-center">
                       {(c.applicantCount ?? 0) > 0 ? (
                         <Link
@@ -384,14 +384,22 @@ function TableView({
                           title="View influencers"
                           aria-label={`View influencers (${c.applicantCount ?? 0})`}
                         >
-                          <HiOutlineUsers size={18} className="opacity-70 group-hover:text-[#FF7236]" />
-                          <span className="group-hover:underline underline-offset-2">Influencers</span>
+                          <HiOutlineUsers
+                            size={18}
+                            className="opacity-70 group-hover:text-[#FF7236]"
+                          />
+                          <span className="group-hover:underline underline-offset-2">
+                            Influencers
+                          </span>
 
                           <span className="ml-1 inline-flex min-w-[2rem] justify-center rounded-full bg-gray-900 px-2 py-0.5 text-xs font-bold text-white group-hover:bg-[#FF7236]">
                             {c.applicantCount ?? 0}
                           </span>
 
-                          <HiChevronRight size={18} className="opacity-60 group-hover:opacity-100" />
+                          <HiChevronRight
+                            size={18}
+                            className="opacity-60 group-hover:opacity-100"
+                          />
                         </Link>
                       ) : (
                         <span
@@ -414,7 +422,7 @@ function TableView({
                         value={status}
                         disabled={isBusy}
                         onChange={(e) =>
-                          onChangeStatus(c, e.target.value as CampaignStatus)
+                          onChangeStatus(c, e.target.value as "open" | "paused")
                         }
                         className={[
                           "px-3 py-2 rounded-lg text-sm font-semibold border",
@@ -431,7 +439,7 @@ function TableView({
 
                     {/* Actions */}
                     <td className="px-6 py-4 whitespace-nowrap align-top text-center">
-                      <div className="flex items-center justify-center gap-2">
+                      <div className="flex items-center justify-center gap-2 flex-wrap">
                         <Link
                           href={`/brand/add-edit-campaign?id=${c.id}`}
                           className="inline-flex items-center bg-white border border-gray-900 text-gray-900 hover:bg-gray-50 px-3 py-2 rounded-lg text-sm font-semibold"
@@ -446,6 +454,16 @@ function TableView({
                         >
                           <HiOutlineUserAdd className="mr-1" size={18} />
                           Invite
+                        </Link>
+
+                        {/* ✅ NEW: See Deliverables */}
+                        <Link
+                          href={`/brand/created-campaign/deliverables/${c.id}`}
+                          className="inline-flex items-center bg-white border border-[#FF7236] text-[#FF7236] hover:bg-[#FF7236]/10 px-3 py-2 rounded-lg text-sm font-semibold"
+                          title="See deliverables for this campaign"
+                        >
+                          <HiOutlineDocumentText className="mr-1" size={18} />
+                          See Deliverables
                         </Link>
                       </div>
                     </td>

@@ -14,6 +14,7 @@ import {
   HiChevronDown,
   HiUserGroup,
   HiPencil,
+  HiOutlineDocumentText, // ✅ added
 } from "react-icons/hi";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
@@ -37,7 +38,7 @@ import { Card } from "@/components/ui/card";
 
 interface Campaign {
   campaignsId: string;
-  _id?: string; // (optional but useful — see #3)
+  _id?: string;
   brandId: string;
   productOrServiceName?: string;
   description?: string;
@@ -50,7 +51,6 @@ interface Campaign {
   campaignStatus?: string;
 }
 
-// Updated to match API: 'campaigns' field
 interface ListResponse {
   page: number;
   limit: number;
@@ -60,7 +60,7 @@ interface ListResponse {
   campaigns: Campaign[];
 }
 
-type StatusFilter = 0 | 1 | 2; // 0: All, 1: Active, 2: Inactive
+type StatusFilter = 0 | 1 | 2;
 
 type SortKey =
   | "productOrServiceName"
@@ -71,17 +71,6 @@ type SortKey =
   | "applicantCount"
   | "isActive";
 
-const sortByMap: Record<SortKey, string> = {
-  productOrServiceName: "productOrServiceName",
-  goal: "goal",
-  startDate: "timeline.startDate",
-  endDate: "timeline.endDate",
-  budget: "budget",
-  applicantCount: "applicantCount",
-  isActive: "isActive",
-};
-
-// helper to slice / clean name so repeated / long text doesn't blow up the UI
 const MAX_NAME_LENGTH = 60;
 const formatName = (name?: string) => {
   if (!name) return "—";
@@ -110,7 +99,6 @@ export default function AdminCampaignsPage() {
   const [sortKey, setSortKey] = useState<SortKey>("productOrServiceName");
   const [sortAsc, setSortAsc] = useState<boolean>(true);
 
-  // Fetch data from backend
   const fetchCampaigns = async () => {
     setLoading(true);
     try {
@@ -123,7 +111,6 @@ export default function AdminCampaignsPage() {
         type: statusFilter,
       };
       const data = await post<ListResponse>("/admin/campaign/getlist", payload);
-      // Use campaigns array from response
       setCampaigns(data.campaigns);
       setTotal(data.total);
       setTotalPages(data.totalPages);
@@ -136,7 +123,6 @@ export default function AdminCampaignsPage() {
     }
   };
 
-  // Initial & dependency-triggered load
   useEffect(() => {
     fetchCampaigns();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -201,36 +187,23 @@ export default function AdminCampaignsPage() {
               ))}
             </SelectContent>
           </Select>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleRefresh}
-            disabled={loading}
-          >
-            <HiOutlineRefresh
-              className={`mr-2 h-4 w-4 ${loading ? "animate-spin" : ""
-                }`}
-            />
+          <Button variant="outline" size="sm" onClick={handleRefresh} disabled={loading}>
+            <HiOutlineRefresh className={`mr-2 h-4 w-4 ${loading ? "animate-spin" : ""}`} />
             Refresh
           </Button>
         </div>
       </div>
 
       {loading ? (
-        <Card className="space-y-3">
+        <Card className="space-y-3 p-4">
           {Array.from({ length: limit }).map((_, i) => (
-            <div
-              key={i}
-              className="h-6 w-full bg-gray-200 animate-pulse rounded"
-            />
+            <div key={i} className="h-6 w-full bg-gray-200 animate-pulse rounded" />
           ))}
         </Card>
       ) : error ? (
         <Card className="text-center py-20 text-red-600">{error}</Card>
       ) : campaigns.length === 0 ? (
-        <Card className="text-center py-20 text-gray-600">
-          No campaigns found.
-        </Card>
+        <Card className="text-center py-20 text-gray-600">No campaigns found.</Card>
       ) : (
         <Card>
           <Table>
@@ -243,7 +216,7 @@ export default function AdminCampaignsPage() {
                   { label: "End", key: "endDate" },
                   { label: "Budget", key: "budget" },
                   { label: "Applicants", key: "applicantCount" },
-                  { label: "Status", key: "status" },
+                  { label: "Status", key: "isActive" }, // ✅ was "status" (not in SortKey)
                   { label: "Actions", key: "" },
                 ].map((col) => (
                   <TableHead
@@ -259,13 +232,11 @@ export default function AdminCampaignsPage() {
                 ))}
               </TableRow>
             </TableHeader>
+
             <TableBody>
               {campaigns.map((c) => (
                 <TableRow key={c.campaignsId}>
-                  <TableCell
-                    className="font-medium"
-                    title={c.productOrServiceName}
-                  >
+                  <TableCell className="font-medium" title={c.productOrServiceName}>
                     {formatName(c.productOrServiceName)}
                   </TableCell>
                   <TableCell>{c.goal || "—"}</TableCell>
@@ -291,50 +262,54 @@ export default function AdminCampaignsPage() {
                       </span>
                     )}
                   </TableCell>
+
                   <TableCell>
+                    {/* View */}
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <Link href={`/admin/campaigns/view?id=${c.campaignsId}`}>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            title="View Campaign"
-                          >
+                          <Button variant="ghost" size="icon" title="View Campaign">
                             <HiOutlineEye />
                           </Button>
                         </Link>
                       </TooltipTrigger>
                       <TooltipContent>View Details</TooltipContent>
                     </Tooltip>
+
+                    {/* Edit */}
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <Link href={`/admin/brands/create-campaign?brandId=${c.brandId}&id=${c.campaignsId}`}>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            title="Edit Campaign"
-                          >
+                          <Button variant="ghost" size="icon" title="Edit Campaign">
                             <HiPencil />
                           </Button>
                         </Link>
                       </TooltipTrigger>
                       <TooltipContent>Edit Campaign</TooltipContent>
                     </Tooltip>
+
+                    {/* Applicants */}
                     <Tooltip>
                       <TooltipTrigger asChild>
-                        <Link
-                          href={`/admin/campaigns/applicants?campaignId=${c.campaignsId}`}
-                        >
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            aria-label="View Applicants"
-                          >
+                        <Link href={`/admin/campaigns/applicants?campaignId=${c.campaignsId}`}>
+                          <Button variant="ghost" size="icon" aria-label="View Applicants">
                             <HiUserGroup className="h-5 w-5" />
                           </Button>
                         </Link>
                       </TooltipTrigger>
                       <TooltipContent>View Applicants</TooltipContent>
+                    </Tooltip>
+
+                    {/* ✅ NEW: Deliverables */}
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Link href={`/admin/campaigns/deliverables/${c.campaignsId}`}>
+                          <Button variant="ghost" size="icon" aria-label="See Deliverables">
+                            <HiOutlineDocumentText className="h-5 w-5" />
+                          </Button>
+                        </Link>
+                      </TooltipTrigger>
+                      <TooltipContent>See Deliverables</TooltipContent>
                     </Tooltip>
                   </TableCell>
                 </TableRow>
@@ -347,16 +322,10 @@ export default function AdminCampaignsPage() {
       {!loading && !error && campaigns.length > 0 && (
         <div className="flex justify-between items-center p-4">
           <div className="text-sm text-gray-700">
-            Showing {(page - 1) * limit + 1}–{Math.min(page * limit, total)} of{" "}
-            {total}
+            Showing {(page - 1) * limit + 1}–{Math.min(page * limit, total)} of {total}
           </div>
           <div className="space-x-2">
-            <Button
-              variant="outline"
-              size="icon"
-              disabled={page === 1}
-              onClick={() => setPage((p) => Math.max(p - 1, 1))}
-            >
+            <Button variant="outline" size="icon" disabled={page === 1} onClick={() => setPage((p) => Math.max(p - 1, 1))}>
               <HiChevronLeft />
             </Button>
             <Button
