@@ -62,6 +62,7 @@ interface Campaign {
   timeline: { startDate: string; endDate: string };
   isActive: number;
   budget: number;
+  influencerBudget?: number;
   isApproved: number;
   isContracted: number; // brand sent a contract
   contractId: string;
@@ -1494,7 +1495,7 @@ function CampaignTable({ data, loading, error, emptyMessage, page, totalPages, o
                 <div className="text-gray-600 line-clamp-1">{c.description}</div>
               </td>
               <td className="px-6 py-4 text-center">{c.brandName}</td>
-              <td className="px-6 py-4 text-center">{formatCurrency(c.budget)}</td>
+              <td className="px-6 py-4 text-center">{formatCurrency(c.influencerBudget || c.budget)}</td>
               <td className="px-6 py-4 text-center">
                 {formatDate(c.timeline.startDate)} – {formatDate(c.timeline.endDate)}
               </td>
@@ -1710,6 +1711,7 @@ export default function MyCampaignsPage() {
     timeline: raw.timeline,
     isActive: raw.isActive,
     budget: raw.budget,
+    influencerBudget: raw.influencerBudget,
     isApproved: raw.isApproved,
     isContracted: raw.isContracted,
     contractId: raw.contractId,

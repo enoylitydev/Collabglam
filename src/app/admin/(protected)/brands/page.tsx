@@ -4,7 +4,7 @@ import React, { useState, useEffect } from "react";
 import { NextPage } from "next";
 import Link from "next/link";
 import { post } from "@/lib/api";
-import { HiOutlineRefresh, HiOutlineEye, HiChevronUp, HiChevronDown, HiChevronLeft, HiChevronRight } from "react-icons/hi";
+import { HiOutlineRefresh, HiOutlineEye, HiChevronUp, HiChevronDown, HiChevronLeft, HiChevronRight, HiOutlinePlus, HiPencil } from "react-icons/hi";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -197,6 +197,16 @@ const AdminBrandsPage: NextPage = () => {
                           </Link>
                         </TooltipTrigger>
                         <TooltipContent>View details</TooltipContent>
+                      </Tooltip>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Link href={`/admin/brands/create-campaign?brandId=${b.brandId}`}>
+                            <Button variant="ghost" size="icon">
+                              <HiOutlinePlus />
+                            </Button>
+                          </Link>
+                        </TooltipTrigger>
+                        <TooltipContent>Create Campaign</TooltipContent>
                       </Tooltip>
                     </TableCell>
                   </TableRow>

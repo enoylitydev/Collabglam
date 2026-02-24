@@ -13,6 +13,7 @@ import {
   HiChevronUp,
   HiChevronDown,
   HiUserGroup,
+  HiPencil,
 } from "react-icons/hi";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
@@ -37,6 +38,7 @@ import { Card } from "@/components/ui/card";
 interface Campaign {
   campaignsId: string;
   _id?: string; // (optional but useful — see #3)
+  brandId: string;
   productOrServiceName?: string;
   description?: string;
   timeline?: { startDate?: string; endDate?: string };
@@ -303,6 +305,20 @@ export default function AdminCampaignsPage() {
                         </Link>
                       </TooltipTrigger>
                       <TooltipContent>View Details</TooltipContent>
+                    </Tooltip>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Link href={`/admin/brands/create-campaign?brandId=${c.brandId}&id=${c.campaignsId}`}>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            title="Edit Campaign"
+                          >
+                            <HiPencil />
+                          </Button>
+                        </Link>
+                      </TooltipTrigger>
+                      <TooltipContent>Edit Campaign</TooltipContent>
                     </Tooltip>
                     <Tooltip>
                       <TooltipTrigger asChild>

@@ -1,11 +1,7 @@
 'use client';
 
-import React, {
-  useState,
-  useEffect,
-  useMemo,
-  useRef,
-} from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { useRouter } from 'next/navigation';
 import {
   HiInboxIn,
   HiPaperAirplane,
@@ -55,12 +51,10 @@ interface Mail {
 }
 
 interface InfluencerOption {
-  id: string;               // influencerId OR some id used by backend
+  id: string; // influencerId
   name: string;
   handle?: string;
   platform?: string;
-
-  // ✅ NEW: threadId if known (from /emails/influencer/list)
   threadId?: string;
 }
 
@@ -74,7 +68,7 @@ interface AttachmentPayload {
 }
 
 const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024; // 20MB
-const THREAD_COOLDOWN_MS = 2 * 24 * 60 * 60 * 1000; // ✅ 2 days
+const THREAD_COOLDOWN_MS = 2 * 24 * 60 * 60 * 1000; // 2 days
 
 type Eligibility =
   | { allowed: true; state: 'allowed'; reason: string }
@@ -93,8 +87,15 @@ function formatWait(ms: number): string {
 }
 
 const EmailPage: React.FC = () => {
+  const router = useRouter();
+
   const [brandId, setBrandId] = useState<string>('');
   const [brandAliasEmail, setBrandAliasEmail] = useState<string>('');
+
+  // ✅ Plan gating
+  const [planLoading, setPlanLoading] = useState<boolean>(true);
+  const [brandPlanName, setBrandPlanName] = useState<string>('free');
+  const isFullyManaged = brandPlanName === 'fully_managed';
 
   const [mails, setMails] = useState<Mail[]>([]);
   const [selectedMailId, setSelectedMailId] = useState<string | null>(null);
@@ -138,6 +139,85 @@ const EmailPage: React.FC = () => {
     setBrandAliasEmail(storedAliasEmail || '');
   }, []);
 
+  // 2) Fetch plan from server (source of truth)
+  useEffect(() => {
+    if (!brandId) return;
+
+    let cancelled = false;
+
+    (async () => {
+      setPlanLoading(true);
+
+      // fast UI from cache
+      try {
+        const cached = localStorage.getItem('brandPlanName');
+        if (cached && !cancelled) setBrandPlanName(String(cached).toLowerCase());
+      } catch {}
+
+      try {
+        const res = await get<any>(
+          `/brand/subscription/current?brandId=${encodeURIComponent(brandId)}`
+        );
+        const data = res?.data ?? res;
+        const latestName = String(data?.brandPlanName || 'free').toLowerCase();
+
+        if (cancelled) return;
+        setBrandPlanName(latestName);
+
+        // cache
+        try {
+          localStorage.setItem('brandPlanName', latestName);
+          if (data?.brandPlanId) localStorage.setItem('brandPlanId', String(data.brandPlanId));
+        } catch {}
+      } catch {
+        // keep cached plan if server fails
+      } finally {
+        if (!cancelled) setPlanLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [brandId]);
+
+  // 3) If Fully Managed → redirect
+  useEffect(() => {
+    if (!planLoading && isFullyManaged) {
+      router.replace('/brand/dashboard');
+    }
+  }, [planLoading, isFullyManaged, router]);
+
+  // Hard guard for actions (extra safety)
+  const blockIfFullyManaged = (actionLabel: string) => {
+    if (!isFullyManaged) return false;
+    setComposeError(`Email is disabled on Fully Managed plan. (${actionLabel})`);
+    return true;
+  };
+
+  // Block UI entirely if fully managed (no flicker)
+  if (!planLoading && isFullyManaged) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-[#FFF9F2] via-white to-[#FFE7CF] p-6">
+        <div className="max-w-lg w-full bg-white border border-orange-100 rounded-2xl shadow-xl p-6 text-center">
+          <div className="mx-auto h-12 w-12 rounded-full bg-gradient-to-r from-[#FFA135] to-[#FF7236] flex items-center justify-center text-white">
+            <HiMail className="w-6 h-6" />
+          </div>
+          <h1 className="mt-4 text-xl font-semibold text-gray-900">Email Center is disabled</h1>
+          <p className="mt-2 text-sm text-gray-600">
+            Your plan is <b>Fully Managed</b>. CollabGlam handles all outreach and email sending for you.
+          </p>
+          <button
+            className="mt-5 inline-flex items-center justify-center rounded-full bg-gray-900 text-white px-5 py-2 text-sm font-semibold"
+            onClick={() => router.replace('/brand/dashboard')}
+          >
+            Go to Dashboard
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   // Helper: get influencer display name by id
   const getInfluencerNameById = (id: string): string => {
     const fromList = influencers.find((inf) => inf.id === id)?.name;
@@ -149,7 +229,7 @@ const EmailPage: React.FC = () => {
     return 'Creator';
   };
 
-  // ✅ Fast lookup: thread -> messages
+  // Fast lookup: thread -> messages
   const mailsByThread = useMemo(() => {
     const map = new Map<string, Mail[]>();
     for (const m of mails) {
@@ -158,9 +238,11 @@ const EmailPage: React.FC = () => {
       arr.push(m);
       map.set(m.threadId, arr);
     }
-    // sort each thread ascending by createdAt
     for (const [k, arr] of map.entries()) {
-      arr.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+      arr.sort(
+        (a, b) =>
+          new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+      );
       map.set(k, arr);
     }
     return map;
@@ -172,25 +254,17 @@ const EmailPage: React.FC = () => {
     return map;
   }, [influencers]);
 
-  // ✅ Resolve threadId for influencer (for compose gating)
   const resolveThreadIdForInfluencer = (influencerId: string): string | null => {
-    // reply mode already has threadId
     if (composeThreadId) return composeThreadId;
-
-    // try influencer list (from /emails/influencer/list)
     const opt = influencerById.get(influencerId);
     if (opt?.threadId) return opt.threadId;
-
-    // fallback: find newest mail by influencerId
     const m = mails.find((x) => x.influencerId === influencerId);
     return m?.threadId || null;
   };
 
-  // ✅ Eligibility calculator (your rule)
   const getEligibility = (influencerId: string): Eligibility => {
     const threadId = resolveThreadIdForInfluencer(influencerId);
 
-    // If we don't even have a thread yet → first message allowed
     if (!threadId) {
       return { allowed: true, state: 'allowed', reason: 'First message allowed.' };
     }
@@ -228,15 +302,15 @@ const EmailPage: React.FC = () => {
       };
     }
 
-    // outgoingCount >= 2 and no incoming ever => blocked until influencer replies
     return {
       allowed: false,
       state: 'blocked',
-      reason: 'You already sent 2 emails without a reply. You can message again only after the influencer replies.',
+      reason:
+        'You already sent 2 emails without a reply. You can message again only after the influencer replies.',
     };
   };
 
-  // 2) Load inbox (threads + messages) -> flatten into Mail[]
+  // Load inbox (threads + messages) -> flatten into Mail[]
   useEffect(() => {
     if (!brandId) return;
 
@@ -245,7 +319,6 @@ const EmailPage: React.FC = () => {
         setIsLoading(true);
         setLoadError(null);
 
-        // ✅ single call (no N+1)
         const inboxRes = await post<any>(`/emails/brand/inbox`, {
           brandId,
           limit: 200,
@@ -267,7 +340,11 @@ const EmailPage: React.FC = () => {
           const messages: any[] = Array.isArray(conv.messages) ? conv.messages : [];
 
           for (const msg of messages) {
-            const createdAt = msg.createdAt || msg.sentAt || msg.receivedAt || new Date().toISOString();
+            const createdAt =
+              msg.createdAt ||
+              msg.sentAt ||
+              msg.receivedAt ||
+              new Date().toISOString();
             const created = new Date(createdAt);
 
             const date = created.toLocaleDateString('en-US', {
@@ -292,17 +369,17 @@ const EmailPage: React.FC = () => {
 
             const attachments: MailAttachment[] = Array.isArray(msg.attachments)
               ? msg.attachments.map((att: any) => ({
-                _id: att._id,
-                filename: att.filename,
-                contentType: att.contentType,
-                size: Number(att.size) || 0,
-                url: att.url,
-                storageKey: att.storageKey,
-              }))
+                  _id: att._id,
+                  filename: att.filename,
+                  contentType: att.contentType,
+                  size: Number(att.size) || 0,
+                  url: att.url,
+                  storageKey: att.storageKey,
+                }))
               : [];
 
             allMails.push({
-              id: String(msg.id || msg._id || `${threadId}-${Date.now()}`), // ✅ controller uses `id`
+              id: String(msg.id || msg._id || `${threadId}-${Date.now()}`),
               direction,
               from: fromLabel,
               to: toLabel,
@@ -316,7 +393,7 @@ const EmailPage: React.FC = () => {
               threadId,
               influencerId,
               influencerName,
-              createdAt: createdAt,
+              createdAt,
               attachments,
             });
           }
@@ -342,7 +419,7 @@ const EmailPage: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [brandId]);
 
-  // 3) Load influencers list for compose (based on API: { brand, conversations })
+  // Load influencers list for compose
   useEffect(() => {
     if (!brandId) return;
 
@@ -351,9 +428,12 @@ const EmailPage: React.FC = () => {
       for (const m of mails) {
         const id = String(m.influencerId || '').trim();
         if (!id) continue;
-
         if (!map.has(id)) {
-          map.set(id, { id, name: m.influencerName || 'Creator', threadId: m.threadId });
+          map.set(id, {
+            id,
+            name: m.influencerName || 'Creator',
+            threadId: m.threadId,
+          });
         }
       }
       return Array.from(map.values());
@@ -364,24 +444,26 @@ const EmailPage: React.FC = () => {
         setIsLoadingInfluencers(true);
         setInfluencerError(null);
 
-        const res = await get<any>(`/emails/brand/contacts?brandId=${encodeURIComponent(brandId)}`);
+        const res = await get<any>(
+          `/emails/brand/contacts?brandId=${encodeURIComponent(brandId)}`
+        );
         const payload = res?.data ?? res;
 
-        const list: any[] = Array.isArray(payload?.influencers) ? payload.influencers : [];
+        const list: any[] = Array.isArray(payload?.influencers)
+          ? payload.influencers
+          : [];
 
-        // ✅ only keep entries that can be emailed via /emails/brand-to-influencer (requires influencerId)
         const mapped: InfluencerOption[] = list
-          .filter((x) => x?.influencerId) // invited-only rows won't have influencerId
+          .filter((x) => x?.influencerId)
           .map((x) => ({
             id: String(x.influencerId),
             name: x.name || 'Creator',
-            threadId: x.threadId ? String(x.threadId) : undefined, // ✅ used by your cooldown gating
+            threadId: x.threadId ? String(x.threadId) : undefined,
             handle: x.invitation?.handle || undefined,
             platform: x.invitation?.platform || undefined,
           }));
 
         const finalList = mapped.length ? mapped : buildFallbackFromMails();
-
         finalList.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
         setInfluencers(finalList);
       } catch (err: any) {
@@ -396,7 +478,7 @@ const EmailPage: React.FC = () => {
     loadInfluencers();
   }, [brandId, mails]);
 
-  // 4) Filtering + selected mail
+  // Filtering + selected mail
   const filteredMails = useMemo(() => {
     let result = [...mails];
 
@@ -443,7 +525,6 @@ const EmailPage: React.FC = () => {
     }
   }, [filteredMails, selectedMail, selectedMailId]);
 
-  // ✅ Compose recipient status list
   const composeRecipientStatuses = useMemo(() => {
     return composeInfluencerIds.map((id) => {
       const name = getInfluencerNameById(id);
@@ -459,7 +540,7 @@ const EmailPage: React.FC = () => {
       .map((x) => x.id);
   }, [composeRecipientStatuses]);
 
-  // 5) Compose helpers
+  // Compose helpers
   const openCompose = (opts?: {
     subject?: string;
     body?: string;
@@ -467,6 +548,8 @@ const EmailPage: React.FC = () => {
     threadId?: string;
     toDisplay?: string;
   }) => {
+    if (blockIfFullyManaged('Compose')) return;
+
     setComposeSubject(opts?.subject ?? '');
     setComposeBody(opts?.body ?? '');
     setComposeThreadId(opts?.threadId ?? null);
@@ -493,25 +576,17 @@ const EmailPage: React.FC = () => {
     const accepted: File[] = [];
 
     files.forEach((file) => {
-      if (file.size > MAX_ATTACHMENT_BYTES) {
-        tooLargeCount += 1;
-      } else {
-        accepted.push(file);
-      }
+      if (file.size > MAX_ATTACHMENT_BYTES) tooLargeCount += 1;
+      else accepted.push(file);
     });
 
     if (tooLargeCount > 0) {
-      setComposeError(
-        `Some files were too large and skipped (max size: 20MB per file).`
-      );
+      setComposeError(`Some files were too large and skipped (max size: 20MB per file).`);
     } else {
       setComposeError(null);
     }
 
-    if (accepted.length) {
-      setComposeAttachments((prev) => [...prev, ...accepted]);
-    }
-
+    if (accepted.length) setComposeAttachments((prev) => [...prev, ...accepted]);
     e.target.value = '';
   };
 
@@ -530,9 +605,7 @@ const EmailPage: React.FC = () => {
 
             reader.onload = () => {
               const result = reader.result as string;
-              const base64 = result.includes(',')
-                ? result.split(',')[1]
-                : result;
+              const base64 = result.includes(',') ? result.split(',')[1] : result;
 
               resolve({
                 filename: file.name,
@@ -554,6 +627,8 @@ const EmailPage: React.FC = () => {
   };
 
   const handleSend = async () => {
+    if (blockIfFullyManaged('Send')) return;
+
     if (!composeSubject.trim() || !composeBody.trim()) {
       setComposeError('Please fill Subject and Message before sending.');
       return;
@@ -565,24 +640,19 @@ const EmailPage: React.FC = () => {
     }
 
     if (!composeInfluencerIds.length) {
-      setComposeError(
-        'Please select at least one influencer to send this email to.'
-      );
+      setComposeError('Please select at least one influencer to send this email to.');
       return;
     }
 
-    // ✅ Apply rule BEFORE sending
     const blocked = composeRecipientStatuses.filter((x) => !x.eligibility.allowed);
     const allowed = composeRecipientStatuses.filter((x) => x.eligibility.allowed);
 
     if (!allowed.length) {
-      // none can send
       const msg = blocked[0]?.eligibility.reason || 'You cannot send this email right now.';
       setComposeError(msg);
       return;
     }
 
-    // If some are blocked, warn but still send to allowed
     if (blocked.length) {
       const list = blocked
         .slice(0, 3)
@@ -601,9 +671,7 @@ const EmailPage: React.FC = () => {
     } catch (err) {
       console.error('Error preparing attachments:', err);
       setComposeError(
-        err instanceof Error
-          ? err.message
-          : 'Failed to read attachment(s). Please try again.'
+        err instanceof Error ? err.message : 'Failed to read attachment(s). Please try again.'
       );
       return;
     }
@@ -614,7 +682,6 @@ const EmailPage: React.FC = () => {
       const sentMails: Mail[] = [];
       const failures: string[] = [];
 
-      // ✅ send only to allowed recipients
       for (const influencerId of allowed.map((x) => x.id)) {
         try {
           const data = await post<any>('/emails/brand-to-influencer', {
@@ -637,18 +704,15 @@ const EmailPage: React.FC = () => {
           });
 
           const body = composeBody.trim();
-          const preview =
-            body.slice(0, 120) + (body.length > 120 ? '…' : '');
+          const preview = body.slice(0, 120) + (body.length > 120 ? '…' : '');
 
           const influencerName = getInfluencerNameById(influencerId);
 
-          const attachmentsMeta: MailAttachment[] = attachmentsPayload.map(
-            (att) => ({
-              filename: att.filename,
-              contentType: att.contentType,
-              size: att.size,
-            })
-          );
+          const attachmentsMeta: MailAttachment[] = attachmentsPayload.map((att) => ({
+            filename: att.filename,
+            contentType: att.contentType,
+            size: att.size,
+          }));
 
           const newMail: Mail = {
             id: data.messageId || `${influencerId}-${Date.now()}`,
@@ -684,13 +748,10 @@ const EmailPage: React.FC = () => {
 
       if (failures.length > 0) {
         setComposeError(
-          `Some emails failed to send (${failures.length} recipient${failures.length > 1 ? 's' : ''
-          }). Check logs / API and try again if needed.`
+          `Some emails failed to send (${failures.length} recipient${failures.length > 1 ? 's' : ''}). Check logs / API and try again if needed.`
         );
       } else {
         setComposeAttachments([]);
-
-        // close modal only if everything that was allowed succeeded
         setIsComposeOpen(false);
       }
     } catch (err: any) {
@@ -702,6 +763,7 @@ const EmailPage: React.FC = () => {
   };
 
   const handleReply = () => {
+    if (blockIfFullyManaged('Reply')) return;
     if (!selectedMail) return;
 
     const senderLabel =
@@ -723,6 +785,7 @@ const EmailPage: React.FC = () => {
   };
 
   const handleForward = () => {
+    if (blockIfFullyManaged('Forward')) return;
     if (!selectedMail) return;
 
     const fromLabel =
@@ -742,9 +805,7 @@ const EmailPage: React.FC = () => {
     });
   };
 
-  const handleHeaderCompose = () => {
-    openCompose();
-  };
+  const handleHeaderCompose = () => openCompose();
 
   const toggleInfluencerSelection = (id: string) => {
     setComposeInfluencerIds((prev) =>
@@ -810,14 +871,17 @@ const EmailPage: React.FC = () => {
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={handleHeaderCompose}
-            className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white px-5 py-2.5 text-sm font-semibold shadow-[0_12px_35px_rgba(255,114,54,0.35)] hover:shadow-[0_16px_40px_rgba(255,114,54,0.45)] transition-all"
-          >
-            <HiPlus className="w-5 h-5" />
-            <span>Compose Email</span>
-          </button>
+          {/* ✅ Hide Compose for Fully Managed */}
+          {!isFullyManaged && (
+            <button
+              type="button"
+              onClick={handleHeaderCompose}
+              className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white px-5 py-2.5 text-sm font-semibold shadow-[0_12px_35px_rgba(255,114,54,0.35)] hover:shadow-[0_16px_40px_rgba(255,114,54,0.45)] transition-all"
+            >
+              <HiPlus className="w-5 h-5" />
+              <span>Compose Email</span>
+            </button>
+          )}
         </div>
 
         {/* Main email panel */}
@@ -839,29 +903,28 @@ const EmailPage: React.FC = () => {
               <div className="flex items-center justify-between gap-3 text-xs">
                 <span className="text-gray-500">Filter</span>
                 <div className="inline-flex bg-gray-50 rounded-full p-1 border border-gray-100">
-                  {(['all', 'incoming', 'outgoing'] as FilterType[]).map(
-                    (f) => {
-                      const isActive = filter === f;
-                      const labels: Record<FilterType, string> = {
-                        all: 'All',
-                        incoming: 'Inbox',
-                        outgoing: 'Sent',
-                      };
-                      return (
-                        <button
-                          key={f}
-                          type="button"
-                          onClick={() => setFilter(f)}
-                          className={`px-3 py-1 rounded-full text-xs font-medium transition-all ${isActive
+                  {(['all', 'incoming', 'outgoing'] as FilterType[]).map((f) => {
+                    const isActive = filter === f;
+                    const labels: Record<FilterType, string> = {
+                      all: 'All',
+                      incoming: 'Inbox',
+                      outgoing: 'Sent',
+                    };
+                    return (
+                      <button
+                        key={f}
+                        type="button"
+                        onClick={() => setFilter(f)}
+                        className={`px-3 py-1 rounded-full text-xs font-medium transition-all ${
+                          isActive
                             ? 'bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white shadow-sm'
                             : 'text-gray-600 hover:bg-white hover:text-gray-900'
-                            }`}
-                        >
-                          {labels[f]}
-                        </button>
-                      );
-                    }
-                  )}
+                        }`}
+                      >
+                        {labels[f]}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             </div>
@@ -873,11 +936,7 @@ const EmailPage: React.FC = () => {
                   <HiInboxIn className="w-8 h-8 mb-2 text-gray-300" />
                   <p className="font-medium">Brand context missing.</p>
                   <p className="text-xs mt-1 text-gray-400">
-                    Set{' '}
-                    <code className="font-mono text-[11px] bg-gray-100 px-1 py-0.5 rounded">
-                      NEXT_PUBLIC_BRAND_ID
-                    </code>{' '}
-                    or store{' '}
+                    Store{' '}
                     <code className="font-mono text-[11px] bg-gray-100 px-1 py-0.5 rounded">
                       brandId
                     </code>{' '}
@@ -907,52 +966,49 @@ const EmailPage: React.FC = () => {
                     const isActive = mail.id === selectedMailId;
                     const isIncoming = mail.direction === 'incoming';
                     const creatorLabel = mail.influencerName || 'Creator';
-                    const hasAttachments =
-                      mail.attachments && mail.attachments.length > 0;
+                    const hasAttachments = mail.attachments && mail.attachments.length > 0;
 
                     return (
                       <li key={mail.id}>
                         <button
                           type="button"
                           onClick={() => setSelectedMailId(mail.id)}
-                          className={`relative w-full text-left px-4 py-3 flex flex-col gap-1 transition-all group ${isActive
-                            ? 'bg-gradient-to-r from-[#FFF1DF] to-[#FFE0D0]'
-                            : 'hover:bg:white'
-                            }`.replace('hover:bg:white', 'hover:bg-white')}
+                          className={`relative w-full text-left px-4 py-3 flex flex-col gap-1 transition-all group ${
+                            isActive
+                              ? 'bg-gradient-to-r from-[#FFF1DF] to-[#FFE0D0]'
+                              : 'hover:bg-white'
+                          }`}
                         >
                           {isActive && (
                             <span className="absolute left-0 top-0 h-full w-1 rounded-r-full bg-gradient-to-b from-[#FFA135] to-[#FF7236]" />
                           )}
                           <div className="flex items-center justify-between gap-2 pl-1">
                             <div className="flex items-center gap-2">
-                              {!mail.isRead && (
-                                <span className="h-1.5 w-1.5 rounded-full bg-[#FF7236]" />
-                              )}
+                              {!mail.isRead && <span className="h-1.5 w-1.5 rounded-full bg-[#FF7236]" />}
                               <p className="text-sm font-semibold text-gray-900 line-clamp-1">
                                 {mail.subject}
                               </p>
                             </div>
-                            <span className="text-[11px] text-gray-500">
-                              {mail.time}
-                            </span>
+                            <span className="text-[11px] text-gray-500">{mail.time}</span>
                           </div>
+
                           <div className="flex items-center justify-between gap-2 pl-1">
                             <p className="text-xs text-gray-600 line-clamp-1">
                               {isIncoming ? creatorLabel : 'You'}
                             </p>
                             <span
-                              className={`text-[10px] px-2 py-0.5 rounded-full border ${isIncoming
-                                ? 'bg-emerald-50 text-emerald-700 border-emerald-100'
-                                : 'bg-indigo-50 text-indigo-700 border-indigo-100'
-                                }`}
+                              className={`text-[10px] px-2 py-0.5 rounded-full border ${
+                                isIncoming
+                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-100'
+                                  : 'bg-indigo-50 text-indigo-700 border-indigo-100'
+                              }`}
                             >
                               {isIncoming ? 'Incoming' : 'Outgoing'}
                             </span>
                           </div>
+
                           <div className="flex items-center justify-between gap-2 pl-1">
-                            <p className="text-xs text-gray-500 line-clamp-2">
-                              {mail.preview}
-                            </p>
+                            <p className="text-xs text-gray-500 line-clamp-2">{mail.preview}</p>
 
                             {hasAttachments && (
                               <span className="inline-flex items-center gap-1 text-[10px] text-gray-500 shrink-0">
@@ -961,6 +1017,7 @@ const EmailPage: React.FC = () => {
                               </span>
                             )}
                           </div>
+
                           {mail.tags && mail.tags.length > 0 && (
                             <div className="flex flex-wrap gap-1 pt-1 pl-1">
                               {mail.tags.map((tag) => (
@@ -992,9 +1049,7 @@ const EmailPage: React.FC = () => {
                       <div className="inline-flex items-center gap-2 rounded-full bg-gray-50 px-2.5 py-1 border border-gray-100">
                         <HiMail className="w-4 h-4 text-[#FF7236]" />
                         <span className="text-[11px] font-medium text-gray-700">
-                          {selectedMail.direction === 'incoming'
-                            ? 'Inbox message'
-                            : 'Sent from CollabGlam'}
+                          {selectedMail.direction === 'incoming' ? 'Inbox message' : 'Sent from CollabGlam'}
                         </span>
                       </div>
 
@@ -1010,30 +1065,27 @@ const EmailPage: React.FC = () => {
                     </div>
 
                     <div className="text-right text-xs text-gray-500">
-                      <p className="font-medium text-gray-700">
-                        {selectedMail.date}
-                      </p>
+                      <p className="font-medium text-gray-700">{selectedMail.date}</p>
                       <p>{selectedMail.time}</p>
                     </div>
                   </div>
 
                   <div className="flex flex-wrap items-center gap-3 text-xs text-gray-600 pt-1">
                     <div className="flex items-center gap-1.5">
-                      <span className="font-semibold text-gray-700">
-                        From
-                      </span>
+                      <span className="font-semibold text-gray-700">From</span>
                       <span className="px-2 py-0.5 rounded-full bg-gray-50 border border-gray-100 text-[11px]">
-                        {selectedFromLabel}
+                        {selectedMail.direction === 'incoming' ? selectedMail.influencerName || 'Creator' : 'You'}
                       </span>
                     </div>
                     <div className="flex items-center gap-1.5">
                       <span className="font-semibold text-gray-700">To</span>
                       <span className="px-2 py-0.5 rounded-full bg-gray-50 border border-gray-100 text-[11px]">
-                        {selectedToLabel}
+                        {selectedMail.direction === 'incoming' ? 'You' : selectedMail.influencerName || 'Creator'}
                       </span>
                     </div>
                   </div>
 
+                  {/* ✅ Reply/Forward hidden for fully managed (but page is blocked anyway) */}
                   <div className="flex flex-wrap gap-2 pt-2">
                     <button
                       type="button"
@@ -1059,7 +1111,6 @@ const EmailPage: React.FC = () => {
                     {selectedMail.body}
                   </div>
 
-                  {/* Image preview */}
                   {imageAttachments.length > 0 && (
                     <div className="mt-4 space-y-2">
                       <div className="flex items-center gap-1 text-xs font-medium text-gray-600">
@@ -1072,18 +1123,10 @@ const EmailPage: React.FC = () => {
                             key={att._id || att.filename}
                             className="max-w-[220px] rounded-xl overflow-hidden border border-gray-200 bg-white shadow-sm"
                           >
-                            <img
-                              src={att.url!}
-                              alt={att.filename}
-                              className="w-full h-auto object-cover"
-                            />
+                            <img src={att.url!} alt={att.filename} className="w-full h-auto object-cover" />
                             <div className="px-2 py-1">
-                              <p className="text-[11px] text-gray-700 truncate">
-                                {att.filename}
-                              </p>
-                              <p className="text-[10px] text-gray-400">
-                                {Math.round(att.size / 1024)} KB
-                              </p>
+                              <p className="text-[11px] text-gray-700 truncate">{att.filename}</p>
+                              <p className="text-[10px] text-gray-400">{Math.round(att.size / 1024)} KB</p>
                             </div>
                           </div>
                         ))}
@@ -1091,7 +1134,6 @@ const EmailPage: React.FC = () => {
                     </div>
                   )}
 
-                  {/* Video preview */}
                   {videoAttachments.length > 0 && (
                     <div className="mt-4 space-y-2">
                       <div className="flex items-center gap-1 text-xs font-medium text-gray-600">
@@ -1104,18 +1146,10 @@ const EmailPage: React.FC = () => {
                             key={att._id || att.filename}
                             className="max-w-[260px] rounded-xl overflow-hidden border border-gray-200 bg-black shadow-sm"
                           >
-                            <video
-                              controls
-                              className="w-full h-auto"
-                              src={att.url!}
-                            />
+                            <video controls className="w-full h-auto" src={att.url!} />
                             <div className="px-2 py-1 bg-white">
-                              <p className="text-[11px] text-gray-700 truncate">
-                                {att.filename}
-                              </p>
-                              <p className="text-[10px] text-gray-400">
-                                {Math.round(att.size / 1024)} KB
-                              </p>
+                              <p className="text-[11px] text-gray-700 truncate">{att.filename}</p>
+                              <p className="text-[10px] text-gray-400">{Math.round(att.size / 1024)} KB</p>
                             </div>
                           </div>
                         ))}
@@ -1123,14 +1157,11 @@ const EmailPage: React.FC = () => {
                     </div>
                   )}
 
-                  {/* Attachment chips (clickable) */}
                   {selectedAttachments.length > 0 && (
                     <div className="mt-4 space-y-2">
                       <div className="flex items-center gap-1 text-xs font-medium text-gray-600">
                         <Paperclip className="w-3 h-3" />
-                        <span>
-                          Attachments ({selectedAttachments.length})
-                        </span>
+                        <span>Attachments ({selectedAttachments.length})</span>
                       </div>
                       <div className="flex flex-wrap gap-2">
                         {selectedAttachments.map((att) => (
@@ -1142,12 +1173,8 @@ const EmailPage: React.FC = () => {
                             className="inline-flex items-center gap-1.5 px-2 py-1 rounded-full bg-white border border-gray-200 text-[11px] text-gray-700 hover:bg-gray-50"
                           >
                             <Paperclip className="w-3 h-3" />
-                            <span className="max-w-[160px] truncate">
-                              {att.filename}
-                            </span>
-                            <span className="text-[10px] text-gray-400">
-                              {Math.round(att.size / 1024)} KB
-                            </span>
+                            <span className="max-w-[160px] truncate">{att.filename}</span>
+                            <span className="text-[10px] text-gray-400">{Math.round(att.size / 1024)} KB</span>
                           </a>
                         ))}
                       </div>
@@ -1158,21 +1185,20 @@ const EmailPage: React.FC = () => {
             ) : (
               <div className="flex-1 flex flex-col items-center justify-center text-center px-6 py-10 text-gray-500">
                 <HiInboxIn className="w-10 h-10 mb-3 text-gray-300" />
-                <p className="text-sm font-medium text-gray-700">
-                  No email selected yet.
-                </p>
+                <p className="text-sm font-medium text-gray-700">No email selected yet.</p>
                 <p className="text-xs mt-1 text-gray-400">
-                  Choose an email on the left, or start a new creator
-                  conversation.
+                  Choose an email on the left, or start a new creator conversation.
                 </p>
-                <button
-                  type="button"
-                  onClick={handleHeaderCompose}
-                  className="mt-4 inline-flex items-center gap-2 rounded-full border border-orange-200 px-4 py-2 text-xs font-medium text-[#FF7236] bg-orange-50/60 hover:bg-orange-100/80 transition-colors"
-                >
-                  <HiPaperAirplane className="w-4 h-4" />
-                  Compose new email
-                </button>
+                {!isFullyManaged && (
+                  <button
+                    type="button"
+                    onClick={handleHeaderCompose}
+                    className="mt-4 inline-flex items-center gap-2 rounded-full border border-orange-200 px-4 py-2 text-xs font-medium text-[#FF7236] bg-orange-50/60 hover:bg-orange-100/80 transition-colors"
+                  >
+                    <HiPaperAirplane className="w-4 h-4" />
+                    Compose new email
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -1183,16 +1209,13 @@ const EmailPage: React.FC = () => {
       {isComposeOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 backdrop-blur-sm px-4">
           <div className="bg-white/95 w-full max-w-2xl rounded-2xl shadow-2xl border border-orange-100 flex flex-col max-h-[90vh] overflow-hidden">
-            {/* Header */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 bg-gradient-to-r from-white via-white to-[#FFF3E1]">
               <div className="flex items-center gap-3">
                 <div className="h-10 w-10 rounded-full bg-gradient-to-tr from-[#FFA135] to-[#FF7236] flex items-center justify-center text-white shadow-md">
                   <HiMail className="w-5 h-5" />
                 </div>
                 <div>
-                  <h2 className="text-sm font-semibold text-gray-900">
-                    Compose Email
-                  </h2>
+                  <h2 className="text-sm font-semibold text-gray-900">Compose Email</h2>
                   <p className="text-xs text-gray-500">
                     Send collaboration offers directly to your creator pipeline.
                   </p>
@@ -1207,13 +1230,9 @@ const EmailPage: React.FC = () => {
               </button>
             </div>
 
-            {/* Body */}
             <div className="px-6 py-4 space-y-3 overflow-y-auto">
-              {/* From */}
               <div className="space-y-1.5">
-                <label className="text-[11px] font-medium text-gray-500">
-                  From
-                </label>
+                <label className="text-[11px] font-medium text-gray-500">From</label>
                 <input
                   type="text"
                   value={brandAliasEmail}
@@ -1222,12 +1241,9 @@ const EmailPage: React.FC = () => {
                 />
               </div>
 
-              {/* Recipients */}
               {composeThreadId ? (
                 <div className="space-y-1.5">
-                  <label className="text-[11px] font-medium text-gray-500">
-                    To (reply)
-                  </label>
+                  <label className="text-[11px] font-medium text-gray-500">To (reply)</label>
                   <input
                     type="text"
                     value={composeToDisplay || 'Creator'}
@@ -1252,17 +1268,11 @@ const EmailPage: React.FC = () => {
 
                   <div className="max-h-40 overflow-y-auto rounded-lg border border-gray-200 bg-white">
                     {isLoadingInfluencers ? (
-                      <div className="px-3 py-2 text-[11px] text-gray-500">
-                        Loading influencers…
-                      </div>
+                      <div className="px-3 py-2 text-[11px] text-gray-500">Loading influencers…</div>
                     ) : influencerError ? (
-                      <div className="px-3 py-2 text-[11px] text-red-500">
-                        {influencerError}
-                      </div>
+                      <div className="px-3 py-2 text-[11px] text-red-500">{influencerError}</div>
                     ) : filteredInfluencersForPicker.length === 0 ? (
-                      <div className="px-3 py-2 text-[11px] text-gray-500">
-                        No influencers found.
-                      </div>
+                      <div className="px-3 py-2 text-[11px] text-gray-500">No influencers found.</div>
                     ) : (
                       <ul className="divide-y divide-gray-100 text-xs">
                         {filteredInfluencersForPicker.map((inf) => {
@@ -1279,19 +1289,10 @@ const EmailPage: React.FC = () => {
                                 className="w-full flex items-center justify-between gap-2 px-3 py-2 hover:bg-gray-50"
                               >
                                 <div className="flex items-center gap-2">
-                                  <input
-                                    type="checkbox"
-                                    checked={checked}
-                                    readOnly
-                                    className="h-3 w-3"
-                                  />
+                                  <input type="checkbox" checked={checked} readOnly className="h-3 w-3" />
                                   <div className="flex flex-col items-start">
-                                    <span className="font-medium text-gray-800">
-                                      {inf.name}
-                                    </span>
-                                    <span className="text-[11px] text-gray-500">
-                                      {secondaryLine}
-                                    </span>
+                                    <span className="font-medium text-gray-800">{inf.name}</span>
+                                    <span className="text-[11px] text-gray-500">{secondaryLine}</span>
                                   </div>
                                 </div>
                               </button>
@@ -1308,7 +1309,6 @@ const EmailPage: React.FC = () => {
                 </div>
               )}
 
-              {/* ✅ NEW: Eligibility status panel */}
               {composeRecipientStatuses.length > 0 && (
                 <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
                   <p className="text-[11px] font-medium text-gray-700">
@@ -1317,30 +1317,23 @@ const EmailPage: React.FC = () => {
                   <div className="mt-1 space-y-1">
                     {composeRecipientStatuses.slice(0, 6).map((r) => (
                       <div key={r.id} className="flex items-start justify-between gap-3">
-                        <span className="text-[11px] text-gray-700 truncate">
-                          {r.name}
-                        </span>
+                        <span className="text-[11px] text-gray-700 truncate">{r.name}</span>
                         <span
-                          className={`text-[10px] px-2 py-0.5 rounded-full border shrink-0 ${r.eligibility.allowed
-                            ? 'bg-emerald-50 text-emerald-700 border-emerald-100'
-                            : r.eligibility.state === 'cooldown'
+                          className={`text-[10px] px-2 py-0.5 rounded-full border shrink-0 ${
+                            r.eligibility.allowed
+                              ? 'bg-emerald-50 text-emerald-700 border-emerald-100'
+                              : r.eligibility.state === 'cooldown'
                               ? 'bg-amber-50 text-amber-700 border-amber-100'
                               : 'bg-rose-50 text-rose-700 border-rose-100'
-                            }`}
+                          }`}
                           title={r.eligibility.reason}
                         >
-                          {r.eligibility.allowed
-                            ? 'Allowed'
-                            : r.eligibility.state === 'cooldown'
-                              ? 'Wait'
-                              : 'Blocked'}
+                          {r.eligibility.allowed ? 'Allowed' : r.eligibility.state === 'cooldown' ? 'Wait' : 'Blocked'}
                         </span>
                       </div>
                     ))}
                     {composeRecipientStatuses.length > 6 && (
-                      <p className="text-[10px] text-gray-400">
-                        +{composeRecipientStatuses.length - 6} more…
-                      </p>
+                      <p className="text-[10px] text-gray-400">+{composeRecipientStatuses.length - 6} more…</p>
                     )}
                   </div>
 
@@ -1352,11 +1345,8 @@ const EmailPage: React.FC = () => {
                 </div>
               )}
 
-              {/* Subject */}
               <div className="space-y-1.5">
-                <label className="text-[11px] font-medium text-gray-500">
-                  Subject
-                </label>
+                <label className="text-[11px] font-medium text-gray-500">Subject</label>
                 <input
                   type="text"
                   value={composeSubject}
@@ -1366,11 +1356,8 @@ const EmailPage: React.FC = () => {
                 />
               </div>
 
-              {/* Message + attachments preview */}
               <div className="space-y-1.5">
-                <label className="text-[11px] font-medium text-gray-500">
-                  Message
-                </label>
+                <label className="text-[11px] font-medium text-gray-500">Message</label>
                 <textarea
                   value={composeBody}
                   onChange={(e) => setComposeBody(e.target.value)}
@@ -1388,9 +1375,7 @@ const EmailPage: React.FC = () => {
                       >
                         <Paperclip className="w-3 h-3" />
                         <span className="max-w-[140px] truncate">{file.name}</span>
-                        <span className="text-[10px] text-gray-400">
-                          {Math.round(file.size / 1024)} KB
-                        </span>
+                        <span className="text-[10px] text-gray-400">{Math.round(file.size / 1024)} KB</span>
                         <button
                           type="button"
                           onClick={() => removeAttachment(index)}
@@ -1404,12 +1389,9 @@ const EmailPage: React.FC = () => {
                 )}
               </div>
 
-              {composeError && (
-                <p className="text-[11px] text-red-500">{composeError}</p>
-              )}
+              {composeError && <p className="text-[11px] text-red-500">{composeError}</p>}
             </div>
 
-            {/* Footer */}
             <div className="flex items-center justify-between px-6 py-4 border-t border-gray-100 bg-gray-50/80">
               <div className="flex items-center gap-2">
                 <button
@@ -1428,6 +1410,7 @@ const EmailPage: React.FC = () => {
                   onChange={handleFileChange}
                 />
               </div>
+
               <div className="flex items-center gap-2">
                 <button
                   type="button"
@@ -1441,14 +1424,16 @@ const EmailPage: React.FC = () => {
                   onClick={handleSend}
                   disabled={sendDisabled}
                   className="inline-flex items-center gap-1.5 text-xs px-4 py-1.5 rounded-full bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white shadow-sm hover:shadow-md disabled:opacity-60 disabled:cursor-not-allowed"
-                  title={
-                    allowedRecipientIds.length === 0
-                      ? 'Blocked by messaging rules'
-                      : undefined
-                  }
+                  title={allowedRecipientIds.length === 0 ? 'Blocked by messaging rules' : undefined}
                 >
                   <Send className="w-3 h-3" />
-                  {isSending ? 'Sending…' : `Send${allowedRecipientIds.length && composeInfluencerIds.length > 1 ? ` (${allowedRecipientIds.length})` : ''}`}
+                  {isSending
+                    ? 'Sending…'
+                    : `Send${
+                        allowedRecipientIds.length && composeInfluencerIds.length > 1
+                          ? ` (${allowedRecipientIds.length})`
+                          : ''
+                      }`}
                 </button>
               </div>
             </div>

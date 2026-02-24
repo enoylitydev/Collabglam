@@ -64,13 +64,26 @@ type OnboardingRes = {
 const BRAND_TOUR_LS_KEY = 'cg_brandTourSeen_v1';
 
 const lsGet = (k: string) => {
-  try { return window.localStorage.getItem(k); } catch { return null; }
+  try {
+    return window.localStorage.getItem(k);
+  } catch {
+    return null;
+  }
 };
 const lsSet = (k: string, v: string) => {
-  try { window.localStorage.setItem(k, v); } catch {}
+  try {
+    window.localStorage.setItem(k, v);
+  } catch {}
 };
 const lsRemove = (k: string) => {
-  try { window.localStorage.removeItem(k); } catch {}
+  try {
+    window.localStorage.removeItem(k);
+  } catch {}
+};
+
+type BrandPlanRes = {
+  brandPlanId: string | null;
+  brandPlanName: string | null;
 };
 
 export default function BrandSidebar({ isOpen, onClose }: BrandSidebarProps) {
@@ -78,35 +91,93 @@ export default function BrandSidebar({ isOpen, onClose }: BrandSidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
 
-  const [planName, setPlanName] = React.useState<string | null>(null);
   const [tourOpen, setTourOpen] = React.useState(false);
 
   // ✅ token state
   const [token, setTokenState] = React.useState<string | null>(null);
 
+  // ✅ plan cache states
+  const [brandId, setBrandId] = React.useState<string | null>(null);
+  const [planId, setPlanId] = React.useState<string | null>(null);
+  const [planName, setPlanName] = React.useState<string | null>(null);
+
   // ✅ avoid duplicate checks (Strict Mode)
   const didCheckOnboardingRef = React.useRef(false);
+  const didFetchPlanRef = React.useRef(false);
 
+  // ✅ on mount: token + cached brandId + cached plan (fast UI)
   React.useEffect(() => {
+    setTokenState(getToken());
+
     try {
-      const pn =
+      const bid =
+        window.localStorage.getItem('brandId') ||
+        window.localStorage.getItem('brand_id') ||
+        null;
+
+      const cachedPlanName =
         window.localStorage.getItem('brandPlanName') ||
-        window.localStorage.getItem('planName');
-      setPlanName(pn ? pn.toLowerCase() : null);
+        window.localStorage.getItem('planName') ||
+        null;
+
+      const cachedPlanId = window.localStorage.getItem('brandPlanId') || null;
+
+      setBrandId(bid);
+      setPlanId(cachedPlanId);
+      setPlanName(cachedPlanName ? cachedPlanName.toLowerCase() : null);
     } catch {
+      setBrandId(null);
+      setPlanId(null);
       setPlanName(null);
     }
   }, []);
 
+  // ✅ Option 1: fetch latest plan from server once per mount (source of truth)
   React.useEffect(() => {
-    setTokenState(getToken());
-  }, []);
+    if (!token || !brandId) return;
+    if (didFetchPlanRef.current) return;
+    didFetchPlanRef.current = true;
+
+    let cancelled = false;
+
+    (async () => {
+      try {
+        // GET /brand/subscription/current?brandId=xxxx
+        const data = await get<BrandPlanRes>(
+          `/subscription/brand/current?brandId=${encodeURIComponent(brandId)}`
+        );
+
+        const latestId = data?.brandPlanId ?? null;
+        const latestName = data?.brandPlanName ? String(data.brandPlanName).toLowerCase() : null;
+
+        if (cancelled) return;
+
+        setPlanId(latestId);
+        setPlanName(latestName);
+
+        // cache
+        try {
+          if (latestId) window.localStorage.setItem('brandPlanId', latestId);
+          else window.localStorage.removeItem('brandPlanId');
+
+          if (latestName) window.localStorage.setItem('brandPlanName', latestName);
+          else window.localStorage.removeItem('brandPlanName');
+        } catch {}
+      } catch {
+        // keep cached plan if server fails
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [token, brandId]);
 
   const markLocalSeen = React.useCallback(() => {
     lsSet(BRAND_TOUR_LS_KEY, '1');
   }, []);
 
-  // ✅ server + local fallback
+  // ✅ server + local fallback (tour)
   React.useEffect(() => {
     if (!token) return;
     if (didCheckOnboardingRef.current) return;
@@ -115,51 +186,58 @@ export default function BrandSidebar({ isOpen, onClose }: BrandSidebarProps) {
     const localSeen = lsGet(BRAND_TOUR_LS_KEY) === '1';
 
     (async () => {
-      // 1) If already seen on this device, don't open modal.
-      //    But still try syncing to server (best effort).
       if (localSeen) {
         post('/brand/onboarding/brand-tour/seen').catch(() => {});
         return;
       }
 
       try {
-        // 2) Ask server (source of truth across devices)
         const data = await get<OnboardingRes>('/brand/onboarding');
 
         if (data?.brandTourSeen) {
-          // Server says seen -> cache locally for fallback
           markLocalSeen();
           return;
         }
 
-        // 3) Not seen -> open + mark immediately (server + local)
         setTourOpen(true);
         markLocalSeen();
         post('/brand/onboarding/brand-tour/seen').catch(() => {});
       } catch {
-        // 4) Server failed -> fallback: show once locally
         setTourOpen(true);
         markLocalSeen();
       }
     })();
   }, [token, markLocalSeen]);
 
+  // ✅ menu gating by plan
   const menuItems = React.useMemo(() => {
     if (!planName) return BASE_MENU_ITEMS;
-    const isFree = planName === 'free' || planName === 'brand_free';
-    if (!isFree) return BASE_MENU_ITEMS;
-    return BASE_MENU_ITEMS.filter((item) => item.href !== '/brand/disputes');
+
+    const normalized = planName.toLowerCase();
+    const isFree = normalized === 'free' || normalized === 'brand_free';
+    const isFullyManaged = normalized === 'fully_managed';
+
+    return BASE_MENU_ITEMS.filter((item) => {
+      if (isFree && item.href === '/brand/disputes') return false;
+      if (isFullyManaged && item.href === '/brand/email') return false;
+      return true;
+    });
   }, [planName]);
 
   const handleLogout = () => {
     localStorage.removeItem('token');
-    lsRemove(BRAND_TOUR_LS_KEY); // ✅ so another brand account on same device can see tour
+
+    // ✅ clear cached subscription (prevents cross-account issues)
+    localStorage.removeItem('brandPlanId');
+    localStorage.removeItem('brandPlanName');
+
+    lsRemove(BRAND_TOUR_LS_KEY);
     router.push('/');
   };
 
   const openGuide = () => {
     setTourOpen(true);
-    markLocalSeen(); // ✅ so it won't auto-open later if server fails
+    markLocalSeen();
     if (token) post('/brand/onboarding/brand-tour/seen').catch(() => {});
     onClose?.();
   };
@@ -186,7 +264,9 @@ export default function BrandSidebar({ isOpen, onClose }: BrandSidebarProps) {
           >
             <item.icon
               size={20}
-              className={`flex-shrink-0 ${isActive ? 'text-white' : 'text-gray-400 group-hover:text-white'}`}
+              className={`flex-shrink-0 ${
+                isActive ? 'text-white' : 'text-gray-400 group-hover:text-white'
+              }`}
             />
             {!collapsed && <span className="ml-3 text-md font-medium">{item.name}</span>}
           </Link>
@@ -232,7 +312,9 @@ export default function BrandSidebar({ isOpen, onClose }: BrandSidebarProps) {
 
         <Link href="/brand/dashboard" className="flex items-center space-x-2">
           <img src="/logo.png" alt="Collabglam logo" className="h-10 w-auto" />
-          {!collapsed && <span className="text-2xl font-semibold text-gray-900">CollabGlam Brand</span>}
+          {!collapsed && (
+            <span className="text-2xl font-semibold text-gray-900">CollabGlam Brand</span>
+          )}
         </Link>
       </div>
 
@@ -297,7 +379,7 @@ export default function BrandSidebar({ isOpen, onClose }: BrandSidebarProps) {
         open={tourOpen}
         onClose={() => {
           setTourOpen(false);
-          markLocalSeen(); // ✅ if user closes, still don't auto-open again
+          markLocalSeen();
           if (token) post('/brand/onboarding/brand-tour/seen').catch(() => {});
         }}
         startAt={0}

@@ -30,6 +30,7 @@ interface Campaign {
   timeline: { startDate: string; endDate: string };
   isActive: number;
   budget: number;
+  influencerBudget?: number;
   isApproved: number;
 }
 interface InvitationItem {
@@ -495,7 +496,7 @@ export default function MyCampaignsPage() {
                       <div className="text-gray-600 line-clamp-1">{c.description}</div>
                     </td>
                     <td className="px-6 py-4 text-center">{c.brandName}</td>
-                    <td className="px-6 py-4">{formatCurrency(c.budget)}</td>
+                    <td className="px-6 py-4">{formatCurrency( c.influencerBudget || c.budget)}</td>
                     <td className="px-6 py-4">{formatDate(c.timeline.startDate)} - {formatDate(c.timeline.endDate)}</td>
                     <td className="px-6 py-4 flex space-x-2 justify-center">
                       <Link href={`/influencer/dashboard/view-campaign?id=${c.campaignsId}`} className="p-2 bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-800 rounded-md">

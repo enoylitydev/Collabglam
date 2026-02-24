@@ -550,6 +550,46 @@ export default function AppliedInfluencersPage() {
     },
   ]);
 
+  const [brandId, setBrandId] = useState<string | null>(null);
+  const [brandPlanName, setBrandPlanName] = useState<string>("free");
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const bid = localStorage.getItem("brandId");
+    setBrandId(bid);
+
+    // fast UI from cache
+    const cached = localStorage.getItem("brandPlanName");
+    if (cached) setBrandPlanName(String(cached).toLowerCase());
+  }, []);
+
+  useEffect(() => {
+    if (!brandId) return;
+
+    (async () => {
+      try {
+        const res: any = await api.get("/subscription/brand/current", {
+          params: { brandId },
+        });
+
+        const data = res?.data || res || {};
+        const latestName = (data?.brandPlanName || "free").toString().toLowerCase();
+        const latestId = data?.brandPlanId || null;
+
+        setBrandPlanName(latestName);
+
+        try {
+          localStorage.setItem("brandPlanName", latestName);
+          if (latestId) localStorage.setItem("brandPlanId", latestId);
+        } catch { }
+      } catch {
+      }
+    })();
+  }, [brandId]);
+
+  const isFullyManagedPlan = brandPlanName === "fully_managed";
+
   // Usage Bundle
   const [usageType, setUsageType] = useState<string>("Organic");
   const [usageDurationMonths, setUsageDurationMonths] = useState<string>("12");
@@ -1159,15 +1199,24 @@ export default function AppliedInfluencersPage() {
       ? "Resend Contract"
       : "Update Contract";
 
-  const openSidebar = async (inf: Influencer, mode: PanelMode) => {
-    setSelectedInf(inf);
-    setPanelMode(mode);
-    const meta = metaCache[inf.influencerId] ?? (await getLatestContractFor(inf));
-    setSelectedMeta(meta || null);
-    prefillFormFor(inf, meta || null);
-    clearPreview();
-    setSidebarOpen(true);
-  };
+const openSidebar = async (inf: Influencer, mode: PanelMode) => {
+  if (isFullyManagedPlan) {
+    toast({
+      icon: "info",
+      title: "Fully Managed Plan",
+      text: "Contract sending is handled by CollabGlam for Fully Managed brands.",
+    });
+    return;
+  }
+
+  setSelectedInf(inf);
+  setPanelMode(mode);
+  const meta = metaCache[inf.influencerId] ?? (await getLatestContractFor(inf));
+  setSelectedMeta(meta || null);
+  prefillFormFor(inf, meta || null);
+  clearPreview();
+  setSidebarOpen(true);
+};
 
   const closeSidebar = () => {
     setSidebarOpen(false);
@@ -1465,6 +1514,14 @@ export default function AppliedInfluencersPage() {
     if (!selectedInf) return;
     if (!validateForPreview()) return;
 
+    if (isFullyManagedPlan) {
+    return toast({
+      icon: "info",
+      title: "Not available on Fully Managed",
+      text: "Contract sending/preview is disabled for Fully Managed brands.",
+    });
+  }
+
     setIsPreviewLoading(true);
     try {
       if (panelMode === "send") {
@@ -1614,6 +1671,14 @@ export default function AppliedInfluencersPage() {
     }
     if (!validateForPreview()) return;
 
+      if (isFullyManagedPlan) {
+    return toast({
+      icon: "info",
+      title: "Not available on Fully Managed",
+      text: "Contract sending is disabled for Fully Managed brands.",
+    });
+  }
+
     setIsSendLoading(true);
     try {
       const brand = buildBrandPayload();
@@ -1656,6 +1721,14 @@ export default function AppliedInfluencersPage() {
     if (!selectedMeta?.contractId) return;
     if (!pdfUrl) return toast({ icon: "info", title: "Preview required" });
     if (!validateForPreview()) return;
+
+      if (isFullyManagedPlan) {
+    return toast({
+      icon: "info",
+      title: "Not available on Fully Managed",
+      text: "Contract editing/resending is disabled for Fully Managed brands.",
+    });
+  }
 
     setIsUpdateLoading(true);
     try {
@@ -1890,7 +1963,7 @@ export default function AppliedInfluencersPage() {
         </ActionButton>
 
         {/* No contract yet */}
-        {!hasContract && !rejected && (
+{!isFullyManagedPlan && !hasContract && !rejected && (
           <ActionButton
             icon={HiPaperAirplane}
             title="Send contract"
@@ -1902,7 +1975,7 @@ export default function AppliedInfluencersPage() {
         )}
 
         {/* Rejected → allow resend (still controlled by your resend logic) */}
-        {hasContract && rejected && !locked && (
+{!isFullyManagedPlan && hasContract && rejected && !locked && (
           <ActionButton
             title="Resend contract"
             variant="grad"
@@ -1926,7 +1999,7 @@ export default function AppliedInfluencersPage() {
         )}
 
         {/* Editable window (pre-accept / change-request) */}
-        {hasContract && !rejected && !locked && editable && (
+{!isFullyManagedPlan && hasContract && !rejected && !locked && editable && (
           <ActionButton
             title="Edit contract"
             variant="grad"
@@ -2335,7 +2408,7 @@ export default function AppliedInfluencersPage() {
 
         {/* ================= Sidebar ================= */}
         <ContractSidebar
-          isOpen={sidebarOpen}
+          isOpen={sidebarOpen && !isFullyManagedPlan}
           onClose={closeSidebar}
           title={
             panelMode === "send"

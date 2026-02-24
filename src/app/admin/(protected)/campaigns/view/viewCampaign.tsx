@@ -43,6 +43,7 @@ interface CampaignData {
 
   goal?: string;
   budget?: number;
+  influencerBudget?: number;
 
   timeline?: { startDate?: string; endDate?: string };
 
@@ -332,6 +333,19 @@ export default function ViewCampaignPage() {
               {(c.budget ?? 0).toLocaleString()}
             </p>
           </div>
+
+          {c.influencerBudget && (
+
+
+            <div>
+              <p className="text-sm font-medium text-gray-600">Influencer Budget</p>
+              <p className="mt-1 text-gray-800">
+                <HiOutlineCurrencyDollar className="inline mb-1" />
+                {(c.influencerBudget ?? 0).toLocaleString()}
+              </p>
+            </div>
+          )
+          }
 
           <div className="flex items-center gap-2">
             <HiOutlineCalendar className="h-5 w-5 text-gray-500" />
