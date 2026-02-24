@@ -33,7 +33,8 @@ const navItems = [
   { label: "Missing-Email", href: "/admin/missingemail", icon: MailCheckIcon },
   { label: "Invoice Details", href: "/admin/invoiceDetails", icon: DollarSign },
   { label: "Payment Notification", href: "/admin/payment", icon: Bell },
-  { label: "Youtube Handle", href: "/admin/youtube", icon: MailCheckIcon }
+  { label: "Youtube Handle", href: "/admin/youtube", icon: MailCheckIcon },
+  {label:"Modash Data", href:"/admin/modash", icon: MailCheckIcon}
 ];
 
 const documentLinks = [
