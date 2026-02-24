@@ -303,7 +303,7 @@ export default function AdminCampaignsPage() {
                     {/* ✅ NEW: Deliverables */}
                     <Tooltip>
                       <TooltipTrigger asChild>
-                        <Link href={`/admin/campaigns/deliverables/${c.campaignsId}`}>
+                        <Link href={`/admin/campaigns/deliverables/${c._id}`}>
                           <Button variant="ghost" size="icon" aria-label="See Deliverables">
                             <HiOutlineDocumentText className="h-5 w-5" />
                           </Button>
