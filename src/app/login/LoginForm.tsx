@@ -1,22 +1,24 @@
+/* ===========================
+   LoginForm.tsx
+   =========================== */
 'use client';
 
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { FloatingLabelInput } from '@/components/common/FloatingLabelInput';
 import { Button } from './Button';
 import type { Role } from './types';
 import { post } from '@/lib/api';
-import { useRouter } from 'next/navigation';
 
 interface LoginFormProps {
-  role: Role;
+  role: Role; // 'brand' | 'influencer'
   onForgotPassword: () => void;
-  onSuccess: () => void;
+  onSuccess: () => void; // ✅ parent controls redirect (next / dashboard)
 }
 
 type BrandLoginResponse = {
   token: string;
   brandId: string;
-  brandAliasEmail?: string; // ⬅️ added
+  brandAliasEmail?: string;
   subscriptionPlanName?: string;
   subscription?: {
     planId?: string;
@@ -44,12 +46,11 @@ export function LoginForm({ role, onForgotPassword, onSuccess }: LoginFormProps)
   const [formData, setFormData] = useState({
     email: '',
     password: '',
-    rememberMe: false
+    rememberMe: false,
   });
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const router = useRouter();
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -69,72 +70,48 @@ export function LoginForm({ role, onForgotPassword, onSuccess }: LoginFormProps)
           password: formData.password,
         });
 
-        console.log('Brand login response:', data);
-
-        // Use role-scoped token storage
+        // ✅ store auth
         localStorage.setItem('token', data.token);
         localStorage.setItem('brandId', data.brandId);
         localStorage.setItem('userType', 'brand');
         localStorage.setItem('userEmail', formData.email);
 
-        // ⬇️ NEW: store brandAliasEmail if backend returns it
         if (data.brandAliasEmail) {
           localStorage.setItem('brandAliasEmail', data.brandAliasEmail);
         }
 
-        // 🔹 Brand plan info
-        const brandPlanName =
-          data.subscriptionPlanName ??
-          data.subscription?.planName ??
-          'free';
-
+        // ✅ store plan
+        const brandPlanName = data.subscriptionPlanName ?? data.subscription?.planName ?? 'free';
         const brandPlanId = data.subscription?.planId ?? '';
 
-        console.log('Saving BRAND subscription:', { brandPlanName, brandPlanId });
-
         localStorage.setItem('brandPlanName', brandPlanName);
-        if (brandPlanId) {
-          localStorage.setItem('brandPlanId', brandPlanId);
-        }
+        if (brandPlanId) localStorage.setItem('brandPlanId', brandPlanId);
 
+        // ✅ DO NOT redirect here
         onSuccess();
-        router.replace('/brand/dashboard');
-      } else {
-        const data = await post<InfluencerLoginResponse>('/influencer/login', {
-          email: formData.email,
-          password: formData.password,
-        });
-
-        console.log('Influencer login response:', data);
-
-        // Use role-scoped token storage
-        localStorage.setItem('token', data.token);
-        localStorage.setItem('influencerId', data.influencerId);
-        localStorage.setItem('categoryId', data.categoryId);
-        localStorage.setItem('userType', 'influencer');
-        localStorage.setItem('userEmail', formData.email);
-
-        // 🔹 Influencer plan info
-        const influencerPlanName =
-          data.subscriptionPlanName ??
-          data.subscription?.planName ??
-          'free';
-
-        const influencerPlanId = data.subscription?.planId ?? '';
-
-        console.log('Saving INFLUENCER subscription:', {
-          influencerPlanName,
-          influencerPlanId,
-        });
-
-        localStorage.setItem('influencerPlanName', influencerPlanName);
-        if (influencerPlanId) {
-          localStorage.setItem('influencerPlanId', influencerPlanId);
-        }
-
-        onSuccess();
-        router.replace('/influencer/dashboard');
+        return;
       }
+
+      // influencer
+      const data = await post<InfluencerLoginResponse>('/influencer/login', {
+        email: formData.email,
+        password: formData.password,
+      });
+
+      localStorage.setItem('token', data.token);
+      localStorage.setItem('influencerId', data.influencerId);
+      localStorage.setItem('categoryId', data.categoryId);
+      localStorage.setItem('userType', 'influencer');
+      localStorage.setItem('userEmail', formData.email);
+
+      const influencerPlanName = data.subscriptionPlanName ?? data.subscription?.planName ?? 'free';
+      const influencerPlanId = data.subscription?.planId ?? '';
+
+      localStorage.setItem('influencerPlanName', influencerPlanName);
+      if (influencerPlanId) localStorage.setItem('influencerPlanId', influencerPlanId);
+
+      // ✅ DO NOT redirect here
+      onSuccess();
     } catch (err: any) {
       console.error('Login error:', err);
       setError(err?.response?.data?.message || err?.message || 'Login failed');
@@ -146,13 +123,8 @@ export function LoginForm({ role, onForgotPassword, onSuccess }: LoginFormProps)
   return (
     <form onSubmit={handleLogin} className="space-y-5">
       <div className="text-center space-y-2">
-        <div className="flex justify-center">
-          <div className="w-16 h-16 rounded-2xl flex items-center justify-center">
-            <img src="./logo.png" />
-          </div>
-        </div>
-        <h2 className="text-3xl font-bold text-gray-900">Welcome back</h2>
-        <p className="text-gray-600">
+        <h2 className="text-3xl font-bold text-gray-900 text-left">Welcome back</h2>
+        <p className="text-gray-600 text-left">
           Sign in to your {role === 'brand' ? 'brand' : 'influencer'} account
         </p>
       </div>
@@ -193,9 +165,7 @@ export function LoginForm({ role, onForgotPassword, onSuccess }: LoginFormProps)
                 : 'text-yellow-600 focus:ring-yellow-500'
             }`}
           />
-          <span className="text-gray-600 group-hover:text-gray-900">
-            Show password
-          </span>
+          <span className="text-gray-600 group-hover:text-gray-900">Show password</span>
         </label>
 
         <button

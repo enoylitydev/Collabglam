@@ -20,34 +20,43 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { HiOutlinePhotograph, HiOutlineRefresh } from "react-icons/hi";
 
 interface CampaignData {
-  _id: string;
+  _id?: string;
+  campaignsId?: string;
+
   brandId?: string;
   brandName?: string;
-  productOrServiceName: string;
-  description: string;
-  images: string[];
-  targetAudience: {
-    age: { MinAge: number; MaxAge: number };
-    gender: 0 | 1 | 2; // 0 = Female, 1 = Male, 2 = All
-    locations: { countryId: string; countryName: string }[];
+  productOrServiceName?: string;
+  description?: string;
+
+  images?: string[];
+
+  targetAudience?: {
+    age?: { MinAge?: number; MaxAge?: number };
+    gender?: 0 | 1 | 2; // 0 = Female, 1 = Male, 2 = All
+    locations?: { countryId: string; countryName: string }[];
   };
-  // interestId removed
-  categories: {
-    // IDs removed per request
+
+  categories?: {
     categoryName: string;
     subcategoryName: string;
   }[];
-  goal: string;
-  budget: number;
-  timeline: { startDate: string; endDate: string };
+
+  goal?: string;
+  budget?: number;
+  influencerBudget?: number;
+
+  timeline?: { startDate?: string; endDate?: string };
+
   creativeBriefText?: string;
-  creativeBrief: string[];
+  creativeBrief?: string[];
   additionalNotes?: string;
-  isActive: number;
-  createdAt: string;
+
+  isActive?: number;
+  isDraft?: number;
+
+  createdAt?: string;
   applicantCount?: number;
   hasApplied?: number;
-  campaignsId?: string;
 }
 
 export default function ViewCampaignPage() {
@@ -59,38 +68,51 @@ export default function ViewCampaignPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
+  const formatDate = (iso?: string) => {
+    if (!iso) return "—";
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return "—";
+    return d.toLocaleDateString(undefined, {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
+  };
+
+  const genderLabel = (g?: 0 | 1 | 2) =>
+    g === 0 ? "Female" : g === 1 ? "Male" : g === 2 ? "All" : "—";
+
+  const loadCampaign = async () => {
     if (!id) {
       setError("No campaign ID provided.");
       setLoading(false);
       return;
     }
-    (async () => {
-      try {
-        const data = await get<CampaignData>(`/campaign/id?id=${id}`);
-        setCampaign(data);
-      } catch {
-        setError("Failed to load campaign details.");
-      } finally {
-        setLoading(false);
-      }
-    })();
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const data = await get<CampaignData>(`/campaign/id?id=${id}`);
+      setCampaign(data);
+    } catch {
+      setError("Failed to load campaign details.");
+      setCampaign(null);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadCampaign();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
-
-  const formatDate = (iso: string) =>
-    new Date(iso).toLocaleDateString(undefined, {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-    });
-
-  const genderLabel = (g: 0 | 1 | 2) =>
-    g === 0 ? "Female" : g === 1 ? "Male" : "All";
 
   const imageUrls = useMemo(
     () => resolveFileList(campaign?.images ?? []),
     [campaign?.images]
   );
+
   const creativeBriefUrls = useMemo(
     () => resolveFileList(campaign?.creativeBrief ?? []),
     [campaign?.creativeBrief]
@@ -116,6 +138,33 @@ export default function ViewCampaignPage() {
 
   const c = campaign;
 
+  const statusBadge = () => {
+    if (c.isDraft === 1) {
+      return (
+        <Badge variant="secondary" className="inline-flex items-center space-x-1 text-yellow-700">
+          <HiOutlineDocument className="h-4 w-4" />
+          <span>Draft</span>
+        </Badge>
+      );
+    }
+
+    if (c.isActive === 1) {
+      return (
+        <Badge variant="default" className="inline-flex items-center space-x-1">
+          <HiCheckCircle className="h-4 w-4" />
+          <span>Active</span>
+        </Badge>
+      );
+    }
+
+    return (
+      <Badge variant="destructive" className="inline-flex items-center space-x-1">
+        <HiXCircle className="h-4 w-4" />
+        <span>Inactive</span>
+      </Badge>
+    );
+  };
+
   return (
     <div className="max-w-5xl mx-auto space-y-8">
       {/* Header */}
@@ -135,31 +184,16 @@ export default function ViewCampaignPage() {
         </div>
 
         <div className="flex items-center space-x-2">
-          <Badge
-            variant={c.isActive === 1 ? "default" : "destructive"}
-            className="inline-flex items-center space-x-1"
-          >
-            {c.isActive === 1 ? (
-              <>
-                <HiCheckCircle />
-                <span>Active</span>
-              </>
-            ) : (
-              <>
-                <HiXCircle />
-                <span>Inactive</span>
-              </>
-            )}
-          </Badge>
+          {statusBadge()}
           <Button
             variant="outline"
             size="icon"
-            onClick={() => router.refresh()}
+            onClick={loadCampaign}
             aria-label="Refresh"
+            disabled={loading}
           >
             <HiOutlineRefresh className="h-5 w-5" />
           </Button>
-         
         </div>
       </div>
 
@@ -178,16 +212,19 @@ export default function ViewCampaignPage() {
               <p className="mt-1 text-gray-800">{c.brandName}</p>
             </div>
           )}
+
           <div>
             <p className="text-sm font-medium text-gray-600">Name</p>
-            <p className="mt-1 text-gray-800">{c.productOrServiceName}</p>
+            <p className="mt-1 text-gray-800">{c.productOrServiceName || "—"}</p>
           </div>
+
           <div className="md:col-span-2 lg:col-span-2">
             <p className="text-sm font-medium text-gray-600">Description</p>
             <p className="mt-1 whitespace-pre-wrap text-gray-800">
-              {c.description}
+              {c.description || "—"}
             </p>
           </div>
+
           {imageUrls.length > 0 && (
             <div className="md:col-span-3">
               <p className="text-sm font-medium text-gray-600">Images</p>
@@ -222,29 +259,35 @@ export default function ViewCampaignPage() {
           <div>
             <p className="text-sm font-medium text-gray-600">Age</p>
             <p className="mt-1 text-gray-800">
-              {c.targetAudience.age.MinAge}–{c.targetAudience.age.MaxAge}
+              {(c.targetAudience?.age?.MinAge ?? "—")}–{(c.targetAudience?.age?.MaxAge ?? "—")}
             </p>
           </div>
+
           <div>
             <p className="text-sm font-medium text-gray-600">Gender</p>
             <p className="mt-1 text-gray-800">
-              {genderLabel(c.targetAudience.gender)}
+              {genderLabel(c.targetAudience?.gender)}
             </p>
           </div>
+
           <div className="md:col-span-3">
             <p className="text-sm font-medium text-gray-600">Locations</p>
             <div className="mt-2 flex flex-wrap gap-2">
-              {c.targetAudience.locations.map((loc) => (
-                <Badge key={loc.countryId} variant="secondary">
-                  {loc.countryName}
-                </Badge>
-              ))}
+              {(c.targetAudience?.locations ?? []).length > 0 ? (
+                c.targetAudience!.locations!.map((loc) => (
+                  <Badge key={loc.countryId} variant="secondary">
+                    {loc.countryName}
+                  </Badge>
+                ))
+              ) : (
+                <p className="text-gray-700">No locations added.</p>
+              )}
             </div>
           </div>
         </CardContent>
       </Card>
 
-      {/* Categories (IDs removed) */}
+      {/* Categories */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -280,22 +323,38 @@ export default function ViewCampaignPage() {
         <CardContent className="grid grid-cols-1 gap-6 lg:grid-cols-2">
           <div>
             <p className="text-sm font-medium text-gray-600">Goal</p>
-            <p className="mt-1 text-gray-800">{c.goal}</p>
+            <p className="mt-1 text-gray-800">{c.goal || "—"}</p>
           </div>
+
           <div>
             <p className="text-sm font-medium text-gray-600">Budget</p>
             <p className="mt-1 text-gray-800">
               <HiOutlineCurrencyDollar className="inline mb-1" />
-              {c.budget.toLocaleString()}
+              {(c.budget ?? 0).toLocaleString()}
             </p>
           </div>
+
+          {c.influencerBudget && (
+
+
+            <div>
+              <p className="text-sm font-medium text-gray-600">Influencer Budget</p>
+              <p className="mt-1 text-gray-800">
+                <HiOutlineCurrencyDollar className="inline mb-1" />
+                {(c.influencerBudget ?? 0).toLocaleString()}
+              </p>
+            </div>
+          )
+          }
+
           <div className="flex items-center gap-2">
             <HiOutlineCalendar className="h-5 w-5 text-gray-500" />
-            <p className="text-gray-800">{formatDate(c.timeline.startDate)}</p>
+            <p className="text-gray-800">{formatDate(c.timeline?.startDate)}</p>
           </div>
+
           <div className="flex items-center gap-2">
             <HiOutlineCalendar className="h-5 w-5 text-gray-500" />
-            <p className="text-gray-800">{formatDate(c.timeline.endDate)}</p>
+            <p className="text-gray-800">{formatDate(c.timeline?.endDate)}</p>
           </div>
         </CardContent>
       </Card>

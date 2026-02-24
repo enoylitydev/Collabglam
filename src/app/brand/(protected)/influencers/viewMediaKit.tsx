@@ -155,21 +155,6 @@ export default function MediaKitPage() {
           <p className="text-red-600 font-medium">
             {error ?? "No influencer ID available to load the MediaKit."}
           </p>
-          <button
-            onClick={() => {
-              const urlId = searchParams?.get("id");
-              if (urlId) {
-                setResolvedId(urlId);
-                setError(null);
-                setLoading(true);
-              } else {
-                setError("No influencer ID found in URL.");
-              }
-            }}
-            className="w-full px-4 py-3 rounded-xl bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white font-semibold"
-          >
-            Retry with URL ID
-          </button>
         </div>
       </div>
     );
@@ -206,7 +191,7 @@ export default function MediaKitPage() {
                 </h1>
                 {primary?.username && (
                   <p className="text-xl text-gray-600 flex items-center gap-2 justify-center lg:justify-start">
-                    <span className="text-[#FFA135]">@</span>{primary.username}
+                    {primary.username}
                   </p>
                 )}
                 {primary?.bio && (
@@ -339,7 +324,7 @@ export default function MediaKitPage() {
                     <TrendingUp className="w-6 h-6 text-[#FFA135]" />
                     Recent Content
                   </h3>
-                  <p className="text-gray-600 mt-1">Latest posts from @{primary.username}</p>
+                  <p className="text-gray-600 mt-1">Latest posts from {primary.username}</p>
                 </div>
                 <div className="p-6">
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -517,7 +502,7 @@ export default function MediaKitPage() {
                   <ContactItem
                     icon={getPlatformIcon(primary.provider)}
                     label={`${primary.provider.charAt(0).toUpperCase() + primary.provider.slice(1)} Profile`}
-                    value={`@${primary.username}`}
+                    value={`${primary.username}`}
                     href={primary.url}
                     external
                   />

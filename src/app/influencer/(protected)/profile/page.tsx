@@ -11,7 +11,6 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -41,6 +40,8 @@ import {
   Image as ImageIcon,
   Loader2,
   Check as CheckIcon,
+  Download,
+  ChevronDown,
 } from "lucide-react";
 
 /* ===================== Types (aligned to Influencer model) ===================== */
@@ -149,6 +150,73 @@ export type InfluencerData = {
   gender?: GenderStr;
 };
 
+/* ===================== Payment History Types & Helpers ===================== */
+
+type PaymentHistoryItem = {
+  _id: string;
+  kind: "plan" | "milestone";
+  amount: number;
+  currency?: string;
+  createdAt?: string;
+  paidAt?: string;
+  invoiceNumber?: string;
+  planName?: string;
+  milestoneTitle?: string;
+  campaignName?: string;
+};
+
+const FIXED_LOCALE = "en-US";
+const FIXED_TZ = "UTC";
+
+const formatDateTime = (iso?: string) => {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  return new Intl.DateTimeFormat(FIXED_LOCALE, {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: FIXED_TZ,
+  }).format(d);
+};
+
+const formatCurrencyFromCents = (cents: number, currency = "USD") => {
+  const v = (Number(cents) || 0) / 100;
+  return new Intl.NumberFormat(FIXED_LOCALE, { style: "currency", currency }).format(v);
+};
+
+function flattenInvoices(res: any): PaymentHistoryItem[] {
+  const payload = res?.data ?? res;
+  const plans = Array.isArray(payload?.invoices?.plans) ? payload.invoices.plans : [];
+  const milestones = Array.isArray(payload?.invoices?.milestones) ? payload.invoices.milestones : [];
+
+  const planRows: PaymentHistoryItem[] = plans.map((p: any) => ({
+    _id: p._id,
+    kind: "plan",
+    amount: Number(p.amount || 0),
+    currency: p.currency || "USD",
+    createdAt: p.createdAt,
+    paidAt: p.paidAt,
+    invoiceNumber: p.invoiceNumber,
+    planName: p.planName && p.planName.trim() !== "" ? p.planName : "—",
+  }));
+
+  const milestoneRows: PaymentHistoryItem[] = milestones.map((m: any) => ({
+    _id: m._id,
+    kind: "milestone",
+    amount: Number(m.amount || 0),
+    currency: m.currency || "USD",
+    createdAt: m.createdAt,
+    paidAt: m.paidAt,
+    invoiceNumber: m.invoiceNumber,
+    planName: "Milestone",
+  }));
+
+  return [...planRows, ...milestoneRows].sort((a, b) => {
+    const ta = new Date(a.paidAt || a.createdAt || 0).getTime();
+    const tb = new Date(b.paidAt || b.createdAt || 0).getTime();
+    return tb - ta;
+  });
+}
+
 /* ===================== Utilities ===================== */
 const isEmailEqual = (a = "", b = "") => a.trim().toLowerCase() === b.trim().toLowerCase();
 
@@ -185,8 +253,8 @@ function normalizeGenderStr(raw: any): GenderStr | undefined {
     typeof raw === "number" && Number.isFinite(raw)
       ? raw
       : typeof raw === "string" && /^[0-9]+$/.test(raw.trim())
-      ? Number(raw.trim())
-      : null;
+        ? Number(raw.trim())
+        : null;
 
   if (num !== null) {
     switch (num) {
@@ -446,7 +514,7 @@ function MultiSelect({
 
 export type EmailFlowState = "idle" | "needs" | "codes_sent" | "verifying" | "verified";
 
-function EmailEditorDualOTP({
+function EmailEditorSingleOTP({
   influencerId,
   originalEmail,
   value,
@@ -462,8 +530,7 @@ function EmailEditorDualOTP({
   onStateChange: (s: EmailFlowState) => void;
 }) {
   const [flow, setFlow] = useState<EmailFlowState>("idle");
-  const [oldOtp, setOldOtp] = useState("");
-  const [newOtp, setNewOtp] = useState("");
+  const [otp, setOtp] = useState("");
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -474,8 +541,7 @@ function EmailEditorDualOTP({
   useEffect(() => {
     if (!needs) {
       setFlow("idle");
-      setOldOtp("");
-      setNewOtp("");
+      setOtp("");
       setErr(null);
       setMsg(null);
       onStateChange("idle");
@@ -485,12 +551,13 @@ function EmailEditorDualOTP({
       setFlow("needs");
       onStateChange("needs");
     }
-  }, [needs, flow, value, originalEmail, onStateChange]);
+  }, [needs, flow, onStateChange]);
 
-  const requestCodes = useCallback(async () => {
+  const requestCode = useCallback(async () => {
     setErr(null);
     setMsg(null);
     if (!valueIsValid) return;
+
     setBusy(true);
     try {
       const resp = await post<{ message?: string }>("/influencer/requestEmailUpdate", {
@@ -498,45 +565,49 @@ function EmailEditorDualOTP({
         newEmail: value.trim().toLowerCase(),
         role: "Influencer",
       });
+
       setFlow("codes_sent");
-      const m = resp?.message || `OTPs sent to ${originalEmail} (current) and ${value} (new).`;
+      const m = resp?.message || `OTP sent to ${value.trim().toLowerCase()}.`;
       setMsg(m);
       onStateChange("codes_sent");
-      await Swal.fire({ icon: "info", title: "OTPs sent", text: m });
+      await Swal.fire({ icon: "info", title: "OTP sent", text: m });
     } catch (e: any) {
-      const m = e?.message || "Failed to send codes.";
+      const m = e?.message || "Failed to send OTP.";
       setErr(m);
       await Swal.fire({ icon: "error", title: "Error", text: m });
     } finally {
       setBusy(false);
     }
-  }, [influencerId, originalEmail, value, valueIsValid, onStateChange]);
+  }, [influencerId, value, valueIsValid, onStateChange]);
 
   const verifyAndPersist = useCallback(async () => {
     setErr(null);
-    if (oldOtp.trim().length !== 6 || newOtp.trim().length !== 6) {
-      const m = "Enter both 6-digit OTPs.";
+
+    if (otp.trim().length !== 6) {
+      const m = "Enter the 6-digit OTP.";
       setErr(m);
       await Swal.fire({ icon: "warning", title: "Invalid OTP", text: m });
       return;
     }
+
     setBusy(true);
     setFlow("verifying");
     onStateChange("verifying");
+
     try {
-      await post<{ message?: string }>("/influencer/verifyEmailUpdateOtp", {
+      await post<{ message?: string }>("/influencer/verifyotp", {
         influencerId,
         role: "Influencer",
-        oldEmailOtp: oldOtp.trim(),
-        newEmailOtp: newOtp.trim(),
+        otp: otp.trim(),
         newEmail: value.trim().toLowerCase(),
       });
+
       onVerified(value.trim().toLowerCase());
       setMsg("Email updated successfully.");
       setFlow("verified");
       onStateChange("verified");
-      setOldOtp("");
-      setNewOtp("");
+      setOtp("");
+
       await Swal.fire({
         icon: "success",
         title: "Email updated",
@@ -552,32 +623,32 @@ function EmailEditorDualOTP({
     } finally {
       setBusy(false);
     }
-  }, [influencerId, value, oldOtp, newOtp, onVerified, onStateChange]);
+  }, [influencerId, value, otp, onVerified, onStateChange]);
 
-  const handleOtp =
-    (setter: (v: string) => void) => (e: React.ChangeEvent<HTMLInputElement>) => {
-      const digits = e.target.value.replace(/\D/g, "").slice(0, 6);
-      setter(digits);
-    };
+  const handleOtp = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const digits = e.target.value.replace(/\D/g, "").slice(0, 6);
+    setOtp(digits);
+  };
 
   return (
     <Card className="max-w-md bg-white">
       <CardContent className="pt-6 space-y-3">
         <Label>Email Address</Label>
+
         <div className="flex gap-2">
           <Input
             value={value}
             onChange={(e) => onChange(e.target.value)}
             placeholder="name@example.com"
             onKeyDown={(e) => {
-              if (e.key === "Enter" && needs && valueIsValid && flow === "needs") {
-                requestCodes();
+              if (e.key === "Enter" && needs && valueIsValid && (flow === "needs" || flow === "idle")) {
+                requestCode();
               }
             }}
           />
           {needs && valueIsValid && (flow === "needs" || flow === "idle") && (
             <Button
-              onClick={requestCodes}
+              onClick={requestCode}
               disabled={busy}
               className="bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-800"
             >
@@ -594,46 +665,31 @@ function EmailEditorDualOTP({
               <div>
                 <p className="text-sm font-medium">Verification Required</p>
                 <p className="text-sm text-muted-foreground">
-                  Enter the 6-digit codes sent to{" "}
-                  <span className="font-semibold">{originalEmail}</span> (current) and{" "}
-                  <span className="font-semibold">{value}</span> (new).
+                  Enter the 6-digit code sent to <span className="font-semibold">{value}</span>.
                 </p>
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <Label className="text-xs">Current Email OTP</Label>
-                <Input
-                  className="font-mono tracking-[0.3em] text-center text-lg"
-                  placeholder="000000"
-                  value={oldOtp}
-                  onChange={handleOtp(setOldOtp)}
-                  inputMode="numeric"
-                  maxLength={6}
-                />
-              </div>
-              <div>
-                <Label className="text-xs">New Email OTP</Label>
-                <Input
-                  className="font-mono tracking-[0.3em] text-center text-lg"
-                  placeholder="000000"
-                  value={newOtp}
-                  onChange={handleOtp(setNewOtp)}
-                  inputMode="numeric"
-                  maxLength={6}
-                />
-              </div>
+            <div>
+              <Label className="text-xs">New Email OTP</Label>
+              <Input
+                className="font-mono tracking-[0.3em] text-center text-lg"
+                placeholder="000000"
+                value={otp}
+                onChange={handleOtp}
+                inputMode="numeric"
+                maxLength={6}
+              />
             </div>
 
             <div className="flex flex-col sm:flex-row gap-2 sm:justify-end">
-              <Button variant="outline" onClick={requestCodes} disabled={busy}>
-                Resend Codes
+              <Button variant="outline" onClick={requestCode} disabled={busy}>
+                Resend Code
               </Button>
               <Button
                 onClick={verifyAndPersist}
                 className="bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-800"
-                disabled={busy || oldOtp.length !== 6 || newOtp.length !== 6}
+                disabled={busy || otp.length !== 6}
               >
                 {busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 Verify & Update
@@ -674,6 +730,7 @@ function EmailEditorDualOTP({
   );
 }
 
+
 /* ===================== Main Page ===================== */
 export default function InfluencerProfilePage() {
   const router = useRouter();
@@ -709,6 +766,14 @@ export default function InfluencerProfilePage() {
 
   // Profile image upload
   const [profileImageFile, setProfileImageFile] = useState<File | null>(null);
+
+  /* ✅ Payment History State */
+  const [paymentsOpen, setPaymentsOpen] = useState(false);
+  const [paymentsLoading, setPaymentsLoading] = useState(false);
+  const [paymentsFetched, setPaymentsFetched] = useState(false);
+  const [paymentsError, setPaymentsError] = useState<string | null>(null);
+  const [paymentHistory, setPaymentHistory] = useState<PaymentHistoryItem[]>([]);
+  const [invoiceBusy, setInvoiceBusy] = useState<string | null>(null);
 
   // Show load error in Swal
   useEffect(() => {
@@ -970,8 +1035,11 @@ export default function InfluencerProfilePage() {
       return;
     }
 
-    // Phone quick check (model expects 10 digits when otpVerified)
-    if (form.otpVerified && !/^\d{10}$/.test((form.phone || "").trim())) {
+    // Phone: optional update
+    const phoneTrim = (form.phone || "").trim();
+
+    // If provided, validate (but don't force it)
+    if (form.otpVerified && phoneTrim && !/^\d{10}$/.test(phoneTrim)) {
       await Swal.fire({
         icon: "warning",
         title: "Invalid phone",
@@ -1009,7 +1077,11 @@ export default function InfluencerProfilePage() {
       // Basics
       fd.append("name", form.name || "");
       if (form.password) fd.append("password", form.password);
-      fd.append("phone", form.phone || "");
+      const originalPhone = (influencer.phone || "").trim();
+
+      if (phoneTrim && phoneTrim !== originalPhone) {
+        fd.append("phone", phoneTrim);
+      }
 
       // Gender: send label (backend expects String enum)
       if (typeof form.gender !== "undefined") {
@@ -1104,6 +1176,93 @@ export default function InfluencerProfilePage() {
       setSaving(false);
     }
   }, [influencer, emailFlow, form, profileImageFile, countryOptions, codeOptions, categories]);
+
+  /* ✅ Payment History Logic */
+  useEffect(() => {
+    if (!paymentsOpen) return;
+    if (paymentsFetched && !paymentsError) return;
+
+    let cancelled = false;
+
+    (async () => {
+      try {
+        setPaymentsLoading(true);
+        setPaymentsError(null);
+
+        const influencerId = localStorage.getItem("influencerId");
+        if (!influencerId) throw new Error("Missing influencerId in localStorage.");
+
+        const res = await post<any>("/payment/payment-history", {
+          userId: String(influencerId),
+          role: "Influencer", 
+        });
+
+        const payload = res?.data ?? res;
+        if (!payload?.success) {
+          throw new Error(payload?.message || "Failed to load payment history.");
+        }
+
+        const rows = flattenInvoices(payload);
+
+        if (cancelled) return;
+        setPaymentHistory(rows);
+        setPaymentsFetched(true);
+      } catch (e: any) {
+        if (!cancelled) {
+          console.error("Payment Fetch Error:", e);
+          setPaymentsError(e?.message || "Failed to load payment history.");
+          setPaymentsFetched(true);
+        }
+      } finally {
+        if (!cancelled) setPaymentsLoading(false);
+      }
+    })();
+
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paymentsOpen]); 
+
+  const downloadInvoice = useCallback(async (invoiceNumber?: string) => {
+    if (!invoiceNumber) return;
+    setInvoiceBusy(invoiceNumber);
+    try {
+      const token = localStorage.getItem("token");
+      const url = "/payment/generate-invoice"; 
+      const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || process.env.NEXT_PUBLIC_API_URL || "";
+      const fullUrl = API_BASE ? `${API_BASE.replace(/\/$/, "")}${url}` : url;
+
+      const resp = await fetch(fullUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ invoiceNumber }),
+      });
+
+      if (!resp.ok) throw new Error("Failed to generate invoice");
+      
+      const blob = await resp.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = blobUrl;
+      a.download = `${invoiceNumber}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
+    } catch (e: any) {
+      await Swal.fire({ icon: "error", title: "Invoice Error", text: e.message });
+    } finally {
+      setInvoiceBusy(null);
+    }
+  }, []);
+  
+  const retryPayments = useCallback(() => {
+    setPaymentsFetched(false);
+    setPaymentsError(null);
+    setPaymentHistory([]);
+  }, []);
 
   if (loading) return <Loader />;
   if (error) return <InlineError message={error} />;
@@ -1225,7 +1384,7 @@ export default function InfluencerProfilePage() {
               ) : (
                 influencer &&
                 form && (
-                  <EmailEditorDualOTP
+                  <EmailEditorSingleOTP
                     influencerId={influencer.influencerId}
                     originalEmail={influencer.email}
                     value={form.email}
@@ -1453,8 +1612,8 @@ export default function InfluencerProfilePage() {
                       <p className="text-2xl font-bold">
                         {influencer?.subscription?.planName
                           ? influencer.subscription.planName.replace(/^./u, (c) =>
-                              c.toLocaleUpperCase()
-                            )
+                            c.toLocaleUpperCase()
+                          )
                           : "No Plan"}
                       </p>
                       <div className="space-y-1 text-sm text-muted-foreground mt-2">
@@ -1512,8 +1671,8 @@ export default function InfluencerProfilePage() {
                           const status = unlimited
                             ? "Unlimited"
                             : limit >= 1
-                            ? "Available"
-                            : "Not Included";
+                              ? "Available"
+                              : "Not Included";
                           const ok = unlimited || limit >= 1;
 
                           return (
@@ -1527,13 +1686,12 @@ export default function InfluencerProfilePage() {
                                 <span className="text-gray-800">{label}</span>
                               </div>
                               <span
-                                className={`text-xs px-2 py-1 rounded-md border ${
-                                  unlimited
-                                    ? "bg-blue-100 text-blue-700 border-blue-200"
-                                    : ok
+                                className={`text-xs px-2 py-1 rounded-md border ${unlimited
+                                  ? "bg-blue-100 text-blue-700 border-blue-200"
+                                  : ok
                                     ? "bg-emerald-100 text-emerald-800 border-emerald-200"
                                     : "bg-gray-100 text-gray-700 border-gray-200"
-                                }`}
+                                  }`}
                               >
                                 {status}
                               </span>
@@ -1544,16 +1702,16 @@ export default function InfluencerProfilePage() {
                         const pct = unlimited
                           ? 100
                           : limit > 0
-                          ? Math.min(100, Math.round((used / limit) * 100))
-                          : 0;
+                            ? Math.min(100, Math.round((used / limit) * 100))
+                            : 0;
 
                         const barColorClass = unlimited
                           ? "[&>div]:bg-gradient-to-r [&>div]:from-[#FFBF00] [&>div]:to-[#FFDB58]"
                           : used >= limit
-                          ? "[&>div]:bg-gradient-to-r [&>div]:from-red-500 [&>div]:to-red-400"
-                          : pct >= 80
-                          ? "[&>div]:bg-gradient-to-r [&>div]:from-orange-500 [&>div]:to-orange-300"
-                          : "[&>div]:bg-gradient-to-r [&>div]:from-[#FFBF00] [&>div]:to-[#FFDB58]";
+                            ? "[&>div]:bg-gradient-to-r [&>div]:from-red-500 [&>div]:to-red-400"
+                            : pct >= 80
+                              ? "[&>div]:bg-gradient-to-r [&>div]:from-orange-500 [&>div]:to-orange-300"
+                              : "[&>div]:bg-gradient-to-r [&>div]:from-[#FFBF00] [&>div]:to-[#FFDB58]";
 
                         return (
                           <div key={f.key} className="group">
@@ -1592,6 +1750,131 @@ export default function InfluencerProfilePage() {
                 </div>
               </div>
             </CardContent>
+          </Card>
+        )}
+
+        {/* ✅ Payment History (Yellow Theme) */}
+        {!isEditing && (
+          <Card className="bg-white border-amber-200/50">
+            <CardHeader className="py-4 border-b border-amber-100/50">
+               <button
+                  type="button"
+                  onClick={() => setPaymentsOpen((s) => !s)}
+                  className="w-full flex items-center justify-between gap-3 text-left focus:outline-none"
+                >
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 rounded-xl bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-800 flex items-center justify-center shadow-sm">
+                      <CreditCard className="h-6 w-6" />
+                    </div>
+                    <div>
+                      <CardTitle className="text-lg">Payment History</CardTitle>
+                      <p className="text-sm text-muted-foreground font-normal">
+                         {paymentsFetched
+                          ? `${paymentHistory.length} invoice${paymentHistory.length === 1 ? "" : "s"}`
+                          : "View your invoices"}
+                      </p>
+                    </div>
+                  </div>
+
+                  <ChevronDown
+                    className={`w-6 h-6 text-gray-400 transition-transform duration-200 ${paymentsOpen ? "rotate-180" : "rotate-0"}`}
+                  />
+                </button>
+            </CardHeader>
+
+            {paymentsOpen && (
+              <CardContent className="pt-6">
+                 {paymentsLoading ? (
+                    <div className="space-y-3">
+                      <div className="h-4 bg-amber-50 rounded w-2/3 animate-pulse" />
+                      <div className="h-4 bg-amber-50 rounded w-full animate-pulse" />
+                      <div className="h-4 bg-amber-50 rounded w-5/6 animate-pulse" />
+                    </div>
+                  ) : paymentsError ? (
+                    <div className="bg-red-50 border border-red-100 text-red-700 rounded-xl p-4 text-sm flex items-center gap-2">
+                       <X className="w-5 h-5" />
+                       {paymentsError}
+                       <button onClick={retryPayments} className="underline ml-auto hover:text-red-800">Retry</button>
+                    </div>
+                  ) : paymentHistory.length === 0 ? (
+                    <div className="text-sm text-gray-500 italic p-2">No invoices found.</div>
+                  ) : (
+                    <div className="overflow-hidden border border-amber-200 rounded-2xl">
+                      <table className="min-w-full text-sm text-left">
+                        <thead>
+                          {/* --- Top Header Row (Groups) --- */}
+                          <tr className="bg-amber-100 border-b border-amber-200">
+                            <th
+                              colSpan={4}
+                              className="px-4 py-3 font-bold text-amber-900 uppercase tracking-wider text-xs border-r border-amber-200"
+                            >
+                              Payment Details
+                            </th>
+                            <th className="px-4 py-3 font-bold text-amber-900 uppercase tracking-wider text-xs text-right">
+                              Invoice
+                            </th>
+                          </tr>
+
+                          {/* --- Sub Header Row (Columns) --- */}
+                          <tr className="bg-amber-50 border-b border-amber-200 text-xs font-semibold text-amber-800 uppercase tracking-wide">
+                            <th className="px-4 py-3">Invoice Number</th>
+                            <th className="px-4 py-3">Plan Name</th>
+                            <th className="px-4 py-3">Amount</th>
+                            <th className="px-4 py-3 border-r border-amber-200">Date</th>
+                            <th className="px-4 py-3 text-right">Action</th>
+                          </tr>
+                        </thead>
+
+                        <tbody className="divide-y divide-amber-100 bg-white">
+                          {paymentHistory.map((inv) => {
+                            const when = inv.paidAt || inv.createdAt;
+                            const busyRow = invoiceBusy === inv.invoiceNumber;
+
+                            return (
+                              <tr key={inv._id} className="hover:bg-amber-50/50 transition-colors">
+                                {/* Invoice Number */}
+                                <td className="px-4 py-3 font-medium text-gray-900 whitespace-nowrap">
+                                  {inv.invoiceNumber || "—"}
+                                </td>
+
+                                {/* Plan Name */}
+                                <td className="px-4 py-3 text-gray-700 whitespace-nowrap">
+                                  {inv.planName}
+                                </td>
+
+                                {/* Amount */}
+                                <td className="px-4 py-3 text-gray-700 whitespace-nowrap font-medium tabular-nums">
+                                  {formatCurrencyFromCents(inv.amount, inv.currency || "USD")}
+                                </td>
+
+                                {/* Date */}
+                                <td className="px-4 py-3 text-gray-600 whitespace-nowrap border-r border-amber-100">
+                                  {when ? formatDateTime(when) : "—"}
+                                </td>
+
+                                {/* Action (Download) */}
+                                <td className="px-4 py-3 text-right">
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-8 text-xs rounded-lg border-amber-200 text-amber-900 hover:bg-amber-100 hover:border-amber-300 disabled:opacity-50"
+                                    disabled={!inv.invoiceNumber || !!invoiceBusy}
+                                    onClick={() => downloadInvoice(inv.invoiceNumber)}
+                                  >
+                                    <Download className={`w-3 h-3 mr-1.5 ${busyRow ? "animate-bounce" : ""}`} />
+                                    {busyRow ? "Loading..." : "Download"}
+                                  </Button>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+              </CardContent>
+            )}
           </Card>
         )}
 

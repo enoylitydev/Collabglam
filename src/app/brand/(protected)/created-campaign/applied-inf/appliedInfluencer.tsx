@@ -185,7 +185,6 @@ interface ContractMeta {
   signatures?: {
     brand?: PartySign;
     influencer?: PartySign;
-    collabglam?: PartySign;
   };
 
   resendIteration?: number;
@@ -289,16 +288,6 @@ const isRejectedMeta = (meta?: any) => {
   );
 };
 
-const isAwaitingCollabglam = (meta?: ContractMeta | null) => {
-  const s = String(meta?.status || "");
-  return (
-    s === CONTRACT_STATUS.READY_TO_SIGN &&
-    !!meta?.signatures?.brand?.signed &&
-    !!meta?.signatures?.influencer?.signed &&
-    !meta?.signatures?.collabglam?.signed
-  );
-};
-
 const signingStatusLabel = (meta?: ContractMeta | null) => {
   if (!meta) return null;
   const s = String(meta.status || "");
@@ -306,13 +295,11 @@ const signingStatusLabel = (meta?: ContractMeta | null) => {
 
   const b = !!meta.signatures?.brand?.signed;
   const i = !!meta.signatures?.influencer?.signed;
-  const c = !!meta.signatures?.collabglam?.signed;
 
-  if (b && i && !c) return "Awaiting CollabGlam signature";
   if (b && !i) return "Awaiting influencer signature";
   if (!b && i) return "Awaiting brand signature";
   if (!b && !i) return "Ready to sign";
-  if (b && i && c) return "Signed";
+  if (b && i) return "Signed"; // ✅ fully signed now (no CollabGlam)
   return null;
 };
 
@@ -382,7 +369,8 @@ const isLockedStatus = (status?: string | null) =>
 const isEditableStatus = (status?: string | null) =>
   status === CONTRACT_STATUS.BRAND_SENT_DRAFT ||
   status === CONTRACT_STATUS.BRAND_EDITED ||
-  status === CONTRACT_STATUS.INFLUENCER_EDITED;
+  status === CONTRACT_STATUS.INFLUENCER_EDITED ||
+  status === CONTRACT_STATUS.INFLUENCER_ACCEPTED;
 
 const needsBrandAcceptance = (status?: string | null) =>
   status === CONTRACT_STATUS.INFLUENCER_ACCEPTED;
@@ -476,6 +464,8 @@ export default function AppliedInfluencersPage() {
   const searchParams = useSearchParams();
   const campaignId = searchParams.get("id");
   const influencerId = searchParams.get("infId");
+  const createdPage = searchParams.get("createdPage") === "true";
+
 
   const [serverBudget, setServerBudget] = useState<number | null>(null);
   const [serverTimeline, setServerTimeline] = useState<{
@@ -559,6 +549,46 @@ export default function AppliedInfluencersPage() {
       insightsReadOnly: false,
     },
   ]);
+
+  const [brandId, setBrandId] = useState<string | null>(null);
+  const [brandPlanName, setBrandPlanName] = useState<string>("free");
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const bid = localStorage.getItem("brandId");
+    setBrandId(bid);
+
+    // fast UI from cache
+    const cached = localStorage.getItem("brandPlanName");
+    if (cached) setBrandPlanName(String(cached).toLowerCase());
+  }, []);
+
+  useEffect(() => {
+    if (!brandId) return;
+
+    (async () => {
+      try {
+        const res: any = await api.get("/subscription/brand/current", {
+          params: { brandId },
+        });
+
+        const data = res?.data || res || {};
+        const latestName = (data?.brandPlanName || "free").toString().toLowerCase();
+        const latestId = data?.brandPlanId || null;
+
+        setBrandPlanName(latestName);
+
+        try {
+          localStorage.setItem("brandPlanName", latestName);
+          if (latestId) localStorage.setItem("brandPlanId", latestId);
+        } catch { }
+      } catch {
+      }
+    })();
+  }, [brandId]);
+
+  const isFullyManagedPlan = brandPlanName === "fully_managed";
 
   // Usage Bundle
   const [usageType, setUsageType] = useState<string>("Organic");
@@ -838,6 +868,7 @@ export default function AppliedInfluencersPage() {
           search: (search ?? searchTerm).trim(),
           sortField,
           sortOrder,
+          createdPage,
         };
         const res: any = await post("/apply/list", payload);
         const influencersList =
@@ -1168,15 +1199,24 @@ export default function AppliedInfluencersPage() {
       ? "Resend Contract"
       : "Update Contract";
 
-  const openSidebar = async (inf: Influencer, mode: PanelMode) => {
-    setSelectedInf(inf);
-    setPanelMode(mode);
-    const meta = metaCache[inf.influencerId] ?? (await getLatestContractFor(inf));
-    setSelectedMeta(meta || null);
-    prefillFormFor(inf, meta || null);
-    clearPreview();
-    setSidebarOpen(true);
-  };
+const openSidebar = async (inf: Influencer, mode: PanelMode) => {
+  if (isFullyManagedPlan) {
+    toast({
+      icon: "info",
+      title: "Fully Managed Plan",
+      text: "Contract sending is handled by CollabGlam for Fully Managed brands.",
+    });
+    return;
+  }
+
+  setSelectedInf(inf);
+  setPanelMode(mode);
+  const meta = metaCache[inf.influencerId] ?? (await getLatestContractFor(inf));
+  setSelectedMeta(meta || null);
+  prefillFormFor(inf, meta || null);
+  clearPreview();
+  setSidebarOpen(true);
+};
 
   const closeSidebar = () => {
     setSidebarOpen(false);
@@ -1474,6 +1514,14 @@ export default function AppliedInfluencersPage() {
     if (!selectedInf) return;
     if (!validateForPreview()) return;
 
+    if (isFullyManagedPlan) {
+    return toast({
+      icon: "info",
+      title: "Not available on Fully Managed",
+      text: "Contract sending/preview is disabled for Fully Managed brands.",
+    });
+  }
+
     setIsPreviewLoading(true);
     try {
       if (panelMode === "send") {
@@ -1623,6 +1671,14 @@ export default function AppliedInfluencersPage() {
     }
     if (!validateForPreview()) return;
 
+      if (isFullyManagedPlan) {
+    return toast({
+      icon: "info",
+      title: "Not available on Fully Managed",
+      text: "Contract sending is disabled for Fully Managed brands.",
+    });
+  }
+
     setIsSendLoading(true);
     try {
       const brand = buildBrandPayload();
@@ -1665,6 +1721,14 @@ export default function AppliedInfluencersPage() {
     if (!selectedMeta?.contractId) return;
     if (!pdfUrl) return toast({ icon: "info", title: "Preview required" });
     if (!validateForPreview()) return;
+
+      if (isFullyManagedPlan) {
+    return toast({
+      icon: "info",
+      title: "Not available on Fully Managed",
+      text: "Contract editing/resending is disabled for Fully Managed brands.",
+    });
+  }
 
     setIsUpdateLoading(true);
     try {
@@ -1828,9 +1892,15 @@ export default function AppliedInfluencersPage() {
     const signAllowed = canSignNow(statusStr);
     const brandSigned = !!meta?.signatures?.brand?.signed;
     const influencerSigned = !!meta?.signatures?.influencer?.signed;
-    const collabglamSigned = !!meta?.signatures?.collabglam?.signed;
 
-    const awaitingCG = isAwaitingCollabglam(meta);
+    const milestonesAllowed =
+      hasContract &&
+      !rejected &&
+      statusStr !== CONTRACT_STATUS.MILESTONES_CREATED &&
+      (
+        statusStr === CONTRACT_STATUS.CONTRACT_SIGNED ||
+        (statusStr === CONTRACT_STATUS.READY_TO_SIGN && brandSigned && influencerSigned)
+      );
 
     return (
       <div
@@ -1840,58 +1910,24 @@ export default function AppliedInfluencersPage() {
           nowrap ? "inline-flex flex-nowrap" : "flex flex-wrap justify-center",
         ].join(" ")}
       >
-        <ActionButton
-          title="View Influencer"
-          variant="outline"
-          onClick={() => router.push(`/brand/influencers?id=${inf.influencerId}`)}
-        >
-          View Influencer
-        </ActionButton>
 
-        {/* No contract yet */}
-        {!hasContract && !rejected && (
+        {/* Fully signed (Brand + Influencer) → allow Add Milestone */}
+        {milestonesAllowed && (
           <ActionButton
-            icon={HiPaperAirplane}
-            title="Send contract"
-            variant="grad"
-            onClick={() => openSidebar(inf, "send")}
+            title="Add milestones for this influencer"
+            variant="outline"
+            onClick={() =>
+              router.push(
+                `/brand/active-campaign/active-inf?id=${encodeURIComponent(
+                  campaignId || ""
+                )}&infId=${encodeURIComponent(inf.influencerId)}${meta?.contractId ? `&contractId=${encodeURIComponent(meta.contractId)}` : ""
+                }&name=${encodeURIComponent(
+                  campaignTitle || ""
+                )}`
+              )
+            }
           >
-            Send Contract
-          </ActionButton>
-        )}
-
-        {/* Rejected → allow resend (still controlled by your resend logic) */}
-        {hasContract && rejected && !locked && (
-          <ActionButton
-            title="Resend contract"
-            variant="grad"
-            onClick={() => openSidebar(inf, "edit")}
-          >
-            Resend Contract
-          </ActionButton>
-        )}
-
-        {/* Always allow viewing if exists */}
-        {hasContract && (
-          <ActionButton
-            icon={HiEye}
-            title="View contract"
-            variant="grad"
-            disabled={metaCacheLoading && !meta}
-            onClick={() => handleViewContract(inf)}
-          >
-            View Contract
-          </ActionButton>
-        )}
-
-        {/* Editable window (pre-accept / change-request) */}
-        {hasContract && !rejected && !locked && editable && (
-          <ActionButton
-            title="Edit contract"
-            variant="grad"
-            onClick={() => openSidebar(inf, "edit")}
-          >
-            Edit Contract
+            Add Milestone
           </ActionButton>
         )}
 
@@ -1915,6 +1951,61 @@ export default function AppliedInfluencersPage() {
             onClick={() => openSignModal(meta)}
           >
             Sign as Brand
+          </ActionButton>
+        )}
+
+        <ActionButton
+          title="View Influencer"
+          variant="outline"
+          onClick={() => router.push(`/brand/influencers?id=${inf.influencerId}`)}
+        >
+          View Influencer
+        </ActionButton>
+
+        {/* No contract yet */}
+{!isFullyManagedPlan && !hasContract && !rejected && (
+          <ActionButton
+            icon={HiPaperAirplane}
+            title="Send contract"
+            variant="grad"
+            onClick={() => openSidebar(inf, "send")}
+          >
+            Send Contract
+          </ActionButton>
+        )}
+
+        {/* Rejected → allow resend (still controlled by your resend logic) */}
+{!isFullyManagedPlan && hasContract && rejected && !locked && (
+          <ActionButton
+            title="Resend contract"
+            variant="grad"
+            onClick={() => openSidebar(inf, "edit")}
+          >
+            Resend Contract
+          </ActionButton>
+        )}
+
+        {/* Always allow viewing if exists */}
+        {hasContract && (
+          <ActionButton
+            icon={HiEye}
+            title="View contract"
+            variant="grad"
+            disabled={metaCacheLoading && !meta}
+            onClick={() => handleViewContract(inf)}
+          >
+            View Contract
+          </ActionButton>
+        )}
+
+        {/* Editable window (pre-accept / change-request) */}
+{!isFullyManagedPlan && hasContract && !rejected && !locked && editable && (
+          <ActionButton
+            title="Edit contract"
+            variant="grad"
+            onClick={() => openSidebar(inf, "edit")}
+          >
+            Edit Contract
           </ActionButton>
         )}
       </div>
@@ -2317,7 +2408,7 @@ export default function AppliedInfluencersPage() {
 
         {/* ================= Sidebar ================= */}
         <ContractSidebar
-          isOpen={sidebarOpen}
+          isOpen={sidebarOpen && !isFullyManagedPlan}
           onClose={closeSidebar}
           title={
             panelMode === "send"
@@ -3828,6 +3919,9 @@ function SignatureModal({
   const [fileSize, setFileSize] = useState<number | null>(null);
   const [isDragging, setIsDragging] = useState(false);
 
+  // ✅ NEW: prevent multiple clicks / double submits
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
   const dropRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -3837,17 +3931,20 @@ function SignatureModal({
       setFileName("");
       setFileSize(null);
       setIsDragging(false);
+      setIsSubmitting(false); // ✅ reset
     }
   }, [isOpen]);
 
   useEffect(() => {
     if (!isOpen) return;
+
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape" && !isSubmitting) onClose(); // ✅ don't close while submitting
     };
+
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [isOpen, onClose]);
+  }, [isOpen, onClose, isSubmitting]);
 
   const formatSize = (size: number | null) => {
     if (!size) return "";
@@ -3857,6 +3954,8 @@ function SignatureModal({
   };
 
   const handleFile = (file?: File | null) => {
+    if (isSubmitting) return; // ✅ block changes during submit
+
     setError("");
     setIsDragging(false);
     if (!file) return;
@@ -3875,9 +3974,7 @@ function SignatureModal({
     }
 
     const reader = new FileReader();
-    reader.onload = () => {
-      setSigDataUrl(reader.result as string);
-    };
+    reader.onload = () => setSigDataUrl(reader.result as string);
     reader.readAsDataURL(file);
   };
 
@@ -3887,26 +3984,28 @@ function SignatureModal({
     if (!el) return;
 
     const onDragOver = (e: DragEvent) => {
+      if (isSubmitting) return;
       e.preventDefault();
       e.stopPropagation();
       setIsDragging(true);
     };
 
     const onDragEnter = (e: DragEvent) => {
+      if (isSubmitting) return;
       e.preventDefault();
       e.stopPropagation();
       setIsDragging(true);
     };
 
     const onDragLeave = (e: DragEvent) => {
+      if (isSubmitting) return;
       e.preventDefault();
       e.stopPropagation();
-      if (e.target === el) {
-        setIsDragging(false);
-      }
+      if (e.target === el) setIsDragging(false);
     };
 
     const onDrop = (e: DragEvent) => {
+      if (isSubmitting) return;
       e.preventDefault();
       e.stopPropagation();
       setIsDragging(false);
@@ -3925,24 +4024,35 @@ function SignatureModal({
       el.removeEventListener("dragleave", onDragLeave);
       el.removeEventListener("drop", onDrop);
     };
-  }, [isOpen]);
+  }, [isOpen, isSubmitting]); // ✅ include isSubmitting
 
   if (!isOpen) return null;
 
-  const handleSignClick = () => {
+  const handleSignClick = async () => {
+    if (isSubmitting) return; // ✅ double-click guard
+
     if (!sigDataUrl) {
       setError("Please select a signature image first.");
       return;
     }
-    onSigned(sigDataUrl);
+
+    try {
+      setIsSubmitting(true); // ✅ lock UI
+      await onSigned(sigDataUrl);
+      // ✅ parent will close modal on success; we don't force close here
+    } finally {
+      // ✅ if parent throws error and modal stays open, unlock
+      setIsSubmitting(false);
+    }
   };
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center">
       <div
-        className="absolute inset-0 bg-black/50 backdrop-blur-[2px]"
-        onClick={onClose}
+        className={`absolute inset-0 bg-black/50 backdrop-blur-[2px] ${isSubmitting ? "pointer-events-none" : ""}`}
+        onClick={() => !isSubmitting && onClose()} // ✅ prevent closing while submitting
       />
+
       <div className="relative z-[61] w-[96%] max-w-xl rounded-2xl bg-white shadow-2xl border border-gray-100 overflow-hidden">
         <div className="relative h-24">
           <div
@@ -3965,11 +4075,14 @@ function SignatureModal({
                 </span>
               </div>
             </div>
+
             <button
-              className="w-9 h-9 rounded-full bg-white/20 hover:bg-white/30 backdrop-blur-sm flex items-center justify-center text-lg"
-              onClick={onClose}
+              className={`w-9 h-9 rounded-full bg-white/20 hover:bg-white/30 backdrop-blur-sm flex items-center justify-center text-lg ${isSubmitting ? "opacity-50 cursor-not-allowed" : ""
+                }`}
+              onClick={() => !isSubmitting && onClose()}
               aria-label="Close"
               title="Close"
+              disabled={isSubmitting as any}
             >
               ✕
             </button>
@@ -4024,33 +4137,31 @@ function SignatureModal({
             <input
               type="file"
               accept="image/png,image/jpeg"
+              disabled={isSubmitting} // ✅ disable file picker
               onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                 handleFile(e.target.files?.[0])
               }
-              className="block w-full text-xs sm:text-sm text-gray-700 file:mr-3 file:rounded-md file:border-0 file:bg-gray-900 file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-white hover:file:bg-black"
+              className="block w-full text-xs sm:text-sm text-gray-700 file:mr-3 file:rounded-md file:border-0 file:bg-gray-900 file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-white hover:file:bg-black disabled:opacity-60 disabled:cursor-not-allowed"
             />
+
             <div className="flex justify-between items-center text-[11px] text-gray-500">
               <span>Allowed: PNG, JPG · Max size: 50 KB</span>
               {fileSize !== null && (
                 <span>
                   Selected size:{" "}
-                  <span
-                    className={
-                      fileSize > 50 * 1024
-                        ? "text-red-600 font-medium"
-                        : ""
-                    }
-                  >
+                  <span className={fileSize > 50 * 1024 ? "text-red-600 font-medium" : ""}>
                     {formatSize(fileSize)}
                   </span>
                 </span>
               )}
             </div>
+
             {fileName && (
               <div className="text-[11px] text-gray-600 truncate">
                 File: <span className="font-medium">{fileName}</span>
               </div>
             )}
+
             {error && (
               <div className="text-xs text-red-600 flex items-center gap-1 mt-1">
                 <span>⚠️</span>
@@ -4066,19 +4177,23 @@ function SignatureModal({
                   <div className="text-xs font-semibold text-gray-700">
                     Signature preview
                   </div>
+
                   <button
                     type="button"
+                    disabled={isSubmitting} // ✅ disable clear
                     onClick={() => {
+                      if (isSubmitting) return;
                       setSigDataUrl("");
                       setFileName("");
                       setFileSize(null);
                       setError("");
                     }}
-                    className="text-[11px] text-gray-500 hover:text-gray-700 underline"
+                    className="text-[11px] text-gray-500 hover:text-gray-700 underline disabled:opacity-60 disabled:cursor-not-allowed"
                   >
                     Clear
                   </button>
                 </div>
+
                 <div className="flex items-center justify-center rounded-lg border bg-white px-3 py-2">
                   <img
                     src={sigDataUrl}
@@ -4094,23 +4209,26 @@ function SignatureModal({
         <div className="px-5 pb-5 pt-1 flex flex-col sm:flex-row justify-end gap-3">
           <Button
             variant="outline"
-            className="text-gray-800 border-gray-300 hover:bg-gray-100"
-            onClick={onClose}
+            className="text-gray-800 border-gray-300 hover:bg-gray-100 disabled:opacity-60 disabled:cursor-not-allowed"
+            onClick={() => !isSubmitting && onClose()}
+            disabled={isSubmitting} // ✅ disable cancel while submitting
           >
             Cancel
           </Button>
+
           <Button
             className="bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white hover:from-[#FF7236] hover:to-[#FFA135] shadow-none disabled:opacity-60 disabled:cursor-not-allowed"
             onClick={handleSignClick}
-            disabled={!sigDataUrl}
+            disabled={!sigDataUrl || isSubmitting} // ✅ key line
           >
-            Sign & continue
+            {isSubmitting ? "Signing..." : "Sign & continue"}
           </Button>
         </div>
       </div>
     </div>
   );
 }
+
 
 function SidebarSection({ title, children, icon }: any) {
   return (

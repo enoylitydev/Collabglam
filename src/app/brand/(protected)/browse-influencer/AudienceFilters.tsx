@@ -35,7 +35,7 @@ type Country = {
   label: string; // e.g. "🇦🇩 Andorra (AD)"
 };
 
-const API_URL = 'http://localhost:5000/country/getAll';
+const API_URL = 'https://api.collabglam.com/country/getAll';
 
 export function AudienceFilters({
   filters,

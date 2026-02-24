@@ -87,6 +87,35 @@ const statusTone = (status: string | null | undefined) => {
   return "bg-indigo-50 text-indigo-700 border-indigo-100";
 };
 
+function unwrap<T>(res: any): T {
+  return (res?.data ?? res) as T;
+}
+
+const toMs = (d: string | null | undefined) => {
+  const t = d ? new Date(d).getTime() : 0;
+  return Number.isFinite(t) ? t : 0;
+};
+
+// ✅ Keep 1 row per influencer (latest message wins)
+function dedupeInboxConversations(rows: InboxRow[]): InboxRow[] {
+  const map = new Map<string, InboxRow>();
+
+  for (const r of rows || []) {
+    const infId = (r?.influencer?.influencerId || "").trim();
+    const infName = (r?.influencer?.name || "").trim().toLowerCase();
+
+    // prefer influencerId; fallback to name; final fallback to threadId
+    const key = infId ? `id:${infId}` : infName ? `name:${infName}` : `thread:${r.threadId}`;
+
+    const prev = map.get(key);
+    if (!prev || toMs(r.lastMessageAt) > toMs(prev.lastMessageAt)) {
+      map.set(key, r);
+    }
+  }
+
+  return Array.from(map.values()).sort((a, b) => toMs(b.lastMessageAt) - toMs(a.lastMessageAt));
+}
+
 /* ---------------- page ---------------- */
 
 export default function BrandDashboardHome() {
@@ -123,7 +152,7 @@ export default function BrandDashboardHome() {
 
       const [dashRes, inboxRes] = await Promise.allSettled([
         post<BrandDashboardHomePayload>("/dash/brand", { brandId }),
-        post<InboxResponse>("/emails/brand/influencer-list", { brandId, limit: 25 }),
+        post<any>("/emails/brand/inbox", { brandId, limit: 25 }),
       ]);
 
       // dashboard (fatal if fails)
@@ -139,10 +168,22 @@ export default function BrandDashboardHome() {
         );
       }
 
-      // inbox (non-fatal if fails)
       if (inboxRes.status === "fulfilled") {
-        const conv = inboxRes.value?.conversations;
-        setInbox(Array.isArray(conv) ? conv : []);
+        const payload = unwrap<any>(inboxRes.value);
+
+        // support multiple shapes
+        const conv =
+          payload?.conversations ||
+          payload?.data?.conversations ||
+          payload?.data ||
+          [];
+
+        const list = Array.isArray(conv) ? (conv as InboxRow[]) : [];
+
+        // ✅ remove duplicates (1 per influencer)
+        const unique = dedupeInboxConversations(list);
+
+        setInbox(unique);
       } else {
         const err: any = inboxRes.reason;
         setInboxError(
@@ -210,7 +251,6 @@ export default function BrandDashboardHome() {
       <div className="flex-1 flex flex-col overflow-y-auto overflow-x-hidden">
         <main className="flex-1 px-6 py-8">
 
-          {/* <BrandTourModal open={true} onClose={() => {}} startAt={0} /> */}
           {/* Welcome */}
           <div className="rounded-lg bg-white p-6 mb-8 mt-4 md:mt-6">
             <h2
@@ -451,7 +491,7 @@ export default function BrandDashboardHome() {
                                   title={c.hasAcceptedInfluencer ? "Open active influencers" : "Open applied influencers"}
                                 >
                                   <span
-                                    className={`inline-flex min-w-[28px] justify-center rounded-full px-2 py-0.5 text-xs font-bold ${applied > 0 ? "bg-gray-900 text-white" : "bg-gray-100 text-gray-500"
+                                    className={`inline-flex min-w-[28px] justify-center rounded-full px-2 py-0.5 text-xs font-bold ${applied > 0 ? "bg-[#EAF6EC] text-[#28A745]" : "bg-gray-100 text-gray-500"
                                       }`}
                                   >
                                     {applied.toLocaleString()}
@@ -467,8 +507,8 @@ export default function BrandDashboardHome() {
                               <td className="py-3 pr-4 hidden xl:table-cell">
                                 <span
                                   className={`px-2 py-1 rounded-full text-xs font-semibold ${c.hasAcceptedInfluencer
-                                      ? "bg-indigo-100 text-indigo-700"
-                                      : "bg-yellow-100 text-yellow-700"
+                                    ? "bg-indigo-100 text-indigo-700"
+                                    : "bg-yellow-100 text-yellow-700"
                                     }`}
                                 >
                                   {c.hasAcceptedInfluencer ? "Accepted" : "Not accepted"}

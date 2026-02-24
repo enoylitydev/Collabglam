@@ -30,9 +30,9 @@ const navItems = [
   { label: "E-Mails", href: "/admin/emails", icon: MailCheckIcon },
   { label: "Influencer-Email", href: "/admin/influencerdetails", icon: MailCheckIcon },
   { label: "Missing-Email", href: "/admin/missingemail", icon: MailCheckIcon },
-
-  // 👇 NEW payment notification item
+  { label: "Invoice Details", href: "/admin/invoiceDetails", icon: DollarSign },
   { label: "Payment Notification", href: "/admin/payment", icon: Bell },
+  { label: "Youtube Handle", href: "/admin/youtube", icon: MailCheckIcon }
 ];
 
 const documentLinks = [

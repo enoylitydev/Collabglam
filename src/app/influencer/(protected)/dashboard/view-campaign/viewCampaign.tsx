@@ -45,6 +45,7 @@ interface CampaignData {
   }[];
   goal: string;
   budget: number;
+  influencerBudget?: number;
   timeline: { startDate: string; endDate: string };
   creativeBriefText?: string;
   creativeBrief: string[];
@@ -471,7 +472,7 @@ export default function ViewCampaignPage() {
             </div>
             <div>
               <p className="text-sm font-medium text-gray-600">Budget</p>
-              <p className="mt-1 text-gray-800">${c.budget.toLocaleString()}</p>
+              <p className="mt-1 text-gray-800">${ c.influencerBudget?.toLocaleString() || c.budget?.toLocaleString()}</p>
             </div>
             <div className="flex items-center gap-3">
               <Tooltip>

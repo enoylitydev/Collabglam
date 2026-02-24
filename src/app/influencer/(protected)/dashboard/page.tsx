@@ -30,6 +30,7 @@ interface Campaign {
   timeline: { startDate: string; endDate: string };
   isActive: number;
   budget: number;
+  influencerBudget?: number;
   isApproved: number;
 }
 interface InvitationItem {
@@ -140,7 +141,6 @@ const formatDate = (d: string) => new Intl.DateTimeFormat('en-US', { month: 'sho
 const formatCurrency = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(n);
 
 export default function MyCampaignsPage() {
-  // Campaign list search (existing)
   const [search, setSearch] = useState('');
 
   // Brand search UI state (the one you asked to update)
@@ -336,10 +336,8 @@ export default function MyCampaignsPage() {
               {brandResults.map((res) => (
                 <li
                   key={res.brandId}
-                  className="px-4 py-3 hover:bg-gray-100 cursor-pointer"
+                  className="px-4 py-3 hover:bg-gray-100 cursor-pointer" 
                   onClick={() => {
-                    // navigate or do something with brandId
-                    // Example:
                     window.location.href = `/brand/profile?id=${res.brandId}`;
                     setSearchOpen(false);
                   }}
@@ -371,11 +369,6 @@ export default function MyCampaignsPage() {
               <h3 className="text-sm text-gray-500">Pending Approvals</h3>
               <p className="text-3xl font-bold">{pendingCount}</p>
             </div>
-            {pendingCount > 0 && (
-              <span className="inline-block bg-red-100 text-red-600 px-2 py-1 rounded-full text-xs font-semibold">
-                {pendingCount}
-              </span>
-            )}
           </div>
         </div>
 
@@ -503,7 +496,7 @@ export default function MyCampaignsPage() {
                       <div className="text-gray-600 line-clamp-1">{c.description}</div>
                     </td>
                     <td className="px-6 py-4 text-center">{c.brandName}</td>
-                    <td className="px-6 py-4">{formatCurrency(c.budget)}</td>
+                    <td className="px-6 py-4">{formatCurrency( c.influencerBudget || c.budget)}</td>
                     <td className="px-6 py-4">{formatDate(c.timeline.startDate)} - {formatDate(c.timeline.endDate)}</td>
                     <td className="px-6 py-4 flex space-x-2 justify-center">
                       <Link href={`/influencer/dashboard/view-campaign?id=${c.campaignsId}`} className="p-2 bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] text-gray-800 rounded-md">

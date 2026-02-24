@@ -55,6 +55,7 @@ interface UICampaign {
   product: string;
   goal: string;
   budget: number;
+  influencerBudget?: number;
   gender: number; // 0 = Female, 1 = Male, 2 = All
   ageRange: string;
   locations: string; // "India, Afghanistan"
@@ -101,6 +102,7 @@ const mapResponse = (raw: any): UICampaign => ({
   product: raw.productOrServiceName,
   goal: raw.goal,
   budget: raw.budget,
+  influencerBudget: raw.influencerBudget,
   gender: raw.targetAudience?.gender,
   ageRange: `${raw.targetAudience?.age?.MinAge}-${raw.targetAudience?.age?.MaxAge}`,
   locations: Array.isArray(raw.targetAudience?.locations)
@@ -645,7 +647,7 @@ function CampaignCard({
           <div className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1">
             <DollarSign className="w-3.5 h-3.5 text-emerald-600" />
             <span className="text-xs font-semibold text-gray-900">
-              ${campaign.budget.toLocaleString()}
+              ${campaign.influencerBudget?.toLocaleString() || campaign.budget?.toLocaleString()}
             </span>
           </div>
 

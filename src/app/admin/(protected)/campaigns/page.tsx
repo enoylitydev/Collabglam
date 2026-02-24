@@ -13,6 +13,7 @@ import {
   HiChevronUp,
   HiChevronDown,
   HiUserGroup,
+  HiPencil,
 } from "react-icons/hi";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
@@ -36,13 +37,17 @@ import { Card } from "@/components/ui/card";
 
 interface Campaign {
   campaignsId: string;
-  productOrServiceName: string;
-  description: string;
-  timeline: { startDate: string; endDate: string };
-  budget: number;
+  _id?: string; // (optional but useful — see #3)
+  brandId: string;
+  productOrServiceName?: string;
+  description?: string;
+  timeline?: { startDate?: string; endDate?: string };
+  budget?: number;
   isActive: number;
   goal?: string;
   applicantCount?: number;
+  isDraft?: number;
+  campaignStatus?: string;
 }
 
 // Updated to match API: 'campaigns' field
@@ -57,7 +62,24 @@ interface ListResponse {
 
 type StatusFilter = 0 | 1 | 2; // 0: All, 1: Active, 2: Inactive
 
-type SortKey = keyof Campaign | "startDate" | "endDate" | "status";
+type SortKey =
+  | "productOrServiceName"
+  | "goal"
+  | "startDate"
+  | "endDate"
+  | "budget"
+  | "applicantCount"
+  | "isActive";
+
+const sortByMap: Record<SortKey, string> = {
+  productOrServiceName: "productOrServiceName",
+  goal: "goal",
+  startDate: "timeline.startDate",
+  endDate: "timeline.endDate",
+  budget: "budget",
+  applicantCount: "applicantCount",
+  isActive: "isActive",
+};
 
 // helper to slice / clean name so repeated / long text doesn't blow up the UI
 const MAX_NAME_LENGTH = 60;
@@ -186,9 +208,8 @@ export default function AdminCampaignsPage() {
             disabled={loading}
           >
             <HiOutlineRefresh
-              className={`mr-2 h-4 w-4 ${
-                loading ? "animate-spin" : ""
-              }`}
+              className={`mr-2 h-4 w-4 ${loading ? "animate-spin" : ""
+                }`}
             />
             Refresh
           </Button>
@@ -248,12 +269,17 @@ export default function AdminCampaignsPage() {
                     {formatName(c.productOrServiceName)}
                   </TableCell>
                   <TableCell>{c.goal || "—"}</TableCell>
-                  <TableCell>{formatDate(c.timeline.startDate)}</TableCell>
-                  <TableCell>{formatDate(c.timeline.endDate)}</TableCell>
-                  <TableCell>${c.budget.toLocaleString()}</TableCell>
+                  <TableCell>{c.timeline?.startDate ? formatDate(c.timeline.startDate) : "—"}</TableCell>
+                  <TableCell>{c.timeline?.endDate ? formatDate(c.timeline.endDate) : "—"}</TableCell>
+                  <TableCell>${(c.budget ?? 0).toLocaleString()}</TableCell>
                   <TableCell>{c.applicantCount || 0}</TableCell>
                   <TableCell>
-                    {c.isActive === 1 ? (
+                    {c.isDraft === 1 ? (
+                      <span className="inline-flex items-center space-x-1 text-yellow-600">
+                        <HiOutlineRefresh className="h-4 w-4" />
+                        <span>Draft</span>
+                      </span>
+                    ) : c.isActive === 1 ? (
                       <span className="inline-flex items-center space-x-1 text-green-600">
                         <HiCheckCircle />
                         <span>Active</span>
@@ -279,6 +305,20 @@ export default function AdminCampaignsPage() {
                         </Link>
                       </TooltipTrigger>
                       <TooltipContent>View Details</TooltipContent>
+                    </Tooltip>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Link href={`/admin/brands/create-campaign?brandId=${c.brandId}&id=${c.campaignsId}`}>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            title="Edit Campaign"
+                          >
+                            <HiPencil />
+                          </Button>
+                        </Link>
+                      </TooltipTrigger>
+                      <TooltipContent>Edit Campaign</TooltipContent>
                     </Tooltip>
                     <Tooltip>
                       <TooltipTrigger asChild>
