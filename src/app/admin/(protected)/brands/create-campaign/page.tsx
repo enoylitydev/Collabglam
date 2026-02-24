@@ -160,7 +160,7 @@ export default function AdminCreateCampaignPage() {
 
     // admin must pass brandId in query: /admin/campaigns/create?brandId=...
     const brandIdFromQuery = searchParams.get("brandId") || "";
-    const campaignId = searchParams.get("id"); // optional (if you also want edit mode)
+    const campaignId = searchParams.get("id"); // optional (if editing)
     const isEditMode = Boolean(campaignId);
 
     // ── state ─────────────────────────────────────────────────
@@ -168,9 +168,13 @@ export default function AdminCreateCampaignPage() {
 
     const [brandLoading, setBrandLoading] = useState(false);
     const [brand, setBrand] = useState<BrandDetails | null>(null);
-    const resolvedBrandId = brandIdFromQuery; // for admin create, only query param
+    const resolvedBrandId = brandIdFromQuery;
 
     const [isLoading, setIsLoading] = useState(isEditMode);
+
+    // Track workflow states
+    const [mongoId, setMongoId] = useState<string>("");
+    const [isDraft, setIsDraft] = useState<boolean>(true); // Default to draft for new campaigns
 
     const [productName, setProductName] = useState("");
     const [description, setDescription] = useState("");
@@ -196,7 +200,6 @@ export default function AdminCreateCampaignPage() {
     const [campaignType, setCampaignType] = useState<string>("");
     const [customCampaignType, setCustomCampaignType] = useState<string>("");
 
-    // ✅ two budgets
     const [brandBudget, setBrandBudget] = useState<number | "">("");
     const [influencerBudget, setInfluencerBudget] = useState<number | "">("");
 
@@ -210,12 +213,13 @@ export default function AdminCreateCampaignPage() {
     const [existingBriefFiles, setExistingBriefFiles] = useState<string[]>([]);
     const [useFileUploadForBrief, setUseFileUploadForBrief] = useState(false);
 
+    const [publishStatus, setPublishStatus] = useState("");
     const [additionalNotes, setAdditionalNotes] = useState("");
 
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [showRequiredHints, setShowRequiredHints] = useState(false);
+    const [draftLoaded, setDraftLoaded] = useState(false);
 
-    // preview modal
     const [isPreviewOpen, setIsPreviewOpen] = useState(false);
 
     const ageOrderError =
@@ -344,18 +348,15 @@ export default function AdminCreateCampaignPage() {
         setBrandLoading(true);
         try {
             const candidates = `/brand?id=${resolvedBrandId}`;
-
             let data: any = null;
             try {
                 data = await get<any>(candidates);
-                if (data) console.log("Fetched brand details for campaign creation:", data);
             } catch {
-                // try next
+                // Ignore error, fallback to raw ID
             }
 
             if (data?.brand) data = data.brand;
             if (!data?.name) {
-                // fallback: if API returns {brands:[...]} or other structures
                 if (Array.isArray(data?.brands) && data.brands[0]) data = data.brands[0];
             }
 
@@ -366,7 +367,6 @@ export default function AdminCreateCampaignPage() {
                     email: data.email,
                 });
             } else {
-                // If you don't have a fetch endpoint, admin can still type brand name manually below.
                 setBrand({ brandId: resolvedBrandId, name: "" });
             }
         } finally {
@@ -391,14 +391,18 @@ export default function AdminCreateCampaignPage() {
             .catch(() => console.error("Failed to fetch categories"));
     }, []);
 
-    // ── hydrate helper (for optional edit mode) ───────────────
+    // ── hydrate helper (for edit mode) ───────────────
     const hydrateFromCampaign = (data: CampaignEditPayload) => {
+        // Track the specific DB IDs and states
+        setMongoId(data._id || "");
+        setIsDraft(data.isDraft === 1);
+
         setProductName(data.productOrServiceName || "");
         setDescription(data.description || "");
         setAdditionalNotes(data.additionalNotes || "");
         setCreativeBriefText(data.creativeBriefText || "");
         setExistingImages(Array.isArray(data.images) ? data.images : []);
-
+        setPublishStatus(data.publishStatus || "");
         const briefFiles = Array.isArray(data.creativeBrief) ? data.creativeBrief : [];
         setExistingBriefFiles(briefFiles);
         if (briefFiles.length > 0) setUseFileUploadForBrief(true);
@@ -480,6 +484,30 @@ export default function AdminCreateCampaignPage() {
             .finally(() => setIsLoading(false));
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isEditMode, campaignId, countries, categories]);
+
+    // ✅ NEW: ── fetch existing draft if not strictly editing ────────────────
+    useEffect(() => {
+        if (isEditMode || draftLoaded || !resolvedBrandId) return;
+        if (!countries.length || !categories.length) return;
+
+        // Auto-load their active draft so they don't accidentally duplicate it
+        get<CampaignEditPayload>(`/campaign/draft?brandId=${resolvedBrandId}`)
+            .then((draft: any) => {
+                if (!draft || draft.isDraft !== 1) return;
+                hydrateFromCampaign(draft);
+                setDraftLoaded(true);
+
+                toast({
+                    icon: "info",
+                    title: "Draft loaded",
+                    text: "We restored the existing draft for this brand to prevent duplicates.",
+                });
+            })
+            .catch((err) => {
+                // Ignore if no draft is found (let them create a fresh one)
+            });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isEditMode, draftLoaded, resolvedBrandId, countries, categories]);
 
     // ── handlers ──────────────────────────────────────────────
     const handleCountriesChange = (value: readonly CountryOption[] | null) => {
@@ -633,9 +661,11 @@ export default function AdminCreateCampaignPage() {
 
     const handlePreview = () => setIsPreviewOpen(true);
 
-    // ── submit (admin create/update) ──────────────────────────
+    // ── submit (admin create/update/draft) ──────────────────────────
     const handleSubmit = async (e?: React.FormEvent) => {
-        if (e) e.preventDefault();
+        if (e && typeof (e as any).preventDefault === 'function') {
+            (e as React.FormEvent).preventDefault();
+        }
         setShowRequiredHints(false);
 
         if (!resolvedBrandId) {
@@ -676,7 +706,7 @@ export default function AdminCreateCampaignPage() {
             toast({
                 icon: "warning",
                 title: "Please complete all required fields",
-                text: "Fields marked with * must be filled before submitting your campaign.",
+                text: "Fields marked with * must be filled before submitting.",
             });
             return;
         }
@@ -715,10 +745,11 @@ export default function AdminCreateCampaignPage() {
             // brand identification (admin)
             formData.append("brandId", resolvedBrandId);
 
-            // if your backend requires brandName (schema says required),
-            // we send it if we have it, else admin must type it (field shown below)
             const brandNameToSend = (brand?.name || "").trim();
             if (brandNameToSend) formData.append("brandName", brandNameToSend);
+
+            const adminId = localStorage.getItem("adminId") || "";
+            if (adminId) formData.append("adminId", adminId);
 
             formData.append("productOrServiceName", productName.trim());
             formData.append("description", description.trim());
@@ -743,9 +774,9 @@ export default function AdminCreateCampaignPage() {
             formData.append("goal", selectedGoal);
             formData.append("campaignType", finalCampaignType || "");
 
-            // ✅ budgets
-            formData.append("budget", String(brandBudget)); // brand visible
-            formData.append("influencerBudget", String(influencerBudget)); // influencer visible
+            // budgets
+            formData.append("budget", String(brandBudget));
+            formData.append("influencerBudget", String(influencerBudget));
 
             formData.append(
                 "timeline",
@@ -758,8 +789,6 @@ export default function AdminCreateCampaignPage() {
 
             if (useFileUploadForBrief) {
                 creativeBriefFiles.forEach((f) => formData.append("creativeBrief", f));
-                // keep existingBriefFiles as-is; your backend should keep what’s not removed
-                // If your backend needs explicit list, send it:
                 if (existingBriefFiles.length) {
                     formData.append("existingCreativeBrief", JSON.stringify(existingBriefFiles));
                 }
@@ -768,30 +797,37 @@ export default function AdminCreateCampaignPage() {
             }
 
             let redirectCampaignsId: string | null = null;
+            let res: any;
 
-            if (isEditMode && campaignId) {
-                const res: any = await post(`/campaign/update?id=${campaignId}`, formData);
+            if (isEditMode && (publishStatus === "brand_confirmed" || !isDraft)) {
+
+                formData.append("isDraft", "0");
+
+                res = await post(`/campaign/update?id=${campaignId}`, formData);
 
                 const updatedCampaign = res?.campaign ?? res?.data?.campaign;
-                redirectCampaignsId =
-                    updatedCampaign?.campaignsId ?? updatedCampaign?._id ?? null;
+                redirectCampaignsId = updatedCampaign?.campaignsId ?? updatedCampaign?._id ?? null;
 
                 toast({
                     icon: "success",
                     title: "Campaign updated",
-                    text: "Your changes have been saved successfully.",
+                    text: "Your changes have been saved to the live campaign.",
                 });
             } else {
-                const res: any = await post("/campaign/create", formData);
+                if (mongoId) {
+                    formData.append("_id", mongoId);
+                }
 
-                const createdCampaign = res?.campaign ?? res?.data?.campaign;
-                redirectCampaignsId =
-                    createdCampaign?.campaignsId ?? createdCampaign?._id ?? null;
+                // Hits the specific temporary draft endpoint
+                res = await post("/campaign/save-draft", formData);
+
+                const savedCampaign = res?.campaign ?? res?.data?.campaign;
+                redirectCampaignsId = savedCampaign?.campaignsId ?? savedCampaign?._id ?? null;
 
                 toast({
                     icon: "success",
-                    title: "Campaign created",
-                    text: "Campaign is live and ready to go.",
+                    title: "Draft Saved",
+                    text: "Temporary campaign drafted successfully.",
                 });
             }
 
@@ -801,12 +837,12 @@ export default function AdminCreateCampaignPage() {
                 toast({
                     icon: "error",
                     title: "Redirect failed",
-                    text: "Campaign created but ID was not returned by API.",
+                    text: "Campaign action succeeded but ID was not returned by API.",
                 });
                 return;
             }
 
-            // Adjust query keys to what your view page expects
+            // Route to View page, where Admin can hit "Send to Brand for Review"
             router.push(
                 `/admin/campaigns/view?id=${encodeURIComponent(
                     redirectCampaignsId
@@ -854,6 +890,15 @@ export default function AdminCreateCampaignPage() {
         );
     }
 
+    // Determine titles based on state
+    const pageTitle = isEditMode
+        ? (isDraft ? "Edit Temporary Draft (Admin)" : "Edit Live Campaign (Admin)")
+        : "Create Temporary Campaign (Admin)";
+
+    const pageSubtitle = isEditMode && !isDraft
+        ? "Update campaign details for this live brand campaign."
+        : "Draft a temporary campaign for the brand to review before it goes live.";
+
     // ── JSX ───────────────────────────────────────────────────
     return (
         <>
@@ -861,12 +906,10 @@ export default function AdminCreateCampaignPage() {
                 <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8 pb-32">
                     <div className="mb-8">
                         <h1 className="text-4xl font-semibold text-black mb-2">
-                            {isEditMode ? "Edit Campaign (Admin)" : "Create Campaign (Admin)"}
+                            {pageTitle}
                         </h1>
                         <p className="text-gray-600 text-lg">
-                            {isEditMode
-                                ? "Update campaign details for this brand"
-                                : "Create a new campaign for this brand"}
+                            {pageSubtitle}
                         </p>
                     </div>
 
@@ -896,7 +939,7 @@ export default function AdminCreateCampaignPage() {
                                             }
                                             disabled
                                             placeholder="Brand name"
-                                            className="h-11"
+                                            className="h-11 bg-gray-50"
                                         />
                                     </div>
                                 </div>
@@ -1276,7 +1319,7 @@ export default function AdminCreateCampaignPage() {
                                     </div>
                                 </div>
 
-                                {/* ✅ Two budgets */}
+                                {/* Budgets */}
                                 <div className="grid sm:grid-cols-2 gap-6">
                                     <div className="space-y-1">
                                         <Label className="text-sm font-medium text-gray-700 mb-2 block">
@@ -1538,7 +1581,6 @@ export default function AdminCreateCampaignPage() {
                                         )}
                                     </div>
                                 )}
-
                                 <div>
                                     <Label
                                         htmlFor="additionalNotes"
@@ -1579,29 +1621,31 @@ export default function AdminCreateCampaignPage() {
                         </Button>
                     </div>
 
-                    <button
-                        onClick={() => handleSubmit()}
-                        disabled={isSubmitting}
-                        className={`
-              inline-flex items-center justify-center
-              bg-gradient-to-r from-[#FFA135] to-[#FF7236]
-              text-white font-semibold text-base
-              px-8 py-3 rounded-lg shadow-lg
-              transition-all duration-200
-              ${isSubmitting ? "opacity-50 cursor-not-allowed" : "hover:scale-105 hover:shadow-xl active:scale-95"}
-            `}
-                    >
-                        {isSubmitting ? (
-                            <>
-                                <div className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-solid border-white border-r-transparent mr-2"></div>
-                                Submitting...
-                            </>
-                        ) : isEditMode ? (
-                            "Update Campaign"
-                        ) : (
-                            "Create Campaign"
-                        )}
-                    </button>
+                    <div className="flex gap-3">
+                        <button
+                            onClick={handleSubmit}
+                            disabled={isSubmitting}
+                            className={`
+                              inline-flex items-center justify-center
+                              bg-gradient-to-r from-[#FFA135] to-[#FF7236]
+                              text-white font-semibold text-base
+                              px-8 py-3 rounded-lg shadow-lg
+                              transition-all duration-200
+                              ${isSubmitting ? "opacity-50 cursor-not-allowed" : "hover:scale-105 hover:shadow-xl active:scale-95"}
+                            `}
+                        >
+                            {isSubmitting ? (
+                                <>
+                                    <div className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-solid border-white border-r-transparent mr-2"></div>
+                                    Submitting...
+                                </>
+                            ) : isEditMode && (publishStatus === "brand_confirmed" || !isDraft) ? (
+                                "Update Live Campaign"
+                            ) : (
+                                "Save Campaign Draft"
+                            )}
+                        </button>
+                    </div>
                 </div>
             </div>
 
@@ -1701,6 +1745,8 @@ export default function AdminCreateCampaignPage() {
                                 </div>
                             </div>
                         </section>
+
+                        <Separator />
 
                         <section>
                             <h3 className="text-sm font-semibold text-gray-700 mb-2">Categories</h3>
@@ -1810,11 +1856,11 @@ export default function AdminCreateCampaignPage() {
                             Keep Editing
                         </Button>
                         <Button
-                            onClick={() => handleSubmit()}
+                            onClick={handleSubmit}
                             disabled={isSubmitting}
                             className="bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white"
                         >
-                            {isSubmitting ? "Submitting..." : isEditMode ? "Confirm Update" : "Create Campaign"}
+                            {isSubmitting ? "Submitting..." : isEditMode && (publishStatus === "brand_confirmed" || !isDraft) ? "Confirm Update" : "Save Draft"}
                         </Button>
                     </DialogFooter>
                 </DialogContent>
@@ -1828,6 +1874,7 @@ export default function AdminCreateCampaignPage() {
 interface CampaignEditPayload {
     _id?: string;
     isDraft?: number;
+    publishStatus?: string; // Track workflow status
 
     productOrServiceName: string;
     description: string;
@@ -1849,9 +1896,8 @@ interface CampaignEditPayload {
 
     goal: string;
 
-    // ✅ budgets
-    budget: number; // brand visible
-    influencerBudget?: number; // influencer visible
+    budget: number;
+    influencerBudget?: number;
 
     timeline: { startDate?: string; endDate?: string };
     creativeBriefText: string;

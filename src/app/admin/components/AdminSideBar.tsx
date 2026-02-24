@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 
 const navItems = [
+  { label: "Notifications", href: "/admin/notifications", icon: Bell },
   { label: "Brands", href: "/admin/brands", icon: Home },
   { label: "Influencers", href: "/admin/influencers", icon: Users },
   { label: "All Campaigns", href: "/admin/campaigns", icon: List },

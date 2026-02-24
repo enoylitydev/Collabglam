@@ -14,7 +14,7 @@ import {
   HiOutlineUpload,
   HiOutlineCheckCircle,
 } from "react-icons/hi";
-import { toast } from "@/components/common/toast"
+import { toast } from "@/components/common/toast";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -111,13 +111,11 @@ const filterByCountryName = (
   );
 };
 
-// Server ↔ UI gender mapping (server: 0=Female,1=Male,2=All)
 const serverGenderToUI = (g: 0 | 1 | 2): GenderOption =>
   g === 1 ? "Male" : g === 0 ? "Female" : "All";
 const uiGenderToServer = (g: GenderOption | ""): 0 | 1 | 2 =>
   g === "Male" ? 1 : g === "Female" ? 0 : 2;
 
-// ReactSelect option lists for Gender, Goals & Campaign Type
 const GENDER_SELECT_OPTIONS: SimpleOption[] = ["Male", "Female", "All"].map(
   (g) => ({
     value: g,
@@ -149,7 +147,7 @@ const CAMPAIGN_TYPE_OPTIONS: SimpleOption[] = [
 
 // ── main component ─────────────────────────────────────────
 
-export default function CampaignFormPage() {
+export default function BrandCreateCampaignPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const campaignId = searchParams.get("id");
@@ -157,6 +155,11 @@ export default function CampaignFormPage() {
 
   // ── state ─────────────────────────────────────────────────
   const [isLoading, setIsLoading] = useState(isEditMode);
+
+  // ✅ NEW: Workflow States
+  const [isAdminCreated, setIsAdminCreated] = useState(false);
+  const [isDraftMode, setIsDraftMode] = useState(false);
+
   const [productName, setProductName] = useState("");
   const [description, setDescription] = useState("");
   const [existingImages, setExistingImages] = useState<string[]>([]);
@@ -172,9 +175,7 @@ export default function CampaignFormPage() {
 
   const [categories, setCategories] = useState<CategoryDTO[]>([]);
   const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(null);
-  const [selectedSubcategories, setSelectedSubcategories] = useState<SubcategoryOption[]>(
-    []
-  );
+  const [selectedSubcategories, setSelectedSubcategories] = useState<SubcategoryOption[]>([]);
 
   const [selectedGoal, setSelectedGoal] = useState<string>("");
   const [campaignType, setCampaignType] = useState<string>("");
@@ -208,16 +209,12 @@ export default function CampaignFormPage() {
     campaignType === "Other" ? customCampaignType.trim() : campaignType;
   const campaignTypeMissing = !finalCampaignTypeForUI;
 
-  // 🔴 images required – true when no existing or new images
   const imagesMissing = existingImages.length + productImages.length === 0;
 
   const [draftLoaded, setDraftLoaded] = useState(false);
   const [isSavingDraft, setIsSavingDraft] = useState(false);
-
-  // 🔹 store current draft _id so backend can update that draft only
   const [draftId, setDraftId] = useState<string | null>(null);
-
-  // preview modal
+  const [loadedCampaignsId, setLoadedCampaignsId] = useState<string | null>(null);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
 
   // ── memoised options ─────────────────────────────────────
@@ -226,7 +223,6 @@ export default function CampaignFormPage() {
     [countries]
   );
 
-  // local YYYY-MM-DD for <input type="date">
   const todayStr = useMemo(() => {
     const d = new Date();
     const y = d.getFullYear();
@@ -235,7 +231,6 @@ export default function CampaignFormPage() {
     return `${y}-${m}-${day}`;
   }, []);
 
-  // Single-select category options
   const categorySelectOptions = useMemo<SimpleOption[]>(
     () =>
       categories.map((cat) => ({
@@ -245,7 +240,6 @@ export default function CampaignFormPage() {
     [categories]
   );
 
-  // Multi-select subcategory options for selected category
   const subcategoryOptionsForSelectedCategory = useMemo<SubcategoryOption[]>(() => {
     if (selectedCategoryId == null) return [];
     const cat = categories.find((c) => c.id === selectedCategoryId);
@@ -258,7 +252,6 @@ export default function CampaignFormPage() {
     }));
   }, [categories, selectedCategoryId]);
 
-  // Group selected subs by category for preview list
   const groupedSubcats = useMemo(() => {
     const m = new Map<string, string[]>();
     selectedSubcategories.forEach((s) => {
@@ -269,7 +262,6 @@ export default function CampaignFormPage() {
     return Array.from(m.entries());
   }, [selectedSubcategories]);
 
-  // react-select styles
   const selectStyles = {
     control: (base: any, state: any) => ({
       ...base,
@@ -305,7 +297,6 @@ export default function CampaignFormPage() {
     }),
   };
 
-  // extend styles to show red error ring when missing required
   const makeSelectStyles = (hasError = false) => ({
     ...selectStyles,
     control: (base: any, state: any) => ({
@@ -319,7 +310,6 @@ export default function CampaignFormPage() {
     }),
   });
 
-  // Normalized URLs for existing images (for UI display only)
   const existingImagesNormalized = useMemo(
     () => existingImages.map((v) => fileUrl(v)),
     [existingImages]
@@ -327,8 +317,12 @@ export default function CampaignFormPage() {
 
   // ── hydrate helper used by edit + draft load ─────────────
   const hydrateFromCampaign = (data: CampaignEditPayload) => {
-    // 🔹 keep track of draft (or campaign) _id for future saves
     setDraftId(data._id || null);
+    setLoadedCampaignsId(data.campaignsId || null);
+    // ✅ DETECT ADMIN WORKFLOW
+    const adminCreated = data.approvalMode === "admin_review" || data.createdBy?.role === "admin";
+    setIsAdminCreated(adminCreated);
+    setIsDraftMode(data.isDraft === 1);
 
     setProductName(data.productOrServiceName || "");
     setDescription(data.description || "");
@@ -336,7 +330,6 @@ export default function CampaignFormPage() {
     setCreativeBriefText(data.creativeBriefText || "");
     setExistingImages(Array.isArray(data.images) ? data.images : []);
 
-    // existing brief PDFs from backend
     const briefFiles = Array.isArray(data.creativeBrief) ? data.creativeBrief : [];
     setExistingBriefFiles(briefFiles);
     if (briefFiles.length > 0) {
@@ -349,14 +342,12 @@ export default function CampaignFormPage() {
     });
     setSelectedGender(serverGenderToUI(data.targetAudience?.gender ?? 2));
 
-    // locations
     const locIds = (data.targetAudience?.locations || []).map((l) => l.countryId);
     const locOptions = countryOptions.filter((o) => locIds.includes(o.value));
     setSelectedCountries(locOptions);
 
     setSelectedGoal(data.goal || "");
 
-    // campaign type
     if (data.campaignType) {
       if (CAMPAIGN_TYPE_OPTIONS.some((o) => o.value === data.campaignType)) {
         setCampaignType(data.campaignType);
@@ -376,7 +367,6 @@ export default function CampaignFormPage() {
     const ed = data.timeline?.endDate ? data.timeline.endDate.split("T")[0] : "";
     setTimeline({ start: sd, end: ed });
 
-    // categories + subcategories (single category, multi subcategories)
     if (Array.isArray(data.categories) && data.categories.length && categories.length) {
       const firstCatId = data.categories[0].categoryId;
       setSelectedCategoryId(firstCatId);
@@ -408,7 +398,6 @@ export default function CampaignFormPage() {
     }
   };
 
-  // ── fetch reference data ─────────────────────────────────
   useEffect(() => {
     get<Country[]>("/country/getall")
       .then((data) => setCountries(data))
@@ -419,7 +408,6 @@ export default function CampaignFormPage() {
       .catch(() => console.error("Failed to fetch categories"));
   }, []);
 
-  // ── fetch campaign data if editing ───────────────────────
   useEffect(() => {
     if (!isEditMode || !campaignId) return;
     if (!countries.length || !categories.length) return;
@@ -434,21 +422,16 @@ export default function CampaignFormPage() {
       .finally(() => setIsLoading(false));
   }, [isEditMode, campaignId, countries, categories]);
 
-  // ── auto-load draft (only when creating, from backend) ───
   useEffect(() => {
     if (isEditMode || draftLoaded) return;
     if (!countries.length || !categories.length) return;
 
-    const brandId =
-      typeof window !== "undefined" ? localStorage.getItem("brandId") || "" : "";
-
+    const brandId = typeof window !== "undefined" ? localStorage.getItem("brandId") || "" : "";
     if (!brandId) return;
 
     get<CampaignEditPayload>(`/campaign/draft?brandId=${brandId}`)
       .then((draft) => {
-        // If backend returns no draft or not a draft, do nothing & NO Swal
         if (!draft || draft.isDraft !== 1) return;
-
         hydrateFromCampaign(draft);
         setDraftLoaded(true);
 
@@ -459,7 +442,6 @@ export default function CampaignFormPage() {
         });
       })
       .catch((err) => {
-        // If 404 (no draft), just ignore; do not show Swal
         console.error("No draft found or failed to load draft", err);
       });
   }, [isEditMode, draftLoaded, countries, categories]);
@@ -468,7 +450,6 @@ export default function CampaignFormPage() {
 
   const handleCountriesChange = (value: readonly CountryOption[] | null) => {
     const v = value ? [...value] : [];
-
     if (v.length <= MAX_COUNTRIES) {
       setSelectedCountries(v as CountryOption[]);
     } else {
@@ -503,261 +484,117 @@ export default function CampaignFormPage() {
         toast({
           icon: "info",
           title: "Duplicate image skipped",
-          text:
-            duplicatesCount === 1
-              ? "One duplicate image was ignored."
-              : `${duplicatesCount} duplicate images were ignored.`,
+          text: duplicatesCount === 1 ? "One duplicate image was ignored." : `${duplicatesCount} duplicate images were ignored.`,
         });
       }
 
       return [...prev, ...uniqueNew];
     });
 
-    // allow re-selecting the same file again if needed
     e.target.value = "";
   };
 
   const handleCreativeBriefFiles = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files ? Array.from(e.target.files) : [];
     if (!files.length) return;
-
-    // ✅ append to existing brief files instead of replacing
     setCreativeBriefFiles((prev) => [...prev, ...files]);
-
     e.target.value = "";
   };
 
-  const removeProductImage = (idx: number) => {
-    setProductImages((prev) => prev.filter((_, i) => i !== idx));
-  };
-
-  const removeExistingImage = (idx: number) => {
-    setExistingImages((prev) => prev.filter((_, i) => i !== idx));
-  };
-
-  // NEW: remove newly uploaded brief file
-  const removeCreativeBriefFile = (idx: number) => {
-    setCreativeBriefFiles((prev) => prev.filter((_, i) => i !== idx));
-  };
-
-  // NEW: remove existing brief from list (e.g. when editing)
-  const removeExistingBriefFile = (idx: number) => {
-    setExistingBriefFiles((prev) => prev.filter((_, i) => i !== idx));
-  };
+  const removeProductImage = (idx: number) => setProductImages((prev) => prev.filter((_, i) => i !== idx));
+  const removeExistingImage = (idx: number) => setExistingImages((prev) => prev.filter((_, i) => i !== idx));
+  const removeCreativeBriefFile = (idx: number) => setCreativeBriefFiles((prev) => prev.filter((_, i) => i !== idx));
+  const removeExistingBriefFile = (idx: number) => setExistingBriefFiles((prev) => prev.filter((_, i) => i !== idx));
 
   const resetForm = () => {
-    setProductName("");
-    setDescription("");
-    setExistingImages([]);
-    setProductImages([]);
-    setAgeRange({ min: "", max: "" });
-    setSelectedGender("");
-    setSelectedCountries([]);
-    setSelectedCategoryId(null);
-    setSelectedSubcategories([]);
-    setSelectedGoal("");
-    setCampaignType("");
-    setCustomCampaignType("");
-    setBudget("");
-    setTimeline({ start: "", end: "" });
-    setCreativeBriefText("");
-    setCreativeBriefFiles([]);
-    setExistingBriefFiles([]);
-    setUseFileUploadForBrief(false);
-    setAdditionalNotes("");
-    setDraftId(null);
-    setDraftLoaded(false);
+    setProductName(""); setDescription(""); setExistingImages([]); setProductImages([]);
+    setAgeRange({ min: "", max: "" }); setSelectedGender(""); setSelectedCountries([]);
+    setSelectedCategoryId(null); setSelectedSubcategories([]); setSelectedGoal("");
+    setCampaignType(""); setCustomCampaignType(""); setBudget(""); setTimeline({ start: "", end: "" });
+    setCreativeBriefText(""); setCreativeBriefFiles([]); setExistingBriefFiles([]);
+    setUseFileUploadForBrief(false); setAdditionalNotes(""); setDraftId(null); setDraftLoaded(false);
   };
 
-  // small helpers for preview
-  const fmtMoney = (n: number | "") =>
-    n === "" ? "—" : `$${Number(n).toLocaleString()}`;
+  const fmtMoney = (n: number | "") => n === "" ? "—" : `$${Number(n).toLocaleString()}`;
   const fileSizeKB = (b: number) => `${(b / 1024).toFixed(1)} KB`;
 
-  // SweetAlert2 confirm dialogs for Back & Reset
   const handleBackClick = async () => {
     const result = await Swal.fire({
-      icon: "warning",
-      title: "Leave this page?",
-      text: "Any unsaved changes in this campaign form will be lost.",
-      showCancelButton: true,
-      confirmButtonText: "Leave page",
-      cancelButtonText: "Stay",
-      confirmButtonColor: "#F97316",
-      cancelButtonColor: "#6B7280",
-      customClass: {
-        popup: "rounded-xl border border-gray-200",
-        confirmButton:
-          "bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white px-4 py-2 rounded-lg",
-        cancelButton: "px-4 py-2 rounded-lg",
-      },
+      icon: "warning", title: "Leave this page?", text: "Any unsaved changes in this campaign form will be lost.",
+      showCancelButton: true, confirmButtonText: "Leave page", cancelButtonText: "Stay",
+      confirmButtonColor: "#F97316", cancelButtonColor: "#6B7280",
+      customClass: { popup: "rounded-xl border border-gray-200", confirmButton: "bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white px-4 py-2 rounded-lg", cancelButton: "px-4 py-2 rounded-lg", },
     });
-
-    if (result.isConfirmed) {
-      router.back();
-    }
+    if (result.isConfirmed) router.back();
   };
 
   const handleResetClick = async () => {
     const result = await Swal.fire({
-      icon: "warning",
-      title: "Reset all fields?",
-      text: "This will clear everything you have entered in this campaign form.",
-      showCancelButton: true,
-      confirmButtonText: "Yes, reset",
-      cancelButtonText: "Cancel",
-      confirmButtonColor: "#F97316",
-      cancelButtonColor: "#6B7280",
-      customClass: {
-        popup: "rounded-xl border border-gray-200",
-        confirmButton:
-          "bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white px-4 py-2 rounded-lg",
-        cancelButton: "px-4 py-2 rounded-lg",
-      },
+      icon: "warning", title: "Reset all fields?", text: "This will clear everything you have entered in this campaign form.",
+      showCancelButton: true, confirmButtonText: "Yes, reset", cancelButtonText: "Cancel",
+      confirmButtonColor: "#F97316", cancelButtonColor: "#6B7280",
+      customClass: { popup: "rounded-xl border border-gray-200", confirmButton: "bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white px-4 py-2 rounded-lg", cancelButton: "px-4 py-2 rounded-lg", },
     });
-
     if (result.isConfirmed) {
       resetForm();
-      toast({
-        icon: "info",
-        title: "Form reset",
-        text: "All fields have been cleared.",
-      });
+      toast({ icon: "info", title: "Form reset", text: "All fields have been cleared." });
     }
   };
 
-  // ── save draft (backend only, using _id logic) ───────────
+  // ── SAVE BRAND DRAFT ───────────────────────────
   const handleSaveDraft = async () => {
     if (isEditMode) {
-      toast({
-        icon: "info",
-        title: "Drafts are for new campaigns",
-        text: "This campaign already exists. Use Update to save changes.",
-      });
+      toast({ icon: "info", title: "Drafts are for new campaigns", text: "This campaign already exists. Use Update to save changes." });
       return;
     }
 
-    const brandId =
-      typeof window !== "undefined" ? localStorage.getItem("brandId") || "" : "";
+    const brandId = typeof window !== "undefined" ? localStorage.getItem("brandId") || "" : "";
+    if (!brandId) return toast({ icon: "error", title: "Brand not found", text: "Please log in again before saving a draft." });
 
-    if (!brandId) {
-      toast({
-        icon: "error",
-        title: "Brand not found",
-        text: "Please log in again before saving a draft.",
-      });
-      return;
-    }
-
-    // Backend requires productOrServiceName + goal for drafts
     if (!productName.trim() || !selectedGoal) {
-      toast({
-        icon: "warning",
-        title: "Add title & goal",
-        text: "Campaign title and goal are required before saving a draft.",
-      });
-      return;
+      return toast({ icon: "warning", title: "Add title & goal", text: "Campaign title and goal are required before saving a draft." });
     }
 
     setIsSavingDraft(true);
     try {
       const formData = new FormData();
-
-      // 🔹 send _id if we already have a draft, so backend updates it
-      if (draftId) {
-        formData.append("_id", draftId);
-      }
-
+      if (draftId) formData.append("_id", draftId);
       formData.append("brandId", brandId);
       formData.append("productOrServiceName", productName.trim());
       formData.append("goal", selectedGoal);
+      if (description.trim()) formData.append("description", description.trim());
 
-      if (description.trim()) {
-        formData.append("description", description.trim());
-      }
-
-      // targetAudience (optional fields allowed)
-      const ta: any = {
-        age: {},
-        gender: uiGenderToServer((selectedGender as GenderOption) || "All"),
-        locations: [] as string[],
-      };
-
+      const ta: any = { age: {}, gender: uiGenderToServer((selectedGender as GenderOption) || "All"), locations: [] as string[] };
       if (ageRange.min !== "") ta.age.MinAge = ageRange.min;
       if (ageRange.max !== "") ta.age.MaxAge = ageRange.max;
-      if (selectedCountries.length) {
-        ta.locations = selectedCountries.map((c) => c.value);
-      }
+      if (selectedCountries.length) ta.locations = selectedCountries.map((c) => c.value);
       formData.append("targetAudience", JSON.stringify(ta));
 
       if (selectedSubcategories.length) {
-        formData.append(
-          "categories",
-          JSON.stringify(
-            selectedSubcategories.map((s) => ({
-              categoryId: s.categoryId,
-              subcategoryId: s.value,
-            }))
-          )
-        );
+        formData.append("categories", JSON.stringify(selectedSubcategories.map((s) => ({ categoryId: s.categoryId, subcategoryId: s.value }))));
       }
 
-      const finalCampaignTypeDraft =
-        campaignType === "Other" ? customCampaignType.trim() : campaignType;
-      if (finalCampaignTypeDraft) {
-        formData.append("campaignType", finalCampaignTypeDraft);
-      }
+      const finalCampaignTypeDraft = campaignType === "Other" ? customCampaignType.trim() : campaignType;
+      if (finalCampaignTypeDraft) formData.append("campaignType", finalCampaignTypeDraft);
+      if (budget !== "") formData.append("budget", String(budget));
+      if (timeline.start || timeline.end) formData.append("timeline", JSON.stringify({ startDate: timeline.start || undefined, endDate: timeline.end || undefined }));
+      if (additionalNotes.trim()) formData.append("additionalNotes", additionalNotes.trim());
 
-      if (budget !== "") {
-        formData.append("budget", String(budget));
-      }
-
-      if (timeline.start || timeline.end) {
-        formData.append(
-          "timeline",
-          JSON.stringify({
-            startDate: timeline.start || undefined,
-            endDate: timeline.end || undefined,
-          })
-        );
-      }
-
-      if (additionalNotes.trim()) {
-        formData.append("additionalNotes", additionalNotes.trim());
-      }
-
-      // Images (optional for draft)
       productImages.forEach((f) => formData.append("image", f));
-
-      // Creative brief (optional for drafts)
       if (useFileUploadForBrief) {
         creativeBriefFiles.forEach((f) => formData.append("creativeBrief", f));
       } else if (creativeBriefText.trim()) {
         formData.append("creativeBriefText", creativeBriefText.trim());
       }
 
-      // Backend draft API (saveDraftCampaign)
       const saved = await post<any>("/campaign/save-draft", formData);
-
-      // 🔹 keep the draft _id from backend so next save updates same draft
       const newId = saved?.campaign?._id || saved?._id || draftId || null;
-      if (newId) {
-        setDraftId(newId);
-      }
+      if (newId) setDraftId(newId);
       setDraftLoaded(true);
 
-      toast({
-        icon: "success",
-        title: "Draft saved",
-        text: "Your campaign draft is stored safely.",
-      });
+      toast({ icon: "success", title: "Draft saved", text: "Your campaign draft is stored safely." });
     } catch (err: any) {
-      console.error("Failed to save campaign draft", err);
-      toast({
-        icon: "error",
-        title: "Could not save draft",
-        text: err?.response?.data?.message || "Please try again.",
-      });
+      toast({ icon: "error", title: "Could not save draft", text: err?.response?.data?.message || "Please try again." });
     } finally {
       setIsSavingDraft(false);
     }
@@ -765,135 +602,126 @@ export default function CampaignFormPage() {
 
   const handlePreview = () => setIsPreviewOpen(true);
 
-  // ── submit (create / update live campaign) ────────────────
-  const handleSubmit = async (e?: React.FormEvent) => {
+  const handleConfirmReadiness = async () => {
+    const targetCampaignId = campaignId || loadedCampaignsId; // ✅ Use fallback ID
+  };
+
+  // ── MAIN SUBMIT (Create / Update) ───────────────────────────
+  const handleSubmit = async (e?: React.FormEvent, markReady: boolean = false) => {
     if (e) e.preventDefault();
     setShowRequiredHints(false);
 
-    const finalCampaignType =
-      campaignType === "Other" ? customCampaignType.trim() : campaignType;
+    const finalCampaignType = campaignType === "Other" ? customCampaignType.trim() : campaignType;
 
     if (
-      !productName.trim() ||
-      !description.trim() ||
-      ageRange.min === "" ||
-      ageRange.max === "" ||
-      !selectedGender ||
-      selectedCountries.length === 0 ||
-      !selectedCategoryId ||
-      selectedSubcategories.length === 0 ||
-      !selectedGoal ||
-      !finalCampaignType ||
-      budget === "" ||
-      !timeline.start ||
-      !timeline.end ||
-      imagesMissing ||
+      !productName.trim() || !description.trim() || ageRange.min === "" || ageRange.max === "" ||
+      !selectedGender || selectedCountries.length === 0 || !selectedCategoryId ||
+      selectedSubcategories.length === 0 || !selectedGoal || !finalCampaignType ||
+      budget === "" || !timeline.start || !timeline.end || imagesMissing ||
       (!useFileUploadForBrief && !creativeBriefText.trim()) ||
-      (useFileUploadForBrief &&
-        creativeBriefFiles.length === 0 &&
-        existingBriefFiles.length === 0)
+      (useFileUploadForBrief && creativeBriefFiles.length === 0 && existingBriefFiles.length === 0)
     ) {
       setShowRequiredHints(true);
       setIsPreviewOpen(false);
-
-      toast({
-        icon: "warning",
-        title: "Please complete all required fields",
-        text: "Fields marked with * must be filled before submitting your campaign.",
-      });
-
-      return;
+      return toast({ icon: "warning", title: "Please complete all required fields", text: "Fields marked with * must be filled before submitting." });
     }
 
     if (Number(ageRange.min) >= Number(ageRange.max)) {
       setIsPreviewOpen(false);
-      return toast({
-        icon: "error",
-        title: "Invalid age range",
-        text: "Min Age must be less than Max Age.",
-      });
+      return toast({ icon: "error", title: "Invalid age range", text: "Min Age must be less than Max Age." });
     }
 
     if (timeline.start && timeline.end && new Date(timeline.start) > new Date(timeline.end)) {
       setIsPreviewOpen(false);
-      return toast({
-        icon: "error",
-        title: "Invalid dates",
-        text: "Start Date must be on or before End Date.",
-      });
+      return toast({ icon: "error", title: "Invalid dates", text: "Start Date must be on or before End Date." });
     }
 
     setIsSubmitting(true);
     try {
       const formData = new FormData();
-
-      // 🔹 if this form is based on a loaded draft, send its _id
-      if (!isEditMode && draftId) {
-        formData.append("_id", draftId);
-      }
+      if (!isEditMode && draftId) formData.append("_id", draftId);
 
       formData.append("productOrServiceName", productName.trim());
       formData.append("description", description.trim());
-      formData.append(
-        "targetAudience",
-        JSON.stringify({
-          age: { MinAge: ageRange.min, MaxAge: ageRange.max },
-          gender: uiGenderToServer(selectedGender),
-          locations: selectedCountries.map((c) => c.value),
-        })
-      );
-      formData.append(
-        "categories",
-        JSON.stringify(
-          selectedSubcategories.map((s) => ({
-            categoryId: s.categoryId,
-            subcategoryId: s.value,
-          }))
-        )
-      );
+      formData.append("targetAudience", JSON.stringify({ age: { MinAge: ageRange.min, MaxAge: ageRange.max }, gender: uiGenderToServer(selectedGender), locations: selectedCountries.map((c) => c.value) }));
+      formData.append("categories", JSON.stringify(selectedSubcategories.map((s) => ({ categoryId: s.categoryId, subcategoryId: s.value }))));
       formData.append("additionalNotes", additionalNotes.trim());
       formData.append("brandId", localStorage.getItem("brandId") || "");
       formData.append("goal", selectedGoal);
       formData.append("campaignType", finalCampaignType || "");
       formData.append("budget", String(budget));
-      formData.append(
-        "timeline",
-        JSON.stringify({ startDate: timeline.start, endDate: timeline.end })
-      );
+      formData.append("timeline", JSON.stringify({ startDate: timeline.start, endDate: timeline.end }));
 
       productImages.forEach((f) => formData.append("image", f));
+
+      // ✅ FIX: Explicitly send existing images so the backend knows what wasn't deleted
+      if (existingImages.length > 0) {
+        formData.append("existingImages", JSON.stringify(existingImages));
+      } else if (isEditMode || draftId) {
+        formData.append("existingImages", "[]"); // Tell backend all existing images were deleted
+      }
+
       if (useFileUploadForBrief) {
         creativeBriefFiles.forEach((f) => formData.append("creativeBrief", f));
+
+        // ✅ FIX: Explicitly send existing briefs
+        if (existingBriefFiles.length > 0) {
+          formData.append("existingCreativeBrief", JSON.stringify(existingBriefFiles));
+        } else if (isEditMode || draftId) {
+          formData.append("existingCreativeBrief", "[]");
+        }
       } else {
         formData.append("creativeBriefText", creativeBriefText.trim());
       }
 
-      if (isEditMode && campaignId) {
-        await post(`/campaign/update?id=${campaignId}`, formData);
-        toast({
-          icon: "success",
-          title: "Campaign updated",
-          text: "Your changes have been saved successfully.",
-        });
+      const targetCampaignId = campaignId || loadedCampaignsId;
+
+      if (targetCampaignId) {
+        // UPDATE Existing Campaign or Draft
+        await post(`/campaign/update?id=${targetCampaignId}`, formData);
+
+        // ✅ NEW: If marking ready, trigger the readiness API AFTER saving successfully!
+        if (markReady) {
+          await post("/campaign/confirm-readiness", { campaignsId: targetCampaignId });
+          toast({
+            icon: "success",
+            title: "Ready for Publishing",
+            text: "Changes saved! The admin has been notified to launch your campaign.",
+          });
+          setIsPreviewOpen(false);
+          router.push("/brand/campaigns"); // Route to your campaigns list
+          return; // Exit out so normal toasts don't double fire
+        }
+
+        // Customizing normal save toast message based on workflow mode
+        if (isAdminCreated) {
+          toast({
+            icon: "success",
+            title: isDraftMode ? "Draft Changes Saved" : "Changes Submitted",
+            text: isDraftMode ? "Your updates to the draft have been saved." : "Your suggested changes have been sent to the admin for review.",
+          });
+        } else {
+          toast({
+            icon: "success",
+            title: "Campaign updated",
+            text: "Your changes have been saved successfully.",
+          });
+        }
       } else {
+        // CREATE Fresh Normal Campaign
         await post("/campaign/create", formData);
-        toast({
-          icon: "success",
-          title: "Campaign created",
-          text: "Your campaign is live and ready to go.",
-        });
+        toast({ icon: "success", title: "Campaign created", text: "Your campaign is live and ready to go." });
       }
 
       setIsPreviewOpen(false);
-      router.push("/brand/created-campaign");
-      resetForm();
+
+      if (!isAdminCreated || !isDraftMode) {
+        router.push("/brand/created-campaign");
+      }
+
     } catch (err: any) {
       setIsPreviewOpen(false);
-      toast({
-        icon: "error",
-        title: "Error",
-        text: err?.response?.data?.message || "Please try again.",
-      });
+      toast({ icon: "error", title: "Error", text: err?.response?.data?.message || "Please try again." });
     } finally {
       setIsSubmitting(false);
     }
@@ -910,6 +738,20 @@ export default function CampaignFormPage() {
     );
   }
 
+  // ── Dynamic Text Resolvers ──────────────────────────────────
+  let pageTitle = isEditMode ? "Edit Campaign" : "Create New Campaign";
+  let pageSubtitle = isEditMode ? "Update your campaign details below" : "Fill in the details to launch your campaign";
+
+  if (isAdminCreated) {
+    if (isDraftMode) {
+      pageTitle = "Review Campaign Draft";
+      pageSubtitle = "An admin created this draft for you. Review the details, make edits, and approve it for launch.";
+    } else {
+      pageTitle = "Suggest Campaign Changes";
+      pageSubtitle = "Update the fields below. An admin will review and approve your changes to this live campaign.";
+    }
+  }
+
   // ── JSX ───────────────────────────────────────────────────
   return (
     <>
@@ -917,12 +759,10 @@ export default function CampaignFormPage() {
         <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8 pb-32">
           <div className="mb-8">
             <h1 className="text-4xl font-semibold text-black mb-2">
-              {isEditMode ? "Edit Campaign" : "Create New Campaign"}
+              {pageTitle}
             </h1>
             <p className="text-gray-600 text-lg">
-              {isEditMode
-                ? "Update your campaign details below"
-                : "Fill in the details to launch your campaign"}
+              {pageSubtitle}
             </p>
           </div>
 
@@ -1593,7 +1433,7 @@ export default function CampaignFormPage() {
               Reset
             </Button>
 
-            {!isEditMode && (
+            {!isEditMode && !isAdminCreated && (
               <Button
                 variant="outline"
                 onClick={handleSaveDraft}
@@ -1614,32 +1454,72 @@ export default function CampaignFormPage() {
             </Button>
           </div>
 
-          <button
-            onClick={() => handleSubmit()}
-            disabled={isSubmitting}
-            className={`
-              inline-flex items-center justify-center
-              bg-gradient-to-r from-[#FFA135] to-[#FF7236]
-              text-white font-semibold text-base
-              px-8 py-3 rounded-lg shadow-lg
-              transition-all duration-200
-              ${isSubmitting
-                ? "opacity-50 cursor-not-allowed"
-                : "hover:scale-105 hover:shadow-xl active:scale-95"
-              }
-            `}
-          >
-            {isSubmitting ? (
-              <>
-                <div className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-solid border-white border-r-transparent mr-2"></div>
-                Submitting...
-              </>
-            ) : isEditMode ? (
-              "Update Campaign"
+          <div className="flex gap-3">
+            {/* ✅ WORKFLOW BUTTONS */}
+            {isAdminCreated ? (
+              isDraftMode ? (
+                <>
+                  <Button
+                    variant="secondary"
+                    onClick={(e) => handleSubmit(e, false)} // ✅ Pass false
+                    disabled={isSubmitting}
+                    size="lg"
+                    className="bg-gray-100 hover:bg-gray-200 text-gray-800"
+                  >
+                    {isSubmitting ? "Saving..." : "Save Changes"}
+                  </Button>
+                  <Button
+                    onClick={(e) => handleSubmit(e, true)} // ✅ Pass TRUE for markReady
+                    disabled={isSubmitting}
+                    size="lg"
+                    className="bg-green-600 hover:bg-green-700 text-white font-semibold transition-all duration-200 shadow-md hover:scale-105"
+                  >
+                    {isSubmitting ? "Processing..." : "Approve & Mark Ready"}
+                  </Button>
+                </>
+              ) : (
+                <button
+                  onClick={(e) => handleSubmit(e, false)}
+                  disabled={isSubmitting}
+                  className={`
+                    inline-flex items-center justify-center
+                    bg-gradient-to-r from-[#FFA135] to-[#FF7236]
+                    text-white font-semibold text-base
+                    px-8 py-3 rounded-lg shadow-lg
+                    transition-all duration-200
+                    ${isSubmitting ? "opacity-50 cursor-not-allowed" : "hover:scale-105 hover:shadow-xl active:scale-95"}
+                  `}
+                >
+                  {isSubmitting ? "Submitting..." : "Submit Changes for Review"}
+                </button>
+              )
             ) : (
-              "Create Campaign"
+              /* NORMAL BRAND FLOW */
+              <button
+                onClick={() => handleSubmit()}
+                disabled={isSubmitting}
+                className={`
+                  inline-flex items-center justify-center
+                  bg-gradient-to-r from-[#FFA135] to-[#FF7236]
+                  text-white font-semibold text-base
+                  px-8 py-3 rounded-lg shadow-lg
+                  transition-all duration-200
+                  ${isSubmitting ? "opacity-50 cursor-not-allowed" : "hover:scale-105 hover:shadow-xl active:scale-95"}
+                `}
+              >
+                {isSubmitting ? (
+                  <>
+                    <div className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-solid border-white border-r-transparent mr-2"></div>
+                    Submitting...
+                  </>
+                ) : isEditMode ? (
+                  "Update Campaign"
+                ) : (
+                  "Create Campaign"
+                )}
+              </button>
             )}
-          </button>
+          </div>
         </div>
       </div>
 
@@ -1733,6 +1613,8 @@ export default function CampaignFormPage() {
                 </div>
               </div>
             </section>
+
+            <Separator />
 
             {/* Categories */}
             <section>
@@ -1879,6 +1761,10 @@ export default function CampaignFormPage() {
 interface CampaignEditPayload {
   _id?: string;
   isDraft?: number;
+  campaignsId?: string;
+  createdBy?: { role: string; userId: string };
+  approvalMode?: string;
+  publishStatus?: string;
 
   productOrServiceName: string;
   description: string;

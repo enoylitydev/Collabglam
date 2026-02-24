@@ -25,43 +25,84 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 
+interface PendingUpdate {
+  status: "none" | "pending" | "approved" | "rejected";
+  patch?: any; // patch can contain partial fields + nested objects
+  updatedAt?: string;
+  reviewNote?: string;
+}
+
 interface CampaignData {
   _id: string;
   campaignsId: string;
+
+  brandId: string;
   brandName?: string;
+
   productOrServiceName: string;
   description: string;
-  images: string[]; // GridFS filenames or absolute/relative URLs
+
+  images: string[];
+
   targetAudience: {
     age: { MinAge: number; MaxAge: number };
-    gender: number; // 0=Female, 1=Male, 2=All
+    gender: number;
     locations: { countryId: string; countryName: string; _id?: string }[];
   };
+
   categories: {
-    categoryId: string;
+    categoryId: number | string;
     categoryName: string;
     subcategoryId: string;
     subcategoryName: string;
   }[];
+
   goal: string;
-  campaignType?: string; // ✅ NEW
-  budget: number;
+  campaignType?: string;
+
+  budget: number | string;
+  influencerBudget?: number | string;
+
   timeline: { startDate?: string; endDate?: string };
   creativeBriefText?: string;
-  creativeBrief: string[]; // GridFS filenames or URLs
+  creativeBrief: string[];
+
   additionalNotes?: string;
   isActive: number;
   createdAt: string;
+
+  pendingUpdate?: PendingUpdate;
 }
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") || "";
 
-/** Normalize a stored filename or partial path into a fully-qualified URL. */
 function fileUrl(v?: string) {
   if (!v) return "";
-  if (/^https?:\/\//i.test(v)) return v; // already absolute
-  if (v.startsWith("/file/")) return `${API_BASE}${v}`; // API-relative path
-  return `${API_BASE}/file/${encodeURIComponent(v)}`; // bare GridFS filename
+  if (/^https?:\/\//i.test(v)) return v;
+  if (v.startsWith("/file/")) return `${API_BASE}${v}`;
+  return `${API_BASE}/file/${encodeURIComponent(v)}`;
+}
+
+function applyPendingPatch(base: CampaignData, patch: any): CampaignData {
+  const merged: CampaignData = {
+    ...base,
+    ...patch,
+
+    // ✅ nested overrides
+    targetAudience: patch?.targetAudience ?? base.targetAudience,
+    categories: patch?.categories ?? base.categories,
+    timeline: patch?.timeline ?? base.timeline,
+    images: patch?.images ?? base.images,
+    creativeBrief: patch?.creativeBrief ?? base.creativeBrief,
+  };
+
+  // ✅ normalize numeric fields (patch can store strings)
+  merged.budget = Number(merged.budget || 0);
+  if (merged.influencerBudget !== undefined) {
+    merged.influencerBudget = Number(merged.influencerBudget || 0);
+  }
+
+  return merged;
 }
 
 const isPdf = (href: string) => /\.pdf(?:$|[?#])/i.test(href);
@@ -81,6 +122,16 @@ export default function ViewCampaignPage() {
 
   // ===== Inline PDF preview state (inside card, not modal) =====
   const [pdfPreview, setPdfPreview] = useState<{ name: string; url: string } | null>(null);
+
+  const [myBrandId, setMyBrandId] = useState("");
+
+  useEffect(() => {
+    try {
+      setMyBrandId(localStorage.getItem("brandId") || "");
+    } catch {
+      setMyBrandId("");
+    }
+  }, []);
 
   // Fetch campaign
   useEffect(() => {
@@ -227,7 +278,37 @@ export default function ViewCampaignPage() {
     );
   }
 
-  const c = campaign;
+    const isOwnerBrand =
+    !!(myBrandId && campaign?.brandId && myBrandId === campaign.brandId);
+
+  const hasPendingPatch =
+    isOwnerBrand &&
+    campaign?.pendingUpdate?.status === "pending" &&
+    !!campaign?.pendingUpdate?.patch;
+
+  const c: CampaignData | null =
+    campaign && hasPendingPatch
+      ? applyPendingPatch(campaign, campaign.pendingUpdate!.patch)
+      : campaign;
+
+    if (loading) {
+    return (
+      <div className="flex h-screen items-center justify-center">
+        <div className="animate-pulse rounded-lg bg-gray-200 p-6 text-gray-500">Loading…</div>
+      </div>
+    );
+  }
+
+  if (error || !c) {
+    return (
+      <div className="flex h-screen items-center justify-center">
+        <p className="rounded-lg bg-red-100 p-6 text-red-600">
+          {error || "Campaign not found."}
+        </p>
+      </div>
+    );
+  }
+
   const fmtDate = (iso?: string) => (iso ? new Date(iso).toLocaleDateString() : "—");
 
   return (
@@ -580,9 +661,8 @@ export default function ViewCampaignPage() {
                 <button
                   key={src + idx}
                   onClick={() => setPreviewIndex(idx)}
-                  className={`h-16 w-16 flex-shrink-0 overflow-hidden rounded-md border ${
-                    idx === previewIndex ? "ring-2 ring-orange-500 border-transparent" : "border-gray-200"
-                  }`}
+                  className={`h-16 w-16 flex-shrink-0 overflow-hidden rounded-md border ${idx === previewIndex ? "ring-2 ring-orange-500 border-transparent" : "border-gray-200"
+                    }`}
                   aria-label={`Open image ${idx + 1}`}
                 >
                   <img src={src} alt={`thumb-${idx + 1}`} className="h-full w-full object-cover" />

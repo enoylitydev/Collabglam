@@ -26,6 +26,7 @@ interface Campaign {
 
   campaignStatus?: CampaignStatus; // open | paused
   influencerWorking?: boolean; // ✅ from backend
+  hasPendingUpdate?: boolean;
 }
 
 interface CampaignsResponse {
@@ -60,6 +61,24 @@ export default function BrandCreatedCampaignsPage() {
   const [statusUpdating, setStatusUpdating] = useState<Record<string, boolean>>(
     {}
   );
+const applyPendingPatch = (c: any) => {
+  const pending = c?.pendingUpdate?.status === "pending" && c?.pendingUpdate?.patch;
+  const patch = pending ? c.pendingUpdate.patch : null;
+
+  return {
+    ...c,
+    ...(patch || {}),
+    // ✅ deep merge nested objects you care about
+    timeline: {
+      ...(c.timeline || {}),
+      ...(patch?.timeline || {}),
+    },
+    targetAudience: {
+      ...(c.targetAudience || {}),
+      ...(patch?.targetAudience || {}),
+    },
+  };
+};
 
   const fetchCampaigns = useCallback(
     async (page: number, term: string) => {
@@ -81,28 +100,33 @@ export default function BrandCreatedCampaignsPage() {
         const raw = Array.isArray(res?.data) ? res.data : [];
         const active = raw.filter((c: any) => c.isActive === 1);
 
-        const normalized: Campaign[] = active.map((c: any) => {
-          const rawStatus = String(c.campaignStatus || "open")
-            .toLowerCase()
-            .trim();
+const normalized: Campaign[] = active.map((c: any) => {
+  const merged = applyPendingPatch(c);
 
-          // ✅ closed removed: if legacy "closed" ever comes, treat it as paused
-          const safeStatus: CampaignStatus =
-            rawStatus === "paused" || rawStatus === "closed" ? "paused" : "open";
+  const rawStatus = String(merged.campaignStatus || "open")
+    .toLowerCase()
+    .trim();
 
-          return {
-            id: c.campaignsId ?? c.id ?? c._id,
-            productOrServiceName: c.productOrServiceName ?? "",
-            description: c.description ?? "",
-            timeline: c.timeline ?? { startDate: "", endDate: "" },
-            isActive: c.isActive ?? 0,
-            budget: c.budget ?? 0,
-            applicantCount: c.applicantCount ?? 0,
-            campaignType: c.campaignType ?? "",
-            campaignStatus: safeStatus,
-            influencerWorking: Boolean(c.influencerWorking),
-          };
-        });
+  const safeStatus: CampaignStatus =
+    rawStatus === "paused" || rawStatus === "closed" ? "paused" : "open";
+
+  const hasPendingUpdate =
+    c?.pendingUpdate?.status === "pending" && !!c?.pendingUpdate?.patch;
+
+  return {
+    id: merged.campaignsId ?? merged.id ?? merged._id,
+    productOrServiceName: merged.productOrServiceName ?? "",
+    description: merged.description ?? "",
+    timeline: merged.timeline ?? { startDate: "", endDate: "" },
+    isActive: merged.isActive ?? 0,
+    budget: merged.budget ?? 0,
+    applicantCount: merged.applicantCount ?? 0,
+    campaignType: merged.campaignType ?? "",
+    campaignStatus: safeStatus,
+    influencerWorking: Boolean(merged.influencerWorking),
+    hasPendingUpdate, // ✅
+  };
+});
 
         setCampaigns(normalized);
         setTotalPages(res?.pagination?.totalPages ?? res?.pagination?.pages ?? 1);
