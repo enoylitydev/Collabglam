@@ -15,29 +15,40 @@ export default function InfluencerDetailPage() {
   const params = useParams<{ id: string }>();
   const searchParams = useSearchParams();
 
-  const id = params?.id ? String(params.id) : '';
+  // ✅ userId comes from /mediakit/[id]
+  const userId = params?.id ? decodeURIComponent(String(params.id)) : '';
 
   const qpPlatform = (searchParams?.get('platform') || '').toLowerCase() as Platform;
-  const platform: Platform =
-    (['youtube', 'instagram', 'tiktok'].includes(qpPlatform) ? qpPlatform : 'youtube');
+  const platform: Platform = (['youtube', 'instagram', 'tiktok'].includes(qpPlatform) ? qpPlatform : 'youtube');
 
   const handleParam = searchParams?.get('handle') || '';
   const handle = handleParam ? String(handleParam) : null;
 
   const [brandId, setBrandId] = useState('');
+  const [adminId, setAdminId] = useState('');
   const [authChecked, setAuthChecked] = useState(false);
+  const [authRole, setAuthRole] = useState<'brand' | 'admin' | ''>('');
 
-  // ✅ Auth gate (localStorage)
+  // ✅ Auth gate: allow brandId OR adminId; else go to login
   useEffect(() => {
-    const storedBrandId = localStorage.getItem('brandId') || '';
+    const storedBrandId = (localStorage.getItem('brandId') || '').trim();
+    const storedAdminId = (localStorage.getItem('adminId') || '').trim();
 
-    if (!storedBrandId) {
-      // keep "next" so you can send them back after login
+    if (!storedBrandId && !storedAdminId) {
       router.replace(`/login?next=${encodeURIComponent(pathname)}`);
       return;
     }
 
-    setBrandId(storedBrandId);
+    if (storedBrandId) {
+      setBrandId(storedBrandId);
+      setAdminId('');
+      setAuthRole('brand');
+    } else {
+      setBrandId('');
+      setAdminId(storedAdminId);
+      setAuthRole('admin');
+    }
+
     setAuthChecked(true);
   }, [router, pathname]);
 
@@ -46,29 +57,38 @@ export default function InfluencerDetailPage() {
   const { report, rawReport, loading, error, lastFetchedAt, fetchReport } = useInfluencerReport();
   const { exists: emailExists, checkStatus } = useEmailStatus();
 
+  // ✅ load report
   useEffect(() => {
-    // ✅ don’t call APIs until auth is verified
     if (!authChecked) return;
-    if (!id) return;
+    if (!userId) return;
 
-    fetchReport(id, platform, calculationMethod);
+    fetchReport(userId, platform, calculationMethod, {
+      brandId: brandId || undefined,
+      adminId: adminId || undefined,
+      role: authRole === 'admin' ? 'admin' : 'brand',
+    });
 
     if (handle) {
       const safeHandle = handle.startsWith('@') ? handle : `@${handle}`;
       checkStatus(safeHandle, platform);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authChecked, id, platform, calculationMethod, handle]);
+  }, [authChecked, userId, platform, calculationMethod, handle, brandId, adminId, authRole]);
 
+  // ✅ refresh report
   const onRefreshReport = useCallback(async () => {
-    if (!id) return;
-    await fetchReport(id, platform, calculationMethod, undefined, true);
-  }, [id, platform, calculationMethod, fetchReport]);
+    if (!userId) return;
 
-  // ✅ While checking auth, render nothing (or a loader)
+    await fetchReport(userId, platform, calculationMethod, {
+      brandId: brandId || undefined,
+      adminId: adminId || undefined,
+      role: authRole === 'admin' ? 'admin' : 'brand',
+      forceRefresh: true,
+    });
+  }, [userId, platform, calculationMethod, fetchReport, brandId, adminId, authRole]);
+
   if (!authChecked) return null;
-
-  if (!id) return null;
+  if (!userId) return null;
 
   return (
     <InfluencerDetailFullPage
@@ -79,7 +99,6 @@ export default function InfluencerDetailPage() {
       platform={platform}
       onChangeCalc={(calc) => setCalculationMethod(calc)}
       emailExists={emailExists}
-      brandId={brandId}
       handle={handle}
       lastFetchedAt={lastFetchedAt}
       onRefreshReport={onRefreshReport}

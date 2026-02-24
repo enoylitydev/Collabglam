@@ -1,10 +1,13 @@
 'use client';
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronDown, ExternalLink, Info, RefreshCw, Search } from 'lucide-react';
+import Link from 'next/link';
+import { ChevronDown, ExternalLink, Info, RefreshCw, Search, Download } from 'lucide-react';
 import swal from 'sweetalert';
 import { get } from '@/lib/api';
 import { Checkbox } from '@/components/animate-ui/components/radix/checkbox';
+
+const DASH = '--';
 
 type LangObj = { code?: string; name?: string };
 
@@ -73,25 +76,25 @@ function showErr(message: string) {
 }
 
 function formatNumber(n?: number | null) {
-  if (n == null || !Number.isFinite(n)) return '—';
+  if (n == null || !Number.isFinite(n)) return DASH;
   return new Intl.NumberFormat('en-IN').format(n);
 }
 
 function formatPercent(x?: number | null) {
-  if (x == null || !Number.isFinite(x)) return '—';
+  if (x == null || !Number.isFinite(x)) return DASH;
   return `${(x * 100).toFixed(2)}%`;
 }
 
 function formatBool(b?: boolean | null) {
   if (b === true) return 'Yes';
   if (b === false) return 'No';
-  return 'Unknown';
+  return DASH;
 }
 
 function formatDate(iso?: string | null, timeZone = 'Asia/Kolkata') {
-  if (!iso) return '—';
+  if (!iso) return DASH;
   const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '—';
+  if (Number.isNaN(d.getTime())) return DASH;
 
   return new Intl.DateTimeFormat('en-IN', {
     timeZone,
@@ -122,7 +125,7 @@ function chipText(filters: InfluencerFilters) {
 }
 
 /**
- * ✅ USE userId as primary key (what you asked).
+ * ✅ USE userId as primary key.
  * Fallbacks ONLY if userId missing.
  */
 function getRowKey(p: InfluencerDoc) {
@@ -141,6 +144,9 @@ function toDomId(key: string) {
 export default function Page() {
   const SAVED_ENDPOINT = '/modash/saved';
   const USERS_ENDPOINT = '/modash/users';
+
+  // ✅ CSV export endpoint (POST, returns blob)
+  const EXPORT_ENDPOINT = '/modash/export-csv';
 
   const [items, setItems] = useState<InfluencerDoc[]>([]);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
@@ -167,8 +173,15 @@ export default function Page() {
     tiktok: true,
   });
 
-  // ✅ selection keyed by rowKey (userId)
+  // ✅ selection keyed by rowKey (userId/fallback)
   const [selectedIds, setSelectedIds] = useState<Record<string, boolean>>({});
+
+  // ✅ store modash _id for exporting selected
+  const [selectedMeta, setSelectedMeta] = useState<Record<string, { modashId?: string }>>({});
+
+  // ✅ CSV download
+  const [downloadLimit, setDownloadLimit] = useState('');
+  const [downloadLoading, setDownloadLoading] = useState(false);
 
   // filters
   const [filtersDraft, setFiltersDraft] = useState<InfluencerFilters>({
@@ -199,6 +212,14 @@ export default function Page() {
 
   const selectedCount = useMemo(() => Object.values(selectedIds).filter(Boolean).length, [selectedIds]);
 
+  // ✅ selected modash ids (only those we actually have _id for)
+  const selectedModashIds = useMemo(() => {
+    return Object.entries(selectedIds)
+      .filter(([, v]) => v)
+      .map(([rowKey]) => selectedMeta[rowKey]?.modashId)
+      .filter(Boolean) as string[];
+  }, [selectedIds, selectedMeta]);
+
   // ✅ map handle -> rowKey (for jump)
   const itemsByHandle = useMemo(() => {
     const map = new Map<string, { key: string; doc: InfluencerDoc }>();
@@ -221,22 +242,48 @@ export default function Page() {
     }, 60);
   }
 
-  function toggleSelect(rowKey: string, checked: boolean) {
+  // ✅ updated selection to store modashId when available
+  function toggleSelect(rowKey: string, checked: boolean, modashId?: string) {
     setSelectedIds((prev) => ({ ...prev, [rowKey]: checked }));
+
+    setSelectedMeta((prev) => {
+      const next = { ...prev };
+      if (!checked) {
+        delete next[rowKey];
+        return next;
+      }
+      next[rowKey] = { modashId: modashId || next[rowKey]?.modashId };
+      return next;
+    });
   }
 
   function clearSelection() {
     setSelectedIds({});
+    setSelectedMeta({});
   }
 
   function selectAllOnPage(list: InfluencerDoc[]) {
-    const next: Record<string, boolean> = {};
-    for (const it of list) next[getRowKey(it)] = true;
-    setSelectedIds((prev) => ({ ...prev, ...next }));
+    const nextIds: Record<string, boolean> = {};
+    const nextMeta: Record<string, { modashId?: string }> = {};
+
+    for (const it of list) {
+      const key = getRowKey(it);
+      nextIds[key] = true;
+      if (it._id) nextMeta[key] = { modashId: String(it._id) };
+    }
+
+    setSelectedIds((prev) => ({ ...prev, ...nextIds }));
+    setSelectedMeta((prev) => ({ ...prev, ...nextMeta }));
   }
 
   function clearSelectionOnPage(list: InfluencerDoc[]) {
     setSelectedIds((prev) => {
+      const next = { ...prev };
+      for (const it of list) delete next[getRowKey(it)];
+      return next;
+    });
+
+    setSelectedMeta((prev) => {
       const next = { ...prev };
       for (const it of list) delete next[getRowKey(it)];
       return next;
@@ -258,8 +305,11 @@ export default function Page() {
     else if (selectedPlatformKeys.length > 1) params.platforms = selectedPlatformKeys.join(',');
 
     if (f.provider && f.provider !== 'all') params.provider = f.provider;
-    if (String(f.followersMin || '').trim()) params.followersMin = String(f.followersMin).trim();
-    if (String(f.followersMax || '').trim()) params.followersMax = String(f.followersMax).trim();
+
+    // listing endpoint may ignore these if not implemented, but export uses them
+    if (String(f.followersMin || '').trim()) params.minFollowers = String(f.followersMin).trim();
+    if (String(f.followersMax || '').trim()) params.maxFollowers = String(f.followersMax).trim();
+
     if (String(f.country || '').trim()) params.country = String(f.country).trim();
 
     return params;
@@ -343,6 +393,7 @@ export default function Page() {
       setSearchHint('');
       return;
     }
+    // optional: setSearchHint(...) if you want
   }, [query, itemsByHandle]);
 
   // type search (debounced) => saved only
@@ -457,6 +508,136 @@ export default function Page() {
     return false;
   }, [allOnPageSelected, someOnPageSelected]);
 
+  function getApiUrl(path: string) {
+    const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || process.env.NEXT_PUBLIC_API_URL || '').replace(/\/$/, '');
+    return API_BASE ? `${API_BASE}${path}` : path;
+  }
+
+  async function downloadCsvAll() {
+    if (view !== 'saved') {
+      await showErr('CSV export works for Saved Results only.');
+      return;
+    }
+
+    const n = parseInt(downloadLimit, 10);
+    if (!Number.isFinite(n) || n <= 0) {
+      await showErr('Enter a valid download count.');
+      return;
+    }
+
+    setDownloadLoading(true);
+    try {
+      const url = getApiUrl(EXPORT_ENDPOINT);
+
+      const payload: any = {
+        limit: n,
+        sortBy: 'updatedAt',
+        sortOrder: 'desc',
+        sort: 'updatedAt',
+        dir: 'desc',
+      };
+
+      // ✅ Prefer provider dropdown. If provider=all and exactly 1 platform selected -> use that.
+      const providerDrop = String(filtersActive.provider || 'all').toLowerCase();
+      if (providerDrop && providerDrop !== 'all') payload.provider = providerDrop;
+      else if (selectedPlatformKeys.length === 1) payload.provider = selectedPlatformKeys[0];
+
+      if (String(filtersActive.followersMin || '').trim()) payload.minFollowers = Number(String(filtersActive.followersMin).trim());
+      if (String(filtersActive.followersMax || '').trim()) payload.maxFollowers = Number(String(filtersActive.followersMax).trim());
+
+      const qClean = String(query || '').trim();
+      if (qClean) payload.search = qClean;
+
+      const countryClean = String(filtersActive.country || '').trim();
+      if (countryClean) payload.country = countryClean;
+
+      const resp = await fetch(url, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      if (!resp.ok) {
+        const txt = await resp.text().catch(() => '');
+        throw new Error(txt || `Export failed (${resp.status})`);
+      }
+
+      const blob = await resp.blob();
+
+      let filename = '';
+      const cd = resp.headers.get('content-disposition') || '';
+      const m = cd.match(/filename="([^"]+)"/i);
+      if (m?.[1]) filename = m[1];
+      if (!filename) filename = `modash_saved_${n}.csv`;
+
+      const blobUrl = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(blobUrl);
+    } catch (e: any) {
+      await showErr(e?.message || 'Failed to download CSV.');
+    } finally {
+      setDownloadLoading(false);
+    }
+  }
+
+  async function downloadCsvSelected() {
+    if (view !== 'saved') {
+      await showErr('Selected export works for Saved Results only.');
+      return;
+    }
+
+    if (!selectedModashIds.length) {
+      await showErr('Select at least 1 saved influencer to export.');
+      return;
+    }
+
+    setDownloadLoading(true);
+    try {
+      const url = getApiUrl(EXPORT_ENDPOINT);
+
+      const resp = await fetch(url, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          modashIds: selectedModashIds,
+          sortBy: 'updatedAt',
+          sortOrder: 'desc',
+        }),
+      });
+
+      if (!resp.ok) {
+        const txt = await resp.text().catch(() => '');
+        throw new Error(txt || `Export failed (${resp.status})`);
+      }
+
+      const blob = await resp.blob();
+
+      let filename = '';
+      const cd = resp.headers.get('content-disposition') || '';
+      const m = cd.match(/filename="([^"]+)"/i);
+      if (m?.[1]) filename = m[1];
+      if (!filename) filename = `modash_selected_${selectedModashIds.length}.csv`;
+
+      const blobUrl = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(blobUrl);
+    } catch (e: any) {
+      await showErr(e?.message || 'Failed to download selected CSV.');
+    } finally {
+      setDownloadLoading(false);
+    }
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -503,7 +684,7 @@ export default function Page() {
                     className="w-full pl-12 pr-4 py-3.5 border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all bg-white"
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
-                    placeholder="e.g. @SamZonebd or soulsyncav"
+                    placeholder="e.g. @SamZonebd"
                   />
                 </div>
               </div>
@@ -561,6 +742,7 @@ export default function Page() {
                 </button>
               </div>
             </div>
+
             {/* Filters */}
             <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
               <div className="px-5 py-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between gap-3 flex-wrap">
@@ -620,6 +802,7 @@ export default function Page() {
                     </p>
                   </div>
                 </div>
+
                 <div className="flex gap-2 flex-wrap mt-5 justify-center">
                   <button
                     type="button"
@@ -639,6 +822,74 @@ export default function Page() {
                     Apply
                   </button>
                 </div>
+
+                {/* ✅ CSV Download */}
+                <div className="mt-6 pt-5 border-t border-slate-200">
+                  <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <div className="relative">
+                        <input
+                          className="w-[160px] px-3 py-3 border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white pr-14"
+                          value={downloadLimit}
+                          onChange={(e) => setDownloadLimit(e.target.value)}
+                          placeholder="No. of."
+                          inputMode="numeric"
+                          title="How many rows to export (no pagination)"
+                        />
+                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-500">rows</span>
+                      </div>
+
+                      <button
+                        type="button"
+                        className="px-4 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm flex items-center gap-2"
+                        onClick={downloadCsvAll}
+                        disabled={downloadLoading || listLoading}
+                        title="Download CSV by limit (no pagination)"
+                      >
+                        <Download className="w-4 h-4" />
+                        {downloadLoading ? 'Downloading…' : 'Download CSV'}
+                      </button>
+
+                      <button
+                        type="button"
+                        className="px-4 py-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-sm font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm flex items-center gap-2"
+                        onClick={downloadCsvSelected}
+                        disabled={downloadLoading || selectedModashIds.length === 0}
+                        title="Download CSV for selected influencers only"
+                      >
+                        <Download className="w-4 h-4" />
+                        Download Selected ({selectedModashIds.length})
+                      </button>
+
+                      {selectedCount ? (
+                        <button
+                          type="button"
+                          className="px-4 py-3 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-slate-800 text-sm font-semibold transition-colors"
+                          onClick={clearSelection}
+                          disabled={downloadLoading}
+                          title="Clear selected"
+                        >
+                          Clear Selection
+                        </button>
+                      ) : null}
+                    </div>
+
+                    {view !== 'saved' ? (
+                      <div className="text-xs text-slate-500">
+                        Note: CSV export works on <b>Saved Results</b>.
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+
+                {searchHint ? (
+                  <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 flex gap-3 items-start">
+                    <div className="mt-0.5">
+                      <Info className="w-5 h-5 text-slate-500" />
+                    </div>
+                    <p className="text-sm text-slate-700">{searchHint}</p>
+                  </div>
+                ) : null}
               </div>
             </div>
           </form>
@@ -646,7 +897,6 @@ export default function Page() {
 
         {/* List */}
         <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-          {/* top toolbar */}
           <div className="px-6 py-4 border-b border-slate-200 flex items-start justify-between gap-4 flex-wrap">
             <div className="flex items-center gap-4">
               <h2 className="text-lg font-semibold text-slate-900">{view === 'saved' ? 'Saved Results' : 'Users Results'}</h2>
@@ -664,7 +914,15 @@ export default function Page() {
             <div className="grid grid-cols-12 items-center gap-3">
               <div className="col-span-1 flex items-center">
                 <Checkbox
-                  checked={headerCheckState as any}
+                  checked={
+                    currentItems.length
+                      ? currentItems.every((it) => !!selectedIds[getRowKey(it)])
+                        ? (true as any)
+                        : currentItems.some((it) => !!selectedIds[getRowKey(it)])
+                        ? ('indeterminate' as any)
+                        : (false as any)
+                      : (false as any)
+                  }
                   onCheckedChange={(v: any) => {
                     const checked = !!v;
                     checked ? selectAllOnPage(currentItems) : clearSelectionOnPage(currentItems);
@@ -703,7 +961,7 @@ export default function Page() {
               const url = p.url || '';
               const checked = !!selectedIds[rowKey];
 
-              const providerLabel = p.provider || p.platform;
+              const providerLabel = p.provider || p.platform || DASH;
 
               return (
                 <div key={rowKey} id={domId} className="hover:bg-slate-50 transition-colors">
@@ -711,7 +969,10 @@ export default function Page() {
                     <div className="grid grid-cols-12 items-start gap-3">
                       {/* checkbox */}
                       <div className="col-span-1 pt-2">
-                        <Checkbox checked={checked} onCheckedChange={(v: any) => toggleSelect(rowKey, !!v)} />
+                        <Checkbox
+                          checked={checked}
+                          onCheckedChange={(v: any) => toggleSelect(rowKey, !!v, p._id ? String(p._id) : undefined)}
+                        />
                       </div>
 
                       {/* handle column */}
@@ -723,13 +984,11 @@ export default function Page() {
 
                           <div className="min-w-0">
                             <div className="flex items-center gap-2">
-                              <h3 className="text-lg font-semibold text-slate-900 truncate">{p.handle || p.username || '—'}</h3>
+                              <h3 className="text-lg font-semibold text-slate-900 truncate">{p.handle || p.username || DASH}</h3>
 
-                              {providerLabel ? (
-                                <span className="text-[10px] px-2 py-0.5 rounded-full border border-slate-300 text-slate-600">
-                                  {providerLabel}
-                                </span>
-                              ) : null}
+                              <span className="text-[10px] px-2 py-0.5 rounded-full border border-slate-300 text-slate-600">
+                                {providerLabel}
+                              </span>
 
                               {p.isVerified ? (
                                 <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700">
@@ -738,14 +997,14 @@ export default function Page() {
                               ) : null}
                             </div>
 
-                            <div className="text-sm text-slate-600 truncate">{p.fullname || '—'}</div>
+                            <div className="text-sm text-slate-600 truncate">{p.fullname || DASH}</div>
                           </div>
                         </div>
 
                         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-3">
                           <div>
                             <div className="text-xs text-slate-500 mb-1">Country</div>
-                            <div className="text-sm font-medium text-slate-900">{p.country || '—'}</div>
+                            <div className="text-sm font-medium text-slate-900">{p.country || DASH}</div>
                           </div>
                           <div>
                             <div className="text-xs text-slate-500 mb-1">Followers</div>
@@ -773,24 +1032,47 @@ export default function Page() {
 
                         <div className="flex items-center gap-4 text-xs text-slate-500 flex-wrap">
                           <span>Private: {formatBool(p.isPrivate)}</span>
-                          {p.userId ? <span>UserId: {p.userId}</span> : null}
+                          {p.userId ? <span>UserId: {p.userId}</span> : <span>UserId: {DASH}</span>}
                         </div>
                       </div>
 
                       {/* actions */}
-                      <div className="col-span-2 flex items-center justify-end gap-2">
+                      <div className="col-span-2 flex flex-col items-end gap-2">
                         {url ? (
                           <a
                             href={url}
                             target="_blank"
                             rel="noreferrer"
-                            className="px-4 py-2 border border-slate-300 hover:bg-slate-100 text-slate-700 text-sm font-medium rounded-lg transition-colors flex items-center gap-2"
+                            className="w-full px-4 py-2 border border-slate-300 hover:bg-slate-100 text-slate-700 text-sm font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
                             title="Open profile"
                           >
                             <ExternalLink className="w-4 h-4" />
                             Open
                           </a>
                         ) : null}
+
+                        {p.userId ? (
+                          <Link
+                            href={`/mediakit/${encodeURIComponent(p.userId)}?platform=${encodeURIComponent(
+                              String((p.platform || p.provider || 'youtube')).toLowerCase()
+                            )}&handle=${encodeURIComponent(String(p.handle || p.username || ''))}`}
+                            className="w-full px-4 py-2 border border-slate-300 hover:bg-slate-100 text-slate-700 text-sm font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
+                            title="View MediaKit"
+                          >
+                            <Info className="w-4 h-4" />
+                            View
+                          </Link>
+                        ) : (
+                          <button
+                            type="button"
+                            className="w-full px-4 py-2 border border-slate-200 text-slate-400 text-sm font-medium rounded-lg cursor-not-allowed flex items-center justify-center gap-2"
+                            disabled
+                            title="No userId found"
+                          >
+                            <Info className="w-4 h-4" />
+                            View
+                          </button>
+                        )}
 
                         <button
                           type="button"
@@ -810,13 +1092,13 @@ export default function Page() {
                           <div className="bg-slate-50 rounded-xl p-4">
                             <h4 className="font-semibold text-slate-900 mb-3">Profile Details</h4>
                             <div className="space-y-2 text-sm">
-                              <Row label="User ID" value={p.userId || '—'} mono />
-                              <Row label="Username" value={p.username || '—'} />
-                              <Row label="Handle" value={p.handle || '—'} />
-                              <Row label="City" value={p.city || '—'} />
-                              <Row label="State" value={p.state || '—'} />
-                              <Row label="Country" value={p.country || '—'} />
-                              <Row label="Language" value={p.language?.name || p.language?.code || '—'} />
+                              <Row label="User ID" value={p.userId || DASH} mono />
+                              <Row label="Username" value={p.username || DASH} />
+                              <Row label="Handle" value={p.handle || DASH} />
+                              <Row label="City" value={p.city || DASH} />
+                              <Row label="State" value={p.state || DASH} />
+                              <Row label="Country" value={p.country || DASH} />
+                              <Row label="Language" value={p.language?.name || p.language?.code || DASH} />
                             </div>
                           </div>
 
@@ -842,7 +1124,7 @@ export default function Page() {
             })}
           </div>
 
-          {/* ✅ Pagination footer */}
+          {/* Pagination footer */}
           <div className="px-6 py-4 border-t border-slate-200 bg-white flex items-center justify-between gap-4 flex-wrap">
             <div className="text-sm text-slate-600">
               Page <span className="font-semibold text-slate-900">{page}</span>

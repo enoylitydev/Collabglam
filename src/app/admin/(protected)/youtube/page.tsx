@@ -161,8 +161,14 @@ function asList<T>(d: any): T[] {
   return Array.isArray(d) ? d : [];
 }
 
-function getDocId(p: InfluencerProfileDoc) {
+/** ✅ Card key/id for expand/scroll/UI (can fallback) */
+function getCardId(p: InfluencerProfileDoc) {
   return p.handleId || p._id || p.channelId || p.handle || Math.random().toString(36).slice(2);
+}
+
+/** ✅ Selection id MUST be stable and exportable -> handleId only */
+function getSelectId(p: InfluencerProfileDoc) {
+  return p.handleId || '';
 }
 
 function ytVideoUrl(videoId?: string) {
@@ -231,7 +237,7 @@ export default function Page() {
   const [total, setTotal] = useState(0);
   const [hasNext, setHasNext] = useState(false);
 
-  // ✅ selection
+  // ✅ selection (keyed by handleId only)
   const [selectedIds, setSelectedIds] = useState<Record<string, boolean>>({});
 
   // Handle search (sync/open)
@@ -256,7 +262,7 @@ export default function Page() {
     category: '',
   });
 
-  // ✅ CSV download
+  // ✅ CSV download (filtered)
   const [downloadLimit, setDownloadLimit] = useState('500');
   const [downloadLoading, setDownloadLoading] = useState(false);
 
@@ -314,8 +320,8 @@ export default function Page() {
     return out;
   }
 
-  function toggleSelect(id: string, checked: boolean) {
-    setSelectedIds((prev) => ({ ...prev, [id]: checked }));
+  function toggleSelect(handleId: string, checked: boolean) {
+    setSelectedIds((prev) => ({ ...prev, [handleId]: checked }));
   }
 
   function clearSelection() {
@@ -324,30 +330,44 @@ export default function Page() {
 
   function selectAllOnPage(list: InfluencerProfileDoc[]) {
     const next: Record<string, boolean> = {};
-    for (const it of list) next[getDocId(it)] = true;
+    for (const it of list) {
+      const hid = getSelectId(it);
+      if (hid) next[hid] = true;
+    }
     setSelectedIds((prev) => ({ ...prev, ...next }));
   }
 
   function clearSelectionOnPage(list: InfluencerProfileDoc[]) {
     setSelectedIds((prev) => {
       const next = { ...prev };
-      for (const it of list) delete next[getDocId(it)];
+      for (const it of list) {
+        const hid = getSelectId(it);
+        if (hid) delete next[hid];
+      }
       return next;
     });
   }
 
-  const selectedCount = useMemo(() => Object.values(selectedIds).filter(Boolean).length, [selectedIds]);
+  const selectedHandleIds = useMemo(() => {
+    return Object.entries(selectedIds)
+      .filter(([, v]) => v)
+      .map(([hid]) => hid);
+  }, [selectedIds]);
 
-  // ✅ header checkbox state (all / indeterminate / none)
+  const selectedCount = useMemo(() => selectedHandleIds.length, [selectedHandleIds]);
+
+  // ✅ header checkbox state (only count selectable rows = those with handleId)
+  const selectableOnPage = useMemo(() => profiles.filter((p) => !!getSelectId(p)), [profiles]);
+
   const allOnPageSelected = useMemo(() => {
-    if (!profiles.length) return false;
-    return profiles.every((it) => !!selectedIds[getDocId(it)]);
-  }, [profiles, selectedIds]);
+    if (!selectableOnPage.length) return false;
+    return selectableOnPage.every((it) => !!selectedIds[getSelectId(it)]);
+  }, [selectableOnPage, selectedIds]);
 
   const someOnPageSelected = useMemo(() => {
-    if (!profiles.length) return false;
-    return profiles.some((it) => !!selectedIds[getDocId(it)]);
-  }, [profiles, selectedIds]);
+    if (!selectableOnPage.length) return false;
+    return selectableOnPage.some((it) => !!selectedIds[getSelectId(it)]);
+  }, [selectableOnPage, selectedIds]);
 
   const headerCheckState = useMemo(() => {
     if (allOnPageSelected) return true;
@@ -378,8 +398,8 @@ export default function Page() {
       setHasNext(!!resp.hasNext);
       setPage(resp.page || p);
 
-      // optional: reset selection on new page
-      setSelectedIds({});
+      // ✅ DO NOT auto-clear selection here (so selected export can work across pages)
+      // setSelectedIds({});
     } catch (e: any) {
       await showErr(e?.message || 'Failed to load saved data.');
     } finally {
@@ -599,6 +619,56 @@ export default function Page() {
     }
   }
 
+  /** ✅ NEW: Download only selected handleIds */
+  async function downloadSelectedCsv() {
+    if (!selectedHandleIds.length) {
+      await showErr('Select at least 1 influencer.');
+      return;
+    }
+
+    setDownloadLoading(true);
+    try {
+      const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || process.env.NEXT_PUBLIC_API_URL || '').replace(/\/$/, '');
+      const url = API_BASE ? `${API_BASE}/youtube/export-csv` : `/youtube/export-csv`;
+
+      const resp = await fetch(url, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          handleIds: selectedHandleIds, // ✅ IMPORTANT
+          sortBy: 'createdAt',
+          sortOrder: 'desc',
+        }),
+      });
+
+      if (!resp.ok) {
+        const txt = await resp.text().catch(() => '');
+        throw new Error(txt || `Export failed (${resp.status})`);
+      }
+
+      const blob = await resp.blob();
+
+      let filename = '';
+      const cd = resp.headers.get('content-disposition') || '';
+      const m = cd.match(/filename="([^"]+)"/i);
+      if (m?.[1]) filename = m[1];
+      if (!filename) filename = `selected_influencers_${selectedHandleIds.length}.csv`;
+
+      const blobUrl = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(blobUrl);
+    } catch (e: any) {
+      await showErr(e?.message || 'Failed to download selected CSV.');
+    } finally {
+      setDownloadLoading(false);
+    }
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -775,9 +845,9 @@ export default function Page() {
                   </div>
                 </div>
 
-                {/* CSV row */}
+                {/* ✅ CSV row */}
                 <div className="mt-5 pt-5 border-t border-slate-200 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <div className="relative">
                       <input
                         className="w-[150px] px-3 py-3 border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white pr-14"
@@ -800,6 +870,30 @@ export default function Page() {
                       <Download className="w-4 h-4" />
                       {downloadLoading ? 'Downloading…' : 'Download CSV'}
                     </button>
+
+                    {/* ✅ NEW: Download selected */}
+                    <button
+                      type="button"
+                      className="px-4 py-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-sm font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm flex items-center gap-2"
+                      onClick={downloadSelectedCsv}
+                      disabled={downloadLoading || selectedCount === 0}
+                      title="Download CSV for selected influencers only"
+                    >
+                      <Download className="w-4 h-4" />
+                      Download Selected ({selectedCount})
+                    </button>
+
+                    {selectedCount ? (
+                      <button
+                        type="button"
+                        className="px-4 py-3 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-slate-800 text-sm font-semibold transition-colors"
+                        onClick={clearSelection}
+                        disabled={downloadLoading}
+                        title="Clear selected influencers"
+                      >
+                        Clear Selection
+                      </button>
+                    ) : null}
                   </div>
                 </div>
               </div>
@@ -809,7 +903,7 @@ export default function Page() {
 
         {/* List */}
         <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-          {/* minimal toolbar (no “Saved Profiles” heading) */}
+          {/* minimal toolbar */}
           <div className="px-6 py-4 border-b border-slate-200 flex items-start justify-between gap-4 flex-wrap">
             <div className="flex items-center gap-3 flex-wrap">
               <span className="text-sm text-slate-600">
@@ -867,20 +961,28 @@ export default function Page() {
 
           <div className="divide-y divide-slate-200">
             {profiles.map((p) => {
-              const id = getDocId(p);
-              const isOpen = !!expanded[id];
-              const checked = !!selectedIds[id];
+              const cardId = getCardId(p);
+              const selectId = getSelectId(p); // handleId
+              const isOpen = !!expanded[cardId];
+              const checked = selectId ? !!selectedIds[selectId] : false;
+
               const thumb = p.thumbnails?.default?.url || p.thumbnails?.medium?.url || p.thumbnails?.high?.url;
               const channelUrl = ytChannelUrl(p);
 
               return (
-                <div key={id} id={`card-${id}`} className="hover:bg-slate-50 transition-colors">
+                <div key={cardId} id={`card-${cardId}`} className="hover:bg-slate-50 transition-colors">
                   <div className="px-6 py-4">
-                    {/* ✅ aligned with header */}
                     <div className="grid grid-cols-12 items-start gap-3">
                       {/* checkbox */}
                       <div className="col-span-1 pt-2">
-                        <Checkbox checked={checked} onCheckedChange={(v: any) => toggleSelect(id, !!v)} />
+                        <Checkbox
+                          checked={checked}
+                          disabled={!selectId}
+                          onCheckedChange={(v: any) => {
+                            if (!selectId) return;
+                            toggleSelect(selectId, !!v);
+                          }}
+                        />
                       </div>
 
                       {/* handle column */}
@@ -966,7 +1068,7 @@ export default function Page() {
                         <button
                           type="button"
                           className="p-2 hover:bg-slate-100 rounded-lg transition-colors"
-                          onClick={() => toggleExpand(id)}
+                          onClick={() => toggleExpand(cardId)}
                           aria-expanded={isOpen}
                           aria-label="Expand"
                         >
