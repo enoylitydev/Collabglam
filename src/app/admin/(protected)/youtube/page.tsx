@@ -1,8 +1,10 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { ChevronDown, ExternalLink, Mail, RefreshCw, Search, X } from 'lucide-react';
+import { ChevronDown, ExternalLink, Mail, RefreshCw, Search, X, Download, Info } from 'lucide-react';
+import swal from 'sweetalert';
 import { post } from '@/lib/api';
+import { Checkbox } from '@/components/animate-ui/components/radix/checkbox';
 
 type VideoItem = {
   _id?: string;
@@ -106,6 +108,14 @@ type InfluencerFilters = {
   categories?: string[];
 };
 
+function showErr(message: string) {
+  return swal({
+    title: 'Error',
+    text: message || 'Something went wrong.',
+    icon: 'error',
+  });
+}
+
 function normalizeHandle(input: string) {
   const s = (input || '').trim();
   if (!s) return '';
@@ -145,20 +155,6 @@ function formatDate(iso?: string | null, timeZone = 'Asia/Kolkata') {
     hour: '2-digit',
     minute: '2-digit',
   }).format(d);
-}
-
-function parseISODurationToHMS(iso?: string | null) {
-  if (!iso) return '—';
-  const m = iso.match(/^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/);
-  if (!m) return iso;
-
-  const h = Number(m[1] || 0);
-  const min = Number(m[2] || 0);
-  const s = Number(m[3] || 0);
-
-  const pad2 = (x: number) => String(x).padStart(2, '0');
-  if (h > 0) return `${h}:${pad2(min)}:${pad2(s)}`;
-  return `${min}:${pad2(s)}`;
 }
 
 function asList<T>(d: any): T[] {
@@ -214,15 +210,13 @@ function chipText(filters: InfluencerFilters) {
   const chips: string[] = [];
 
   if (filters.followersMin || filters.followersMax) {
-    chips.push(
-      `Followers: ${filters.followersMin || '0'} - ${filters.followersMax || '∞'}`
-    );
+    chips.push(`Followers: ${filters.followersMin || '0'} - ${filters.followersMax || '∞'}`);
   }
 
-  const cs = filters.countries?.length ? filters.countries : (filters.country ? [filters.country] : []);
+  const cs = filters.countries?.length ? filters.countries : filters.country ? [filters.country] : [];
   if (cs.length) chips.push(`Country: ${cs.join(', ')}`);
 
-  const cats = filters.categories?.length ? filters.categories : (filters.category ? [filters.category] : []);
+  const cats = filters.categories?.length ? filters.categories : filters.category ? [filters.category] : [];
   if (cats.length) chips.push(`Category: ${cats.join(', ')}`);
 
   return chips;
@@ -237,6 +231,9 @@ export default function Page() {
   const [total, setTotal] = useState(0);
   const [hasNext, setHasNext] = useState(false);
 
+  // ✅ selection
+  const [selectedIds, setSelectedIds] = useState<Record<string, boolean>>({});
+
   // Handle search (sync/open)
   const [query, setQuery] = useState('');
   const [searchHint, setSearchHint] = useState('');
@@ -244,10 +241,8 @@ export default function Page() {
 
   // List state
   const [listLoading, setListLoading] = useState(false);
-  const [error, setError] = useState('');
 
   // ✅ Filters (draft + active)
-  const [filtersOpen, setFiltersOpen] = useState(true);
   const [filtersDraft, setFiltersDraft] = useState<InfluencerFilters>({
     followersMin: '',
     followersMax: '',
@@ -261,11 +256,14 @@ export default function Page() {
     category: '',
   });
 
+  // ✅ CSV download
+  const [downloadLimit, setDownloadLimit] = useState('500');
+  const [downloadLoading, setDownloadLoading] = useState(false);
+
   // ✅ Details modal
   const [detailsModalOpen, setDetailsModalOpen] = useState(false);
   const [detailsHandleId, setDetailsHandleId] = useState('');
   const [detailsSaving, setDetailsSaving] = useState(false);
-  const [detailsError, setDetailsError] = useState('');
 
   const [detailsForm, setDetailsForm] = useState({
     email: '',
@@ -296,11 +294,9 @@ export default function Page() {
   function buildFilterPayload(f: InfluencerFilters): InfluencerFilters {
     const out: InfluencerFilters = {};
 
-    // followers
     if (String(f.followersMin || '').trim()) out.followersMin = String(f.followersMin).trim();
     if (String(f.followersMax || '').trim()) out.followersMax = String(f.followersMax).trim();
 
-    // country: if comma separated => countries[]
     const cRaw = String(f.country || '').trim();
     if (cRaw) {
       const parts = splitCsvOrSpace(cRaw);
@@ -308,7 +304,6 @@ export default function Page() {
       else out.country = parts[0];
     }
 
-    // category: if comma separated => categories[]
     const catRaw = String(f.category || '').trim();
     if (catRaw) {
       const parts = splitCsvOrSpace(catRaw);
@@ -319,8 +314,48 @@ export default function Page() {
     return out;
   }
 
+  function toggleSelect(id: string, checked: boolean) {
+    setSelectedIds((prev) => ({ ...prev, [id]: checked }));
+  }
+
+  function clearSelection() {
+    setSelectedIds({});
+  }
+
+  function selectAllOnPage(list: InfluencerProfileDoc[]) {
+    const next: Record<string, boolean> = {};
+    for (const it of list) next[getDocId(it)] = true;
+    setSelectedIds((prev) => ({ ...prev, ...next }));
+  }
+
+  function clearSelectionOnPage(list: InfluencerProfileDoc[]) {
+    setSelectedIds((prev) => {
+      const next = { ...prev };
+      for (const it of list) delete next[getDocId(it)];
+      return next;
+    });
+  }
+
+  const selectedCount = useMemo(() => Object.values(selectedIds).filter(Boolean).length, [selectedIds]);
+
+  // ✅ header checkbox state (all / indeterminate / none)
+  const allOnPageSelected = useMemo(() => {
+    if (!profiles.length) return false;
+    return profiles.every((it) => !!selectedIds[getDocId(it)]);
+  }, [profiles, selectedIds]);
+
+  const someOnPageSelected = useMemo(() => {
+    if (!profiles.length) return false;
+    return profiles.some((it) => !!selectedIds[getDocId(it)]);
+  }, [profiles, selectedIds]);
+
+  const headerCheckState = useMemo(() => {
+    if (allOnPageSelected) return true;
+    if (someOnPageSelected) return 'indeterminate';
+    return false;
+  }, [allOnPageSelected, someOnPageSelected]);
+
   async function loadSaved(p = 1, active: InfluencerFilters = filtersActive) {
-    setError('');
     setListLoading(true);
     try {
       const filterPayload = buildFilterPayload(active);
@@ -328,13 +363,11 @@ export default function Page() {
       const resp = await post<GetAllResponse>('/youtube/getall', {
         page: p,
         limit,
-        search: '', // keep separate from handle-sync search
+        search: '',
         sortBy: 'createdAt',
         sortOrder: 'desc',
         includeRaw: false,
         includeVideos: false,
-
-        // ✅ filters to backend
         ...filterPayload,
       });
 
@@ -344,8 +377,11 @@ export default function Page() {
       setTotal(resp.total || 0);
       setHasNext(!!resp.hasNext);
       setPage(resp.page || p);
+
+      // optional: reset selection on new page
+      setSelectedIds({});
     } catch (e: any) {
-      setError(e?.message || 'Failed to load saved data.');
+      await showErr(e?.message || 'Failed to load saved data.');
     } finally {
       setListLoading(false);
     }
@@ -357,7 +393,6 @@ export default function Page() {
   }, []);
 
   useEffect(() => {
-    setError('');
     const h = normalizeHandle(query);
     if (!h) {
       setSearchHint('');
@@ -406,17 +441,15 @@ export default function Page() {
       workingHandle: p.workingHandle || '',
     });
 
-    setDetailsError('');
     setDetailsModalOpen(true);
   }
 
   async function onSearch(e: React.FormEvent) {
     e.preventDefault();
-    setError('');
 
     const h = normalizeHandle(query);
     if (!h) {
-      setError('Please enter a valid handle.');
+      await showErr('Please enter a valid handle.');
       return;
     }
 
@@ -436,21 +469,19 @@ export default function Page() {
       setSearchHint('Fetched & saved. Expanded below.');
       setQuery(h);
     } catch (e: any) {
-      setError(e?.message || 'Failed to fetch from YouTube.');
+      await showErr(e?.message || 'Failed to fetch from YouTube.');
     } finally {
       setSearchLoading(false);
     }
   }
 
   async function saveDetails() {
-    setDetailsError('');
-
     const payload: any = { handleId: detailsHandleId };
 
     const email = detailsForm.email.trim();
     if (email) {
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.toLowerCase())) {
-        setDetailsError('Enter a valid email.');
+        await showErr('Enter a valid email.');
         return;
       }
       payload.email = email.toLowerCase();
@@ -462,12 +493,13 @@ export default function Page() {
     payload.topAudienceCountry = detailsForm.topAudienceCountry.trim() || null;
     payload.workingHandle = detailsForm.workingHandle.trim() || null;
 
-    payload.managedByAgency = detailsForm.managedByAgency === 'yes' ? true : detailsForm.managedByAgency === 'no' ? false : null;
+    payload.managedByAgency =
+      detailsForm.managedByAgency === 'yes' ? true : detailsForm.managedByAgency === 'no' ? false : null;
 
     if (detailsForm.averageAudienceAge.trim()) {
       const n = Number(detailsForm.averageAudienceAge.trim());
       if (!Number.isFinite(n) || n < 0 || n > 120) {
-        setDetailsError('Average audience age must be 0–120.');
+        await showErr('Average audience age must be 0–120.');
         return;
       }
       payload.averageAudienceAge = n;
@@ -485,7 +517,7 @@ export default function Page() {
       upsertProfile(resp.data);
       setDetailsModalOpen(false);
     } catch (e: any) {
-      setDetailsError(e?.message || 'Failed to save details.');
+      await showErr(e?.message || 'Failed to save details.');
     } finally {
       setDetailsSaving(false);
     }
@@ -506,6 +538,67 @@ export default function Page() {
 
   const activeChips = useMemo(() => chipText(buildFilterPayload(filtersActive)), [filtersActive]);
 
+  async function downloadCsv() {
+    const n = parseInt(downloadLimit, 10);
+    if (!Number.isFinite(n) || n <= 0) {
+      await showErr('Enter a valid download count (e.g. 500).');
+      return;
+    }
+
+    setDownloadLoading(true);
+    try {
+      const filterPayload = buildFilterPayload(filtersActive);
+
+      const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || process.env.NEXT_PUBLIC_API_URL || '').replace(/\/$/, '');
+      const url = API_BASE ? `${API_BASE}/youtube/export-csv` : `/youtube/export-csv`;
+
+      const resp = await fetch(url, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          limit: n,
+          sortBy: 'createdAt',
+          sortOrder: 'desc',
+          search: '',
+          ...filterPayload,
+        }),
+      });
+
+      if (!resp.ok) {
+        const txt = await resp.text().catch(() => '');
+        throw new Error(txt || `Export failed (${resp.status})`);
+      }
+
+      const blob = await resp.blob();
+
+      let filename = '';
+      const cd = resp.headers.get('content-disposition') || '';
+      const m = cd.match(/filename="([^"]+)"/i);
+      if (m?.[1]) filename = m[1];
+
+      if (!filename) {
+        const ts = new Date();
+        const stamp = `${ts.getFullYear()}${String(ts.getMonth() + 1).padStart(2, '0')}${String(ts.getDate()).padStart(2, '0')}_${String(
+          ts.getHours()
+        ).padStart(2, '0')}${String(ts.getMinutes()).padStart(2, '0')}${String(ts.getSeconds()).padStart(2, '0')}`;
+        filename = `influencers_${stamp}.csv`;
+      }
+
+      const blobUrl = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(blobUrl);
+    } catch (e: any) {
+      await showErr(e?.message || 'Failed to download CSV.');
+    } finally {
+      setDownloadLoading(false);
+    }
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -516,167 +609,248 @@ export default function Page() {
         </div>
 
         {/* Search + Filters card */}
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 mb-6">
-          <form onSubmit={onSearch} className="space-y-4">
-            <div className="flex gap-3">
-              <div className="relative flex-1">
-                <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
-                <input
-                  className="w-full pl-12 pr-4 py-3 border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Search by handle (e.g., @MrBeast)"
-                />
+        <div className="mb-6 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <div className="border-b border-slate-200 bg-gradient-to-r from-slate-50 via-white to-slate-50 px-6 py-5">
+            <div className="flex items-start justify-between gap-4 flex-wrap">
+              <div>
+                <h2 className="text-lg font-semibold text-slate-900">Search Influencer</h2>
+                <p className="text-sm text-slate-600 mt-0.5">Search by handle to open saved profiles or fetch &amp; save from YouTube.</p>
               </div>
 
-              <button
-                className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-                type="submit"
-                disabled={searchLoading}
-              >
-                {searchLoading ? (
+              <div className="flex flex-wrap gap-2 items-center">
+                {activeChips.length ? (
                   <>
-                    <RefreshCw className="w-4 h-4 animate-spin" />
-                    Searching
+                    {activeChips.slice(0, 4).map((c) => (
+                      <span
+                        key={c}
+                        className="text-xs px-3 py-1 rounded-full bg-white text-slate-700 border border-slate-200 shadow-[0_1px_0_rgba(0,0,0,0.03)]"
+                      >
+                        {c}
+                      </span>
+                    ))}
+                    {activeChips.length > 4 ? (
+                      <span className="text-xs px-3 py-1 rounded-full bg-slate-900 text-white">+{activeChips.length - 4}</span>
+                    ) : null}
                   </>
-                ) : existingProfile ? (
-                  'Open'
                 ) : (
-                  'Search'
+                  <span className="text-xs px-3 py-1 rounded-full bg-white text-slate-600 border border-slate-200">No active filters</span>
                 )}
-              </button>
-
-              <button
-                type="button"
-                className="px-4 py-3 border border-slate-300 hover:bg-slate-50 text-slate-700 font-medium rounded-xl transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                onClick={() => loadSaved(1, filtersActive)}
-                disabled={listLoading}
-              >
-                <RefreshCw className={`w-4 h-4 ${listLoading ? 'animate-spin' : ''}`} />
-                Refresh List
-              </button>
+              </div>
             </div>
+          </div>
 
-            {searchHint ? <p className="text-sm text-slate-600">{searchHint}</p> : null}
+          <form onSubmit={onSearch} className="p-6 space-y-5">
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 items-end">
+              <div className="lg:col-span-7">
+                <label className="text-xs font-medium text-slate-600 mb-2 block">YouTube Handle</label>
+                <div className="relative">
+                  <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
+                  <input
+                    className="w-full pl-12 pr-4 py-3.5 border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all bg-white"
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    placeholder="e.g. @MrBeast"
+                  />
+                </div>
+              </div>
 
-            {/* Filters toggle */}
-            <div className="flex items-center justify-between pt-2">
-              <button
-                type="button"
-                className="text-sm font-medium text-slate-700 hover:text-slate-900"
-                onClick={() => setFiltersOpen((v) => !v)}
-              >
-                {filtersOpen ? 'Hide Filters' : 'Show Filters'}
-              </button>
-
-              <div className="flex gap-2">
+              <div className="lg:col-span-5 grid grid-cols-1 sm:grid-cols-2 gap-2">
                 <button
-                  type="button"
-                  className="px-3 py-2 border border-slate-300 hover:bg-slate-50 text-slate-700 text-sm font-medium rounded-lg transition-colors"
-                  onClick={clearFilters}
-                  disabled={listLoading}
+                  className="w-full h-[52px] px-5 rounded-lg font-semibold text-white bg-blue-600 hover:bg-blue-700 transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  type="submit"
+                  disabled={searchLoading}
                 >
-                  Clear
+                  {searchLoading ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      Searching…
+                    </>
+                  ) : existingProfile ? (
+                    'Open Profile'
+                  ) : (
+                    'Search & Save'
+                  )}
                 </button>
+
                 <button
                   type="button"
-                  className="px-3 py-2 bg-slate-900 hover:bg-slate-800 text-white text-sm font-medium rounded-lg transition-colors"
-                  onClick={applyFilters}
+                  className="w-full h-[52px] px-5 rounded-lg font-semibold border border-slate-300 text-slate-800 hover:bg-slate-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  onClick={() => loadSaved(1, filtersActive)}
                   disabled={listLoading}
+                  title="Reload list from database"
                 >
-                  Apply
+                  <RefreshCw className={`w-4 h-4 ${listLoading ? 'animate-spin' : ''}`} />
+                  Refresh List
                 </button>
               </div>
             </div>
 
-            {filtersOpen ? (
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-                <div>
-                  <label className="text-xs text-slate-600 mb-1 block">Followers Min</label>
-                  <input
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    value={filtersDraft.followersMin || ''}
-                    onChange={(e) => setFiltersDraft((p) => ({ ...p, followersMin: e.target.value }))}
-                    placeholder="e.g. 100000"
-                    inputMode="numeric"
-                  />
+            {searchHint ? (
+              <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 flex gap-3 items-start">
+                <div className="mt-0.5">
+                  <Info className="w-5 h-5 text-slate-500" />
                 </div>
-
-                <div>
-                  <label className="text-xs text-slate-600 mb-1 block">Followers Max</label>
-                  <input
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    value={filtersDraft.followersMax || ''}
-                    onChange={(e) => setFiltersDraft((p) => ({ ...p, followersMax: e.target.value }))}
-                    placeholder="e.g. 5000000"
-                    inputMode="numeric"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-xs text-slate-600 mb-1 block">Country (US, IN…)</label>
-                  <input
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    value={filtersDraft.country || ''}
-                    onChange={(e) => setFiltersDraft((p) => ({ ...p, country: e.target.value }))}
-                    placeholder="US or US,IN"
-                  />
-                  <p className="text-[11px] text-slate-500 mt-1">You can enter multiple: <span className="font-mono">US,IN</span></p>
-                </div>
-
-                <div>
-                  <label className="text-xs text-slate-600 mb-1 block">Category</label>
-                  <input
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    value={filtersDraft.category || ''}
-                    onChange={(e) => setFiltersDraft((p) => ({ ...p, category: e.target.value }))}
-                    placeholder="Entertainment or Lifestyle"
-                  />
-                  <p className="text-[11px] text-slate-500 mt-1">Multiple: <span className="font-mono">Entertainment,Lifestyle</span></p>
-                </div>
+                <p className="text-sm text-slate-700">{searchHint}</p>
               </div>
             ) : null}
 
-            {error ? (
-              <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-600">{error}</div>
-            ) : null}
+            {/* Filters */}
+            <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
+              <div className="px-5 py-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between gap-3 flex-wrap">
+                <div>
+                  <div className="text-sm font-semibold text-slate-900">Filters</div>
+                  <div className="text-xs text-slate-600 mt-0.5">
+                    Use comma-separated values for multiple countries/categories (e.g., <span className="font-mono">US,IN</span>).
+                  </div>
+                </div>
+
+                <div className="flex gap-2 flex-wrap">
+                  <button
+                    type="button"
+                    className="px-3 py-2 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-slate-800 text-sm font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    onClick={clearFilters}
+                    disabled={listLoading}
+                  >
+                    Clear
+                  </button>
+                  <button
+                    type="button"
+                    className="px-3 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-sm font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    onClick={applyFilters}
+                    disabled={listLoading}
+                  >
+                    Apply Filters
+                  </button>
+                </div>
+              </div>
+
+              <div className="p-5">
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                  <div className="rounded-xl border border-slate-200 bg-white p-3">
+                    <label className="text-[11px] font-semibold text-slate-600 mb-2 block uppercase tracking-wide">Followers Min</label>
+                    <input
+                      className="w-full px-3 py-3 border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+                      value={filtersDraft.followersMin || ''}
+                      onChange={(e) => setFiltersDraft((p) => ({ ...p, followersMin: e.target.value }))}
+                      placeholder="100000"
+                      inputMode="numeric"
+                    />
+                  </div>
+
+                  <div className="rounded-xl border border-slate-200 bg-white p-3">
+                    <label className="text-[11px] font-semibold text-slate-600 mb-2 block uppercase tracking-wide">Followers Max</label>
+                    <input
+                      className="w-full px-3 py-3 border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+                      value={filtersDraft.followersMax || ''}
+                      onChange={(e) => setFiltersDraft((p) => ({ ...p, followersMax: e.target.value }))}
+                      placeholder="5000000"
+                      inputMode="numeric"
+                    />
+                  </div>
+
+                  <div className="rounded-xl border border-slate-200 bg-white p-3">
+                    <label className="text-[11px] font-semibold text-slate-600 mb-2 block uppercase tracking-wide">Country</label>
+                    <input
+                      className="w-full px-3 py-3 border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+                      value={filtersDraft.country || ''}
+                      onChange={(e) => setFiltersDraft((p) => ({ ...p, country: e.target.value }))}
+                      placeholder="US or US,IN"
+                    />
+                    <p className="text-[11px] text-slate-500 mt-2">
+                      Multiple: <span className="font-mono">US,IN</span>
+                    </p>
+                  </div>
+
+                  <div className="rounded-xl border border-slate-200 bg-white p-3">
+                    <label className="text-[11px] font-semibold text-slate-600 mb-2 block uppercase tracking-wide">Category</label>
+                    <input
+                      className="w-full px-3 py-3 border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+                      value={filtersDraft.category || ''}
+                      onChange={(e) => setFiltersDraft((p) => ({ ...p, category: e.target.value }))}
+                      placeholder="Entertainment or Lifestyle"
+                    />
+                    <p className="text-[11px] text-slate-500 mt-2">
+                      Multiple: <span className="font-mono">Entertainment,Lifestyle</span>
+                    </p>
+                  </div>
+                </div>
+
+                {/* CSV row */}
+                <div className="mt-5 pt-5 border-t border-slate-200 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <div className="relative">
+                      <input
+                        className="w-[150px] px-3 py-3 border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white pr-14"
+                        value={downloadLimit}
+                        onChange={(e) => setDownloadLimit(e.target.value)}
+                        placeholder="500"
+                        inputMode="numeric"
+                        title="How many rows to export"
+                      />
+                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-500">rows</span>
+                    </div>
+
+                    <button
+                      type="button"
+                      className="px-4 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm flex items-center gap-2"
+                      onClick={downloadCsv}
+                      disabled={downloadLoading}
+                      title="Download CSV with active filters"
+                    >
+                      <Download className="w-4 h-4" />
+                      {downloadLoading ? 'Downloading…' : 'Download CSV'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
           </form>
         </div>
 
         {/* List */}
         <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+          {/* minimal toolbar (no “Saved Profiles” heading) */}
           <div className="px-6 py-4 border-b border-slate-200 flex items-start justify-between gap-4 flex-wrap">
-            <div className="flex items-center gap-4">
-              <h2 className="text-lg font-semibold text-slate-900">Saved Profiles</h2>
-              <span className="text-sm text-slate-600">{formatNumber(total)} total</span>
+            <div className="flex items-center gap-3 flex-wrap">
+              <span className="text-sm text-slate-600">
+                <b className="text-slate-900">{formatNumber(total)}</b> total
+              </span>
+              {selectedCount ? (
+                <span className="text-xs px-3 py-1 rounded-full bg-emerald-600 text-white">Selected: {selectedCount}</span>
+              ) : null}
+
+              {activeChips.length ? (
+                <div className="flex flex-wrap gap-2 items-center">
+                  {activeChips.map((c) => (
+                    <span key={c} className="text-xs px-3 py-1 rounded-full bg-slate-100 text-slate-700 border">
+                      {c}
+                    </span>
+                  ))}
+                </div>
+              ) : null}
             </div>
+          </div>
 
-            {/* active filter chips */}
-            {activeChips.length ? (
-              <div className="flex flex-wrap gap-2 items-center">
-                {activeChips.map((c) => (
-                  <span key={c} className="text-xs px-3 py-1 rounded-full bg-slate-100 text-slate-700 border">
-                    {c}
-                  </span>
-                ))}
+          {/* ✅ Table header row */}
+          <div className="px-6 py-3 bg-slate-50 border-b border-slate-200">
+            <div className="grid grid-cols-12 items-center gap-3">
+              <div className="col-span-1 flex items-center">
+                <Checkbox
+                  checked={headerCheckState as any}
+                  onCheckedChange={(v: any) => {
+                    const checked = !!v;
+                    checked ? selectAllOnPage(profiles) : clearSelectionOnPage(profiles);
+                  }}
+                />
               </div>
-            ) : null}
 
-            <div className="flex gap-2">
-              <button
-                className="px-4 py-2 border border-slate-300 hover:bg-slate-50 text-slate-700 text-sm font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                onClick={() => loadSaved(Math.max(1, page - 1), filtersActive)}
-                disabled={listLoading || page <= 1}
-              >
-                Previous
-              </button>
-              <button
-                className="px-4 py-2 border border-slate-300 hover:bg-slate-50 text-slate-700 text-sm font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                onClick={() => loadSaved(page + 1, filtersActive)}
-                disabled={listLoading || !hasNext}
-              >
-                Next
-              </button>
+              <div className="col-span-9">
+                <div className="text-[11px] font-semibold text-slate-600 uppercase tracking-wide">Handle</div>
+              </div>
+
+              <div className="col-span-2 text-right">
+                <div className="text-[11px] font-semibold text-slate-600 uppercase tracking-wide">Actions</div>
+              </div>
             </div>
           </div>
 
@@ -688,24 +862,29 @@ export default function Page() {
           ) : null}
 
           {!listLoading && profiles.length === 0 ? (
-            <div className="px-6 py-12 text-center text-slate-500">
-              No saved profiles yet. Use search to fetch and save influencer data.
-            </div>
+            <div className="px-6 py-12 text-center text-slate-500">No saved profiles yet. Use search to fetch and save influencer data.</div>
           ) : null}
 
           <div className="divide-y divide-slate-200">
             {profiles.map((p) => {
               const id = getDocId(p);
               const isOpen = !!expanded[id];
+              const checked = !!selectedIds[id];
               const thumb = p.thumbnails?.default?.url || p.thumbnails?.medium?.url || p.thumbnails?.high?.url;
               const channelUrl = ytChannelUrl(p);
 
               return (
                 <div key={id} id={`card-${id}`} className="hover:bg-slate-50 transition-colors">
                   <div className="px-6 py-4">
-                    <div className="flex items-start justify-between gap-4">
-                      {/* left */}
-                      <div className="flex-1 min-w-0">
+                    {/* ✅ aligned with header */}
+                    <div className="grid grid-cols-12 items-start gap-3">
+                      {/* checkbox */}
+                      <div className="col-span-1 pt-2">
+                        <Checkbox checked={checked} onCheckedChange={(v: any) => toggleSelect(id, !!v)} />
+                      </div>
+
+                      {/* handle column */}
+                      <div className="col-span-9 min-w-0">
                         <div className="flex items-center gap-3 mb-3">
                           <div className="w-10 h-10 rounded-full overflow-hidden bg-slate-200 shrink-0">
                             {thumb ? <img src={thumb} alt="" className="w-full h-full object-cover" loading="lazy" /> : null}
@@ -724,7 +903,7 @@ export default function Page() {
                           </div>
                         </div>
 
-                        {/* quick metrics row */}
+                        {/* metrics */}
                         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-3">
                           <div>
                             <div className="text-xs text-slate-500 mb-1">Country</div>
@@ -752,7 +931,6 @@ export default function Page() {
                           </div>
                         </div>
 
-                        {/* manual mini line */}
                         <div className="flex items-center gap-4 text-xs text-slate-500 flex-wrap">
                           <span>Synced: {formatDate(p.syncedAt)}</span>
                           {p.uploadFrequencyPerWeek != null ? <span>{p.uploadFrequencyPerWeek} uploads/week</span> : null}
@@ -761,8 +939,8 @@ export default function Page() {
                         </div>
                       </div>
 
-                      {/* right buttons */}
-                      <div className="flex items-center gap-2">
+                      {/* actions column */}
+                      <div className="col-span-2 flex items-center justify-end gap-2">
                         {channelUrl ? (
                           <a
                             href={channelUrl}
@@ -782,7 +960,7 @@ export default function Page() {
                           onClick={() => openDetailsModal(p)}
                         >
                           <Mail className="w-4 h-4" />
-                          Add Details
+                          Add
                         </button>
 
                         <button
@@ -797,7 +975,6 @@ export default function Page() {
                       </div>
                     </div>
 
-                    {/* expanded */}
                     {isOpen ? (
                       <div className="mt-6 pt-6 border-t border-slate-200 space-y-6">
                         {p.bannerUrl ? (
@@ -848,133 +1025,42 @@ export default function Page() {
                             </div>
                           </div>
                         </div>
-
-                        <div className="bg-slate-50 rounded-xl p-4">
-                          <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
-                            <h4 className="font-semibold text-slate-900">Manual Details</h4>
-                            <button
-                              type="button"
-                              className="px-3 py-2 border border-slate-300 hover:bg-slate-100 text-slate-700 text-sm font-medium rounded-lg transition-colors"
-                              onClick={() => openDetailsModal(p)}
-                            >
-                              Edit Details
-                            </button>
-                          </div>
-
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-                            <div className="space-y-2">
-                              <Row label="Email" value={p.email || '—'} />
-                              <Row label="Working Handle" value={p.workingHandle || '—'} />
-                              <Row label="Last Sponsor" value={p.lastSponsor || '—'} />
-                              <Row label="Managed by Agency" value={formatBool(p.managedByAgency)} />
-                            </div>
-                            <div className="space-y-2">
-                              <Row label="Top Audience Country" value={p.topAudienceCountry || '—'} />
-                              <Row label="Avg Audience Age" value={p.averageAudienceAge ?? '—'} />
-                              <Row label="Last Contacted" value={formatDate(p.lastContactedAt)} />
-                              <Row
-                                label="Follow-ups"
-                                value={p.followUpDates?.length ? p.followUpDates.map((d) => toDateInputValue(d)).filter(Boolean).join(', ') : '—'}
-                              />
-                            </div>
-                          </div>
-                        </div>
-
-                        {p.topicLabels?.length || p.topicCategories?.length ? (
-                          <div className="bg-slate-50 rounded-xl p-4">
-                            <h4 className="font-semibold text-slate-900 mb-3">Topics</h4>
-                            <div className="flex flex-wrap gap-2">
-                              {asList<string>(p.topicLabels).map((t, i) => (
-                                <span key={`tl-${i}`} className="px-3 py-1 bg-blue-100 text-blue-700 text-sm rounded-full">
-                                  {t}
-                                </span>
-                              ))}
-                              {asList<string>(p.topicCategories).map((t, i) => (
-                                <span key={`tc-${i}`} className="px-3 py-1 bg-emerald-100 text-emerald-700 text-sm rounded-full">
-                                  {t}
-                                </span>
-                              ))}
-                            </div>
-                          </div>
-                        ) : null}
-
-                        {p.keywords ? (
-                          <div className="bg-slate-50 rounded-xl p-4">
-                            <h4 className="font-semibold text-slate-900 mb-3">Keywords</h4>
-                            <p className="text-sm text-slate-700">{p.keywords}</p>
-                          </div>
-                        ) : null}
-
-                        <div className="bg-slate-50 rounded-xl p-4">
-                          <h4 className="font-semibold text-slate-900 mb-3">Description</h4>
-                          <p className="text-sm text-slate-700 whitespace-pre-wrap">{p.description || '—'}</p>
-                        </div>
-
-                        <div className="bg-slate-50 rounded-xl p-4">
-                          <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
-                            <h4 className="font-semibold text-slate-900">Latest Videos</h4>
-                            <div className="text-xs text-slate-600">
-                              Showing {asList<VideoItem>(p.lastVideos).length || 0}
-                              {p.lastVideosLimit ? ` (limit: ${p.lastVideosLimit})` : ''}
-                            </div>
-                          </div>
-
-                          {asList<VideoItem>(p.lastVideos).length === 0 ? (
-                            <div className="text-sm text-slate-600">
-                              No videos in this payload. Use sync/search with <b>includeVideos</b>.
-                            </div>
-                          ) : (
-                            <div className="overflow-x-auto bg-white rounded-xl border border-slate-200">
-                              <table className="w-full text-sm">
-                                <thead className="text-xs text-slate-600">
-                                  <tr className="text-left border-b border-slate-200">
-                                    <th className="py-3 px-4">Title</th>
-                                    <th className="py-3 px-4 whitespace-nowrap">Published</th>
-                                    <th className="py-3 px-4 whitespace-nowrap">Duration</th>
-                                    <th className="py-3 px-4 whitespace-nowrap">Views</th>
-                                    <th className="py-3 px-4 whitespace-nowrap">Likes</th>
-                                    <th className="py-3 px-4 whitespace-nowrap">Comments</th>
-                                  </tr>
-                                </thead>
-                                <tbody className="divide-y divide-slate-200">
-                                  {asList<VideoItem>(p.lastVideos).map((v) => (
-                                    <tr key={v._id || v.videoId} className="hover:bg-slate-50">
-                                      <td className="py-3 px-4 min-w-[320px]">
-                                        {v.videoId ? (
-                                          <a
-                                            href={ytVideoUrl(v.videoId)}
-                                            target="_blank"
-                                            rel="noreferrer"
-                                            className="font-medium text-blue-600 hover:text-blue-700"
-                                          >
-                                            {v.title || '—'}
-                                          </a>
-                                        ) : (
-                                          v.title || '—'
-                                        )}
-                                      </td>
-                                      <td className="py-3 px-4 whitespace-nowrap text-slate-700">{formatDate(v.publishedAt)}</td>
-                                      <td className="py-3 px-4 whitespace-nowrap text-slate-700">{parseISODurationToHMS(v.duration)}</td>
-                                      <td className="py-3 px-4 whitespace-nowrap text-slate-700">{formatNumber(v.viewCount)}</td>
-                                      <td className="py-3 px-4 whitespace-nowrap text-slate-700">{formatNumber(v.likeCount)}</td>
-                                      <td className="py-3 px-4 whitespace-nowrap text-slate-700">{formatNumber(v.commentCount)}</td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
-                            </div>
-                          )}
-
-                          <div className="mt-3 text-xs text-slate-500">
-                            Note: <code className="px-1 py-0.5 bg-white border rounded">/youtube/getall</code> returns a light payload.
-                          </div>
-                        </div>
                       </div>
                     ) : null}
                   </div>
                 </div>
               );
             })}
+          </div>
+
+          {/* ✅ Pagination footer */}
+          <div className="px-6 py-4 border-t border-slate-200 bg-white flex items-center justify-between gap-4 flex-wrap">
+            <div className="text-sm text-slate-600">
+              Page <span className="font-semibold text-slate-900">{page}</span>
+              {total ? (
+                <>
+                  {' '}
+                  • <span className="font-semibold text-slate-900">{formatNumber(total)}</span> total
+                </>
+              ) : null}
+            </div>
+
+            <div className="flex gap-2">
+              <button
+                className="px-4 py-2 border border-slate-300 hover:bg-slate-50 text-slate-700 text-sm font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                onClick={() => loadSaved(Math.max(1, page - 1), filtersActive)}
+                disabled={listLoading || page <= 1}
+              >
+                Previous
+              </button>
+              <button
+                className="px-4 py-2 border border-slate-300 hover:bg-slate-50 text-slate-700 text-sm font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                onClick={() => loadSaved(page + 1, filtersActive)}
+                disabled={listLoading || !hasNext}
+              >
+                Next
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -1084,10 +1170,6 @@ export default function Page() {
                   </p>
                 </div>
               </div>
-
-              {detailsError ? (
-                <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-600">{detailsError}</div>
-              ) : null}
             </div>
 
             <div className="flex gap-3 p-6 border-t border-slate-200">
