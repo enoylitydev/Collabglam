@@ -6,10 +6,9 @@ import {
   HiSearch,
   HiChevronLeft,
   HiChevronRight,
-  HiOutlineUserAdd,
   HiOutlinePencil,
-  HiOutlineUsers,
-  HiOutlineDocumentText, // ✅ added
+  HiOutlineDocumentText,
+  HiCheckCircle,
 } from "react-icons/hi";
 import { get, post } from "@/lib/api";
 
@@ -22,117 +21,171 @@ interface Campaign {
   timeline: { startDate: string; endDate: string };
   isActive: number;
   budget: number;
-  applicantCount: number;
   campaignType?: string;
 
-  campaignStatus?: CampaignStatus; // open | paused
-  influencerWorking?: boolean; // ✅ from backend
+  shortlistedCount?: number;
+  campaignStatus?: CampaignStatus;
+  influencerWorking?: boolean;
   hasPendingUpdate?: boolean;
-}
 
-interface CampaignsResponse {
-  data: any[];
-  pagination: {
-    total: number;
-    page: number;
-    limit: number;
-    pages?: number;
-    totalPages?: number;
-  };
+  // ✅ store full campaign payload
+  raw?: any;
 }
 
 const TABLE_GRADIENT_FROM = "#FFA135";
 const TABLE_GRADIENT_TO = "#FF7236";
 
+const APPROVE_ENDPOINT = "/campaign/approve";
+
 const sliceText = (text: string, max = 40) =>
   text?.length > max ? `${text.slice(0, max - 3)}...` : text;
 
-export default function BrandCreatedCampaignsPage() {
+const safeDateLabel = (dateStr: string) => {
+  if (!dateStr) return "—";
+  const d = new Date(dateStr);
+  if (Number.isNaN(d.getTime())) return "—";
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  }).format(d);
+};
+
+const safeCurrency = (amt: number) =>
+  new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+  }).format(Number.isFinite(amt) ? amt : 0);
+
+export default function BrandReviewCampaignsPage() {
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
+
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
 
   const [currentPage, setCurrentPage] = useState(1);
   const [limit] = useState(10);
   const [totalPages, setTotalPages] = useState(1);
   const [debouncedSearch, setDebouncedSearch] = useState("");
 
-  // ✅ per-row status update loading
   const [statusUpdating, setStatusUpdating] = useState<Record<string, boolean>>(
     {}
   );
-const applyPendingPatch = (c: any) => {
-  const pending = c?.pendingUpdate?.status === "pending" && c?.pendingUpdate?.patch;
-  const patch = pending ? c.pendingUpdate.patch : null;
+  const [approveUpdating, setApproveUpdating] = useState<
+    Record<string, boolean>
+  >({});
 
-  return {
-    ...c,
-    ...(patch || {}),
-    // ✅ deep merge nested objects you care about
-    timeline: {
-      ...(c.timeline || {}),
-      ...(patch?.timeline || {}),
-    },
-    targetAudience: {
-      ...(c.targetAudience || {}),
-      ...(patch?.targetAudience || {}),
-    },
+  const applyPendingPatch = (c: any) => {
+    const pending =
+      c?.pendingUpdate?.status === "pending" && c?.pendingUpdate?.patch;
+    const patch = pending ? c.pendingUpdate.patch : null;
+
+    return {
+      ...c,
+      ...(patch || {}),
+      timeline: {
+        ...(c.timeline || {}),
+        ...(patch?.timeline || {}),
+      },
+      targetAudience: {
+        ...(c.targetAudience || {}),
+        ...(patch?.targetAudience || {}),
+      },
+    };
   };
-};
 
   const fetchCampaigns = useCallback(
     async (page: number, term: string) => {
       setLoading(true);
       setError(null);
+      setSuccess(null);
 
       try {
         const brandId =
           typeof window !== "undefined" ? localStorage.getItem("brandId") : null;
         if (!brandId) throw new Error("No brandId found in localStorage.");
 
-        const res = await get<CampaignsResponse>("/campaign/active", {
-          brandId,
+        // ✅ brandId is part of the URL: /campaign/created-by-admin/:brandId
+        const listEndpoint = `/campaign/created-by-admin/${encodeURIComponent(
+          brandId
+        )}`;
+
+        const res: any = await get(listEndpoint, {
           search: term.trim() || undefined,
           page,
           limit,
         });
 
-        const raw = Array.isArray(res?.data) ? res.data : [];
-        const active = raw.filter((c: any) => c.isActive === 1);
+        // ✅ Handles both:
+        // 1) get() returns axios response (res.data is body)
+        // 2) get() returns body directly
+        const body = res?.data && typeof res.data === "object" ? res.data : res;
 
-const normalized: Campaign[] = active.map((c: any) => {
-  const merged = applyPendingPatch(c);
+        // backend body: { success, page, limit, total, data: [...] }
+        const rawList: any[] = Array.isArray(body?.data)
+          ? body.data
+          : Array.isArray(body)
+          ? body
+          : [];
 
-  const rawStatus = String(merged.campaignStatus || "open")
-    .toLowerCase()
-    .trim();
+        const normalized: Campaign[] = rawList.map((c: any) => {
+          const merged = applyPendingPatch(c);
 
-  const safeStatus: CampaignStatus =
-    rawStatus === "paused" || rawStatus === "closed" ? "paused" : "open";
+          const rawStatus = String(merged.campaignStatus || "open")
+            .toLowerCase()
+            .trim();
 
-  const hasPendingUpdate =
-    c?.pendingUpdate?.status === "pending" && !!c?.pendingUpdate?.patch;
+          const safeStatus: CampaignStatus =
+            rawStatus === "paused" || rawStatus === "closed" ? "paused" : "open";
 
-  return {
-    id: merged.campaignsId ?? merged.id ?? merged._id,
-    productOrServiceName: merged.productOrServiceName ?? "",
-    description: merged.description ?? "",
-    timeline: merged.timeline ?? { startDate: "", endDate: "" },
-    isActive: merged.isActive ?? 0,
-    budget: merged.budget ?? 0,
-    applicantCount: merged.applicantCount ?? 0,
-    campaignType: merged.campaignType ?? "",
-    campaignStatus: safeStatus,
-    influencerWorking: Boolean(merged.influencerWorking),
-    hasPendingUpdate, // ✅
-  };
-});
+          const hasPendingUpdate =
+            c?.pendingUpdate?.status === "pending" && !!c?.pendingUpdate?.patch;
+
+          const shortlistCount =
+            merged.shortlistedCount ??
+            merged.shortListedCount ??
+            merged.shortlistedInfluencersCount ??
+            merged.shortlistedInfluencerCount ??
+            (Array.isArray(merged.shortlistedInfluencers)
+              ? merged.shortlistedInfluencers.length
+              : undefined) ??
+            (Array.isArray(merged.shortlisted)
+              ? merged.shortlisted.length
+              : undefined);
+
+          return {
+            id: merged.campaignsId ?? merged.id ?? merged._id,
+            productOrServiceName: merged.productOrServiceName ?? "",
+            description: merged.description ?? "",
+            timeline: merged.timeline ?? { startDate: "", endDate: "" },
+            isActive: merged.isActive ?? 0,
+            budget: merged.budget ?? 0,
+            campaignType: merged.campaignType ?? "",
+            shortlistedCount:
+              typeof shortlistCount === "number" ? shortlistCount : 0,
+            campaignStatus: safeStatus,
+            influencerWorking: Boolean(merged.influencerWorking),
+            hasPendingUpdate,
+            raw: merged,
+          };
+        });
 
         setCampaigns(normalized);
-        setTotalPages(res?.pagination?.totalPages ?? res?.pagination?.pages ?? 1);
+
+        // ✅ Use backend pagination numbers
+        const total = Number(body?.total ?? 0);
+        const respLimit = Number(body?.limit ?? limit);
+        const computedTotalPages = Math.max(
+          1,
+          Math.ceil(total / (respLimit || 1))
+        );
+        setTotalPages(computedTotalPages);
       } catch (err: any) {
-        setError(err.message || "Failed to load campaigns.");
+        setError(err.message || "Failed to load review campaigns.");
+        setCampaigns([]);
+        setTotalPages(1);
       } finally {
         setLoading(false);
       }
@@ -146,11 +199,10 @@ const normalized: Campaign[] = active.map((c: any) => {
       setCurrentPage(1);
       setDebouncedSearch(search.trim());
     }, 400);
-
     return () => clearTimeout(t);
   }, [search]);
 
-  // single source of truth for fetching
+  // fetch
   useEffect(() => {
     fetchCampaigns(currentPage, debouncedSearch);
   }, [fetchCampaigns, currentPage, debouncedSearch]);
@@ -158,7 +210,6 @@ const normalized: Campaign[] = active.map((c: any) => {
   const updateStatus = async (campaignId: string, next: CampaignStatus) => {
     const brandId =
       typeof window !== "undefined" ? localStorage.getItem("brandId") : null;
-
     if (!brandId) throw new Error("No brandId found in localStorage.");
 
     try {
@@ -167,7 +218,6 @@ const normalized: Campaign[] = active.map((c: any) => {
         campaignId,
         status: next,
       });
-
       return (res as any)?.data ?? res;
     } catch (err: any) {
       const msg =
@@ -182,18 +232,18 @@ const normalized: Campaign[] = active.map((c: any) => {
     const id = campaign.id;
     const prev = (campaign.campaignStatus || "open") as CampaignStatus;
 
-    // optimistic update
     setCampaigns((prevList) =>
       prevList.map((c) => (c.id === id ? { ...c, campaignStatus: next } : c))
     );
 
     setStatusUpdating((p) => ({ ...p, [id]: true }));
     setError(null);
+    setSuccess(null);
 
     try {
       await updateStatus(id, next);
+      setSuccess("Campaign status updated.");
     } catch (e: any) {
-      // rollback
       setCampaigns((prevList) =>
         prevList.map((c) => (c.id === id ? { ...c, campaignStatus: prev } : c))
       );
@@ -203,27 +253,40 @@ const normalized: Campaign[] = active.map((c: any) => {
     }
   };
 
-  const formatDate = (dateStr: string) =>
-    new Intl.DateTimeFormat("en-US", {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-    }).format(new Date(dateStr));
+  const approveCampaign = async (campaignId: string) => {
+    const brandId =
+      typeof window !== "undefined" ? localStorage.getItem("brandId") : null;
+    if (!brandId) throw new Error("No brandId found in localStorage.");
 
-  const formatCurrency = (amt: number) =>
-    new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency: "USD",
-    }).format(amt);
+    const res = await post(APPROVE_ENDPOINT, { brandId, campaignId });
+    return (res as any)?.data ?? res;
+  };
+
+  const onApprove = async (c: Campaign) => {
+    const id = c.id;
+    setApproveUpdating((p) => ({ ...p, [id]: true }));
+    setError(null);
+    setSuccess(null);
+
+    try {
+      await approveCampaign(id);
+      setSuccess("Campaign approved successfully.");
+      fetchCampaigns(currentPage, debouncedSearch);
+    } catch (e: any) {
+      setError(e?.message || "Failed to approve campaign.");
+    } finally {
+      setApproveUpdating((p) => ({ ...p, [id]: false }));
+    }
+  };
 
   return (
     <div className="p-6 min-h-screen">
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-3xl font-semibold">Created Campaigns</h1>
+        <h1 className="text-3xl font-semibold">Review Campaigns</h1>
       </div>
 
       {/* Search */}
-      <div className="mb-6 max-w-md">
+      <div className="mb-4 max-w-md">
         <div className="relative">
           <HiSearch
             className="absolute inset-y-0 left-3 my-auto text-gray-400"
@@ -239,10 +302,11 @@ const normalized: Campaign[] = active.map((c: any) => {
         </div>
       </div>
 
+      {error ? <p className="text-red-600 mb-3">{error}</p> : null}
+      {success ? <p className="text-green-700 mb-3">{success}</p> : null}
+
       {loading ? (
         <SkeletonTable />
-      ) : error ? (
-        <p className="text-red-600">{error}</p>
       ) : campaigns.length === 0 ? (
         <p className="text-gray-700">No campaigns found.</p>
       ) : (
@@ -250,8 +314,8 @@ const normalized: Campaign[] = active.map((c: any) => {
           data={campaigns}
           onChangeStatus={onChangeStatus}
           statusUpdating={statusUpdating}
-          formatDate={formatDate}
-          formatCurrency={formatCurrency}
+          approveUpdating={approveUpdating}
+          onApprove={onApprove}
         />
       )}
 
@@ -280,14 +344,14 @@ function TableView({
   data,
   onChangeStatus,
   statusUpdating,
-  formatDate,
-  formatCurrency,
+  approveUpdating,
+  onApprove,
 }: {
   data: Campaign[];
   onChangeStatus: (c: Campaign, next: "open" | "paused") => void;
   statusUpdating: Record<string, boolean>;
-  formatDate: (d: string) => string;
-  formatCurrency: (n: number) => string;
+  approveUpdating: Record<string, boolean>;
+  onApprove: (c: Campaign) => void;
 }) {
   return (
     <div
@@ -311,7 +375,7 @@ function TableView({
                   "Type",
                   "Budget",
                   "Campaign Timeline",
-                  "Influencers List",
+                  "Shortlisted Influencers",
                   "Status",
                   "Actions",
                 ].map((h) => (
@@ -329,6 +393,8 @@ function TableView({
               {data.map((c, idx) => {
                 const status = (c.campaignStatus || "open") as "open" | "paused";
                 const isBusy = !!statusUpdating[c.id];
+                const isApproving = !!approveUpdating[c.id];
+                const shortlistCount = c.shortlistedCount ?? 0;
 
                 return (
                   <tr
@@ -340,7 +406,6 @@ function TableView({
                       "hover:bg-gradient-to-r hover:from-[#FFA135]/10 hover:to-[#FF7236]/10",
                     ].join(" ")}
                   >
-                    {/* Campaign */}
                     <td className="px-6 py-4 align-top">
                       <div className="text-center">
                         <Link
@@ -355,68 +420,52 @@ function TableView({
                       </div>
                     </td>
 
-                    {/* Type */}
                     <td className="px-6 py-4 whitespace-nowrap align-top text-center">
                       {c.campaignType && c.campaignType.trim() !== ""
                         ? sliceText(c.campaignType, 30)
                         : "—"}
                     </td>
 
-                    {/* Budget */}
                     <td className="px-6 py-4 whitespace-nowrap align-top text-center font-medium text-gray-900">
-                      {formatCurrency(c.budget)}
+                      {safeCurrency(c.budget)}
                     </td>
 
-                    {/* Timeline */}
                     <td className="px-6 py-4 whitespace-nowrap align-top text-center">
-                      {formatDate(c.timeline.startDate)} –{" "}
-                      {formatDate(c.timeline.endDate)}
+                      {safeDateLabel(c.timeline?.startDate)} –{" "}
+                      {safeDateLabel(c.timeline?.endDate)}
                     </td>
 
-                    {/* Influencers List */}
                     <td className="px-6 py-4 align-top text-center">
-                      {(c.applicantCount ?? 0) > 0 ? (
-                        <Link
-                          href={`/brand/created-campaign/applied-inf?id=${c.id}`}
-                          className="group inline-flex items-center gap-2 rounded-full border border-gray-200 bg-gray-50 px-4 py-2 text-sm font-semibold text-gray-900
-                 hover:border-[#FF7236] hover:bg-white hover:shadow-sm transition
-                 focus:outline-none focus:ring-2 focus:ring-[#FF7236]"
-                          title="View influencers"
-                          aria-label={`View influencers (${c.applicantCount ?? 0})`}
-                        >
-                          <HiOutlineUsers
-                            size={18}
-                            className="opacity-70 group-hover:text-[#FF7236]"
-                          />
-                          <span className="group-hover:underline underline-offset-2">
-                            Influencers
-                          </span>
-
-                          <span className="ml-1 inline-flex min-w-[2rem] justify-center rounded-full bg-gray-900 px-2 py-0.5 text-xs font-bold text-white group-hover:bg-[#FF7236]">
-                            {c.applicantCount ?? 0}
-                          </span>
-
-                          <HiChevronRight
-                            size={18}
-                            className="opacity-60 group-hover:opacity-100"
-                          />
-                        </Link>
-                      ) : (
-                        <span
-                          className="inline-flex items-center gap-2 rounded-full bg-gray-100 px-4 py-2 text-sm font-semibold text-gray-400"
-                          title="No influencers yet"
-                          aria-label="No influencers yet"
-                        >
-                          <HiOutlineUsers size={18} className="opacity-60" />
-                          <span>Influencers</span>
-                          <span className="ml-1 inline-flex min-w-[2rem] justify-center rounded-full bg-gray-300 px-2 py-0.5 text-xs font-bold text-white">
-                            0
-                          </span>
+                      <Link
+                        href={`/brand/created-campaign/shortlisted-inf?id=${c.id}`}
+                        className={[
+                          "group inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-semibold transition",
+                          shortlistCount > 0
+                            ? "border-gray-200 bg-gray-50 text-gray-900 hover:border-[#FF7236] hover:bg-white hover:shadow-sm"
+                            : "border-gray-200 bg-gray-100 text-gray-500 hover:bg-white hover:border-[#FF7236]",
+                        ].join(" ")}
+                        title="View shortlisted influencers"
+                        aria-label={`View shortlisted influencers (${shortlistCount})`}
+                      >
+                        <HiOutlineDocumentText
+                          size={18}
+                          className="opacity-70 group-hover:text-[#FF7236]"
+                        />
+                        <span className="group-hover:underline underline-offset-2">
+                          Shortlisted
                         </span>
-                      )}
+
+                        <span className="ml-1 inline-flex min-w-[2rem] justify-center rounded-full bg-gray-900 px-2 py-0.5 text-xs font-bold text-white group-hover:bg-[#FF7236]">
+                          {shortlistCount}
+                        </span>
+
+                        <HiChevronRight
+                          size={18}
+                          className="opacity-60 group-hover:opacity-100"
+                        />
+                      </Link>
                     </td>
 
-                    {/* Status (open/paused) */}
                     <td className="px-6 py-4 whitespace-nowrap align-top text-center">
                       <select
                         value={status}
@@ -437,25 +486,29 @@ function TableView({
                       </select>
                     </td>
 
-                    {/* Actions */}
                     <td className="px-6 py-4 whitespace-nowrap align-top text-center">
                       <div className="flex items-center justify-center gap-2 flex-wrap">
                         <Link
-                          href={`/brand/add-edit-campaign?id=${c.id}`}
+                          href={`/brand/edit-review-campaign?id=${c.id}`}
                           className="inline-flex items-center bg-white border border-gray-900 text-gray-900 hover:bg-gray-50 px-3 py-2 rounded-lg text-sm font-semibold"
                         >
                           <HiOutlinePencil className="mr-1" size={18} />
                           Edit
                         </Link>
 
-                        <Link
-                          href={`/brand/browse-influencer?campaignId=${c.id}`}
-                          className="inline-flex items-center bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white hover:opacity-90 px-3 py-2 rounded-lg text-sm font-semibold"
+                        <button
+                          onClick={() => onApprove(c)}
+                          disabled={isApproving}
+                          className={[
+                            "inline-flex items-center px-3 py-2 rounded-lg text-sm font-semibold text-white",
+                            "bg-gradient-to-r from-[#FFA135] to-[#FF7236] hover:opacity-90",
+                            isApproving ? "opacity-60 cursor-wait" : "",
+                          ].join(" ")}
+                          title="Approve campaign"
                         >
-                          <HiOutlineUserAdd className="mr-1" size={18} />
-                          Invite
-                        </Link>
-
+                          <HiCheckCircle className="mr-1" size={18} />
+                          {isApproving ? "Approving..." : "Approve"}
+                        </button>
                       </div>
                     </td>
                   </tr>
