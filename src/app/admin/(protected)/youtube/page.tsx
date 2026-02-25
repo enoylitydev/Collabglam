@@ -1,6 +1,6 @@
 'use client';
-
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { ChevronDown, ExternalLink, Mail, RefreshCw, Search, X, Download, Info } from 'lucide-react';
 import swal from 'sweetalert';
 import { post } from '@/lib/api';
@@ -391,25 +391,30 @@ function MultiCountrySelect({
 }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState('');
-  const wrapRef = useRef<HTMLDivElement | null>(null);
+  const btnRef = useRef<HTMLButtonElement | null>(null);
 
-  useEffect(() => {
-    function onDoc(e: MouseEvent) {
-      if (!open) return;
-      const t = e.target as any;
-      if (wrapRef.current && !wrapRef.current.contains(t)) setOpen(false);
-    }
-    document.addEventListener('mousedown', onDoc);
-    return () => document.removeEventListener('mousedown', onDoc);
-  }, [open]);
+  const [pos, setPos] = useState<{ left: number; top: number; width: number } | null>(null);
 
   const filtered = useMemo(() => {
     const s = q.trim().toLowerCase();
     if (!s) return COUNTRY_OPTIONS;
     return COUNTRY_OPTIONS.filter(
-      (c) => c.code.toLowerCase().includes(s) || c.name.toLowerCase().includes(s),
+      (c) => c.code.toLowerCase().includes(s) || c.name.toLowerCase().includes(s)
     );
   }, [q]);
+
+  const summary = value?.length ? value.join(', ') : 'All';
+
+  function updatePos() {
+    const el = btnRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    setPos({
+      left: r.left,
+      top: r.bottom + 8, // gap
+      width: r.width,
+    });
+  }
 
   function toggle(code: string) {
     const next = new Set(value || []);
@@ -418,74 +423,120 @@ function MultiCountrySelect({
     onChange(Array.from(next).sort());
   }
 
-  const summary = value?.length ? value.join(', ') : 'All';
+  useEffect(() => {
+    if (!open) return;
+
+    updatePos();
+
+    const onReflow = () => updatePos();
+
+    // capture scroll on any parent container too
+    window.addEventListener('scroll', onReflow, true);
+    window.addEventListener('resize', onReflow);
+
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    window.addEventListener('keydown', onKey);
+
+    return () => {
+      window.removeEventListener('scroll', onReflow, true);
+      window.removeEventListener('resize', onReflow);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  const overlay =
+    open && pos && typeof document !== 'undefined'
+      ? createPortal(
+          <div className="fixed inset-0 z-[9999]">
+            {/* backdrop (click to close) */}
+            <div className="absolute inset-0 bg-black/10" onClick={() => setOpen(false)} />
+
+            {/* panel */}
+            <div
+              className="fixed rounded-xl border border-slate-200 bg-white shadow-2xl overflow-hidden"
+              style={{
+                left: pos.left,
+                top: pos.top,
+                width: pos.width,
+                maxHeight: 'min(70vh, 520px)',
+              }}
+            >
+              <div className="p-3 border-b border-slate-200">
+                <input
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  value={q}
+                  onChange={(e) => setQ(e.target.value)}
+                  placeholder="Search"
+                  autoFocus
+                />
+                <div className="mt-2 flex items-center justify-between">
+                  <button
+                    type="button"
+                    className="text-xs font-semibold text-slate-700 hover:underline"
+                    onClick={() => onChange([])}
+                  >
+                    Clear
+                  </button>
+                  <span className="text-xs text-slate-500">{value.length} selected</span>
+                </div>
+              </div>
+
+              <div className="max-h-[420px] overflow-auto p-2">
+                {filtered.map((c) => {
+                  const checked = value.includes(c.code);
+                  return (
+                    <label
+                      key={c.code}
+                      className="flex items-center gap-2 px-2 py-2 rounded-lg hover:bg-slate-50 cursor-pointer"
+                    >
+                      <Checkbox checked={checked} onCheckedChange={() => toggle(c.code)} />
+                      <span className="text-sm text-slate-800">{countryLabel(c.code)}</span>
+                    </label>
+                  );
+                })}
+
+                {!filtered.length ? (
+                  <div className="px-2 py-6 text-center text-sm text-slate-500">No countries found</div>
+                ) : null}
+              </div>
+
+              <div className="p-3 border-t border-slate-200 bg-slate-50">
+                <button
+                  type="button"
+                  className="w-full px-3 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-sm font-semibold"
+                  onClick={() => setOpen(false)}
+                >
+                  Done
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )
+      : null;
 
   return (
-    <div className="relative" ref={wrapRef}>
+    <>
       <button
+        ref={btnRef}
         type="button"
         className="w-full px-3 py-3 border border-slate-300 rounded-xl bg-white text-left flex items-center justify-between gap-2 hover:bg-slate-50"
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => {
+          setOpen((v) => {
+            const next = !v;
+            if (!v && next) updatePos();
+            return next;
+          });
+        }}
       >
         <span className="text-sm text-slate-800 truncate">{summary}</span>
         <ChevronDown className={`w-4 h-4 text-slate-500 transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
 
-      {open ? (
-        <div className="absolute z-30 mt-2 w-full rounded-xl border border-slate-200 bg-white shadow-lg overflow-hidden">
-          <div className="p-3 border-b border-slate-200">
-            <input
-              className="w-full px-3 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder="Search country (US, India...)"
-            />
-            <div className="mt-2 flex items-center justify-between">
-              <button
-                type="button"
-                className="text-xs font-semibold text-slate-700 hover:underline"
-                onClick={() => onChange([])}
-              >
-                Clear
-              </button>
-              <span className="text-xs text-slate-500">{value.length} selected</span>
-            </div>
-          </div>
-
-          <div className="max-h-64 overflow-auto p-2">
-            {filtered.map((c) => {
-              const checked = value.includes(c.code);
-              return (
-                <label
-                  key={c.code}
-                  className="flex items-center gap-2 px-2 py-2 rounded-lg hover:bg-slate-50 cursor-pointer"
-                >
-                  <Checkbox
-                    checked={checked}
-                    onCheckedChange={(v: any) => toggle(c.code)}
-                  />
-                  <span className="text-sm text-slate-800">{countryLabel(c.code)}</span>
-                </label>
-              );
-            })}
-
-            {!filtered.length ? (
-              <div className="px-2 py-6 text-center text-sm text-slate-500">No countries found</div>
-            ) : null}
-          </div>
-
-          <div className="p-3 border-t border-slate-200 bg-slate-50">
-            <button
-              type="button"
-              className="w-full px-3 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-sm font-semibold"
-              onClick={() => setOpen(false)}
-            >
-              Done
-            </button>
-          </div>
-        </div>
-      ) : null}
-    </div>
+      {overlay}
+    </>
   );
 }
 

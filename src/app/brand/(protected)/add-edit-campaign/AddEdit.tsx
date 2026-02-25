@@ -426,12 +426,19 @@ export default function BrandCreateCampaignPage() {
     if (isEditMode || draftLoaded) return;
     if (!countries.length || !categories.length) return;
 
-    const brandId = typeof window !== "undefined" ? localStorage.getItem("brandId") || "" : "";
+    const brandId =
+      typeof window !== "undefined" ? localStorage.getItem("brandId") || "" : "";
     if (!brandId) return;
 
     get<CampaignEditPayload>(`/campaign/draft?brandId=${brandId}`)
       .then((draft) => {
         if (!draft || draft.isDraft !== 1) return;
+
+        // ✅ NEW: Skip drafts created by admin
+        const adminCreated =
+          draft.approvalMode === "admin_review" || draft.createdBy?.role === "admin";
+        if (adminCreated) return;
+
         hydrateFromCampaign(draft);
         setDraftLoaded(true);
 
@@ -602,14 +609,9 @@ export default function BrandCreateCampaignPage() {
 
   const handlePreview = () => setIsPreviewOpen(true);
 
-  const handleConfirmReadiness = async () => {
-    const targetCampaignId = campaignId || loadedCampaignsId; // ✅ Use fallback ID
-  };
 
   // ── MAIN SUBMIT (Create / Update) ───────────────────────────
-  const handleSubmit = async (e?: React.FormEvent, markReady: boolean = false) => {
-    if (e) e.preventDefault();
-    setShowRequiredHints(false);
+  const handleSubmit = async () => {
 
     const finalCampaignType = campaignType === "Other" ? customCampaignType.trim() : campaignType;
 
@@ -679,19 +681,6 @@ export default function BrandCreateCampaignPage() {
       if (targetCampaignId) {
         // UPDATE Existing Campaign or Draft
         await post(`/campaign/update?id=${targetCampaignId}`, formData);
-
-        // ✅ NEW: If marking ready, trigger the readiness API AFTER saving successfully!
-        if (markReady) {
-          await post("/campaign/confirm-readiness", { campaignsId: targetCampaignId });
-          toast({
-            icon: "success",
-            title: "Ready for Publishing",
-            text: "Changes saved! The admin has been notified to launch your campaign.",
-          });
-          setIsPreviewOpen(false);
-          router.push("/brand/created-campaign"); // Route to your campaigns list
-          return; // Exit out so normal toasts don't double fire
-        }
 
         // Customizing normal save toast message based on workflow mode
         if (isAdminCreated) {
@@ -1461,25 +1450,17 @@ export default function BrandCreateCampaignPage() {
                 <>
                   <Button
                     variant="secondary"
-                    onClick={(e) => handleSubmit(e, false)} // ✅ Pass false
+                    onClick={() => handleSubmit()}
                     disabled={isSubmitting}
                     size="lg"
                     className="bg-gray-100 hover:bg-gray-200 text-gray-800"
                   >
                     {isSubmitting ? "Saving..." : "Save Changes"}
                   </Button>
-                  <Button
-                    onClick={(e) => handleSubmit(e, true)} // ✅ Pass TRUE for markReady
-                    disabled={isSubmitting}
-                    size="lg"
-                    className="bg-green-600 hover:bg-green-700 text-white font-semibold transition-all duration-200 shadow-md hover:scale-105"
-                  >
-                    {isSubmitting ? "Processing..." : "Approve & Mark Ready"}
-                  </Button>
                 </>
               ) : (
                 <button
-                  onClick={(e) => handleSubmit(e, false)}
+                  onClick={() => handleSubmit()}
                   disabled={isSubmitting}
                   className={`
                     inline-flex items-center justify-center

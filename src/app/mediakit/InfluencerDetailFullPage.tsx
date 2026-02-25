@@ -1,8 +1,8 @@
 'use client';
 
-import React, { useMemo, useState, useEffect, useRef } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { ArrowLeft, AlertCircle, BarChart3, Send, MessageSquare, Copy, Check } from 'lucide-react';
+import { ArrowLeft, AlertCircle, BarChart3, Send, Copy, Check } from 'lucide-react';
 import Swal from 'sweetalert2';
 
 import { ProfileHeader } from '../brand/(protected)/browse-influencer/detail-panel/ProfileHeader';
@@ -15,7 +15,7 @@ import { BrandAffinity } from '../brand/(protected)/browse-influencer/detail-pan
 import { MiniUserSection } from '../brand/(protected)/browse-influencer/detail-panel/MiniUserSection';
 
 import type { ReportResponse, StatHistoryEntry, Platform } from '../brand/(protected)/browse-influencer/types';
-import { post, post2 } from '@/lib/api';
+import { post } from '@/lib/api';
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -36,57 +36,7 @@ type Props = {
   onChangeCalc: (calc: 'median' | 'average') => void;
 };
 
-/** /email/status response shape */
-type EmailStatusResponse =
-  | { status: 0 | 1; email?: string; handle?: string; platform?: Platform }
-  | { status: 'error'; message?: string };
-
-/** /emails/invitation response shape */
-type InvitationResponse =
-  | {
-      status: 'success';
-      message: string;
-      isExistingInfluencer: true;
-      influencerId: string;
-      influencerName: string;
-      brandName: string;
-      emailSent: boolean;
-      emailMeta?: {
-        recipientEmail: string;
-        threadId: string;
-        messageId: string;
-        subject: string;
-        campaignId: string | null;
-      };
-    }
-  | {
-      status: 'success';
-      message: string;
-      isExistingInfluencer: false;
-      brandName: string;
-      invitationId: string;
-      emailSent: boolean;
-      emailMeta?: {
-        recipientEmail: string;
-        threadId: string;
-        messageId: string;
-        subject: string;
-        campaignId: string | null;
-      };
-      isNewInvitation?: boolean;
-    }
-  | { status: 'error'; message: string };
-
-/** /admin/checkstatus response shape */
-type AdminCheckStatusResponse = {
-  status: 0 | 1;
-  handle?: string;
-  email?: string | null;
-  platform?: Platform | string;
-  message?: string;
-};
-
-/** ✅ NEW: /admin/invitations/store response shape */
+/** ✅ /admin-invitations/send response shape */
 type StoreInvitationResponse =
   | {
       status: 'success';
@@ -104,7 +54,6 @@ export default function InfluencerDetailFullPage({
   data,
   raw,
   platform,
-  emailExists,
   handle,
   lastFetchedAt,
   onRefreshReport,
@@ -131,9 +80,6 @@ export default function InfluencerDetailFullPage({
   const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(lastFetchedAt || null);
   useEffect(() => setLastUpdatedAt(lastFetchedAt || null), [lastFetchedAt]);
 
-  const [hasAnyEmail, setHasAnyEmail] = useState<boolean | null>(null);
-  const [checkingEmail, setCheckingEmail] = useState(false);
-
   const formattedLastUpdated = lastUpdatedAt ? new Date(lastUpdatedAt).toLocaleString() : 'Not fetched yet';
 
   const statHistory = useMemo<StatHistoryEntry[]>(() => {
@@ -141,96 +87,14 @@ export default function InfluencerDetailFullPage({
     return hist?.slice(-12);
   }, [data]);
 
-  const isEmailStatusSuccess = (
-    resp: EmailStatusResponse
-  ): resp is { status: 0 | 1; email?: string; handle?: string; platform?: Platform } =>
-    typeof (resp as any)?.status === 'number';
-
-  const resolveCreatorEmail = async (
-    safeHandle: string,
-    normalizedPlatform: Platform
-  ): Promise<{ email: string | null; source: 'status' | 'admin' | 'both' | 'none' }> => {
-    const [statusResult, adminResult] = await Promise.allSettled([
-      post2<EmailStatusResponse>('/email/status', { handle: safeHandle, platform: normalizedPlatform }),
-      post<AdminCheckStatusResponse>('/admin/checkstatus', { handle: safeHandle, platform: normalizedPlatform }),
-    ]);
-
-    let emailFromStatus: string | null = null;
-    let emailFromAdmin: string | null = null;
-
-    if (statusResult.status === 'fulfilled') {
-      const statusResp = statusResult.value;
-      if (isEmailStatusSuccess(statusResp) && statusResp.status === 1 && statusResp.email) {
-        emailFromStatus = statusResp.email;
-      }
-    }
-
-    if (adminResult.status === 'fulfilled') {
-      const adminResp = adminResult.value;
-      if (typeof adminResp.status === 'number' && adminResp.status === 1 && adminResp.email) {
-        emailFromAdmin = adminResp.email;
-      }
-    }
-
-    if (emailFromStatus && emailFromAdmin && emailFromStatus === emailFromAdmin) return { email: emailFromStatus, source: 'both' };
-    if (emailFromStatus) return { email: emailFromStatus, source: 'status' };
-    if (emailFromAdmin) return { email: emailFromAdmin, source: 'admin' };
-    return { email: null, source: 'none' };
-  };
-
-  // Pre-check email when handle/platform exists
-  useEffect(() => {
-    const normalizedPlatform = (platform ?? '').toLowerCase() as Platform;
-    if (!['youtube', 'instagram', 'tiktok'].includes(normalizedPlatform)) {
-      setHasAnyEmail(null);
-      return;
-    }
-
-    const rawHandle = handle ? String(handle).trim() : '';
-    const safeHandle = rawHandle ? '@' + rawHandle.replace(/^@/, '').trim().toLowerCase() : '';
-
-    if (!safeHandle || !/^[A-Za-z0-9._-]+$/.test(safeHandle.replace(/^@/, ''))) {
-      setHasAnyEmail(null);
-      return;
-    }
-
-    let cancelled = false;
-    setCheckingEmail(true);
-
-    (async () => {
-      try {
-        const { email } = await resolveCreatorEmail(safeHandle, normalizedPlatform);
-        if (!cancelled) setHasAnyEmail(!!email);
-      } catch {
-        if (!cancelled) setHasAnyEmail(null);
-      } finally {
-        if (!cancelled) setCheckingEmail(false);
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [handle, platform]);
-
   const hasUserId = Boolean(data?.profile?.userId);
   const canAct = hasUserId && !loading && !sendingInvite && !refreshing;
 
   const [dropdownOpen, setDropdownOpen] = useState(false);
-  const dropdownRef = useRef<HTMLDivElement | null>(null);
 
   const [campaigns, setCampaigns] = useState<{ campaignsId: string; productOrServiceName?: string }[]>([]);
   const [campaignsLoading, setCampaignsLoading] = useState(false);
   const [selectedCampaignIds, setSelectedCampaignIds] = useState<string[]>(campaignId ? [campaignId] : []);
-
-  useEffect(() => {
-    const onDown = (ev: MouseEvent) => {
-      if (!dropdownRef.current) return;
-      if (!dropdownRef.current.contains(ev.target as Node)) setDropdownOpen(false);
-    };
-    if (dropdownOpen) document.addEventListener('mousedown', onDown);
-    return () => document.removeEventListener('mousedown', onDown);
-  }, [dropdownOpen]);
 
   const toggleCampaign = (id: string, checked: boolean) => {
     setSelectedCampaignIds((prev) => (checked ? Array.from(new Set([...prev, id])) : prev.filter((p) => p !== id)));
@@ -240,7 +104,6 @@ export default function InfluencerDetailFullPage({
   useEffect(() => {
     const bId = (brandId || '').trim();
     const aId = (adminId || '').trim();
-
     if (!aId && !bId) return;
 
     let cancelled = false;
@@ -278,7 +141,7 @@ export default function InfluencerDetailFullPage({
     await sendInvitationsForCampaigns(selectedCampaignIds);
   };
 
-  /** ✅ UPDATED: send invitation uses backend /admin/invitations/store */
+  /** ✅ Send invite (stores invitations) */
   const sendInvitationsForCampaigns = async (campaignIds: string[]) => {
     if (!canAct || sendingInvite) return;
 
@@ -300,7 +163,7 @@ export default function InfluencerDetailFullPage({
       return;
     }
 
-    // ✅ require brandId OR adminId (backend requires one)
+    // ✅ require brandId OR adminId
     const bId = (brandId || '').trim();
     const aId = (adminId || '').trim();
     if (!bId && !aId) {
@@ -314,7 +177,7 @@ export default function InfluencerDetailFullPage({
       const payload: any = {
         userId: modashUserId,
         platform: normalizedPlatform,
-        campaignsIds: ids, // backend supports campaignsIds/campaignsId/campaignId
+        campaignsIds: ids,
       };
 
       if (aId) payload.adminId = aId;
@@ -338,15 +201,14 @@ export default function InfluencerDetailFullPage({
       if (stored > 0) {
         let msg = `Stored ${stored} invitation(s).`;
         if (missing.length) msg += ` Missing campaigns: ${missing.join(', ')}`;
-        await Swal.fire('Invitation stored', msg, 'success');
+        await Swal.fire('Invite stored', msg, 'success');
       } else {
         const msg = missing.length
-          ? `No invitations stored. Missing campaigns: ${missing.join(', ')}`
-          : 'No invitations stored.';
+          ? `No invites stored. Missing campaigns: ${missing.join(', ')}`
+          : 'No invites stored.';
         await Swal.fire('Nothing stored', msg, 'info');
       }
 
-      // keep your existing redirect
       router.push('/brand/invited');
     } catch (err: any) {
       await Swal.fire('Error', err?.message || 'Failed to store invitations', 'error');
@@ -354,8 +216,6 @@ export default function InfluencerDetailFullPage({
       setSendingInvite(false);
     }
   };
-
-  const effectiveHasEmail = hasAnyEmail !== null ? hasAnyEmail : emailExists === true;
 
   const headerProfile = data?.profile?.profile;
   const displayName =
@@ -382,70 +242,6 @@ export default function InfluencerDetailFullPage({
       await Swal.fire('Refresh failed', err?.message || 'Failed to refresh data', 'error');
     } finally {
       setRefreshing(false);
-    }
-  };
-
-  // (unchanged) email send flow — still needs brandId (your existing backend)
-  const handleMessageNow = async (e: React.MouseEvent) => {
-    e.preventDefault();
-    if (!canAct) return;
-
-    if (!brandId) {
-      await Swal.fire('Missing brand', 'Missing brandId.', 'warning');
-      return;
-    }
-
-    const normalizedPlatform = (platform ?? '').toLowerCase() as Platform;
-
-    const rawHandle = handle ? String(handle).trim() : '';
-    const safeHandle = rawHandle ? '@' + rawHandle.replace(/^@/, '').trim().toLowerCase() : '';
-
-    if (!safeHandle || !/^[A-Za-z0-9._-]+$/.test(safeHandle.replace(/^@/, ''))) {
-      await Swal.fire('Invalid handle', 'Invalid or missing handle.', 'warning');
-      return;
-    }
-
-    try {
-      setSendingInvite(true);
-
-      const { email: creatorEmail } = await resolveCreatorEmail(safeHandle, normalizedPlatform);
-      if (!creatorEmail) {
-        await Swal.fire(
-          'No email found',
-          'We could not find a contact email for this creator. Try sending an invitation.',
-          'warning'
-        );
-        return;
-      }
-
-      const resp = await post<InvitationResponse>('/emails/invitation', {
-        email: creatorEmail,
-        brandId,
-        campaignId: campaignId || undefined,
-        handle: safeHandle,
-        platform: normalizedPlatform,
-      });
-
-      if (!resp) {
-        await Swal.fire('Error', 'No response from server.', 'error');
-        return;
-      }
-
-      if (resp.status === 'error') {
-        await Swal.fire('Error', resp.message || 'Failed to send email.', 'error');
-        return;
-      }
-
-      const successTitle = resp.isExistingInfluencer ? 'Message sent' : 'Invitation sent';
-      const successText = resp.isExistingInfluencer
-        ? 'We’ve emailed this creator. They can reply directly.'
-        : 'We’ve sent your invitation to this creator.';
-
-      await Swal.fire(successTitle, successText, 'success');
-    } catch (err: any) {
-      await Swal.fire('Error', err?.message || 'Failed to send.', 'error');
-    } finally {
-      setSendingInvite(false);
     }
   };
 
@@ -544,98 +340,81 @@ export default function InfluencerDetailFullPage({
                     <span>Share media kit</span>
                   </button>
 
-                  {effectiveHasEmail ? (
-                    <button
-                      onClick={handleMessageNow}
-                      disabled={!canAct}
-                      className={`inline-flex items-center gap-2 rounded-xl px-3 py-1.5 text-sm font-medium text-white transition-opacity shadow-sm
-                        ${canAct ? 'bg-gradient-to-r from-[#FFA135] to-[#FF7236] hover:opacity-90' : 'bg-gray-300 cursor-not-allowed opacity-70'}`}
-                    >
-                      {sendingInvite ? (
-                        <>
-                          <MessageSquare className="h-4 w-4 animate-pulse" />
-                          Sending…
-                        </>
-                      ) : (
-                        <>
-                          <MessageSquare className="h-4 w-4" />
-                          Send Invitation
-                        </>
-                      )}
-                    </button>
-                  ) : (
-                    <DropdownMenu open={dropdownOpen} onOpenChange={(v) => setDropdownOpen(v)}>
-                      <DropdownMenuTrigger asChild>
+                  {/* ✅ Always show Campaign dropdown + Send Invite (no Send Invitation button anymore) */}
+                  <DropdownMenu open={dropdownOpen} onOpenChange={(v) => setDropdownOpen(v)}>
+                    <DropdownMenuTrigger asChild>
+                      <button
+                        disabled={!canAct}
+                        className={`inline-flex items-center gap-2 rounded-xl px-3 py-1.5 text-sm font-medium text-white transition-opacity shadow-sm
+                          ${canAct ? 'bg-gradient-to-r from-[#FFA135] to-[#FF7236] hover:opacity-90' : 'bg-gray-300 cursor-not-allowed opacity-70'}`}
+                      >
+                        <Send className="h-4 w-4" />
+                        Send Invite
+                      </button>
+                    </DropdownMenuTrigger>
+
+                    <DropdownMenuContent align="end" className="w-72 bg-white ring-1 ring-gray-200 shadow-lg">
+                      <DropdownMenuLabel>Campaigns</DropdownMenuLabel>
+
+                      <div className="space-y-1 max-h-56 overflow-auto py-1">
+                        {campaigns.length === 0 && !campaignsLoading && (
+                          <div className="px-2 text-xs text-gray-500">No campaigns</div>
+                        )}
+                        {campaignsLoading && <div className="px-2 text-xs text-gray-500">Loading campaigns…</div>}
+
+                        {campaigns.map((c) => {
+                          const checked = selectedCampaignIds.includes(c.campaignsId);
+                          return (
+                            <div
+                              key={c.campaignsId}
+                              role="menuitem"
+                              className="relative pl-10 text-sm cursor-pointer select-none flex items-center gap-2 py-1"
+                              onClick={() => toggleCampaign(c.campaignsId, !checked)}
+                            >
+                              <span
+                                className={`absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 flex items-center justify-center rounded ${
+                                  checked
+                                    ? 'border border-orange-400 bg-orange-50 text-orange-500'
+                                    : 'border border-gray-200 bg-white text-transparent'
+                                }`}
+                              >
+                                {checked ? <Check className="h-3 w-3" /> : null}
+                              </span>
+
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={(e) => toggleCampaign(c.campaignsId, e.target.checked)}
+                                className="sr-only"
+                              />
+
+                              <span>{c.productOrServiceName || c.campaignsId}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      <div className="mt-3 flex justify-end gap-2 px-1">
                         <button
+                          type="button"
+                          onClick={() => setDropdownOpen(false)}
+                          className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                        >
+                          Cancel
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={handleSendFromDropdown}
                           disabled={!canAct}
                           className={`inline-flex items-center gap-2 rounded-xl px-3 py-1.5 text-sm font-medium text-white transition-opacity shadow-sm
                             ${canAct ? 'bg-gradient-to-r from-[#FFA135] to-[#FF7236] hover:opacity-90' : 'bg-gray-300 cursor-not-allowed opacity-70'}`}
                         >
-                          <Send className="h-4 w-4" />
-                          Invite
+                          {sendingInvite ? 'Sending…' : 'Send Invite'}
                         </button>
-                      </DropdownMenuTrigger>
-
-                      <DropdownMenuContent align="end" className="w-72 bg-white ring-1 ring-gray-200 shadow-lg">
-                        <DropdownMenuLabel>Campaigns</DropdownMenuLabel>
-
-                        <div className="space-y-1 max-h-56 overflow-auto py-1">
-                          {campaigns.length === 0 && !campaignsLoading && (
-                            <div className="px-2 text-xs text-gray-500">No campaigns</div>
-                          )}
-                          {campaignsLoading && <div className="px-2 text-xs text-gray-500">Loading campaigns…</div>}
-
-                          {campaigns.map((c) => {
-                            const checked = selectedCampaignIds.includes(c.campaignsId);
-                            return (
-                              <div
-                                key={c.campaignsId}
-                                role="menuitem"
-                                className="relative pl-10 text-sm cursor-pointer select-none flex items-center gap-2 py-1"
-                                onClick={() => toggleCampaign(c.campaignsId, !checked)}
-                              >
-                                <span
-                                  className={`absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 flex items-center justify-center rounded ${
-                                    checked
-                                      ? 'border border-orange-400 bg-orange-50 text-orange-500'
-                                      : 'border border-gray-200 bg-white text-transparent'
-                                  }`}
-                                >
-                                  {checked ? <Check className="h-3 w-3" /> : null}
-                                </span>
-                                <input
-                                  type="checkbox"
-                                  checked={checked}
-                                  onChange={(e) => toggleCampaign(c.campaignsId, e.target.checked)}
-                                  className="sr-only"
-                                />
-                                <span>{c.productOrServiceName || c.campaignsId}</span>
-                              </div>
-                            );
-                          })}
-                        </div>
-
-                        <div className="mt-3 flex justify-end gap-2 px-1">
-                          <button
-                            type="button"
-                            className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
-                          >
-                            Cancel
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={handleSendFromDropdown}
-                            disabled={!canAct}
-                            className={`inline-flex items-center gap-2 rounded-xl px-3 py-1.5 text-sm font-medium text-white transition-opacity shadow-sm
-                              ${canAct ? 'bg-gradient-to-r from-[#FFA135] to-[#FF7236] hover:opacity-90' : 'bg-gray-300 cursor-not-allowed opacity-70'}`}
-                          >
-                            {sendingInvite ? 'Sending…' : 'Send Invite'}
-                          </button>
-                        </div>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  )}
+                      </div>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </div>
               </div>
             </div>

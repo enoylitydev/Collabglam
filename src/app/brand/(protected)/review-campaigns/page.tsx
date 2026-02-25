@@ -7,8 +7,9 @@ import {
   HiChevronLeft,
   HiChevronRight,
   HiOutlinePencil,
-  HiOutlineDocumentText,
   HiCheckCircle,
+  HiOutlineDocumentText,
+  HiChevronRight as HiChevronRightIcon,
 } from "react-icons/hi";
 import { get, post } from "@/lib/api";
 
@@ -23,19 +24,24 @@ interface Campaign {
   budget: number;
   campaignType?: string;
 
-  shortlistedCount?: number;
   campaignStatus?: CampaignStatus;
   influencerWorking?: boolean;
   hasPendingUpdate?: boolean;
 
-  // ✅ store full campaign payload
+  publishStatus?: string;
+  isApproved?: boolean;
+  createdByRole?: string;
+
+  // ✅ NEW
+  shortlistedCount?: number;
+
   raw?: any;
 }
 
 const TABLE_GRADIENT_FROM = "#FFA135";
 const TABLE_GRADIENT_TO = "#FF7236";
 
-const APPROVE_ENDPOINT = "/campaign/approve";
+const APPROVE_ENDPOINT = "/campaign/confirm-readiness";
 
 const sliceText = (text: string, max = 40) =>
   text?.length > max ? `${text.slice(0, max - 3)}...` : text;
@@ -70,9 +76,6 @@ export default function BrandReviewCampaignsPage() {
   const [totalPages, setTotalPages] = useState(1);
   const [debouncedSearch, setDebouncedSearch] = useState("");
 
-  const [statusUpdating, setStatusUpdating] = useState<Record<string, boolean>>(
-    {}
-  );
   const [approveUpdating, setApproveUpdating] = useState<
     Record<string, boolean>
   >({});
@@ -107,7 +110,6 @@ export default function BrandReviewCampaignsPage() {
           typeof window !== "undefined" ? localStorage.getItem("brandId") : null;
         if (!brandId) throw new Error("No brandId found in localStorage.");
 
-        // ✅ brandId is part of the URL: /campaign/created-by-admin/:brandId
         const listEndpoint = `/campaign/created-by-admin/${encodeURIComponent(
           brandId
         )}`;
@@ -118,12 +120,8 @@ export default function BrandReviewCampaignsPage() {
           limit,
         });
 
-        // ✅ Handles both:
-        // 1) get() returns axios response (res.data is body)
-        // 2) get() returns body directly
         const body = res?.data && typeof res.data === "object" ? res.data : res;
 
-        // backend body: { success, page, limit, total, data: [...] }
         const rawList: any[] = Array.isArray(body?.data)
           ? body.data
           : Array.isArray(body)
@@ -143,6 +141,18 @@ export default function BrandReviewCampaignsPage() {
           const hasPendingUpdate =
             c?.pendingUpdate?.status === "pending" && !!c?.pendingUpdate?.patch;
 
+          const createdByRole = Array.isArray(merged.createdBy)
+            ? merged.createdBy?.[0]?.role
+            : merged.createdBy?.role;
+
+          const publishStatus = String(merged.publishStatus || "")
+            .toLowerCase()
+            .trim();
+
+          const isApproved =
+            publishStatus === "brand_confirmed" || publishStatus === "approved";
+
+          // ✅ Shortlisted count (handles multiple backend field names)
           const shortlistCount =
             merged.shortlistedCount ??
             merged.shortListedCount ??
@@ -151,9 +161,7 @@ export default function BrandReviewCampaignsPage() {
             (Array.isArray(merged.shortlistedInfluencers)
               ? merged.shortlistedInfluencers.length
               : undefined) ??
-            (Array.isArray(merged.shortlisted)
-              ? merged.shortlisted.length
-              : undefined);
+            (Array.isArray(merged.shortlisted) ? merged.shortlisted.length : 0);
 
           return {
             id: merged.campaignsId ?? merged.id ?? merged._id,
@@ -163,18 +171,19 @@ export default function BrandReviewCampaignsPage() {
             isActive: merged.isActive ?? 0,
             budget: merged.budget ?? 0,
             campaignType: merged.campaignType ?? "",
-            shortlistedCount:
-              typeof shortlistCount === "number" ? shortlistCount : 0,
             campaignStatus: safeStatus,
             influencerWorking: Boolean(merged.influencerWorking),
             hasPendingUpdate,
+            publishStatus: merged.publishStatus ?? "",
+            isApproved,
+            createdByRole,
+            shortlistedCount: typeof shortlistCount === "number" ? shortlistCount : 0,
             raw: merged,
           };
         });
 
         setCampaigns(normalized);
 
-        // ✅ Use backend pagination numbers
         const total = Number(body?.total ?? 0);
         const respLimit = Number(body?.limit ?? limit);
         const computedTotalPages = Math.max(
@@ -193,7 +202,6 @@ export default function BrandReviewCampaignsPage() {
     [limit]
   );
 
-  // debounce search (also resets to page 1)
   useEffect(() => {
     const t = setTimeout(() => {
       setCurrentPage(1);
@@ -202,67 +210,26 @@ export default function BrandReviewCampaignsPage() {
     return () => clearTimeout(t);
   }, [search]);
 
-  // fetch
   useEffect(() => {
     fetchCampaigns(currentPage, debouncedSearch);
   }, [fetchCampaigns, currentPage, debouncedSearch]);
-
-  const updateStatus = async (campaignId: string, next: CampaignStatus) => {
-    const brandId =
-      typeof window !== "undefined" ? localStorage.getItem("brandId") : null;
-    if (!brandId) throw new Error("No brandId found in localStorage.");
-
-    try {
-      const res = await post("/campaign/status", {
-        brandId,
-        campaignId,
-        status: next,
-      });
-      return (res as any)?.data ?? res;
-    } catch (err: any) {
-      const msg =
-        err?.response?.data?.message ||
-        err?.message ||
-        "Failed to update campaign status.";
-      throw new Error(msg);
-    }
-  };
-
-  const onChangeStatus = async (campaign: Campaign, next: CampaignStatus) => {
-    const id = campaign.id;
-    const prev = (campaign.campaignStatus || "open") as CampaignStatus;
-
-    setCampaigns((prevList) =>
-      prevList.map((c) => (c.id === id ? { ...c, campaignStatus: next } : c))
-    );
-
-    setStatusUpdating((p) => ({ ...p, [id]: true }));
-    setError(null);
-    setSuccess(null);
-
-    try {
-      await updateStatus(id, next);
-      setSuccess("Campaign status updated.");
-    } catch (e: any) {
-      setCampaigns((prevList) =>
-        prevList.map((c) => (c.id === id ? { ...c, campaignStatus: prev } : c))
-      );
-      setError(e?.message || "Failed to update status.");
-    } finally {
-      setStatusUpdating((p) => ({ ...p, [id]: false }));
-    }
-  };
 
   const approveCampaign = async (campaignId: string) => {
     const brandId =
       typeof window !== "undefined" ? localStorage.getItem("brandId") : null;
     if (!brandId) throw new Error("No brandId found in localStorage.");
 
-    const res = await post(APPROVE_ENDPOINT, { brandId, campaignId });
+    const res = await post(APPROVE_ENDPOINT, {
+      brandId,
+      campaignsId: campaignId,
+    });
+
     return (res as any)?.data ?? res;
   };
 
   const onApprove = async (c: Campaign) => {
+    if (c.isApproved) return;
+
     const id = c.id;
     setApproveUpdating((p) => ({ ...p, [id]: true }));
     setError(null);
@@ -270,6 +237,15 @@ export default function BrandReviewCampaignsPage() {
 
     try {
       await approveCampaign(id);
+
+      setCampaigns((prev) =>
+        prev.map((x) =>
+          x.id === id
+            ? { ...x, isApproved: true, publishStatus: "brand_confirmed" }
+            : x
+        )
+      );
+
       setSuccess("Campaign approved successfully.");
       fetchCampaigns(currentPage, debouncedSearch);
     } catch (e: any) {
@@ -312,8 +288,6 @@ export default function BrandReviewCampaignsPage() {
       ) : (
         <TableView
           data={campaigns}
-          onChangeStatus={onChangeStatus}
-          statusUpdating={statusUpdating}
           approveUpdating={approveUpdating}
           onApprove={onApprove}
         />
@@ -342,14 +316,10 @@ function SkeletonTable() {
 
 function TableView({
   data,
-  onChangeStatus,
-  statusUpdating,
   approveUpdating,
   onApprove,
 }: {
   data: Campaign[];
-  onChangeStatus: (c: Campaign, next: "open" | "paused") => void;
-  statusUpdating: Record<string, boolean>;
   approveUpdating: Record<string, boolean>;
   onApprove: (c: Campaign) => void;
 }) {
@@ -391,9 +361,14 @@ function TableView({
 
             <tbody>
               {data.map((c, idx) => {
-                const status = (c.campaignStatus || "open") as "open" | "paused";
-                const isBusy = !!statusUpdating[c.id];
                 const isApproving = !!approveUpdating[c.id];
+                const isApproved = !!c.isApproved;
+
+                const statusLabel =
+                  (c.campaignStatus || "open").toLowerCase() === "paused"
+                    ? "Paused"
+                    : "Open";
+
                 const shortlistCount = c.shortlistedCount ?? 0;
 
                 return (
@@ -435,9 +410,10 @@ function TableView({
                       {safeDateLabel(c.timeline?.endDate)}
                     </td>
 
+                    {/* ✅ NEW: Shortlisted Influencers column AFTER timeline */}
                     <td className="px-6 py-4 align-top text-center">
                       <Link
-                        href={`/brand/created-campaign/shortlisted-inf?id=${c.id}`}
+                        href={`/brand/shortlisted-inf?id=${c.id}`}
                         className={[
                           "group inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-semibold transition",
                           shortlistCount > 0
@@ -459,55 +435,67 @@ function TableView({
                           {shortlistCount}
                         </span>
 
-                        <HiChevronRight
+                        <HiChevronRightIcon
                           size={18}
                           className="opacity-60 group-hover:opacity-100"
                         />
                       </Link>
                     </td>
 
+                    {/* ✅ Status (NO DROPDOWN) */}
                     <td className="px-6 py-4 whitespace-nowrap align-top text-center">
-                      <select
-                        value={status}
-                        disabled={isBusy}
-                        onChange={(e) =>
-                          onChangeStatus(c, e.target.value as "open" | "paused")
-                        }
-                        className={[
-                          "px-3 py-2 rounded-lg text-sm font-semibold border",
-                          "bg-white",
-                          "focus:outline-none focus:ring focus:ring-[#FF7236] focus:border-[#FF7236]",
-                          isBusy ? "opacity-60 cursor-wait" : "",
-                        ].join(" ")}
-                        title="Update campaign status"
-                      >
-                        <option value="open">Open</option>
-                        <option value="paused">Paused</option>
-                      </select>
+                      <div className="inline-flex items-center justify-center rounded-full border px-3 py-1 text-sm font-semibold text-gray-900 bg-white">
+                        {statusLabel}
+                      </div>
+
+                      {String(c.createdByRole || "").toLowerCase() === "admin" ? (
+                        <div className="mt-1 text-xs font-semibold text-gray-500">
+                          By Admin
+                        </div>
+                      ) : null}
+
+                      {isApproved ? (
+                        <div className="mt-1 text-xs font-semibold text-green-700">
+                          Approved
+                        </div>
+                      ) : null}
                     </td>
 
                     <td className="px-6 py-4 whitespace-nowrap align-top text-center">
                       <div className="flex items-center justify-center gap-2 flex-wrap">
-                        <Link
-                          href={`/brand/edit-review-campaign?id=${c.id}`}
-                          className="inline-flex items-center bg-white border border-gray-900 text-gray-900 hover:bg-gray-50 px-3 py-2 rounded-lg text-sm font-semibold"
-                        >
-                          <HiOutlinePencil className="mr-1" size={18} />
-                          Edit
-                        </Link>
+                        {isApproved ? (
+                          <span className="inline-flex items-center bg-gray-100 border border-gray-300 text-gray-400 px-3 py-2 rounded-lg text-sm font-semibold cursor-not-allowed">
+                            <HiOutlinePencil className="mr-1" size={18} />
+                            Edit
+                          </span>
+                        ) : (
+                          <Link
+                            href={`/brand/edit-review-campaign?id=${c.id}`}
+                            className="inline-flex items-center bg-white border border-gray-900 text-gray-900 hover:bg-gray-50 px-3 py-2 rounded-lg text-sm font-semibold"
+                          >
+                            <HiOutlinePencil className="mr-1" size={18} />
+                            Edit
+                          </Link>
+                        )}
 
                         <button
                           onClick={() => onApprove(c)}
-                          disabled={isApproving}
+                          disabled={isApproving || isApproved}
                           className={[
                             "inline-flex items-center px-3 py-2 rounded-lg text-sm font-semibold text-white",
-                            "bg-gradient-to-r from-[#FFA135] to-[#FF7236] hover:opacity-90",
+                            isApproved
+                              ? "bg-green-600 cursor-not-allowed"
+                              : "bg-gradient-to-r from-[#FFA135] to-[#FF7236] hover:opacity-90",
                             isApproving ? "opacity-60 cursor-wait" : "",
                           ].join(" ")}
                           title="Approve campaign"
                         >
                           <HiCheckCircle className="mr-1" size={18} />
-                          {isApproving ? "Approving..." : "Approve"}
+                          {isApproved
+                            ? "Approved"
+                            : isApproving
+                            ? "Approving..."
+                            : "Approve"}
                         </button>
                       </div>
                     </td>
