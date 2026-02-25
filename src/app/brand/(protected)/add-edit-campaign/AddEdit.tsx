@@ -689,7 +689,7 @@ export default function BrandCreateCampaignPage() {
             text: "Changes saved! The admin has been notified to launch your campaign.",
           });
           setIsPreviewOpen(false);
-          router.push("/brand/campaigns"); // Route to your campaigns list
+          router.push("/brand/created-campaign"); // Route to your campaigns list
           return; // Exit out so normal toasts don't double fire
         }
 
