@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown, ExternalLink, Mail, RefreshCw, Search, X, Download, Info } from 'lucide-react';
 import swal from 'sweetalert';
 import { post } from '@/lib/api';
@@ -47,7 +47,7 @@ type InfluencerProfileDoc = {
   topAudienceCountry?: string | null;
   averageAudienceAge?: number | null;
   lastContactedAt?: string | null;
-  followUpDates?: string[]; // ISO strings in API response
+  followUpDates?: string[];
   workingHandle?: string | null;
 
   lastUploadAt?: string | null;
@@ -100,13 +100,22 @@ type UpdateManualResponse = {
 };
 
 type InfluencerFilters = {
+  // NOTE: kept API keys as followersMin/followersMax to avoid backend break;
+  // UI shows them as "Subscribers".
   followersMin?: string;
   followersMax?: string;
-  country?: string;
+
+  // Country multi-select
   countries?: string[];
+
+  // Optional legacy (not used in UI)
+  country?: string;
+
   category?: string;
   categories?: string[];
 };
+
+type SortMode = 'engagement_upload' | 'engagement' | 'uploads' | 'created';
 
 function showErr(message: string) {
   return swal({
@@ -123,6 +132,17 @@ function normalizeHandle(input: string) {
   if (m?.[1]) return `@${m[1]}`;
   if (/^[A-Za-z0-9._\-]+$/.test(s)) return `@${s}`;
   return s.startsWith('@') ? s : `@${s}`;
+}
+
+function isValidHandle(h: string) {
+  return /^@[A-Za-z0-9._\-]+$/.test(h);
+}
+
+function buildSavedSearchText(raw: string) {
+  const v = (raw || '').trim();
+  if (!v) return '';
+  const isHandleish = v.startsWith('@') || /^[A-Za-z0-9._\-]+$/.test(v);
+  return isHandleish ? normalizeHandle(v) : v;
 }
 
 function formatNumber(n?: number | null) {
@@ -216,16 +236,257 @@ function chipText(filters: InfluencerFilters) {
   const chips: string[] = [];
 
   if (filters.followersMin || filters.followersMax) {
-    chips.push(`Followers: ${filters.followersMin || '0'} - ${filters.followersMax || '∞'}`);
+    chips.push(`Subscribers: ${filters.followersMin || '0'} - ${filters.followersMax || '∞'}`);
   }
 
-  const cs = filters.countries?.length ? filters.countries : filters.country ? [filters.country] : [];
+  const cs = filters.countries?.length
+    ? filters.countries
+    : filters.country
+      ? [filters.country]
+      : [];
   if (cs.length) chips.push(`Country: ${cs.join(', ')}`);
 
   const cats = filters.categories?.length ? filters.categories : filters.category ? [filters.category] : [];
   if (cats.length) chips.push(`Category: ${cats.join(', ')}`);
 
   return chips;
+}
+
+/** ✅ Topic helpers: show labels as clean category names */
+function topicFromUrl(url: string) {
+  try {
+    const last = (url || '').split('/').pop() || '';
+    return decodeURIComponent(last).replace(/_/g, ' ');
+  } catch {
+    return url;
+  }
+}
+
+function cleanTopicLabel(s: string) {
+  // "Lifestyle (sociology)" -> "Lifestyle"
+  return String(s || '')
+    .replace(/\s*\(.*?\)\s*$/, '')
+    .trim();
+}
+
+function getTopicNames(p: InfluencerProfileDoc) {
+  const labels = asList<string>(p.topicLabels).filter(Boolean).map(cleanTopicLabel);
+  if (labels.length) return Array.from(new Set(labels));
+
+  const cats = asList<string>(p.topicCategories).filter(Boolean).map(topicFromUrl).map(cleanTopicLabel);
+  return Array.from(new Set(cats));
+}
+
+function numOrNegInf(v: any) {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : Number.NEGATIVE_INFINITY;
+}
+
+function sortProfiles(list: InfluencerProfileDoc[], mode: SortMode) {
+  const arr = [...(list || [])];
+
+  if (mode === 'created') {
+    arr.sort((a, b) => {
+      const ta = new Date(a.createdAt || 0).getTime() || 0;
+      const tb = new Date(b.createdAt || 0).getTime() || 0;
+      return tb - ta;
+    });
+    return arr;
+  }
+
+  if (mode === 'uploads') {
+    arr.sort((a, b) => numOrNegInf(b.uploadFrequencyPerWeek) - numOrNegInf(a.uploadFrequencyPerWeek));
+    return arr;
+  }
+
+  // engagement OR engagement+uploads
+  arr.sort((a, b) => {
+    const e = numOrNegInf(b.engagementRateLast15) - numOrNegInf(a.engagementRateLast15);
+    if (e !== 0) return e;
+    if (mode === 'engagement_upload') {
+      return numOrNegInf(b.uploadFrequencyPerWeek) - numOrNegInf(a.uploadFrequencyPerWeek);
+    }
+    return 0;
+  });
+  return arr;
+}
+
+function sortToApi(mode: SortMode) {
+  if (mode === 'uploads') return { sortBy: 'uploadFrequencyPerWeek', sortOrder: 'desc' as const };
+  if (mode === 'created') return { sortBy: 'createdAt', sortOrder: 'desc' as const };
+  // engagement_upload and engagement
+  return { sortBy: 'engagementRateLast15', sortOrder: 'desc' as const };
+}
+
+/** --- Country list for dropdown (common) --- */
+const COUNTRY_OPTIONS: Array<{ code: string; name: string }> = [
+  { code: 'US', name: 'United States' },
+  { code: 'IN', name: 'India' },
+  { code: 'GB', name: 'United Kingdom' },
+  { code: 'CA', name: 'Canada' },
+  { code: 'AU', name: 'Australia' },
+  { code: 'NZ', name: 'New Zealand' },
+  { code: 'IE', name: 'Ireland' },
+  { code: 'DE', name: 'Germany' },
+  { code: 'FR', name: 'France' },
+  { code: 'IT', name: 'Italy' },
+  { code: 'ES', name: 'Spain' },
+  { code: 'NL', name: 'Netherlands' },
+  { code: 'BE', name: 'Belgium' },
+  { code: 'CH', name: 'Switzerland' },
+  { code: 'AT', name: 'Austria' },
+  { code: 'SE', name: 'Sweden' },
+  { code: 'NO', name: 'Norway' },
+  { code: 'DK', name: 'Denmark' },
+  { code: 'FI', name: 'Finland' },
+  { code: 'PL', name: 'Poland' },
+  { code: 'CZ', name: 'Czechia' },
+  { code: 'PT', name: 'Portugal' },
+  { code: 'RO', name: 'Romania' },
+  { code: 'GR', name: 'Greece' },
+  { code: 'TR', name: 'Turkey' },
+  { code: 'UA', name: 'Ukraine' },
+  { code: 'RU', name: 'Russia' },
+  { code: 'BR', name: 'Brazil' },
+  { code: 'AR', name: 'Argentina' },
+  { code: 'CL', name: 'Chile' },
+  { code: 'CO', name: 'Colombia' },
+  { code: 'MX', name: 'Mexico' },
+  { code: 'PE', name: 'Peru' },
+  { code: 'ZA', name: 'South Africa' },
+  { code: 'NG', name: 'Nigeria' },
+  { code: 'EG', name: 'Egypt' },
+  { code: 'KE', name: 'Kenya' },
+  { code: 'SA', name: 'Saudi Arabia' },
+  { code: 'AE', name: 'United Arab Emirates' },
+  { code: 'IL', name: 'Israel' },
+  { code: 'SG', name: 'Singapore' },
+  { code: 'MY', name: 'Malaysia' },
+  { code: 'ID', name: 'Indonesia' },
+  { code: 'PH', name: 'Philippines' },
+  { code: 'TH', name: 'Thailand' },
+  { code: 'VN', name: 'Vietnam' },
+  { code: 'JP', name: 'Japan' },
+  { code: 'KR', name: 'South Korea' },
+  { code: 'HK', name: 'Hong Kong' },
+  { code: 'TW', name: 'Taiwan' },
+  { code: 'CN', name: 'China' },
+  { code: 'PK', name: 'Pakistan' },
+  { code: 'BD', name: 'Bangladesh' },
+  { code: 'LK', name: 'Sri Lanka' },
+  { code: 'NP', name: 'Nepal' },
+];
+
+function countryLabel(code: string) {
+  const c = COUNTRY_OPTIONS.find((x) => x.code === code);
+  return c ? `${c.code} — ${c.name}` : code;
+}
+
+function MultiCountrySelect({
+  value,
+  onChange,
+}: {
+  value: string[];
+  onChange: (next: string[]) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState('');
+  const wrapRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    function onDoc(e: MouseEvent) {
+      if (!open) return;
+      const t = e.target as any;
+      if (wrapRef.current && !wrapRef.current.contains(t)) setOpen(false);
+    }
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [open]);
+
+  const filtered = useMemo(() => {
+    const s = q.trim().toLowerCase();
+    if (!s) return COUNTRY_OPTIONS;
+    return COUNTRY_OPTIONS.filter(
+      (c) => c.code.toLowerCase().includes(s) || c.name.toLowerCase().includes(s),
+    );
+  }, [q]);
+
+  function toggle(code: string) {
+    const next = new Set(value || []);
+    if (next.has(code)) next.delete(code);
+    else next.add(code);
+    onChange(Array.from(next).sort());
+  }
+
+  const summary = value?.length ? value.join(', ') : 'All';
+
+  return (
+    <div className="relative" ref={wrapRef}>
+      <button
+        type="button"
+        className="w-full px-3 py-3 border border-slate-300 rounded-xl bg-white text-left flex items-center justify-between gap-2 hover:bg-slate-50"
+        onClick={() => setOpen((v) => !v)}
+      >
+        <span className="text-sm text-slate-800 truncate">{summary}</span>
+        <ChevronDown className={`w-4 h-4 text-slate-500 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+
+      {open ? (
+        <div className="absolute z-30 mt-2 w-full rounded-xl border border-slate-200 bg-white shadow-lg overflow-hidden">
+          <div className="p-3 border-b border-slate-200">
+            <input
+              className="w-full px-3 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="Search country (US, India...)"
+            />
+            <div className="mt-2 flex items-center justify-between">
+              <button
+                type="button"
+                className="text-xs font-semibold text-slate-700 hover:underline"
+                onClick={() => onChange([])}
+              >
+                Clear
+              </button>
+              <span className="text-xs text-slate-500">{value.length} selected</span>
+            </div>
+          </div>
+
+          <div className="max-h-64 overflow-auto p-2">
+            {filtered.map((c) => {
+              const checked = value.includes(c.code);
+              return (
+                <label
+                  key={c.code}
+                  className="flex items-center gap-2 px-2 py-2 rounded-lg hover:bg-slate-50 cursor-pointer"
+                >
+                  <Checkbox
+                    checked={checked}
+                    onCheckedChange={(v: any) => toggle(c.code)}
+                  />
+                  <span className="text-sm text-slate-800">{countryLabel(c.code)}</span>
+                </label>
+              );
+            })}
+
+            {!filtered.length ? (
+              <div className="px-2 py-6 text-center text-sm text-slate-500">No countries found</div>
+            ) : null}
+          </div>
+
+          <div className="p-3 border-t border-slate-200 bg-slate-50">
+            <button
+              type="button"
+              className="w-full px-3 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-sm font-semibold"
+              onClick={() => setOpen(false)}
+            >
+              Done
+            </button>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 export default function Page() {
@@ -250,17 +511,21 @@ export default function Page() {
 
   // ✅ Filters (draft + active)
   const [filtersDraft, setFiltersDraft] = useState<InfluencerFilters>({
-    followersMin: '',
-    followersMax: '',
-    country: '',
+    followersMin: '1000',      // ✅ Subscribers min default
+    followersMax: '1000000',   // ✅ Subscribers max default (1M)
+    countries: [],             // ✅ Country multi-select
     category: '',
   });
   const [filtersActive, setFiltersActive] = useState<InfluencerFilters>({
-    followersMin: '',
-    followersMax: '',
-    country: '',
+    followersMin: '1000',
+    followersMax: '1000000',
+    countries: [],
     category: '',
   });
+
+  // ✅ Sorting (draft + active)
+  const [sortModeDraft, setSortModeDraft] = useState<SortMode>('engagement_upload');
+  const [sortModeActive, setSortModeActive] = useState<SortMode>('engagement_upload');
 
   // ✅ CSV download (filtered)
   const [downloadLimit, setDownloadLimit] = useState('500');
@@ -292,8 +557,9 @@ export default function Page() {
   }, [profiles]);
 
   const normalizedQuery = useMemo(() => normalizeHandle(query), [query]);
+
   const existingProfile = useMemo(() => {
-    if (!normalizedQuery) return undefined;
+    if (!normalizedQuery || !isValidHandle(normalizedQuery)) return undefined;
     return profilesByHandle.get(normalizedQuery.toLowerCase());
   }, [normalizedQuery, profilesByHandle]);
 
@@ -303,11 +569,17 @@ export default function Page() {
     if (String(f.followersMin || '').trim()) out.followersMin = String(f.followersMin).trim();
     if (String(f.followersMax || '').trim()) out.followersMax = String(f.followersMax).trim();
 
-    const cRaw = String(f.country || '').trim();
-    if (cRaw) {
-      const parts = splitCsvOrSpace(cRaw);
-      if (parts.length > 1) out.countries = parts;
-      else out.country = parts[0];
+    // ✅ prefer multi-select countries
+    if (Array.isArray(f.countries) && f.countries.length) {
+      out.countries = f.countries;
+    } else {
+      // legacy fallback
+      const cRaw = String(f.country || '').trim();
+      if (cRaw) {
+        const parts = splitCsvOrSpace(cRaw);
+        if (parts.length > 1) out.countries = parts;
+        else out.country = parts[0];
+      }
     }
 
     const catRaw = String(f.category || '').trim();
@@ -356,7 +628,6 @@ export default function Page() {
 
   const selectedCount = useMemo(() => selectedHandleIds.length, [selectedHandleIds]);
 
-  // ✅ header checkbox state (only count selectable rows = those with handleId)
   const selectableOnPage = useMemo(() => profiles.filter((p) => !!getSelectId(p)), [profiles]);
 
   const allOnPageSelected = useMemo(() => {
@@ -375,17 +646,42 @@ export default function Page() {
     return false;
   }, [allOnPageSelected, someOnPageSelected]);
 
-  async function loadSaved(p = 1, active: InfluencerFilters = filtersActive) {
+  /** ✅ refs for debounced “type search” */
+  const typeSearchRef = useRef<any>(null);
+  const filtersActiveRef = useRef(filtersActive);
+  const sortModeActiveRef = useRef(sortModeActive);
+
+  useEffect(() => {
+    filtersActiveRef.current = filtersActive;
+  }, [filtersActive]);
+
+  useEffect(() => {
+    sortModeActiveRef.current = sortModeActive;
+  }, [sortModeActive]);
+
+  useEffect(() => {
+    return () => {
+      if (typeSearchRef.current) clearTimeout(typeSearchRef.current);
+    };
+  }, []);
+
+  async function loadSaved(
+    p = 1,
+    active: InfluencerFilters = filtersActive,
+    searchText = '',
+    sortMode: SortMode = sortModeActive,
+  ) {
     setListLoading(true);
     try {
       const filterPayload = buildFilterPayload(active);
+      const apiSort = sortToApi(sortMode);
 
       const resp = await post<GetAllResponse>('/youtube/getall', {
         page: p,
         limit,
-        search: '',
-        sortBy: 'createdAt',
-        sortOrder: 'desc',
+        search: searchText || '',
+        sortBy: apiSort.sortBy,
+        sortOrder: apiSort.sortOrder,
         includeRaw: false,
         includeVideos: false,
         ...filterPayload,
@@ -393,13 +689,20 @@ export default function Page() {
 
       if (resp?.status !== 'ok') throw new Error('Failed to load saved data');
 
-      setProfiles(asList<InfluencerProfileDoc>(resp.data));
+      const list = sortProfiles(asList<InfluencerProfileDoc>(resp.data), sortMode);
+
+      setProfiles(list);
       setTotal(resp.total || 0);
       setHasNext(!!resp.hasNext);
       setPage(resp.page || p);
 
-      // ✅ DO NOT auto-clear selection here (so selected export can work across pages)
-      // setSelectedIds({});
+      const typed = buildSavedSearchText(searchText || '');
+      if (typed && isValidHandle(typed) && Array.isArray(resp.data) && resp.data.length === 1) {
+        const one = resp.data[0];
+        if ((one.handle || '').toLowerCase() === typed.toLowerCase() && one.handleId) {
+          openAndScrollTo(one.handleId);
+        }
+      }
     } catch (e: any) {
       await showErr(e?.message || 'Failed to load saved data.');
     } finally {
@@ -408,18 +711,24 @@ export default function Page() {
   }
 
   useEffect(() => {
-    loadSaved(1, filtersActive);
+    loadSaved(1, filtersActive, '', sortModeActive);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
-    const h = normalizeHandle(query);
-    if (!h) {
+    const raw = query.trim();
+    if (!raw) {
       setSearchHint('');
       return;
     }
-    const existing = profilesByHandle.get(h.toLowerCase());
-    setSearchHint(existing ? 'Already saved. Press Open to open it.' : 'Not saved yet. Press Search to fetch & save from YouTube.');
+
+    const maybeHandle = buildSavedSearchText(raw);
+    if (isValidHandle(maybeHandle)) {
+      const existing = profilesByHandle.get(maybeHandle.toLowerCase());
+      setSearchHint(existing ? 'Already saved. (Auto search is ON) Press Open Profile to scroll to it.' : 'Not saved yet. Press Search & Save.');
+    } else {
+      setSearchHint('Auto search is ON. Keep typing to filter saved influencers.');
+    }
   }, [query, profilesByHandle]);
 
   function upsertProfile(doc: InfluencerProfileDoc) {
@@ -468,8 +777,8 @@ export default function Page() {
     e.preventDefault();
 
     const h = normalizeHandle(query);
-    if (!h) {
-      await showErr('Please enter a valid handle.');
+    if (!h || !isValidHandle(h)) {
+      await showErr('Please enter a valid handle like @MrBeast (or MrBeast).');
       return;
     }
 
@@ -546,14 +855,27 @@ export default function Page() {
   function applyFilters() {
     const next = { ...filtersDraft };
     setFiltersActive(next);
-    loadSaved(1, next);
+
+    const sortNext = sortModeDraft;
+    setSortModeActive(sortNext);
+
+    loadSaved(1, next, buildSavedSearchText(query), sortNext);
   }
 
   function clearFilters() {
-    const empty: InfluencerFilters = { followersMin: '', followersMax: '', country: '', category: '' };
+    const empty: InfluencerFilters = {
+      followersMin: '1000',
+      followersMax: '1000000',
+      countries: [],
+      category: '',
+    };
     setFiltersDraft(empty);
     setFiltersActive(empty);
-    loadSaved(1, empty);
+
+    setSortModeDraft('engagement_upload');
+    setSortModeActive('engagement_upload');
+
+    loadSaved(1, empty, buildSavedSearchText(query), 'engagement_upload');
   }
 
   const activeChips = useMemo(() => chipText(buildFilterPayload(filtersActive)), [filtersActive]);
@@ -568,6 +890,7 @@ export default function Page() {
     setDownloadLoading(true);
     try {
       const filterPayload = buildFilterPayload(filtersActive);
+      const apiSort = sortToApi(sortModeActive);
 
       const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || process.env.NEXT_PUBLIC_API_URL || '').replace(/\/$/, '');
       const url = API_BASE ? `${API_BASE}/youtube/export-csv` : `/youtube/export-csv`;
@@ -577,9 +900,9 @@ export default function Page() {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           limit: n,
-          sortBy: 'createdAt',
-          sortOrder: 'desc',
-          search: '',
+          sortBy: apiSort.sortBy,
+          sortOrder: apiSort.sortOrder,
+          search: buildSavedSearchText(query) || '',
           ...filterPayload,
         }),
       });
@@ -599,7 +922,7 @@ export default function Page() {
       if (!filename) {
         const ts = new Date();
         const stamp = `${ts.getFullYear()}${String(ts.getMonth() + 1).padStart(2, '0')}${String(ts.getDate()).padStart(2, '0')}_${String(
-          ts.getHours()
+          ts.getHours(),
         ).padStart(2, '0')}${String(ts.getMinutes()).padStart(2, '0')}${String(ts.getSeconds()).padStart(2, '0')}`;
         filename = `influencers_${stamp}.csv`;
       }
@@ -619,7 +942,6 @@ export default function Page() {
     }
   }
 
-  /** ✅ NEW: Download only selected handleIds */
   async function downloadSelectedCsv() {
     if (!selectedHandleIds.length) {
       await showErr('Select at least 1 influencer.');
@@ -628,6 +950,8 @@ export default function Page() {
 
     setDownloadLoading(true);
     try {
+      const apiSort = sortToApi(sortModeActive);
+
       const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || process.env.NEXT_PUBLIC_API_URL || '').replace(/\/$/, '');
       const url = API_BASE ? `${API_BASE}/youtube/export-csv` : `/youtube/export-csv`;
 
@@ -635,9 +959,9 @@ export default function Page() {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
-          handleIds: selectedHandleIds, // ✅ IMPORTANT
-          sortBy: 'createdAt',
-          sortOrder: 'desc',
+          handleIds: selectedHandleIds,
+          sortBy: apiSort.sortBy,
+          sortOrder: apiSort.sortOrder,
         }),
       });
 
@@ -675,7 +999,9 @@ export default function Page() {
         {/* Header */}
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-slate-900 mb-2">YouTube Influencer Profiles</h1>
-          <p className="text-slate-600">Saved list loads from DB. Search by handle to open or fetch &amp; save.</p>
+          <p className="text-slate-600">
+            Saved list loads from DB. Type to search saved influencers. Press Search to fetch &amp; save from YouTube.
+          </p>
         </div>
 
         {/* Search + Filters card */}
@@ -684,7 +1010,9 @@ export default function Page() {
             <div className="flex items-start justify-between gap-4 flex-wrap">
               <div>
                 <h2 className="text-lg font-semibold text-slate-900">Search Influencer</h2>
-                <p className="text-sm text-slate-600 mt-0.5">Search by handle to open saved profiles or fetch &amp; save from YouTube.</p>
+                <p className="text-sm text-slate-600 mt-0.5">
+                  ✅ Auto-search saved influencers while typing. Use Search &amp; Save only when not saved.
+                </p>
               </div>
 
               <div className="flex flex-wrap gap-2 items-center">
@@ -699,11 +1027,15 @@ export default function Page() {
                       </span>
                     ))}
                     {activeChips.length > 4 ? (
-                      <span className="text-xs px-3 py-1 rounded-full bg-slate-900 text-white">+{activeChips.length - 4}</span>
+                      <span className="text-xs px-3 py-1 rounded-full bg-slate-900 text-white">
+                        +{activeChips.length - 4}
+                      </span>
                     ) : null}
                   </>
                 ) : (
-                  <span className="text-xs px-3 py-1 rounded-full bg-white text-slate-600 border border-slate-200">No active filters</span>
+                  <span className="text-xs px-3 py-1 rounded-full bg-white text-slate-600 border border-slate-200">
+                    No active filters
+                  </span>
                 )}
               </div>
             </div>
@@ -712,13 +1044,30 @@ export default function Page() {
           <form onSubmit={onSearch} className="p-6 space-y-5">
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 items-end">
               <div className="lg:col-span-7">
-                <label className="text-xs font-medium text-slate-600 mb-2 block">YouTube Handle</label>
+                <label className="text-xs font-medium text-slate-600 mb-2 block">
+                  YouTube Handle (auto-search saved)
+                </label>
                 <div className="relative">
                   <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
                   <input
                     className="w-full pl-12 pr-4 py-3.5 border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all bg-white"
                     value={query}
-                    onChange={(e) => setQuery(e.target.value)}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setQuery(v);
+
+                      // ✅ Debounced DB search for saved influencers
+                      if (typeSearchRef.current) clearTimeout(typeSearchRef.current);
+
+                      typeSearchRef.current = setTimeout(() => {
+                        const searchText = buildSavedSearchText(v);
+                        if (!searchText) {
+                          loadSaved(1, filtersActiveRef.current, '', sortModeActiveRef.current);
+                          return;
+                        }
+                        loadSaved(1, filtersActiveRef.current, searchText, sortModeActiveRef.current);
+                      }, 350);
+                    }}
                     placeholder="e.g. @MrBeast"
                   />
                 </div>
@@ -729,6 +1078,7 @@ export default function Page() {
                   className="w-full h-[52px] px-5 rounded-lg font-semibold text-white bg-blue-600 hover:bg-blue-700 transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                   type="submit"
                   disabled={searchLoading}
+                  title={existingProfile ? 'Open saved influencer' : 'Fetch from YouTube and save'}
                 >
                   {searchLoading ? (
                     <>
@@ -745,9 +1095,9 @@ export default function Page() {
                 <button
                   type="button"
                   className="w-full h-[52px] px-5 rounded-lg font-semibold border border-slate-300 text-slate-800 hover:bg-slate-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                  onClick={() => loadSaved(1, filtersActive)}
+                  onClick={() => loadSaved(1, filtersActive, buildSavedSearchText(query), sortModeActive)}
                   disabled={listLoading}
-                  title="Reload list from database"
+                  title="Reload list from database (keeps current typed search)"
                 >
                   <RefreshCw className={`w-4 h-4 ${listLoading ? 'animate-spin' : ''}`} />
                   Refresh List
@@ -769,9 +1119,7 @@ export default function Page() {
               <div className="px-5 py-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between gap-3 flex-wrap">
                 <div>
                   <div className="text-sm font-semibold text-slate-900">Filters</div>
-                  <div className="text-xs text-slate-600 mt-0.5">
-                    Use comma-separated values for multiple countries/categories (e.g., <span className="font-mono">US,IN</span>).
-                  </div>
+                  <div className="text-xs text-slate-600 mt-0.5">Country is multi-select. Subscribers range default: 1K–1M.</div>
                 </div>
 
                 <div className="flex gap-2 flex-wrap">
@@ -795,44 +1143,58 @@ export default function Page() {
               </div>
 
               <div className="p-5">
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+                  {/* Subscribers Min */}
                   <div className="rounded-xl border border-slate-200 bg-white p-3">
-                    <label className="text-[11px] font-semibold text-slate-600 mb-2 block uppercase tracking-wide">Followers Min</label>
+                    <label className="text-[11px] font-semibold text-slate-600 mb-2 block uppercase tracking-wide">
+                      Subscribers Min
+                    </label>
                     <input
                       className="w-full px-3 py-3 border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
                       value={filtersDraft.followersMin || ''}
                       onChange={(e) => setFiltersDraft((p) => ({ ...p, followersMin: e.target.value }))}
-                      placeholder="100000"
+                      placeholder="1000"
                       inputMode="numeric"
+                      min={0}
+                      max={1000000}
                     />
+                    <p className="text-[11px] text-slate-500 mt-2">Default: 1,000</p>
                   </div>
 
+                  {/* Subscribers Max */}
                   <div className="rounded-xl border border-slate-200 bg-white p-3">
-                    <label className="text-[11px] font-semibold text-slate-600 mb-2 block uppercase tracking-wide">Followers Max</label>
+                    <label className="text-[11px] font-semibold text-slate-600 mb-2 block uppercase tracking-wide">
+                      Subscribers Max
+                    </label>
                     <input
                       className="w-full px-3 py-3 border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
                       value={filtersDraft.followersMax || ''}
                       onChange={(e) => setFiltersDraft((p) => ({ ...p, followersMax: e.target.value }))}
-                      placeholder="5000000"
+                      placeholder="1000000"
                       inputMode="numeric"
+                      min={0}
+                      max={1000000}
                     />
+                    <p className="text-[11px] text-slate-500 mt-2">Default: 1,000,000</p>
                   </div>
 
+                  {/* Country multi-select */}
                   <div className="rounded-xl border border-slate-200 bg-white p-3">
-                    <label className="text-[11px] font-semibold text-slate-600 mb-2 block uppercase tracking-wide">Country</label>
-                    <input
-                      className="w-full px-3 py-3 border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
-                      value={filtersDraft.country || ''}
-                      onChange={(e) => setFiltersDraft((p) => ({ ...p, country: e.target.value }))}
-                      placeholder="US or US,IN"
+                    <label className="text-[11px] font-semibold text-slate-600 mb-2 block uppercase tracking-wide">
+                      Country (Multi-select)
+                    </label>
+                    <MultiCountrySelect
+                      value={filtersDraft.countries || []}
+                      onChange={(next) => setFiltersDraft((p) => ({ ...p, countries: next }))}
                     />
-                    <p className="text-[11px] text-slate-500 mt-2">
-                      Multiple: <span className="font-mono">US,IN</span>
-                    </p>
+                    <p className="text-[11px] text-slate-500 mt-2">Pick multiple (US, IN, GB…)</p>
                   </div>
 
+                  {/* Category */}
                   <div className="rounded-xl border border-slate-200 bg-white p-3">
-                    <label className="text-[11px] font-semibold text-slate-600 mb-2 block uppercase tracking-wide">Category</label>
+                    <label className="text-[11px] font-semibold text-slate-600 mb-2 block uppercase tracking-wide">
+                      Category
+                    </label>
                     <input
                       className="w-full px-3 py-3 border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
                       value={filtersDraft.category || ''}
@@ -842,6 +1204,24 @@ export default function Page() {
                     <p className="text-[11px] text-slate-500 mt-2">
                       Multiple: <span className="font-mono">Entertainment,Lifestyle</span>
                     </p>
+                  </div>
+
+                  {/* Sort */}
+                  <div className="rounded-xl border border-slate-200 bg-white p-3">
+                    <label className="text-[11px] font-semibold text-slate-600 mb-2 block uppercase tracking-wide">
+                      Sort
+                    </label>
+                    <select
+                      className="w-full px-3 py-3 border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+                      value={sortModeDraft}
+                      onChange={(e) => setSortModeDraft(e.target.value as SortMode)}
+                    >
+                      <option value="engagement_upload">Engagement ↓ then Uploads/week ↓</option>
+                      <option value="engagement">Engagement ↓</option>
+                      <option value="uploads">Uploads/week ↓</option>
+                      <option value="created">Newest (CreatedAt) ↓</option>
+                    </select>
+                    <p className="text-[11px] text-slate-500 mt-2">Default: Engagement + Uploads/week</p>
                   </div>
                 </div>
 
@@ -865,13 +1245,12 @@ export default function Page() {
                       className="px-4 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm flex items-center gap-2"
                       onClick={downloadCsv}
                       disabled={downloadLoading}
-                      title="Download CSV with active filters"
+                      title="Download CSV with active filters + typed search"
                     >
                       <Download className="w-4 h-4" />
                       {downloadLoading ? 'Downloading…' : 'Download CSV'}
                     </button>
 
-                    {/* ✅ NEW: Download selected */}
                     <button
                       type="button"
                       className="px-4 py-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-sm font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm flex items-center gap-2"
@@ -903,7 +1282,6 @@ export default function Page() {
 
         {/* List */}
         <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-          {/* minimal toolbar */}
           <div className="px-6 py-4 border-b border-slate-200 flex items-start justify-between gap-4 flex-wrap">
             <div className="flex items-center gap-3 flex-wrap">
               <span className="text-sm text-slate-600">
@@ -922,10 +1300,20 @@ export default function Page() {
                   ))}
                 </div>
               ) : null}
+
+              <span className="text-xs px-3 py-1 rounded-full bg-slate-900 text-white">
+                Sort: {sortModeActive === 'engagement_upload'
+                  ? 'Engagement + Uploads'
+                  : sortModeActive === 'engagement'
+                    ? 'Engagement'
+                    : sortModeActive === 'uploads'
+                      ? 'Uploads/week'
+                      : 'Newest'}
+              </span>
             </div>
           </div>
 
-          {/* ✅ Table header row */}
+          {/* Table header */}
           <div className="px-6 py-3 bg-slate-50 border-b border-slate-200">
             <div className="grid grid-cols-12 items-center gap-3">
               <div className="col-span-1 flex items-center">
@@ -956,18 +1344,22 @@ export default function Page() {
           ) : null}
 
           {!listLoading && profiles.length === 0 ? (
-            <div className="px-6 py-12 text-center text-slate-500">No saved profiles yet. Use search to fetch and save influencer data.</div>
+            <div className="px-6 py-12 text-center text-slate-500">
+              No matching saved profiles. Type a handle or press Search &amp; Save.
+            </div>
           ) : null}
 
           <div className="divide-y divide-slate-200">
             {profiles.map((p) => {
               const cardId = getCardId(p);
-              const selectId = getSelectId(p); // handleId
+              const selectId = getSelectId(p);
               const isOpen = !!expanded[cardId];
               const checked = selectId ? !!selectedIds[selectId] : false;
 
               const thumb = p.thumbnails?.default?.url || p.thumbnails?.medium?.url || p.thumbnails?.high?.url;
               const channelUrl = ytChannelUrl(p);
+
+              const topics = getTopicNames(p);
 
               return (
                 <div key={cardId} id={`card-${cardId}`} className="hover:bg-slate-50 transition-colors">
@@ -1024,8 +1416,10 @@ export default function Page() {
                             <div className="text-sm font-medium text-slate-900">{formatPercent(p.engagementRateLast15)}</div>
                           </div>
                           <div className="hidden lg:block">
-                            <div className="text-xs text-slate-500 mb-1">Last Upload</div>
-                            <div className="text-sm font-medium text-slate-900">{formatDate(p.lastUploadAt)}</div>
+                            <div className="text-xs text-slate-500 mb-1">Uploads/week</div>
+                            <div className="text-sm font-medium text-slate-900">
+                              {p.uploadFrequencyPerWeek != null ? p.uploadFrequencyPerWeek : '—'}
+                            </div>
                           </div>
                           <div className="hidden lg:block">
                             <div className="text-xs text-slate-500 mb-1">Email</div>
@@ -1035,13 +1429,32 @@ export default function Page() {
 
                         <div className="flex items-center gap-4 text-xs text-slate-500 flex-wrap">
                           <span>Synced: {formatDate(p.syncedAt)}</span>
-                          {p.uploadFrequencyPerWeek != null ? <span>{p.uploadFrequencyPerWeek} uploads/week</span> : null}
                           {p.lastSponsor ? <span>Last Sponsor: {p.lastSponsor}</span> : null}
                           {p.managedByAgency != null ? <span>Agency: {formatBool(p.managedByAgency)}</span> : null}
                         </div>
+
+                        {/* Topic labels */}
+                        {topics.length ? (
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            {topics.slice(0, 4).map((t) => (
+                              <span
+                                key={t}
+                                className="text-[11px] px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 border border-slate-200"
+                                title={t}
+                              >
+                                {t}
+                              </span>
+                            ))}
+                            {topics.length > 4 ? (
+                              <span className="text-[11px] px-2.5 py-1 rounded-full bg-slate-900 text-white">
+                                +{topics.length - 4}
+                              </span>
+                            ) : null}
+                          </div>
+                        ) : null}
                       </div>
 
-                      {/* actions column */}
+                      {/* actions */}
                       <div className="col-span-2 flex items-center justify-end gap-2">
                         {channelUrl ? (
                           <a
@@ -1094,6 +1507,7 @@ export default function Page() {
                               <Row label="Total Videos" value={formatNumber(p.totalVideoCount)} />
                               <Row label="Total Views" value={formatNumber(p.totalViewCount)} />
                               <Row label="Instagram" value={p.instagramHandle || '—'} />
+                              <Row label="Categories" value={topics.length ? topics.join(', ') : '—'} />
                               <Row label="Last upload" value={formatDate(p.lastUploadAt)} />
                               <Row label="Last video" value={p.lastVideoTitle || '—'} />
 
@@ -1135,7 +1549,7 @@ export default function Page() {
             })}
           </div>
 
-          {/* ✅ Pagination footer */}
+          {/* Pagination */}
           <div className="px-6 py-4 border-t border-slate-200 bg-white flex items-center justify-between gap-4 flex-wrap">
             <div className="text-sm text-slate-600">
               Page <span className="font-semibold text-slate-900">{page}</span>
@@ -1150,14 +1564,14 @@ export default function Page() {
             <div className="flex gap-2">
               <button
                 className="px-4 py-2 border border-slate-300 hover:bg-slate-50 text-slate-700 text-sm font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                onClick={() => loadSaved(Math.max(1, page - 1), filtersActive)}
+                onClick={() => loadSaved(Math.max(1, page - 1), filtersActive, buildSavedSearchText(query), sortModeActive)}
                 disabled={listLoading || page <= 1}
               >
                 Previous
               </button>
               <button
                 className="px-4 py-2 border border-slate-300 hover:bg-slate-50 text-slate-700 text-sm font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                onClick={() => loadSaved(page + 1, filtersActive)}
+                onClick={() => loadSaved(page + 1, filtersActive, buildSavedSearchText(query), sortModeActive)}
                 disabled={listLoading || !hasNext}
               >
                 Next
@@ -1167,7 +1581,7 @@ export default function Page() {
         </div>
       </div>
 
-      {/* ✅ Details Modal */}
+      {/* Details Modal */}
       {detailsModalOpen ? (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl">
