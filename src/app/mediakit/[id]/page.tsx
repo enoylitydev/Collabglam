@@ -1,3 +1,4 @@
+// app/mediakit/[id]/page.tsx  (or your InfluencerDetailPage file)
 'use client';
 
 import React, { useCallback, useEffect, useState } from 'react';
@@ -102,6 +103,7 @@ export default function InfluencerDetailPage() {
       handle={handle}
       lastFetchedAt={lastFetchedAt}
       onRefreshReport={onRefreshReport}
+      viewerRole={authRole} // ✅ PASS ROLE HERE (brand/admin)
     />
   );
 }

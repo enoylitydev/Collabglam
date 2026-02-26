@@ -1,3 +1,4 @@
+// InfluencerDetailFullPage.tsx
 'use client';
 
 import React, { useMemo, useState, useEffect } from 'react';
@@ -34,6 +35,9 @@ type Props = {
   lastFetchedAt?: string | null;
   onRefreshReport?: () => Promise<void> | void;
   onChangeCalc: (calc: 'median' | 'average') => void;
+
+  // ✅ who is viewing the mediakit
+  viewerRole?: 'brand' | 'admin' | '';
 };
 
 /** ✅ /admin-invitations/send response shape */
@@ -58,6 +62,7 @@ export default function InfluencerDetailFullPage({
   lastFetchedAt,
   onRefreshReport,
   onChangeCalc,
+  viewerRole,
 }: Props) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -219,11 +224,7 @@ export default function InfluencerDetailFullPage({
 
   const headerProfile = data?.profile?.profile;
   const displayName =
-    headerProfile?.fullname ||
-    headerProfile?.username ||
-    headerProfile?.handle ||
-    handle ||
-    'Creator profile';
+    headerProfile?.fullname || headerProfile?.username || headerProfile?.handle || handle || 'Creator profile';
 
   const displayHandle =
     headerProfile?.handle ||
@@ -250,7 +251,13 @@ export default function InfluencerDetailFullPage({
 
     try {
       await navigator.clipboard.writeText(url);
-      Swal.fire({ icon: 'success', title: 'Link copied!', text: 'Media kit link copied to clipboard.', timer: 1500, showConfirmButton: false });
+      Swal.fire({
+        icon: 'success',
+        title: 'Link copied!',
+        text: 'Media kit link copied to clipboard.',
+        timer: 1500,
+        showConfirmButton: false,
+      });
     } catch {
       try {
         const ta = document.createElement('textarea');
@@ -265,9 +272,19 @@ export default function InfluencerDetailFullPage({
         document.execCommand('copy');
         document.body.removeChild(ta);
 
-        Swal.fire({ icon: 'success', title: 'Link copied!', text: 'Media kit link copied to clipboard.', timer: 1500, showConfirmButton: false });
+        Swal.fire({
+          icon: 'success',
+          title: 'Link copied!',
+          text: 'Media kit link copied to clipboard.',
+          timer: 1500,
+          showConfirmButton: false,
+        });
       } catch {
-        Swal.fire({ icon: 'error', title: 'Copy failed', text: 'Could not copy the link. Please copy it manually from the address bar.' });
+        Swal.fire({
+          icon: 'error',
+          title: 'Copy failed',
+          text: 'Could not copy the link. Please copy it manually from the address bar.',
+        });
       }
     }
   };
@@ -281,6 +298,9 @@ export default function InfluencerDetailFullPage({
   const lookalikesByTopics = profile?.lookalikesByTopics ?? [];
   const audienceLookalikes = profile?.audienceLookalikes ?? [];
   const brandAffinity = profile?.brandAffinity ?? [];
+
+  // ✅ ONLY admin can see About section
+  const isAdminViewer = viewerRole === 'admin';
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -346,10 +366,14 @@ export default function InfluencerDetailFullPage({
                       <button
                         disabled={!canAct}
                         className={`inline-flex items-center gap-2 rounded-xl px-3 py-1.5 text-sm font-medium text-white transition-opacity shadow-sm
-                          ${canAct ? 'bg-gradient-to-r from-[#FFA135] to-[#FF7236] hover:opacity-90' : 'bg-gray-300 cursor-not-allowed opacity-70'}`}
+                          ${
+                            canAct
+                              ? 'bg-gradient-to-r from-[#FFA135] to-[#FF7236] hover:opacity-90'
+                              : 'bg-gray-300 cursor-not-allowed opacity-70'
+                          }`}
                       >
                         <Send className="h-4 w-4" />
-                        Send Invite
+                        Add to Favourite
                       </button>
                     </DropdownMenuTrigger>
 
@@ -408,7 +432,11 @@ export default function InfluencerDetailFullPage({
                           onClick={handleSendFromDropdown}
                           disabled={!canAct}
                           className={`inline-flex items-center gap-2 rounded-xl px-3 py-1.5 text-sm font-medium text-white transition-opacity shadow-sm
-                            ${canAct ? 'bg-gradient-to-r from-[#FFA135] to-[#FF7236] hover:opacity-90' : 'bg-gray-300 cursor-not-allowed opacity-70'}`}
+                            ${
+                              canAct
+                                ? 'bg-gradient-to-r from-[#FFA135] to-[#FF7236] hover:opacity-90'
+                                : 'bg-gray-300 cursor-not-allowed opacity-70'
+                            }`}
                         >
                           {sendingInvite ? 'Sending…' : 'Send Invite'}
                         </button>
@@ -454,7 +482,9 @@ export default function InfluencerDetailFullPage({
 
                   {/* Right */}
                   <div className="space-y-6">
-                    <AboutSection profile={data.profile} />
+                    {/* ✅ Only admin can see AboutSection */}
+                    {isAdminViewer && <AboutSection profile={data.profile} />}
+
                     <AudienceDistribution audience={data.profile.audience} />
                     {brandAffinity.length > 0 && <BrandAffinity items={brandAffinity} />}
                   </div>

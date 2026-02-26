@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import { ChevronDown, ExternalLink, Info, RefreshCw, Search, Download } from 'lucide-react';
 import swal from 'sweetalert';
@@ -43,6 +44,9 @@ type InfluencerDoc = {
 
   influencerId?: string;
   influencer?: string;
+
+  // ✅ added for category display (backend projection includes it)
+  category?: string[] | string | null;
 };
 
 type ListResponse = {
@@ -55,8 +59,18 @@ type ListResponse = {
 type InfluencerFilters = {
   followersMin?: string;
   followersMax?: string;
-  country?: string; // CSV: US,IN
+
+  // ✅ UI uses multi-select
+  countries?: string[];
+
+  // ✅ keep legacy key for backend compatibility (CSV: "US,IN")
+  country?: string;
+
   provider?: string; // all | youtube | instagram | tiktok
+
+  // ✅ Category filter (comma-separated in UI)
+  category?: string; // "Lifestyle" or "Lifestyle,Tech"
+  categories?: string[]; // optional parsed form
 };
 
 type Platform = 'youtube' | 'instagram' | 'tiktok';
@@ -113,14 +127,30 @@ function splitCsv(v: string): string[] {
     .filter(Boolean);
 }
 
+function countriesToCsv(f: InfluencerFilters) {
+  if (Array.isArray(f.countries) && f.countries.length) return f.countries.join(',');
+  const legacy = String(f.country || '').trim();
+  return legacy;
+}
+
+function categoriesFromFilter(f: InfluencerFilters) {
+  const arr = Array.isArray(f.categories) && f.categories.length ? f.categories : splitCsv(String(f.category || ''));
+  return Array.from(new Set(arr.map((x) => x.trim()).filter(Boolean)));
+}
+
 function chipText(filters: InfluencerFilters) {
   const chips: string[] = [];
   if (filters.provider && filters.provider !== 'all') chips.push(`Provider: ${filters.provider}`);
   if (filters.followersMin || filters.followersMax) {
     chips.push(`Followers: ${filters.followersMin || '0'} - ${filters.followersMax || '∞'}`);
   }
-  const countries = splitCsv(filters.country || '');
-  if (countries.length) chips.push(`Country: ${countries.join(', ')}`);
+
+  const cs = Array.isArray(filters.countries) && filters.countries.length ? filters.countries : splitCsv(filters.country || '');
+  if (cs.length) chips.push(`Country: ${cs.join(', ')}`);
+
+  const cats = categoriesFromFilter(filters);
+  if (cats.length) chips.push(`Category: ${cats.join(', ')}`);
+
   return chips;
 }
 
@@ -141,11 +171,206 @@ function toDomId(key: string) {
   return `row_${String(key).replace(/[^a-zA-Z0-9_-]/g, '_')}`;
 }
 
+/** --- Country list for dropdown (common) --- */
+const COUNTRY_OPTIONS: Array<{ code: string; name: string }> = [
+  { code: 'US', name: 'United States' },
+  { code: 'IN', name: 'India' },
+  { code: 'GB', name: 'United Kingdom' },
+  { code: 'CA', name: 'Canada' },
+  { code: 'AU', name: 'Australia' },
+  { code: 'NZ', name: 'New Zealand' },
+  { code: 'IE', name: 'Ireland' },
+  { code: 'DE', name: 'Germany' },
+  { code: 'FR', name: 'France' },
+  { code: 'IT', name: 'Italy' },
+  { code: 'ES', name: 'Spain' },
+  { code: 'NL', name: 'Netherlands' },
+  { code: 'BE', name: 'Belgium' },
+  { code: 'CH', name: 'Switzerland' },
+  { code: 'AT', name: 'Austria' },
+  { code: 'SE', name: 'Sweden' },
+  { code: 'NO', name: 'Norway' },
+  { code: 'DK', name: 'Denmark' },
+  { code: 'FI', name: 'Finland' },
+  { code: 'PL', name: 'Poland' },
+  { code: 'CZ', name: 'Czechia' },
+  { code: 'PT', name: 'Portugal' },
+  { code: 'RO', name: 'Romania' },
+  { code: 'GR', name: 'Greece' },
+  { code: 'TR', name: 'Turkey' },
+  { code: 'UA', name: 'Ukraine' },
+  { code: 'RU', name: 'Russia' },
+  { code: 'BR', name: 'Brazil' },
+  { code: 'AR', name: 'Argentina' },
+  { code: 'CL', name: 'Chile' },
+  { code: 'CO', name: 'Colombia' },
+  { code: 'MX', name: 'Mexico' },
+  { code: 'PE', name: 'Peru' },
+  { code: 'ZA', name: 'South Africa' },
+  { code: 'NG', name: 'Nigeria' },
+  { code: 'EG', name: 'Egypt' },
+  { code: 'KE', name: 'Kenya' },
+  { code: 'SA', name: 'Saudi Arabia' },
+  { code: 'AE', name: 'United Arab Emirates' },
+  { code: 'IL', name: 'Israel' },
+  { code: 'SG', name: 'Singapore' },
+  { code: 'MY', name: 'Malaysia' },
+  { code: 'ID', name: 'Indonesia' },
+  { code: 'PH', name: 'Philippines' },
+  { code: 'TH', name: 'Thailand' },
+  { code: 'VN', name: 'Vietnam' },
+  { code: 'JP', name: 'Japan' },
+  { code: 'KR', name: 'South Korea' },
+  { code: 'HK', name: 'Hong Kong' },
+  { code: 'TW', name: 'Taiwan' },
+  { code: 'CN', name: 'China' },
+  { code: 'PK', name: 'Pakistan' },
+  { code: 'BD', name: 'Bangladesh' },
+  { code: 'LK', name: 'Sri Lanka' },
+  { code: 'NP', name: 'Nepal' },
+];
+
+function countryLabel(code: string) {
+  const c = COUNTRY_OPTIONS.find((x) => x.code === code);
+  return c ? `${c.code} — ${c.name}` : code;
+}
+
+function MultiCountrySelect({
+  value,
+  onChange,
+}: {
+  value: string[];
+  onChange: (next: string[]) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState('');
+  const btnRef = useRef<HTMLButtonElement | null>(null);
+  const [pos, setPos] = useState<{ left: number; top: number; width: number } | null>(null);
+
+  const filtered = useMemo(() => {
+    const s = q.trim().toLowerCase();
+    if (!s) return COUNTRY_OPTIONS;
+    return COUNTRY_OPTIONS.filter((c) => c.code.toLowerCase().includes(s) || c.name.toLowerCase().includes(s));
+  }, [q]);
+
+  const summary = value?.length ? value.join(', ') : 'All';
+
+  function updatePos() {
+    const el = btnRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    setPos({ left: r.left, top: r.bottom + 8, width: r.width });
+  }
+
+  function toggle(code: string) {
+    const next = new Set(value || []);
+    if (next.has(code)) next.delete(code);
+    else next.add(code);
+    onChange(Array.from(next).sort());
+  }
+
+  useEffect(() => {
+    if (!open) return;
+
+    updatePos();
+
+    const onReflow = () => updatePos();
+    window.addEventListener('scroll', onReflow, true);
+    window.addEventListener('resize', onReflow);
+
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    window.addEventListener('keydown', onKey);
+
+    return () => {
+      window.removeEventListener('scroll', onReflow, true);
+      window.removeEventListener('resize', onReflow);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  const overlay =
+    open && pos && typeof document !== 'undefined'
+      ? createPortal(
+          <div className="fixed inset-0 z-[9999]">
+            <div className="absolute inset-0 bg-black/10" onClick={() => setOpen(false)} />
+
+            <div
+              className="fixed rounded-xl border border-slate-200 bg-white shadow-2xl overflow-hidden"
+              style={{ left: pos.left, top: pos.top, width: pos.width, maxHeight: 'min(70vh, 520px)' }}
+            >
+              <div className="p-3 border-b border-slate-200">
+                <input
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  value={q}
+                  onChange={(e) => setQ(e.target.value)}
+                  placeholder="Search"
+                  autoFocus
+                />
+                <div className="mt-2 flex items-center justify-between">
+                  <button type="button" className="text-xs font-semibold text-slate-700 hover:underline" onClick={() => onChange([])}>
+                    Clear
+                  </button>
+                  <span className="text-xs text-slate-500">{value.length} selected</span>
+                </div>
+              </div>
+
+              <div className="max-h-[420px] overflow-auto p-2">
+                {filtered.map((c) => {
+                  const checked = value.includes(c.code);
+                  return (
+                    <label key={c.code} className="flex items-center gap-2 px-2 py-2 rounded-lg hover:bg-slate-50 cursor-pointer">
+                      <Checkbox checked={checked} onCheckedChange={() => toggle(c.code)} />
+                      <span className="text-sm text-slate-800">{countryLabel(c.code)}</span>
+                    </label>
+                  );
+                })}
+
+                {!filtered.length ? <div className="px-2 py-6 text-center text-sm text-slate-500">No countries found</div> : null}
+              </div>
+
+              <div className="p-3 border-t border-slate-200 bg-slate-50">
+                <button
+                  type="button"
+                  className="w-full px-3 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-sm font-semibold"
+                  onClick={() => setOpen(false)}
+                >
+                  Done
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )
+      : null;
+
+  return (
+    <>
+      <button
+        ref={btnRef}
+        type="button"
+        className="w-full px-3 py-3 border border-slate-300 rounded-xl bg-white text-left flex items-center justify-between gap-2 hover:bg-slate-50"
+        onClick={() => {
+          setOpen((v) => {
+            const next = !v;
+            if (!v && next) updatePos();
+            return next;
+          });
+        }}
+      >
+        <span className="text-sm text-slate-800 truncate">{summary}</span>
+        <ChevronDown className={`w-4 h-4 text-slate-500 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+
+      {overlay}
+    </>
+  );
+}
+
 export default function Page() {
   const SAVED_ENDPOINT = '/modash/saved';
   const USERS_ENDPOINT = '/modash/users';
-
-  // ✅ CSV export endpoint (POST, returns blob)
   const EXPORT_ENDPOINT = '/modash/export-csv';
 
   const [items, setItems] = useState<InfluencerDoc[]>([]);
@@ -183,19 +408,21 @@ export default function Page() {
   const [downloadLimit, setDownloadLimit] = useState('');
   const [downloadLoading, setDownloadLoading] = useState(false);
 
-  // filters
+  // ✅ filters (draft + active)
   const [filtersDraft, setFiltersDraft] = useState<InfluencerFilters>({
     provider: 'all',
     followersMin: '',
     followersMax: '',
-    country: '',
+    countries: [],
+    category: '',
   });
 
   const [filtersActive, setFiltersActive] = useState<InfluencerFilters>({
     provider: 'all',
     followersMin: '',
     followersMax: '',
-    country: '',
+    countries: [],
+    category: '',
   });
 
   const activeChips = useMemo(() => chipText(filtersActive), [filtersActive]);
@@ -306,11 +533,15 @@ export default function Page() {
 
     if (f.provider && f.provider !== 'all') params.provider = f.provider;
 
-    // listing endpoint may ignore these if not implemented, but export uses them
     if (String(f.followersMin || '').trim()) params.minFollowers = String(f.followersMin).trim();
     if (String(f.followersMax || '').trim()) params.maxFollowers = String(f.followersMax).trim();
 
-    if (String(f.country || '').trim()) params.country = String(f.country).trim();
+    const countryCsv = countriesToCsv(f);
+    if (countryCsv) params.country = countryCsv;
+
+    // ✅ Category (backend supports: category OR categories; it splits by comma)
+    const cats = categoriesFromFilter(f);
+    if (cats.length) params.category = cats.join(',');
 
     return params;
   }
@@ -386,14 +617,13 @@ export default function Page() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // hint
+  // hint (optional)
   useEffect(() => {
     const q = query.trim().toLowerCase();
     if (!q) {
       setSearchHint('');
       return;
     }
-    // optional: setSearchHint(...) if you want
   }, [query, itemsByHandle]);
 
   // type search (debounced) => saved only
@@ -422,13 +652,27 @@ export default function Page() {
   }, [query, filtersActive, selectedPlatformKeys.join('|'), view]);
 
   function applyFilters() {
-    const next = { ...filtersDraft };
+    // normalize categories once (optional)
+    const cats = categoriesFromFilter(filtersDraft);
+    const next: InfluencerFilters = {
+      ...filtersDraft,
+      categories: cats,
+    };
+
     setFiltersActive(next);
     loadSaved(1, next, query.trim());
   }
 
   function clearFilters() {
-    const empty: InfluencerFilters = { provider: 'all', followersMin: '', followersMax: '', country: '' };
+    const empty: InfluencerFilters = {
+      provider: 'all',
+      followersMin: '',
+      followersMax: '',
+      countries: [],
+      country: '',
+      category: '',
+      categories: [],
+    };
     setFiltersDraft(empty);
     setFiltersActive(empty);
     loadSaved(1, empty, query.trim());
@@ -491,23 +735,6 @@ export default function Page() {
 
   const currentItems = view === 'saved' ? items : usersItems;
 
-  // header checkbox state
-  const allOnPageSelected = useMemo(() => {
-    if (!currentItems.length) return false;
-    return currentItems.every((it) => !!selectedIds[getRowKey(it)]);
-  }, [currentItems, selectedIds]);
-
-  const someOnPageSelected = useMemo(() => {
-    if (!currentItems.length) return false;
-    return currentItems.some((it) => !!selectedIds[getRowKey(it)]);
-  }, [currentItems, selectedIds]);
-
-  const headerCheckState = useMemo(() => {
-    if (allOnPageSelected) return true;
-    if (someOnPageSelected) return 'indeterminate';
-    return false;
-  }, [allOnPageSelected, someOnPageSelected]);
-
   function getApiUrl(path: string) {
     const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || process.env.NEXT_PUBLIC_API_URL || '').replace(/\/$/, '');
     return API_BASE ? `${API_BASE}${path}` : path;
@@ -548,8 +775,12 @@ export default function Page() {
       const qClean = String(query || '').trim();
       if (qClean) payload.search = qClean;
 
-      const countryClean = String(filtersActive.country || '').trim();
-      if (countryClean) payload.country = countryClean;
+      const countryCsv = countriesToCsv(filtersActive);
+      if (countryCsv) payload.country = countryCsv;
+
+      // ✅ Category export (backend splits comma string)
+      const cats = categoriesFromFilter(filtersActive);
+      if (cats.length) payload.category = cats.join(',');
 
       const resp = await fetch(url, {
         method: 'POST',
@@ -748,11 +979,13 @@ export default function Page() {
               <div className="px-5 py-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between gap-3 flex-wrap">
                 <div>
                   <div className="text-sm font-semibold text-slate-900">Filters</div>
+                  <div className="text-xs text-slate-600 mt-0.5">Country is multi-select. Category supports comma-separated.</div>
                 </div>
               </div>
 
               <div className="p-5">
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+                  {/* Provider */}
                   <div className="rounded-xl border border-slate-200 bg-white p-3">
                     <label className="text-[11px] font-semibold text-slate-600 mb-2 block uppercase tracking-wide">Provider</label>
                     <select
@@ -767,6 +1000,7 @@ export default function Page() {
                     </select>
                   </div>
 
+                  {/* Followers min */}
                   <div className="rounded-xl border border-slate-200 bg-white p-3">
                     <label className="text-[11px] font-semibold text-slate-600 mb-2 block uppercase tracking-wide">Followers Min</label>
                     <input
@@ -778,6 +1012,7 @@ export default function Page() {
                     />
                   </div>
 
+                  {/* Followers max */}
                   <div className="rounded-xl border border-slate-200 bg-white p-3">
                     <label className="text-[11px] font-semibold text-slate-600 mb-2 block uppercase tracking-wide">Followers Max</label>
                     <input
@@ -789,16 +1024,41 @@ export default function Page() {
                     />
                   </div>
 
+                  {/* Country multi-select */}
                   <div className="rounded-xl border border-slate-200 bg-white p-3">
-                    <label className="text-[11px] font-semibold text-slate-600 mb-2 block uppercase tracking-wide">Country</label>
+                    <label className="text-[11px] font-semibold text-slate-600 mb-2 block uppercase tracking-wide">
+                      Country (Multi-select)
+                    </label>
+                    <MultiCountrySelect
+                      value={filtersDraft.countries || []}
+                      onChange={(next) =>
+                        setFiltersDraft((p) => ({
+                          ...p,
+                          countries: next,
+                          country: '', // clear legacy text to avoid conflicts
+                        }))
+                      }
+                    />
+                    <p className="text-[11px] text-slate-500 mt-2">Pick multiple (US, IN, GB…)</p>
+                  </div>
+
+                  {/* Category */}
+                  <div className="rounded-xl border border-slate-200 bg-white p-3">
+                    <label className="text-[11px] font-semibold text-slate-600 mb-2 block uppercase tracking-wide">Category</label>
                     <input
                       className="w-full px-3 py-3 border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
-                      value={filtersDraft.country || ''}
-                      onChange={(e) => setFiltersDraft((p) => ({ ...p, country: e.target.value }))}
-                      placeholder="GB or GB,IN"
+                      value={filtersDraft.category || ''}
+                      onChange={(e) =>
+                        setFiltersDraft((p) => ({
+                          ...p,
+                          category: e.target.value,
+                          categories: [], // normalize on Apply
+                        }))
+                      }
+                      placeholder="Fitness or Fitness,Beauty"
                     />
                     <p className="text-[11px] text-slate-500 mt-2">
-                      Multiple: <span className="font-mono">GB,IN</span>
+                      Multiple: <span className="font-mono">Fitness,Beauty</span>
                     </p>
                   </div>
                 </div>
@@ -823,7 +1083,7 @@ export default function Page() {
                   </button>
                 </div>
 
-                {/* ✅ CSV Download */}
+                {/* CSV Download */}
                 <div className="mt-6 pt-5 border-t border-slate-200">
                   <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
                     <div className="flex items-center gap-2 flex-wrap">
@@ -969,10 +1229,7 @@ export default function Page() {
                     <div className="grid grid-cols-12 items-start gap-3">
                       {/* checkbox */}
                       <div className="col-span-1 pt-2">
-                        <Checkbox
-                          checked={checked}
-                          onCheckedChange={(v: any) => toggleSelect(rowKey, !!v, p._id ? String(p._id) : undefined)}
-                        />
+                        <Checkbox checked={checked} onCheckedChange={(v: any) => toggleSelect(rowKey, !!v, p._id ? String(p._id) : undefined)} />
                       </div>
 
                       {/* handle column */}
@@ -986,9 +1243,7 @@ export default function Page() {
                             <div className="flex items-center gap-2">
                               <h3 className="text-lg font-semibold text-slate-900 truncate">{p.handle || p.username || DASH}</h3>
 
-                              <span className="text-[10px] px-2 py-0.5 rounded-full border border-slate-300 text-slate-600">
-                                {providerLabel}
-                              </span>
+                              <span className="text-[10px] px-2 py-0.5 rounded-full border border-slate-300 text-slate-600">{providerLabel}</span>
 
                               {p.isVerified ? (
                                 <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700">
@@ -1024,9 +1279,7 @@ export default function Page() {
                           </div>
                           <div className="hidden lg:block">
                             <div className="text-xs text-slate-500 mb-1">{view === 'saved' ? 'Updated' : 'Created'}</div>
-                            <div className="text-sm font-medium text-slate-900">
-                              {view === 'saved' ? formatDate(p.updatedAt) : formatDate(p.createdAt)}
-                            </div>
+                            <div className="text-sm font-medium text-slate-900">{view === 'saved' ? formatDate(p.updatedAt) : formatDate(p.createdAt)}</div>
                           </div>
                         </div>
 
@@ -1074,13 +1327,7 @@ export default function Page() {
                           </button>
                         )}
 
-                        <button
-                          type="button"
-                          className="p-2 hover:bg-slate-100 rounded-lg transition-colors"
-                          onClick={() => toggleExpand(rowKey)}
-                          aria-expanded={isOpen}
-                          aria-label="Expand"
-                        >
+                        <button type="button" className="p-2 hover:bg-slate-100 rounded-lg transition-colors" onClick={() => toggleExpand(rowKey)} aria-expanded={isOpen} aria-label="Expand">
                           <ChevronDown className={`w-5 h-5 text-slate-600 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
                         </button>
                       </div>
@@ -1099,6 +1346,7 @@ export default function Page() {
                               <Row label="State" value={p.state || DASH} />
                               <Row label="Country" value={p.country || DASH} />
                               <Row label="Language" value={p.language?.name || p.language?.code || DASH} />
+                              <Row label="Category" value={Array.isArray(p.category) ? p.category.join(', ') : p.category || DASH} />
                             </div>
                           </div>
 

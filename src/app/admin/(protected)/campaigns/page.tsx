@@ -15,7 +15,6 @@ import {
   HiUserGroup,
   HiPencil,
   HiOutlineDocumentText,
-  HiOutlineFlag, // ✅ add this
 } from "react-icons/hi";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
@@ -304,23 +303,13 @@ export default function AdminCampaignsPage() {
                     {/* ✅ NEW: Deliverables */}
                     <Tooltip>
                       <TooltipTrigger asChild>
-                        <Link href={`/admin/campaigns/deliverables/${c._id}`}>
+                        <Link href={`/admin/campaigns/deliverables/${c.campaignsId}`}>
                           <Button variant="ghost" size="icon" aria-label="See Deliverables">
                             <HiOutlineDocumentText className="h-5 w-5" />
                           </Button>
                         </Link>
                       </TooltipTrigger>
                       <TooltipContent>See Deliverables</TooltipContent>
-                    </Tooltip>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Link href={`/admin/campaigns/milestone?campaignId=${c.campaignsId}`}>
-                          <Button variant="ghost" size="icon" aria-label="View Milestones">
-                            <HiOutlineFlag className="h-5 w-5" />
-                          </Button>
-                        </Link>
-                      </TooltipTrigger>
-                      <TooltipContent>View Milestones</TooltipContent>
                     </Tooltip>
                   </TableCell>
                 </TableRow>

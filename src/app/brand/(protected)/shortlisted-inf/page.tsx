@@ -100,6 +100,43 @@ const formatDate = (iso?: string | null) =>
 const normalizeDeliverablesToUniqueInfluencers = (res: any): ShortlistedRow[] => {
   const body = res?.data && typeof res.data === "object" ? res.data : res;
 
+  const platformToString = (obj: any) => {
+    // NEW API: platforms: string[]
+    if (Array.isArray(obj?.platforms) && obj.platforms.length) {
+      return obj.platforms.join(", "); // "youtube" or "youtube, instagram"
+    }
+    // fallback: platform: string
+    if (typeof obj?.platform === "string" && obj.platform.trim()) {
+      return obj.platform.trim();
+    }
+    // sometimes backend might return platforms as string
+    if (typeof obj?.platforms === "string" && obj.platforms.trim()) {
+      return obj.platforms.trim();
+    }
+    return "—";
+  };
+
+  // ✅ NEW API SHAPE: { success, total, influencers: [...] }
+  if (Array.isArray(body?.influencers)) {
+    return body.influencers
+      .map((inf: any) => {
+        const influencerId = String(inf?.influencerId || inf?._id || "");
+        if (!influencerId) return null;
+
+        return {
+          rowId: safeRowId(),
+          influencerId,
+          name: String(inf?.name || inf?.fullName || inf?.username || "—"),
+          country: String(inf?.country || "—"),
+          platform: platformToString(inf), // ✅ FIXED HERE
+          status: "—",
+          createdAt: inf?.createdAt || null,
+        } as ShortlistedRow;
+      })
+      .filter(Boolean) as ShortlistedRow[];
+  }
+
+  // ✅ OLD API SHAPE (invites list)
   const list =
     body?.data ||
     body?.result ||
@@ -109,17 +146,11 @@ const normalizeDeliverablesToUniqueInfluencers = (res: any): ShortlistedRow[] =>
 
   const arr = Array.isArray(list) ? list : [];
 
-  // ✅ unique by influencerId
   const map = new Map<string, ShortlistedRow>();
 
   for (const x of arr) {
     const inf = x?.influencer || {};
-    const influencerId =
-      x?.influencerId ||
-      inf?.influencerId ||
-      inf?._id ||
-      "";
-
+    const influencerId = x?.influencerId || inf?.influencerId || inf?._id || "";
     if (!influencerId) continue;
     if (map.has(String(influencerId))) continue;
 
@@ -129,7 +160,7 @@ const normalizeDeliverablesToUniqueInfluencers = (res: any): ShortlistedRow[] =>
       influencerId: String(influencerId),
       name: String(inf?.name || "—"),
       country: String(inf?.country || "—"),
-      platform: String(x?.platform || "—"),
+      platform: platformToString(x) !== "—" ? platformToString(x) : platformToString(inf), // ✅ more robust
       status: String(x?.status || "—"),
       createdAt: x?.createdAt || null,
     });
@@ -395,18 +426,18 @@ export default function ShortlistedInfluencersPage() {
         const filtered = !term
           ? normalized
           : normalized.filter((r) =>
-              [
-                r.name,
-                r.influencerId,
-                r.country,
-                r.platform,
-                r.status,
-                r.createdAt || "",
-              ]
-                .join(" ")
-                .toLowerCase()
-                .includes(term)
-            );
+            [
+              r.name,
+              r.influencerId,
+              r.country,
+              r.platform,
+              r.status,
+              r.createdAt || "",
+            ]
+              .join(" ")
+              .toLowerCase()
+              .includes(term)
+          );
 
         setRowsData(filtered);
 
@@ -418,8 +449,8 @@ export default function ShortlistedInfluencersPage() {
         console.error(e);
         setError(
           e?.response?.data?.message ||
-            e?.message ||
-            "Failed to load shortlisted influencers."
+          e?.message ||
+          "Failed to load shortlisted influencers."
         );
       } finally {
         setLoading(false);
@@ -616,8 +647,8 @@ export default function ShortlistedInfluencersPage() {
                 !inf.influencerId
                   ? "Missing influencerId"
                   : isBudgetLocked
-                  ? "Campaign budget already fully allocated in milestones"
-                  : "Add milestone"
+                    ? "Campaign budget already fully allocated in milestones"
+                    : "Add milestone"
               }
             >
               Add Milestone
@@ -708,15 +739,6 @@ export default function ShortlistedInfluencersPage() {
             </p>
           )}
         </div>
-
-        <Button
-          size="sm"
-          variant="outline"
-          className="bg-white text-gray-800 hover:bg-gray-100 cursor-pointer self-start"
-          onClick={() => router.back()}
-        >
-          Back
-        </Button>
       </header>
 
       {/* Search */}
@@ -948,10 +970,10 @@ export default function ShortlistedInfluencersPage() {
                   {isBudgetLocked
                     ? "Budget Reached"
                     : isSavingMilestone
-                    ? "Redirecting..."
-                    : amountNum > 0
-                    ? `Pay ${totalWithFee.toFixed(2)} (incl. fee)`
-                    : "Add Milestone"}
+                      ? "Redirecting..."
+                      : amountNum > 0
+                        ? `Pay ${totalWithFee.toFixed(2)} (incl. fee)`
+                        : "Add Milestone"}
                 </Button>
               </div>
             </div>

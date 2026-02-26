@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import {
   HiSearch,
@@ -10,13 +10,14 @@ import {
   HiCheckCircle,
   HiOutlineDocumentText,
   HiChevronRight as HiChevronRightIcon,
+  HiOutlineStar,
 } from "react-icons/hi";
 import { get, post } from "@/lib/api";
 
 type CampaignStatus = "open" | "paused";
 
 interface Campaign {
-  id: string;
+  id: string; // campaignsId (UUID)
   productOrServiceName: string;
   description: string;
   timeline: { startDate: string; endDate: string };
@@ -32,8 +33,8 @@ interface Campaign {
   isApproved?: boolean;
   createdByRole?: string;
 
-  // ✅ NEW
   shortlistedCount?: number;
+  favoriteCount?: number;
 
   raw?: any;
 }
@@ -63,6 +64,52 @@ const safeCurrency = (amt: number) =>
     currency: "USD",
   }).format(Number.isFinite(amt) ? amt : 0);
 
+/** ✅ Deliverables response => { success:true, count:number, data:[...] } */
+const getShortlistedCountFromDeliverablesResp = (res: any) => {
+  const body = res?.data && typeof res.data === "object" ? res.data : res;
+
+  const cnt = Number(body?.count ?? body?.total);
+  if (!Number.isNaN(cnt)) return cnt;
+
+  const arr = Array.isArray(body?.data) ? body.data : [];
+  return arr.length;
+};
+
+/** ✅ Invitations response => { status:"success", total:number, invitations:[...] } */
+const getFavoriteTotalFromInvitationsResp = (res: any) => {
+  const body = res?.data && typeof res.data === "object" ? res.data : res;
+
+  const total = Number(body?.total);
+  if (!Number.isNaN(total)) return total;
+
+  const invitations = Array.isArray(body?.invitations) ? body.invitations : [];
+  return invitations.length;
+};
+
+const uniqKeys = (keys: any[]) => {
+  const out: string[] = [];
+  const set = new Set<string>();
+  keys.forEach((k) => {
+    const v = String(k || "").trim();
+    if (!v) return;
+    if (set.has(v)) return;
+    set.add(v);
+    out.push(v);
+  });
+  return out;
+};
+
+const isDeliverablesOk = (res: any) => {
+  const body = res?.data && typeof res.data === "object" ? res.data : res;
+  return (
+    body &&
+    (body.success === true ||
+      body.status === "success" ||
+      typeof body.count === "number" ||
+      Array.isArray(body.data))
+  );
+};
+
 export default function BrandReviewCampaignsPage() {
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [search, setSearch] = useState("");
@@ -76,9 +123,12 @@ export default function BrandReviewCampaignsPage() {
   const [totalPages, setTotalPages] = useState(1);
   const [debouncedSearch, setDebouncedSearch] = useState("");
 
-  const [approveUpdating, setApproveUpdating] = useState<
-    Record<string, boolean>
-  >({});
+  const [approveUpdating, setApproveUpdating] = useState<Record<string, boolean>>(
+    {}
+  );
+
+  // request-guard for counts hydration (prevents stale overwrite)
+  const countsReqRef = useRef(0);
 
   const applyPendingPatch = (c: any) => {
     const pending =
@@ -98,6 +148,96 @@ export default function BrandReviewCampaignsPage() {
       },
     };
   };
+
+  /** ✅ Try deliverables endpoint with multiple base paths + ids (campaign vs campaign2) */
+  const fetchShortlistedCount = useCallback(async (c: Campaign) => {
+    const candidates = uniqKeys([
+      c.id, // campaignsId (UUID) — you confirmed backend queries campaignsId string
+      c?.raw?.campaignsId,
+      c?.raw?.campaignsID,
+      c?.raw?.campaignId, // mongo campaignId (fallback)
+      c?.raw?._id,
+      c?.raw?.id,
+    ]);
+
+    // ✅ try BOTH (because your controller is "...ByCampaign2")
+    const bases = [
+      "/deliverable/influencer/campaign",
+      "/deliverable/influencer/campaign",
+    ];
+
+    for (const base of bases) {
+      for (const key of candidates) {
+        try {
+          const resp = await get(`${base}/${encodeURIComponent(key)}`);
+          if (isDeliverablesOk(resp)) {
+            return getShortlistedCountFromDeliverablesResp(resp);
+          }
+        } catch {
+          // keep trying
+        }
+      }
+    }
+
+    return 0;
+  }, []);
+
+  /** ✅ Favorites endpoint expects campaignsId */
+  const fetchFavoriteCount = useCallback(async (campaignsId: string) => {
+    try {
+      const resp = await post(`/admin-invitations/get-by-campaign`, {
+        campaignsId,
+        page: 1,
+        limit: 1,
+      });
+      return getFavoriteTotalFromInvitationsResp(resp);
+    } catch {
+      return 0;
+    }
+  }, []);
+
+  const hydrateCounts = useCallback(
+    async (list: Campaign[]) => {
+      const reqId = ++countsReqRef.current;
+
+      const results = await Promise.allSettled(
+        list.map(async (c) => {
+          const campaignsId = c.id;
+
+          const [shortlistedCount, favoriteCount] = await Promise.all([
+            fetchShortlistedCount(c),
+            fetchFavoriteCount(campaignsId),
+          ]);
+
+          return { id: campaignsId, shortlistedCount, favoriteCount };
+        })
+      );
+
+      if (countsReqRef.current !== reqId) return;
+
+      const map = new Map<
+        string,
+        { shortlistedCount: number; favoriteCount: number }
+      >();
+
+      results.forEach((r) => {
+        if (r.status === "fulfilled") {
+          map.set(r.value.id, {
+            shortlistedCount: r.value.shortlistedCount,
+            favoriteCount: r.value.favoriteCount,
+          });
+        }
+      });
+
+      setCampaigns((prev) =>
+        prev.map((p) => {
+          const found = map.get(p.id);
+          return found ? { ...p, ...found } : p;
+        })
+      );
+    },
+    [fetchFavoriteCount, fetchShortlistedCount]
+  );
 
   const fetchCampaigns = useCallback(
     async (page: number, term: string) => {
@@ -152,7 +292,6 @@ export default function BrandReviewCampaignsPage() {
           const isApproved =
             publishStatus === "brand_confirmed" || publishStatus === "approved";
 
-          // ✅ Shortlisted count (handles multiple backend field names)
           const shortlistCount =
             merged.shortlistedCount ??
             merged.shortListedCount ??
@@ -163,8 +302,24 @@ export default function BrandReviewCampaignsPage() {
               : undefined) ??
             (Array.isArray(merged.shortlisted) ? merged.shortlisted.length : 0);
 
+          const favCount =
+            merged.favoriteCount ??
+            merged.favouriteCount ??
+            merged.favCount ??
+            merged.favoriteInfluencersCount ??
+            merged.favouriteInfluencersCount ??
+            merged.favInfluencersCount ??
+            (Array.isArray(merged.favoriteInfluencers)
+              ? merged.favoriteInfluencers.length
+              : undefined) ??
+            (Array.isArray(merged.favorites) ? merged.favorites.length : 0);
+
+          // ✅ IMPORTANT: keep campaignsId as id (UUID) because BOTH count APIs use campaignsId
+          const id =
+            merged.campaignsId ?? merged.campaignsID ?? merged.id ?? merged._id;
+
           return {
-            id: merged.campaignsId ?? merged.id ?? merged._id,
+            id: String(id),
             productOrServiceName: merged.productOrServiceName ?? "",
             description: merged.description ?? "",
             timeline: merged.timeline ?? { startDate: "", endDate: "" },
@@ -178,18 +333,17 @@ export default function BrandReviewCampaignsPage() {
             isApproved,
             createdByRole,
             shortlistedCount: typeof shortlistCount === "number" ? shortlistCount : 0,
+            favoriteCount: typeof favCount === "number" ? favCount : 0,
             raw: merged,
           };
         });
 
         setCampaigns(normalized);
+        hydrateCounts(normalized);
 
         const total = Number(body?.total ?? 0);
         const respLimit = Number(body?.limit ?? limit);
-        const computedTotalPages = Math.max(
-          1,
-          Math.ceil(total / (respLimit || 1))
-        );
+        const computedTotalPages = Math.max(1, Math.ceil(total / (respLimit || 1)));
         setTotalPages(computedTotalPages);
       } catch (err: any) {
         setError(err.message || "Failed to load review campaigns.");
@@ -199,7 +353,7 @@ export default function BrandReviewCampaignsPage() {
         setLoading(false);
       }
     },
-    [limit]
+    [limit, hydrateCounts]
   );
 
   useEffect(() => {
@@ -264,10 +418,7 @@ export default function BrandReviewCampaignsPage() {
       {/* Search */}
       <div className="mb-4 max-w-md">
         <div className="relative">
-          <HiSearch
-            className="absolute inset-y-0 left-3 my-auto text-gray-400"
-            size={20}
-          />
+          <HiSearch className="absolute inset-y-0 left-3 my-auto text-gray-400" size={20} />
           <input
             type="text"
             placeholder="Search campaigns..."
@@ -286,11 +437,7 @@ export default function BrandReviewCampaignsPage() {
       ) : campaigns.length === 0 ? (
         <p className="text-gray-700">No campaigns found.</p>
       ) : (
-        <TableView
-          data={campaigns}
-          approveUpdating={approveUpdating}
-          onApprove={onApprove}
-        />
+        <TableView data={campaigns} approveUpdating={approveUpdating} onApprove={onApprove} />
       )}
 
       <Pagination
@@ -346,13 +493,11 @@ function TableView({
                   "Budget",
                   "Campaign Timeline",
                   "Shortlisted Influencers",
+                  "Favorite Influencers",
                   "Status",
                   "Actions",
                 ].map((h) => (
-                  <th
-                    key={h}
-                    className="px-6 py-3 text-center font-medium whitespace-nowrap"
-                  >
+                  <th key={h} className="px-6 py-3 text-center font-medium whitespace-nowrap">
                     {h}
                   </th>
                 ))}
@@ -370,6 +515,7 @@ function TableView({
                     : "Open";
 
                 const shortlistCount = c.shortlistedCount ?? 0;
+                const favCount = c.favoriteCount ?? 0;
 
                 return (
                   <tr
@@ -406,11 +552,10 @@ function TableView({
                     </td>
 
                     <td className="px-6 py-4 whitespace-nowrap align-top text-center">
-                      {safeDateLabel(c.timeline?.startDate)} –{" "}
-                      {safeDateLabel(c.timeline?.endDate)}
+                      {safeDateLabel(c.timeline?.startDate)} – {safeDateLabel(c.timeline?.endDate)}
                     </td>
 
-                    {/* ✅ NEW: Shortlisted Influencers column AFTER timeline */}
+                    {/* Shortlisted */}
                     <td className="px-6 py-4 align-top text-center">
                       <Link
                         href={`/brand/shortlisted-inf?id=${c.id}`}
@@ -423,44 +568,50 @@ function TableView({
                         title="View shortlisted influencers"
                         aria-label={`View shortlisted influencers (${shortlistCount})`}
                       >
-                        <HiOutlineDocumentText
-                          size={18}
-                          className="opacity-70 group-hover:text-[#FF7236]"
-                        />
-                        <span className="group-hover:underline underline-offset-2">
-                          Shortlisted
-                        </span>
-
-                        <span className="ml-1 inline-flex min-w-[2rem] justify-center rounded-full bg-gray-900 px-2 py-0.5 text-xs font-bold text-white group-hover:bg-[#FF7236]">
-                          {shortlistCount}
-                        </span>
-
-                        <HiChevronRightIcon
-                          size={18}
-                          className="opacity-60 group-hover:opacity-100"
-                        />
+                        <HiOutlineDocumentText size={18} className="opacity-70 group-hover:text-[#FF7236]" />
+                        <span className="group-hover:underline underline-offset-2">Shortlisted</span>
+                        <HiChevronRightIcon size={18} className="opacity-60 group-hover:opacity-100" />
                       </Link>
                     </td>
 
-                    {/* ✅ Status (NO DROPDOWN) */}
+                    {/* Favorites */}
+                    <td className="px-6 py-4 align-top text-center">
+                      <Link
+                        href={`/brand/fav-influencer?id=${c.id}`}
+                        className={[
+                          "group inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-semibold transition",
+                          favCount > 0
+                            ? "border-gray-200 bg-gray-50 text-gray-900 hover:border-[#FF7236] hover:bg-white hover:shadow-sm"
+                            : "border-gray-200 bg-gray-100 text-gray-500 hover:bg-white hover:border-[#FF7236]",
+                        ].join(" ")}
+                        title="View favorite influencers"
+                        aria-label={`View favorite influencers (${favCount})`}
+                      >
+                        <HiOutlineStar size={18} className="opacity-70 group-hover:text-[#FF7236]" />
+                        <span className="group-hover:underline underline-offset-2">Favorites</span>
+                        <span className="ml-1 inline-flex min-w-[2rem] justify-center rounded-full bg-gray-900 px-2 py-0.5 text-xs font-bold text-white group-hover:bg-[#FF7236]">
+                          {favCount}
+                        </span>
+                        <HiChevronRightIcon size={18} className="opacity-60 group-hover:opacity-100" />
+                      </Link>
+                    </td>
+
+                    {/* Status */}
                     <td className="px-6 py-4 whitespace-nowrap align-top text-center">
                       <div className="inline-flex items-center justify-center rounded-full border px-3 py-1 text-sm font-semibold text-gray-900 bg-white">
                         {statusLabel}
                       </div>
 
                       {String(c.createdByRole || "").toLowerCase() === "admin" ? (
-                        <div className="mt-1 text-xs font-semibold text-gray-500">
-                          By Admin
-                        </div>
+                        <div className="mt-1 text-xs font-semibold text-gray-500">By Admin</div>
                       ) : null}
 
                       {isApproved ? (
-                        <div className="mt-1 text-xs font-semibold text-green-700">
-                          Approved
-                        </div>
+                        <div className="mt-1 text-xs font-semibold text-green-700">Approved</div>
                       ) : null}
                     </td>
 
+                    {/* Actions */}
                     <td className="px-6 py-4 whitespace-nowrap align-top text-center">
                       <div className="flex items-center justify-center gap-2 flex-wrap">
                         {isApproved ? (
@@ -491,11 +642,7 @@ function TableView({
                           title="Approve campaign"
                         >
                           <HiCheckCircle className="mr-1" size={18} />
-                          {isApproved
-                            ? "Approved"
-                            : isApproving
-                            ? "Approving..."
-                            : "Approve"}
+                          {isApproved ? "Approved" : isApproving ? "Approving..." : "Approve"}
                         </button>
                       </div>
                     </td>
