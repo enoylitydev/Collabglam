@@ -211,6 +211,7 @@ export default function BrandCreateCampaignPage() {
 
   const imagesMissing = existingImages.length + productImages.length === 0;
 
+  const [draftLoaded, setDraftLoaded] = useState(false);
   const [isSavingDraft, setIsSavingDraft] = useState(false);
   const [draftId, setDraftId] = useState<string | null>(null);
   const [loadedCampaignsId, setLoadedCampaignsId] = useState<string | null>(null);
@@ -421,7 +422,36 @@ export default function BrandCreateCampaignPage() {
       .finally(() => setIsLoading(false));
   }, [isEditMode, campaignId, countries, categories]);
 
- 
+  useEffect(() => {
+    if (isEditMode || draftLoaded) return;
+    if (!countries.length || !categories.length) return;
+
+    const brandId =
+      typeof window !== "undefined" ? localStorage.getItem("brandId") || "" : "";
+    if (!brandId) return;
+
+    get<CampaignEditPayload>(`/campaign/draft?brandId=${brandId}`)
+      .then((draft) => {
+        if (!draft || draft.isDraft !== 1) return;
+
+        // ✅ NEW: Skip drafts created by admin
+        const adminCreated =
+          draft.approvalMode === "admin_review" || draft.createdBy?.role === "admin";
+        if (adminCreated) return;
+
+        hydrateFromCampaign(draft);
+        setDraftLoaded(true);
+
+        toast({
+          icon: "info",
+          title: "Draft loaded",
+          text: "We restored your last saved campaign draft.",
+        });
+      })
+      .catch((err) => {
+        console.error("No draft found or failed to load draft", err);
+      });
+  }, [isEditMode, draftLoaded, countries, categories]);
 
   // ── handlers & reset ─────────────────────────────────────
 
@@ -489,7 +519,7 @@ export default function BrandCreateCampaignPage() {
     setSelectedCategoryId(null); setSelectedSubcategories([]); setSelectedGoal("");
     setCampaignType(""); setCustomCampaignType(""); setBudget(""); setTimeline({ start: "", end: "" });
     setCreativeBriefText(""); setCreativeBriefFiles([]); setExistingBriefFiles([]);
-    setUseFileUploadForBrief(false); setAdditionalNotes(""); setDraftId(null);
+    setUseFileUploadForBrief(false); setAdditionalNotes(""); setDraftId(null); setDraftLoaded(false);
   };
 
   const fmtMoney = (n: number | "") => n === "" ? "—" : `$${Number(n).toLocaleString()}`;
@@ -567,6 +597,7 @@ export default function BrandCreateCampaignPage() {
       const saved = await post<any>("/campaign/save-draft", formData);
       const newId = saved?.campaign?._id || saved?._id || draftId || null;
       if (newId) setDraftId(newId);
+      setDraftLoaded(true);
 
       toast({ icon: "success", title: "Draft saved", text: "Your campaign draft is stored safely." });
     } catch (err: any) {
