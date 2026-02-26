@@ -218,7 +218,6 @@ export default function AdminCreateCampaignPage() {
 
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [showRequiredHints, setShowRequiredHints] = useState(false);
-    const [draftLoaded, setDraftLoaded] = useState(false);
 
     const [isPreviewOpen, setIsPreviewOpen] = useState(false);
 
@@ -485,29 +484,6 @@ export default function AdminCreateCampaignPage() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isEditMode, campaignId, countries, categories]);
 
-    // ✅ NEW: ── fetch existing draft if not strictly editing ────────────────
-    useEffect(() => {
-        if (isEditMode || draftLoaded || !resolvedBrandId) return;
-        if (!countries.length || !categories.length) return;
-
-        // Auto-load their active draft so they don't accidentally duplicate it
-        get<CampaignEditPayload>(`/campaign/draft?brandId=${resolvedBrandId}`)
-            .then((draft: any) => {
-                if (!draft || draft.isDraft !== 1) return;
-                hydrateFromCampaign(draft);
-                setDraftLoaded(true);
-
-                toast({
-                    icon: "info",
-                    title: "Draft loaded",
-                    text: "We restored the existing draft for this brand to prevent duplicates.",
-                });
-            })
-            .catch((err) => {
-                // Ignore if no draft is found (let them create a fresh one)
-            });
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [isEditMode, draftLoaded, resolvedBrandId, countries, categories]);
 
     // ── handlers ──────────────────────────────────────────────
     const handleCountriesChange = (value: readonly CountryOption[] | null) => {
