@@ -4,7 +4,16 @@ import React, { useState, useEffect } from "react";
 import { NextPage } from "next";
 import Link from "next/link";
 import { post } from "@/lib/api";
-import { HiOutlineRefresh, HiOutlineEye, HiChevronUp, HiChevronDown, HiChevronLeft, HiChevronRight, HiOutlinePlus, HiPencil } from "react-icons/hi";
+import {
+  HiOutlineRefresh,
+  HiOutlineEye,
+  HiChevronUp,
+  HiChevronDown,
+  HiChevronLeft,
+  HiChevronRight,
+  HiOutlinePlus,
+  HiPencil,
+} from "react-icons/hi";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -76,7 +85,7 @@ const AdminBrandsPage: NextPage = () => {
       setTotal(response.total);
       setPage(response.page);
       setPageSize(response.limit);
-      setTotalPages(response.totalPages)
+      setTotalPages(response.totalPages);
       setError(null);
     } catch (err: any) {
       console.error(err);
@@ -88,11 +97,12 @@ const AdminBrandsPage: NextPage = () => {
 
   useEffect(() => {
     fetchBrands();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, pageSize, search, sortBy, sortOrder]);
 
   const toggleSort = (field: string) => {
     if (sortBy === field) {
-      setSortOrder(prev => (prev === "asc" ? "desc" : "asc"));
+      setSortOrder((prev) => (prev === "asc" ? "desc" : "asc"));
     } else {
       setSortBy(field);
       setSortOrder("asc");
@@ -108,7 +118,10 @@ const AdminBrandsPage: NextPage = () => {
           <Input
             placeholder="Search by name, email, plan..."
             value={search}
-            onChange={e => { setSearch(e.target.value); setPage(1); }}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setPage(1);
+            }}
             className="w-full sm:w-64"
           />
           <Button variant="outline" onClick={fetchBrands} disabled={loading}>
@@ -126,68 +139,89 @@ const AdminBrandsPage: NextPage = () => {
             <TableRow>
               <TableHead onClick={() => toggleSort("name")} className="cursor-pointer">
                 <div className="flex items-center justify-center">
-                  Name{sortBy === "name" && (sortOrder === "asc" ? <HiChevronUp /> : <HiChevronDown />)}
+                  Name
+                  {sortBy === "name" &&
+                    (sortOrder === "asc" ? <HiChevronUp /> : <HiChevronDown />)}
                 </div>
               </TableHead>
               <TableHead onClick={() => toggleSort("email")} className="cursor-pointer">
                 <div className="flex items-center justify-center">
-                  Email{sortBy === "email" && (sortOrder === "asc" ? <HiChevronUp /> : <HiChevronDown />)}
+                  Email
+                  {sortBy === "email" &&
+                    (sortOrder === "asc" ? <HiChevronUp /> : <HiChevronDown />)}
                 </div>
               </TableHead>
               <TableHead onClick={() => toggleSort("phone")} className="cursor-pointer">
                 <div className="flex items-center justify-center">
-                  Phone{sortBy === "phone" && (sortOrder === "asc" ? <HiChevronUp /> : <HiChevronDown />)}
+                  Phone
+                  {sortBy === "phone" &&
+                    (sortOrder === "asc" ? <HiChevronUp /> : <HiChevronDown />)}
                 </div>
               </TableHead>
               <TableHead onClick={() => toggleSort("planName")} className="cursor-pointer">
                 <div className="flex items-center justify-center">
-                  Plan{sortBy === "planName" && (sortOrder === "asc" ? <HiChevronUp /> : <HiChevronDown />)}
+                  Plan
+                  {sortBy === "planName" &&
+                    (sortOrder === "asc" ? <HiChevronUp /> : <HiChevronDown />)}
                 </div>
               </TableHead>
               <TableHead onClick={() => toggleSort("expiresAt")} className="cursor-pointer">
-                <div className="flex items-center  justify-center">
-                  Expires{sortBy === "expiresAt" && (sortOrder === "asc" ? <HiChevronUp /> : <HiChevronDown />)}
+                <div className="flex items-center justify-center">
+                  Expires
+                  {sortBy === "expiresAt" &&
+                    (sortOrder === "asc" ? <HiChevronUp /> : <HiChevronDown />)}
                 </div>
               </TableHead>
-              <TableHead onClick={() => toggleSort("subscriptionExpired")} className="cursor-pointer">
+              <TableHead
+                onClick={() => toggleSort("subscriptionExpired")}
+                className="cursor-pointer"
+              >
                 <div className="flex items-center justify-center">
-                  Status{sortBy === "subscriptionExpired" && (sortOrder === "asc" ? <HiChevronUp /> : <HiChevronDown />)}
+                  Status
+                  {sortBy === "subscriptionExpired" &&
+                    (sortOrder === "asc" ? <HiChevronUp /> : <HiChevronDown />)}
                 </div>
               </TableHead>
               <TableHead>Actions</TableHead>
             </TableRow>
           </TableHeader>
+
           <TableBody>
-            {loading
-              ? Array.from({ length: pageSize }).map((_, i) => (
+            {loading ? (
+              Array.from({ length: pageSize }).map((_, i) => (
                 <TableRow key={i}>
-                  {Array(7).fill(0).map((_, j) => (
-                    <TableCell key={j}>
-                      <div className="h-4 bg-gray-200 rounded animate-pulse" />
-                    </TableCell>
-                  ))}
+                  {Array(7)
+                    .fill(0)
+                    .map((_, j) => (
+                      <TableCell key={j}>
+                        <div className="h-4 bg-gray-200 rounded animate-pulse" />
+                      </TableCell>
+                    ))}
                 </TableRow>
               ))
-              : brands.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={7} className="text-center text-gray-500 py-8">
-                    No brands match the criteria.
+            ) : brands.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={7} className="text-center text-gray-500 py-8">
+                  No brands match the criteria.
+                </TableCell>
+              </TableRow>
+            ) : (
+              brands.map((b) => (
+                <TableRow key={b.brandId}>
+                  <TableCell>{b.name}</TableCell>
+                  <TableCell>{b.email}</TableCell>
+                  <TableCell>{b.callingcode ? `${b.callingcode} ${b.phone}` : b.phone}</TableCell>
+                  <TableCell>{b.subscription.planName}</TableCell>
+                  <TableCell>{new Date(b.subscription.expiresAt).toLocaleDateString()}</TableCell>
+                  <TableCell>
+                    <span className={b.subscriptionExpired ? "text-red-600" : "text-green-600"}>
+                      {b.subscriptionExpired ? "Expired" : "Active"}
+                    </span>
                   </TableCell>
-                </TableRow>
-              ) : (
-                brands.map(b => (
-                  <TableRow key={b.brandId}>
-                    <TableCell>{b.name}</TableCell>
-                    <TableCell>{b.email}</TableCell>
-                    <TableCell>{b.callingcode ? `${b.callingcode} ${b.phone}` : b.phone}</TableCell>
-                    <TableCell>{b.subscription.planName}</TableCell>
-                    <TableCell>{new Date(b.subscription.expiresAt).toLocaleDateString()}</TableCell>
-                    <TableCell>
-                      <span className={b.subscriptionExpired ? "text-red-600" : "text-green-600"}>
-                        {b.subscriptionExpired ? "Expired" : "Active"}
-                      </span>
-                    </TableCell>
-                    <TableCell>
+
+                  {/* Actions */}
+                  <TableCell>
+                    <div className="flex items-center gap-1">
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <Link href={`/admin/brands/view?brandId=${b.brandId}`}>
@@ -198,6 +232,7 @@ const AdminBrandsPage: NextPage = () => {
                         </TooltipTrigger>
                         <TooltipContent>View details</TooltipContent>
                       </Tooltip>
+
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <Link href={`/admin/brands/create-campaign?brandId=${b.brandId}`}>
@@ -208,10 +243,22 @@ const AdminBrandsPage: NextPage = () => {
                         </TooltipTrigger>
                         <TooltipContent>Create Campaign</TooltipContent>
                       </Tooltip>
-                    </TableCell>
-                  </TableRow>
-                ))
-              )}
+
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Link href={`/admin/brands/review-campaigns?brandId=${b.brandId}`}>
+                            <Button variant="ghost" size="icon">
+                              <HiPencil />
+                            </Button>
+                          </Link>
+                        </TooltipTrigger>
+                        <TooltipContent>Review Campaigns</TooltipContent>
+                      </Tooltip>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
           </TableBody>
         </Table>
       </Card>
@@ -222,10 +269,20 @@ const AdminBrandsPage: NextPage = () => {
             Showing {(page - 1) * limit + 1}–{Math.min(page * limit, total)} of {total}
           </div>
           <div className="space-x-2">
-            <Button variant="outline" size="icon" disabled={page === 1} onClick={() => setPage(p => Math.max(p - 1, 1))}>
+            <Button
+              variant="outline"
+              size="icon"
+              disabled={page === 1}
+              onClick={() => setPage((p) => Math.max(p - 1, 1))}
+            >
               <HiChevronLeft />
             </Button>
-            <Button variant="outline" size="icon" disabled={page === totalPages} onClick={() => setPage(p => Math.min(p + 1, totalPages))}>
+            <Button
+              variant="outline"
+              size="icon"
+              disabled={page === totalPages}
+              onClick={() => setPage((p) => Math.min(p + 1, totalPages))}
+            >
               <HiChevronRight />
             </Button>
           </div>
