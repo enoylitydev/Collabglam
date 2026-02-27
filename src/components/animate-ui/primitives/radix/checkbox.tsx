@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { Checkbox as CheckboxPrimitive } from 'radix-ui';
+import * as CheckboxPrimitive from '@radix-ui/react-checkbox';
 import { motion, SVGMotionProps, type HTMLMotionProps } from 'motion/react';
 
 import { getStrictContext } from '@/lib/get-strict-context';
