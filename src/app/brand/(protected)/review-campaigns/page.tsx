@@ -6,9 +6,6 @@ import {
   HiSearch,
   HiChevronLeft,
   HiChevronRight,
-  HiOutlinePencil,
-  HiCheckCircle,
-  HiOutlineDocumentText,
   HiChevronRight as HiChevronRightIcon,
   HiOutlineStar,
 } from "react-icons/hi";
@@ -30,7 +27,6 @@ interface Campaign {
   hasPendingUpdate?: boolean;
 
   publishStatus?: string;
-  isApproved?: boolean;
   createdByRole?: string;
 
   shortlistedCount?: number;
@@ -41,8 +37,6 @@ interface Campaign {
 
 const TABLE_GRADIENT_FROM = "#FFA135";
 const TABLE_GRADIENT_TO = "#FF7236";
-
-const APPROVE_ENDPOINT = "/campaign/confirm-readiness";
 
 const sliceText = (text: string, max = 40) =>
   text?.length > max ? `${text.slice(0, max - 3)}...` : text;
@@ -116,16 +110,11 @@ export default function BrandReviewCampaignsPage() {
   const [loading, setLoading] = useState(true);
 
   const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
 
   const [currentPage, setCurrentPage] = useState(1);
   const [limit] = useState(10);
   const [totalPages, setTotalPages] = useState(1);
   const [debouncedSearch, setDebouncedSearch] = useState("");
-
-  const [approveUpdating, setApproveUpdating] = useState<Record<string, boolean>>(
-    {}
-  );
 
   // request-guard for counts hydration (prevents stale overwrite)
   const countsReqRef = useRef(0);
@@ -152,18 +141,17 @@ export default function BrandReviewCampaignsPage() {
   /** ✅ Try deliverables endpoint with multiple base paths + ids (campaign vs campaign2) */
   const fetchShortlistedCount = useCallback(async (c: Campaign) => {
     const candidates = uniqKeys([
-      c.id, // campaignsId (UUID) — you confirmed backend queries campaignsId string
+      c.id,
       c?.raw?.campaignsId,
       c?.raw?.campaignsID,
-      c?.raw?.campaignId, // mongo campaignId (fallback)
+      c?.raw?.campaignId,
       c?.raw?._id,
       c?.raw?.id,
     ]);
 
-    // ✅ try BOTH (because your controller is "...ByCampaign2")
     const bases = [
       "/deliverable/influencer/campaign",
-      "/deliverable/influencer/campaign",
+      "/deliverable/influencer/campaign2",
     ];
 
     for (const base of bases) {
@@ -204,6 +192,7 @@ export default function BrandReviewCampaignsPage() {
         list.map(async (c) => {
           const campaignsId = c.id;
 
+          // ✅ shortlistedCount still fetched for internal use if needed, but not displayed
           const [shortlistedCount, favoriteCount] = await Promise.all([
             fetchShortlistedCount(c),
             fetchFavoriteCount(campaignsId),
@@ -243,7 +232,6 @@ export default function BrandReviewCampaignsPage() {
     async (page: number, term: string) => {
       setLoading(true);
       setError(null);
-      setSuccess(null);
 
       try {
         const brandId =
@@ -289,9 +277,6 @@ export default function BrandReviewCampaignsPage() {
             .toLowerCase()
             .trim();
 
-          const isApproved =
-            publishStatus === "brand_confirmed" || publishStatus === "approved";
-
           const shortlistCount =
             merged.shortlistedCount ??
             merged.shortListedCount ??
@@ -314,7 +299,6 @@ export default function BrandReviewCampaignsPage() {
               : undefined) ??
             (Array.isArray(merged.favorites) ? merged.favorites.length : 0);
 
-          // ✅ IMPORTANT: keep campaignsId as id (UUID) because BOTH count APIs use campaignsId
           const id =
             merged.campaignsId ?? merged.campaignsID ?? merged.id ?? merged._id;
 
@@ -329,8 +313,7 @@ export default function BrandReviewCampaignsPage() {
             campaignStatus: safeStatus,
             influencerWorking: Boolean(merged.influencerWorking),
             hasPendingUpdate,
-            publishStatus: merged.publishStatus ?? "",
-            isApproved,
+            publishStatus,
             createdByRole,
             shortlistedCount: typeof shortlistCount === "number" ? shortlistCount : 0,
             favoriteCount: typeof favCount === "number" ? favCount : 0,
@@ -343,10 +326,13 @@ export default function BrandReviewCampaignsPage() {
 
         const total = Number(body?.total ?? 0);
         const respLimit = Number(body?.limit ?? limit);
-        const computedTotalPages = Math.max(1, Math.ceil(total / (respLimit || 1)));
+        const computedTotalPages = Math.max(
+          1,
+          Math.ceil(total / (respLimit || 1))
+        );
         setTotalPages(computedTotalPages);
       } catch (err: any) {
-        setError(err.message || "Failed to load review campaigns.");
+        setError(err.message || "Failed to load campaigns.");
         setCampaigns([]);
         setTotalPages(1);
       } finally {
@@ -368,57 +354,19 @@ export default function BrandReviewCampaignsPage() {
     fetchCampaigns(currentPage, debouncedSearch);
   }, [fetchCampaigns, currentPage, debouncedSearch]);
 
-  const approveCampaign = async (campaignId: string) => {
-    const brandId =
-      typeof window !== "undefined" ? localStorage.getItem("brandId") : null;
-    if (!brandId) throw new Error("No brandId found in localStorage.");
-
-    const res = await post(APPROVE_ENDPOINT, {
-      brandId,
-      campaignsId: campaignId,
-    });
-
-    return (res as any)?.data ?? res;
-  };
-
-  const onApprove = async (c: Campaign) => {
-    if (c.isApproved) return;
-
-    const id = c.id;
-    setApproveUpdating((p) => ({ ...p, [id]: true }));
-    setError(null);
-    setSuccess(null);
-
-    try {
-      await approveCampaign(id);
-
-      setCampaigns((prev) =>
-        prev.map((x) =>
-          x.id === id
-            ? { ...x, isApproved: true, publishStatus: "brand_confirmed" }
-            : x
-        )
-      );
-
-      setSuccess("Campaign approved successfully.");
-      fetchCampaigns(currentPage, debouncedSearch);
-    } catch (e: any) {
-      setError(e?.message || "Failed to approve campaign.");
-    } finally {
-      setApproveUpdating((p) => ({ ...p, [id]: false }));
-    }
-  };
-
   return (
     <div className="p-6 min-h-screen">
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-3xl font-semibold">Review Campaigns</h1>
+        <h1 className="text-3xl font-semibold">Campaigns</h1>
       </div>
 
       {/* Search */}
       <div className="mb-4 max-w-md">
         <div className="relative">
-          <HiSearch className="absolute inset-y-0 left-3 my-auto text-gray-400" size={20} />
+          <HiSearch
+            className="absolute inset-y-0 left-3 my-auto text-gray-400"
+            size={20}
+          />
           <input
             type="text"
             placeholder="Search campaigns..."
@@ -430,14 +378,13 @@ export default function BrandReviewCampaignsPage() {
       </div>
 
       {error ? <p className="text-red-600 mb-3">{error}</p> : null}
-      {success ? <p className="text-green-700 mb-3">{success}</p> : null}
 
       {loading ? (
         <SkeletonTable />
       ) : campaigns.length === 0 ? (
         <p className="text-gray-700">No campaigns found.</p>
       ) : (
-        <TableView data={campaigns} approveUpdating={approveUpdating} onApprove={onApprove} />
+        <TableView data={campaigns} />
       )}
 
       <Pagination
@@ -461,15 +408,17 @@ function SkeletonTable() {
   );
 }
 
-function TableView({
-  data,
-  approveUpdating,
-  onApprove,
-}: {
-  data: Campaign[];
-  approveUpdating: Record<string, boolean>;
-  onApprove: (c: Campaign) => void;
-}) {
+function TableView({ data }: { data: Campaign[] }) {
+  const prettyPublish = (s?: string) => {
+    const v = String(s || "").trim();
+    if (!v) return "";
+    return v
+      .split("_")
+      .filter(Boolean)
+      .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+      .join(" ");
+  };
+
   return (
     <div
       className="p-[1.5px] rounded-lg shadow"
@@ -492,12 +441,13 @@ function TableView({
                   "Type",
                   "Budget",
                   "Campaign Timeline",
-                  "Shortlisted Influencers",
                   "Favorite Influencers",
                   "Status",
-                  "Actions",
                 ].map((h) => (
-                  <th key={h} className="px-6 py-3 text-center font-medium whitespace-nowrap">
+                  <th
+                    key={h}
+                    className="px-6 py-3 text-center font-medium whitespace-nowrap"
+                  >
                     {h}
                   </th>
                 ))}
@@ -506,16 +456,13 @@ function TableView({
 
             <tbody>
               {data.map((c, idx) => {
-                const isApproving = !!approveUpdating[c.id];
-                const isApproved = !!c.isApproved;
-
                 const statusLabel =
                   (c.campaignStatus || "open").toLowerCase() === "paused"
                     ? "Paused"
                     : "Open";
 
-                const shortlistCount = c.shortlistedCount ?? 0;
                 const favCount = c.favoriteCount ?? 0;
+                const publishLabel = prettyPublish(c.publishStatus);
 
                 return (
                   <tr
@@ -552,26 +499,8 @@ function TableView({
                     </td>
 
                     <td className="px-6 py-4 whitespace-nowrap align-top text-center">
-                      {safeDateLabel(c.timeline?.startDate)} – {safeDateLabel(c.timeline?.endDate)}
-                    </td>
-
-                    {/* Shortlisted */}
-                    <td className="px-6 py-4 align-top text-center">
-                      <Link
-                        href={`/brand/shortlisted-inf?id=${c.id}`}
-                        className={[
-                          "group inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-semibold transition",
-                          shortlistCount > 0
-                            ? "border-gray-200 bg-gray-50 text-gray-900 hover:border-[#FF7236] hover:bg-white hover:shadow-sm"
-                            : "border-gray-200 bg-gray-100 text-gray-500 hover:bg-white hover:border-[#FF7236]",
-                        ].join(" ")}
-                        title="View shortlisted influencers"
-                        aria-label={`View shortlisted influencers (${shortlistCount})`}
-                      >
-                        <HiOutlineDocumentText size={18} className="opacity-70 group-hover:text-[#FF7236]" />
-                        <span className="group-hover:underline underline-offset-2">Shortlisted</span>
-                        <HiChevronRightIcon size={18} className="opacity-60 group-hover:opacity-100" />
-                      </Link>
+                      {safeDateLabel(c.timeline?.startDate)} –{" "}
+                      {safeDateLabel(c.timeline?.endDate)}
                     </td>
 
                     {/* Favorites */}
@@ -587,12 +516,20 @@ function TableView({
                         title="View favorite influencers"
                         aria-label={`View favorite influencers (${favCount})`}
                       >
-                        <HiOutlineStar size={18} className="opacity-70 group-hover:text-[#FF7236]" />
-                        <span className="group-hover:underline underline-offset-2">Favorites</span>
+                        <HiOutlineStar
+                          size={18}
+                          className="opacity-70 group-hover:text-[#FF7236]"
+                        />
+                        <span className="group-hover:underline underline-offset-2">
+                          Favorites
+                        </span>
                         <span className="ml-1 inline-flex min-w-[2rem] justify-center rounded-full bg-gray-900 px-2 py-0.5 text-xs font-bold text-white group-hover:bg-[#FF7236]">
                           {favCount}
                         </span>
-                        <HiChevronRightIcon size={18} className="opacity-60 group-hover:opacity-100" />
+                        <HiChevronRightIcon
+                          size={18}
+                          className="opacity-60 group-hover:opacity-100"
+                        />
                       </Link>
                     </td>
 
@@ -603,48 +540,22 @@ function TableView({
                       </div>
 
                       {String(c.createdByRole || "").toLowerCase() === "admin" ? (
-                        <div className="mt-1 text-xs font-semibold text-gray-500">By Admin</div>
+                        <div className="mt-1 text-xs font-semibold text-gray-500">
+                          By Admin
+                        </div>
                       ) : null}
 
-                      {isApproved ? (
-                        <div className="mt-1 text-xs font-semibold text-green-700">Approved</div>
+                      {publishLabel ? (
+                        <div className="mt-1 text-xs font-semibold text-gray-500">
+                          {publishLabel}
+                        </div>
                       ) : null}
-                    </td>
 
-                    {/* Actions */}
-                    <td className="px-6 py-4 whitespace-nowrap align-top text-center">
-                      <div className="flex items-center justify-center gap-2 flex-wrap">
-                        {isApproved ? (
-                          <span className="inline-flex items-center bg-gray-100 border border-gray-300 text-gray-400 px-3 py-2 rounded-lg text-sm font-semibold cursor-not-allowed">
-                            <HiOutlinePencil className="mr-1" size={18} />
-                            Edit
-                          </span>
-                        ) : (
-                          <Link
-                            href={`/brand/edit-review-campaign?id=${c.id}`}
-                            className="inline-flex items-center bg-white border border-gray-900 text-gray-900 hover:bg-gray-50 px-3 py-2 rounded-lg text-sm font-semibold"
-                          >
-                            <HiOutlinePencil className="mr-1" size={18} />
-                            Edit
-                          </Link>
-                        )}
-
-                        <button
-                          onClick={() => onApprove(c)}
-                          disabled={isApproving || isApproved}
-                          className={[
-                            "inline-flex items-center px-3 py-2 rounded-lg text-sm font-semibold text-white",
-                            isApproved
-                              ? "bg-green-600 cursor-not-allowed"
-                              : "bg-gradient-to-r from-[#FFA135] to-[#FF7236] hover:opacity-90",
-                            isApproving ? "opacity-60 cursor-wait" : "",
-                          ].join(" ")}
-                          title="Approve campaign"
-                        >
-                          <HiCheckCircle className="mr-1" size={18} />
-                          {isApproved ? "Approved" : isApproving ? "Approving..." : "Approve"}
-                        </button>
-                      </div>
+                      {c.hasPendingUpdate ? (
+                        <div className="mt-1 text-xs font-semibold text-orange-700">
+                          Pending Update
+                        </div>
+                      ) : null}
                     </td>
                   </tr>
                 );
