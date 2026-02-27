@@ -775,10 +775,11 @@ export default function AdminCreateCampaignPage() {
             let redirectCampaignsId: string | null = null;
             let res: any;
 
-            if (isEditMode && (publishStatus === "brand_confirmed" || !isDraft)) {
+            // Always publish (no drafts)
+            formData.append("isDraft", "0");
 
-                formData.append("isDraft", "0");
-
+            if (isEditMode && campaignId) {
+                // Update existing campaign
                 res = await post(`/campaign/update?id=${campaignId}`, formData);
 
                 const updatedCampaign = res?.campaign ?? res?.data?.campaign;
@@ -787,23 +788,19 @@ export default function AdminCreateCampaignPage() {
                 toast({
                     icon: "success",
                     title: "Campaign updated",
-                    text: "Your changes have been saved to the live campaign.",
+                    text: "Your changes have been published successfully.",
                 });
             } else {
-                if (mongoId) {
-                    formData.append("_id", mongoId);
-                }
+                // Create new campaign
+                res = await post("/campaign/create", formData);
 
-                // Hits the specific temporary draft endpoint
-                res = await post("/campaign/save-draft", formData);
-
-                const savedCampaign = res?.campaign ?? res?.data?.campaign;
-                redirectCampaignsId = savedCampaign?.campaignsId ?? savedCampaign?._id ?? null;
+                const createdCampaign = res?.campaign ?? res?.data?.campaign;
+                redirectCampaignsId = createdCampaign?.campaignsId ?? createdCampaign?._id ?? null;
 
                 toast({
                     icon: "success",
-                    title: "Draft Saved",
-                    text: "Temporary campaign drafted successfully.",
+                    title: "Campaign published",
+                    text: "Campaign created and published successfully.",
                 });
             }
 
@@ -867,14 +864,12 @@ export default function AdminCreateCampaignPage() {
     }
 
     // Determine titles based on state
-    const pageTitle = isEditMode
-        ? (isDraft ? "Edit Temporary Draft (Admin)" : "Edit Live Campaign (Admin)")
-        : "Create Temporary Campaign (Admin)";
+    // Determine titles based on state
+    const pageTitle = isEditMode ? "Edit Campaign (Admin)" : "Create Campaign (Admin)";
 
-    const pageSubtitle = isEditMode && !isDraft
-        ? "Update campaign details for this live brand campaign."
-        : "Draft a temporary campaign for the brand to review before it goes live.";
-
+    const pageSubtitle = isEditMode
+        ? "Update campaign details for this brand campaign."
+        : "Create and publish a new campaign for the brand.";
     // ── JSX ───────────────────────────────────────────────────
     return (
         <>
@@ -1615,10 +1610,10 @@ export default function AdminCreateCampaignPage() {
                                     <div className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-solid border-white border-r-transparent mr-2"></div>
                                     Submitting...
                                 </>
-                            ) : isEditMode && (publishStatus === "brand_confirmed" || !isDraft) ? (
-                                "Update Live Campaign"
+                            ) : isEditMode ? (
+                                "Update Campaign"
                             ) : (
-                                "Save Campaign Draft"
+                                "Publish Campaign"
                             )}
                         </button>
                     </div>
@@ -1836,7 +1831,7 @@ export default function AdminCreateCampaignPage() {
                             disabled={isSubmitting}
                             className="bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white"
                         >
-                            {isSubmitting ? "Submitting..." : isEditMode && (publishStatus === "brand_confirmed" || !isDraft) ? "Confirm Update" : "Save Draft"}
+                            {isSubmitting ? "Submitting..." : isEditMode ? "Update Campaign" : "Publish Campaign"}
                         </Button>
                     </DialogFooter>
                 </DialogContent>
