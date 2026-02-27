@@ -217,15 +217,17 @@ const MilestoneHistoryCard: React.FC<MilestoneHistoryCardProps> = ({
   }, [brandId, influencerId, campaignId, role]);
 
   // ✅ create deliverable from modal (campaignsId + milestoneId of THAT milestone)
+  // ✅ create deliverable from modal (campaignId + milestoneHistoryId of THAT milestone)
   const handleCreateDeliverable = async (payload: {
     title: string;
     description: string;
     url: UrlItem[];
   }) => {
-    const campaignsId = campaignId || targetMilestone?.campaignId; // ✅ campaigns UUID
-    const milestoneId = targetMilestone?.milestoneId; // ✅ specific milestoneId clicked
+    const campaignsId = campaignId || targetMilestone?.campaignId; // UUID
+    const milestoneId = targetMilestone?.milestoneId; // root milestoneId
+    const milestoneHistoryId = targetMilestone?.milestoneHistoryId; // ✅ IMPORTANT
 
-    if (!campaignsId || !milestoneId) return;
+    if (!campaignsId || !milestoneHistoryId) return;
 
     const brandFromLS =
       brandId ||
@@ -244,9 +246,15 @@ const MilestoneHistoryCard: React.FC<MilestoneHistoryCardProps> = ({
       await post("/deliverable/create", {
         brandId: brandFromLS,
         influencerId: influencerFromLS,
-        campaignsId, // ✅ correct key
-        campaignId: campaignsId, // optional backward compat
-        milestoneId, // ✅ particular milestoneId (example: 321c9611-f45c-...)
+
+        // ✅ keep both keys if your backend still supports both
+        campaignId: campaignsId,
+        campaignsId, // optional backward compat
+
+        // ✅ send BOTH (backend can derive milestoneId from historyId too)
+        milestoneHistoryId, // ✅ required for title fetch
+        milestoneId,        // optional but good to send
+
         title: payload.title,
         description: payload.description,
         url: payload.url,
@@ -520,9 +528,8 @@ function AddDeliverablesModal({
                 onChange={(e) => setTitle(e.target.value)}
                 onBlur={() => markTouched("title")}
                 placeholder="Instagram Reel - Product Demo"
-                className={`w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[#FFA135] ${
-                  touched["title"] && titleErr ? "border-red-300" : "border-gray-300"
-                }`}
+                className={`w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[#FFA135] ${touched["title"] && titleErr ? "border-red-300" : "border-gray-300"
+                  }`}
               />
               {touched["title"] && titleErr && <p className="mt-1 text-xs font-medium text-red-600">{titleErr}</p>}
             </div>
@@ -534,9 +541,8 @@ function AddDeliverablesModal({
                 onChange={(e) => setDescription(e.target.value)}
                 onBlur={() => markTouched("desc")}
                 placeholder="30 sec reel with hook + CTA"
-                className={`w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[#FFA135] ${
-                  touched["desc"] && descErr ? "border-red-300" : "border-gray-300"
-                }`}
+                className={`w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[#FFA135] ${touched["desc"] && descErr ? "border-red-300" : "border-gray-300"
+                  }`}
               />
               {touched["desc"] && descErr && <p className="mt-1 text-xs font-medium text-red-600">{descErr}</p>}
             </div>
@@ -578,9 +584,8 @@ function AddDeliverablesModal({
                           onBlur={() => markTouched(`label_${idx}`)}
                           placeholder="Draft 1"
                           disabled={saving}
-                          className={`w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[#FFA135] disabled:opacity-60 ${
-                            showLabelErr ? "border-red-300" : "border-gray-300"
-                          }`}
+                          className={`w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[#FFA135] disabled:opacity-60 ${showLabelErr ? "border-red-300" : "border-gray-300"
+                            }`}
                         />
                         {showLabelErr && <p className="mt-1 text-xs font-medium text-red-600">{e.label}</p>}
                       </div>
@@ -593,9 +598,8 @@ function AddDeliverablesModal({
                           onBlur={() => markTouched(`url_${idx}`)}
                           placeholder="https://drive.google.com/..."
                           disabled={saving}
-                          className={`w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[#FFA135] disabled:opacity-60 ${
-                            showUrlErr ? "border-red-300" : "border-gray-300"
-                          }`}
+                          className={`w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[#FFA135] disabled:opacity-60 ${showUrlErr ? "border-red-300" : "border-gray-300"
+                            }`}
                         />
                         {showUrlErr && <p className="mt-1 text-xs font-medium text-red-600">{e.url}</p>}
                       </div>
@@ -630,9 +634,8 @@ function AddDeliverablesModal({
             <button
               onClick={handleSave}
               disabled={hasInvalid || saving}
-              className={`rounded-md px-4 py-2 text-sm font-medium text-gray-900 bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] hover:opacity-90 ${
-                hasInvalid || saving ? "opacity-60 cursor-not-allowed" : ""
-              }`}
+              className={`rounded-md px-4 py-2 text-sm font-medium text-gray-900 bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] hover:opacity-90 ${hasInvalid || saving ? "opacity-60 cursor-not-allowed" : ""
+                }`}
             >
               {saving ? "Saving..." : "Save"}
             </button>

@@ -242,19 +242,20 @@ export default function BrandReviewCampaignsPage() {
           brandId
         )}`;
 
-        const res: any = await get(listEndpoint, {
-          search: term.trim() || undefined,
-          page,
-          limit,
-        });
+        const params = new URLSearchParams();
+        params.set("page", String(page));
+        params.set("limit", String(limit));
+        if (term.trim()) params.set("search", term.trim());
+
+        const res: any = await get(`${listEndpoint}?${params.toString()}`);
 
         const body = res?.data && typeof res.data === "object" ? res.data : res;
 
         const rawList: any[] = Array.isArray(body?.data)
           ? body.data
           : Array.isArray(body)
-          ? body
-          : [];
+            ? body
+            : [];
 
         const normalized: Campaign[] = rawList.map((c: any) => {
           const merged = applyPendingPatch(c);
@@ -320,13 +321,22 @@ export default function BrandReviewCampaignsPage() {
         setCampaigns(normalized);
         hydrateCounts(normalized);
 
-        const total = Number(body?.total ?? 0);
-        const respLimit = Number(body?.limit ?? limit);
-        const computedTotalPages = Math.max(
-          1,
-          Math.ceil(total / (respLimit || 1))
-        );
-        setTotalPages(computedTotalPages);
+        const respLimit = Number(body?.limit ?? limit) || limit;
+
+        // 1) Prefer API-provided totalPages if present
+        const apiTotalPages = Number(body?.totalPages ?? body?.meta?.totalPages);
+        if (Number.isFinite(apiTotalPages) && apiTotalPages > 0) {
+          setTotalPages(apiTotalPages);
+        } else {
+          // 2) Else compute from total if present
+          const total = Number(body?.total ?? body?.count ?? body?.totalCount ?? body?.meta?.total);
+          if (Number.isFinite(total) && total > 0) {
+            setTotalPages(Math.max(1, Math.ceil(total / respLimit)));
+          } else {
+            // 3) Else: optimistic next-page (enable Next if page returned full limit)
+            setTotalPages(Math.max(1, page + (rawList.length === respLimit ? 1 : 0)));
+          }
+        }
       } catch (err: any) {
         setError(err.message || "Failed to load campaigns.");
         setCampaigns([]);

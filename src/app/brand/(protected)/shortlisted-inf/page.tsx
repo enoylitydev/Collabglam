@@ -636,51 +636,69 @@ export default function ShortlistedInfluencersPage() {
             {hasMilestones ? <p>Working</p> : <p>Awaiting Milestone</p>}
           </TableCell>
 
-          <TableCell className="flex space-x-2 justify-center">
-            <Button
-              size="sm"
-              variant="outline"
-              className="bg-green-500 text-white hover:bg-green-600 cursor-pointer disabled:opacity-50"
-              onClick={() => handleAddMilestone(inf)}
-              disabled={!inf.influencerId || isBudgetLocked}
-              title={
-                !inf.influencerId
-                  ? "Missing influencerId"
-                  : isBudgetLocked
-                    ? "Campaign budget already fully allocated in milestones"
-                    : "Add milestone"
-              }
-            >
-              Add Milestone
-            </Button>
+          <TableCell className="text-center">
+            <div className="flex flex-col items-center gap-2">
+              {/* Row 1: existing action buttons */}
+              <div className="flex items-center gap-2 justify-center">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="bg-green-500 text-white hover:bg-green-600 cursor-pointer disabled:opacity-50"
+                  onClick={() => handleAddMilestone(inf)}
+                  disabled={!inf.influencerId || isBudgetLocked}
+                  title={
+                    !inf.influencerId
+                      ? "Missing influencerId"
+                      : isBudgetLocked
+                        ? "Campaign budget already fully allocated in milestones"
+                        : "Add milestone"
+                  }
+                >
+                  Add Milestone
+                </Button>
 
-            {/* ✅ Show View Milestone beside Add Milestone */}
-            <Button
-              size="sm"
-              variant="outline"
-              className="bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white hover:bg-gradient-to-r hover:from-[#FF7236] hover:to-[#FFA135] cursor-pointer disabled:opacity-50"
-              onClick={() => toggleExpand(rowKey)}
-              disabled={!hasMilestones}
-              title={hasMilestones ? "View milestone history" : "No milestones yet"}
-            >
-              View Milestone
-            </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white hover:bg-gradient-to-r hover:from-[#FF7236] hover:to-[#FFA135] cursor-pointer disabled:opacity-50"
+                  onClick={() => toggleExpand(rowKey)}
+                  disabled={!hasMilestones}
+                  title={hasMilestones ? "View milestone history" : "No milestones yet"}
+                >
+                  View Milestone
+                </Button>
 
-            {/* Optional toggle icon (like your accepted-inf page) */}
-            <Button
-              size="icon"
-              variant="ghost"
-              className="ml-1 cursor-pointer"
-              onClick={() => toggleExpand(rowKey)}
-              disabled={!inf.influencerId}
-              title="Toggle history"
-            >
-              {expandedRow === rowKey ? (
-                <HiOutlineChevronUp className="w-4 h-4" />
-              ) : (
-                <HiOutlineChevronDown className="w-4 h-4" />
-              )}
-            </Button>
+                {/* <Button
+                  size="icon"
+                  variant="ghost"
+                  className="ml-1 cursor-pointer"
+                  onClick={() => toggleExpand(rowKey)}
+                  disabled={!inf.influencerId}
+                  title="Toggle history"
+                >
+                  {expandedRow === rowKey ? (
+                    <HiOutlineChevronUp className="w-4 h-4" />
+                  ) : (
+                    <HiOutlineChevronDown className="w-4 h-4" />
+                  )}
+                </Button> */}
+              </div>
+
+              {/* Row 2: NEW button under Actions */}
+              <Button
+                variant="outline"
+                className="border-gray-300 text-gray-800 hover:bg-gray-50"
+                onClick={() =>
+                  router.push(
+                    `/brand/deleverables?campaignId=${encodeURIComponent(campaignId as string)}`
+                  )
+                }
+                disabled={!campaignId}
+                title={!campaignId ? "Campaign id missing" : "View deliverables"}
+              >
+                View Deliverables
+              </Button>
+            </div>
           </TableCell>
         </TableRow>
       );
