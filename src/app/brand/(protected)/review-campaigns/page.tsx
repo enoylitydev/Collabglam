@@ -6,6 +6,8 @@ import {
   HiSearch,
   HiChevronLeft,
   HiChevronRight,
+  HiOutlinePencil,
+  HiOutlineDocumentText,
   HiChevronRight as HiChevronRightIcon,
   HiOutlineStar,
 } from "react-icons/hi";
@@ -26,7 +28,6 @@ interface Campaign {
   influencerWorking?: boolean;
   hasPendingUpdate?: boolean;
 
-  publishStatus?: string;
   createdByRole?: string;
 
   shortlistedCount?: number;
@@ -141,17 +142,17 @@ export default function BrandReviewCampaignsPage() {
   /** ✅ Try deliverables endpoint with multiple base paths + ids (campaign vs campaign2) */
   const fetchShortlistedCount = useCallback(async (c: Campaign) => {
     const candidates = uniqKeys([
-      c.id,
+      c.id, // campaignsId (UUID)
       c?.raw?.campaignsId,
       c?.raw?.campaignsID,
-      c?.raw?.campaignId,
+      c?.raw?.campaignId, // mongo campaignId (fallback)
       c?.raw?._id,
       c?.raw?.id,
     ]);
 
     const bases = [
       "/deliverable/influencer/campaign",
-      "/deliverable/influencer/campaign2",
+      "/deliverable/influencer/campaign",
     ];
 
     for (const base of bases) {
@@ -192,7 +193,6 @@ export default function BrandReviewCampaignsPage() {
         list.map(async (c) => {
           const campaignsId = c.id;
 
-          // ✅ shortlistedCount still fetched for internal use if needed, but not displayed
           const [shortlistedCount, favoriteCount] = await Promise.all([
             fetchShortlistedCount(c),
             fetchFavoriteCount(campaignsId),
@@ -273,10 +273,6 @@ export default function BrandReviewCampaignsPage() {
             ? merged.createdBy?.[0]?.role
             : merged.createdBy?.role;
 
-          const publishStatus = String(merged.publishStatus || "")
-            .toLowerCase()
-            .trim();
-
           const shortlistCount =
             merged.shortlistedCount ??
             merged.shortListedCount ??
@@ -299,6 +295,7 @@ export default function BrandReviewCampaignsPage() {
               : undefined) ??
             (Array.isArray(merged.favorites) ? merged.favorites.length : 0);
 
+          // ✅ IMPORTANT: keep campaignsId as id (UUID)
           const id =
             merged.campaignsId ?? merged.campaignsID ?? merged.id ?? merged._id;
 
@@ -313,7 +310,6 @@ export default function BrandReviewCampaignsPage() {
             campaignStatus: safeStatus,
             influencerWorking: Boolean(merged.influencerWorking),
             hasPendingUpdate,
-            publishStatus,
             createdByRole,
             shortlistedCount: typeof shortlistCount === "number" ? shortlistCount : 0,
             favoriteCount: typeof favCount === "number" ? favCount : 0,
@@ -409,16 +405,6 @@ function SkeletonTable() {
 }
 
 function TableView({ data }: { data: Campaign[] }) {
-  const prettyPublish = (s?: string) => {
-    const v = String(s || "").trim();
-    if (!v) return "";
-    return v
-      .split("_")
-      .filter(Boolean)
-      .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-      .join(" ");
-  };
-
   return (
     <div
       className="p-[1.5px] rounded-lg shadow"
@@ -441,8 +427,10 @@ function TableView({ data }: { data: Campaign[] }) {
                   "Type",
                   "Budget",
                   "Campaign Timeline",
+                  "Shortlisted Influencers",
                   "Favorite Influencers",
                   "Status",
+                  "Actions",
                 ].map((h) => (
                   <th
                     key={h}
@@ -461,8 +449,8 @@ function TableView({ data }: { data: Campaign[] }) {
                     ? "Paused"
                     : "Open";
 
+                const shortlistCount = c.shortlistedCount ?? 0;
                 const favCount = c.favoriteCount ?? 0;
-                const publishLabel = prettyPublish(c.publishStatus);
 
                 return (
                   <tr
@@ -501,6 +489,33 @@ function TableView({ data }: { data: Campaign[] }) {
                     <td className="px-6 py-4 whitespace-nowrap align-top text-center">
                       {safeDateLabel(c.timeline?.startDate)} –{" "}
                       {safeDateLabel(c.timeline?.endDate)}
+                    </td>
+
+                    {/* Shortlisted */}
+                    <td className="px-6 py-4 align-top text-center">
+                      <Link
+                        href={`/brand/shortlisted-inf?id=${c.id}`}
+                        className={[
+                          "group inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-semibold transition",
+                          shortlistCount > 0
+                            ? "border-gray-200 bg-gray-50 text-gray-900 hover:border-[#FF7236] hover:bg-white hover:shadow-sm"
+                            : "border-gray-200 bg-gray-100 text-gray-500 hover:bg-white hover:border-[#FF7236]",
+                        ].join(" ")}
+                        title="View shortlisted influencers"
+                        aria-label={`View shortlisted influencers (${shortlistCount})`}
+                      >
+                        <HiOutlineDocumentText
+                          size={18}
+                          className="opacity-70 group-hover:text-[#FF7236]"
+                        />
+                        <span className="group-hover:underline underline-offset-2">
+                          Shortlisted
+                        </span>
+                        <HiChevronRightIcon
+                          size={18}
+                          className="opacity-60 group-hover:opacity-100"
+                        />
+                      </Link>
                     </td>
 
                     {/* Favorites */}
@@ -544,18 +559,19 @@ function TableView({ data }: { data: Campaign[] }) {
                           By Admin
                         </div>
                       ) : null}
+                    </td>
 
-                      {publishLabel ? (
-                        <div className="mt-1 text-xs font-semibold text-gray-500">
-                          {publishLabel}
-                        </div>
-                      ) : null}
-
-                      {c.hasPendingUpdate ? (
-                        <div className="mt-1 text-xs font-semibold text-orange-700">
-                          Pending Update
-                        </div>
-                      ) : null}
+                    {/* Actions */}
+                    <td className="px-6 py-4 whitespace-nowrap align-top text-center">
+                      <div className="flex items-center justify-center gap-2 flex-wrap">
+                        <Link
+                          href={`/brand/edit-review-campaign?id=${c.id}`}
+                          className="inline-flex items-center bg-white border border-gray-900 text-gray-900 hover:bg-gray-50 px-3 py-2 rounded-lg text-sm font-semibold"
+                        >
+                          <HiOutlinePencil className="mr-1" size={18} />
+                          Edit
+                        </Link>
+                      </div>
                     </td>
                   </tr>
                 );

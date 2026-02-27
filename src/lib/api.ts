@@ -12,24 +12,53 @@ export const API_BASE_URL2 = process.env.NEXT_PUBLIC_API_URL2 || 'https://api.sh
 // ---- Single token key ----
 export const TOKEN_KEY = 'token'
 
-// const forceLogout = () => {
-//   if (typeof window === 'undefined') return
-//   try {
-//     localStorage.clear()
-//     try { sessionStorage.clear() } catch {}
-//   } catch {}
-//   try {
-//     if (window.location.pathname !== '/login') {
-//       window.location.replace('/login')
-//     }
-//   } catch {}
-// }
+/** -------------------- HELPERS -------------------- */
+const isFormData = (data: any): boolean =>
+  typeof FormData !== 'undefined' && data instanceof FormData
+
+const stripContentType = (headers: any) => {
+  if (!headers) return headers
+  try {
+    // Axios v1 may use AxiosHeaders with .set/.delete
+    if (typeof headers.delete === 'function') {
+      headers.delete('Content-Type')
+      headers.delete('content-type')
+      return headers
+    }
+  } catch {}
+  // Plain object headers
+  const h = { ...(headers as any) }
+  delete h['Content-Type']
+  delete h['content-type']
+  return h
+}
+
+const attachBearer = (
+  config: InternalAxiosRequestConfig,
+  token: string
+): InternalAxiosRequestConfig => {
+  const hdrs = config.headers as AxiosHeaders | AxiosRequestHeaders | undefined
+  if (hdrs && typeof (hdrs as any).set === 'function') {
+    ;(hdrs as AxiosHeaders).set('Authorization', `Bearer ${token}`)
+  } else {
+    config.headers = { ...(hdrs as any), Authorization: `Bearer ${token}` } as AxiosRequestHeaders
+  }
+  return config
+}
+
+/** -------------------- AXIOS INSTANCES -------------------- */
+/**
+ * IMPORTANT:
+ * Do NOT set a global "Content-Type" on the instance.
+ * If you set "application/json" here, it can break FormData uploads by preventing the
+ * browser/axios from adding the required multipart boundary.
+ */
 
 // Primary API (BASE_URL)
 const api = axios.create({
   baseURL: API_BASE_URL,
   withCredentials: true,
-  headers: { 'Content-Type': 'application/json' },
+  headers: { Accept: 'application/json' },
   timeout: 20000,
 })
 
@@ -37,28 +66,19 @@ const api = axios.create({
 const api2 = axios.create({
   baseURL: API_BASE_URL2,
   withCredentials: true,
-  headers: { 'Content-Type': 'application/json' },
+  headers: { Accept: 'application/json' },
   timeout: 20000,
 })
-
-/** Utilities */
-const attachBearer = (
-  config: InternalAxiosRequestConfig,
-  token: string
-): InternalAxiosRequestConfig => {
-  const hdrs = config.headers as AxiosHeaders | AxiosRequestHeaders | undefined
-  if (hdrs && typeof (hdrs as any).set === 'function') {
-    (hdrs as AxiosHeaders).set('Authorization', `Bearer ${token}`)
-  } else {
-    config.headers = { ...(hdrs as any), Authorization: `Bearer ${token}` } as AxiosRequestHeaders
-  }
-  return config
-}
 
 /** ---- Interceptors ---- */
 
 /** PRIMARY: must have token; otherwise logout immediately */
 const attachAuthPrimary = (config: InternalAxiosRequestConfig): InternalAxiosRequestConfig => {
+  // If request is FormData, never allow a manual Content-Type (boundary issue)
+  if (isFormData((config as any).data)) {
+    config.headers = stripContentType(config.headers) as any
+  }
+
   if (typeof window !== 'undefined') {
     try {
       const token = localStorage.getItem(TOKEN_KEY)
@@ -75,6 +95,11 @@ const attachAuthPrimary = (config: InternalAxiosRequestConfig): InternalAxiosReq
 
 /** SECONDARY: attach token if present; never logout if missing */
 const attachAuthSecondary = (config: InternalAxiosRequestConfig): InternalAxiosRequestConfig => {
+  // If request is FormData, never allow a manual Content-Type (boundary issue)
+  if (isFormData((config as any).data)) {
+    config.headers = stripContentType(config.headers) as any
+  }
+
   if (typeof window !== 'undefined') {
     try {
       const token = localStorage.getItem(TOKEN_KEY)
@@ -110,13 +135,13 @@ if (typeof window !== 'undefined') {
       // eslint-disable-next-line no-console
       console.warn(
         '[api] Page is HTTPS but NEXT_PUBLIC_API_URL is HTTP. This causes mixed-content blocking (Network Error). ' +
-        'Use an HTTPS API endpoint or a same-origin relative path.'
+          'Use an HTTPS API endpoint or a same-origin relative path.'
       )
     }
   } catch {}
 }
 
-/** -------------------- HELPERS -------------------- */
+/** -------------------- REQUEST HELPERS -------------------- */
 /** GET (BASE_URL) */
 export const get = async <T = any>(url: string, params?: any): Promise<T> => {
   const res = await api.get<T>(url, { params })
@@ -129,26 +154,27 @@ export const post = async <T = any>(
   data?: any,
   opts?: { signal?: AbortSignal }
 ): Promise<T> => {
-  const isFD = typeof FormData !== 'undefined' && data instanceof FormData
   const baseConfig: AxiosRequestConfig = { signal: opts?.signal }
-  if (isFD) {
-    baseConfig.headers = { ...(baseConfig.headers || {}), 'Content-Type': 'multipart/form-data' }
+
+  if (isFormData(data)) {
+    // Do NOT set multipart content-type manually; let axios/browser add boundary.
+    baseConfig.headers = stripContentType(baseConfig.headers) as any
   }
+
   const res = await api.post<T>(url, data, baseConfig)
   return res.data
 }
 
-/** Explicit helper for multipart/form-data (BASE_URL) */
+/** Explicit helper for FormData (BASE_URL) */
 export const postFormData = async <T = any>(
   url: string,
   formData: FormData,
   opts?: { signal?: AbortSignal }
 ): Promise<T> => {
-  const baseConfig: AxiosRequestConfig = {
+  const res = await api.post<T>(url, formData, {
     signal: opts?.signal,
-    headers: { 'Content-Type': 'multipart/form-data' },
-  }
-  const res = await api.post<T>(url, formData, baseConfig)
+    // no Content-Type here (boundary)
+  })
   return res.data
 }
 
@@ -164,26 +190,27 @@ export const post2 = async <T = any>(
   data?: any,
   opts?: { signal?: AbortSignal }
 ): Promise<T> => {
-  const isFD = typeof FormData !== 'undefined' && data instanceof FormData
   const baseConfig: AxiosRequestConfig = { signal: opts?.signal }
-  if (isFD) {
-    baseConfig.headers = { ...(baseConfig.headers || {}), 'Content-Type': 'multipart/form-data' }
+
+  if (isFormData(data)) {
+    // Do NOT set multipart content-type manually; let axios/browser add boundary.
+    baseConfig.headers = stripContentType(baseConfig.headers) as any
   }
+
   const res = await api2.post<T>(url, data, baseConfig)
   return res.data
 }
 
-/** Explicit helper for multipart/form-data (BASE_URL2) */
+/** Explicit helper for FormData (BASE_URL2) */
 export const postFormData2 = async <T = any>(
   url: string,
   formData: FormData,
   opts?: { signal?: AbortSignal }
 ): Promise<T> => {
-  const baseConfig: AxiosRequestConfig = {
+  const res = await api2.post<T>(url, formData, {
     signal: opts?.signal,
-    headers: { 'Content-Type': 'multipart/form-data' },
-  }
-  const res = await api2.post<T>(url, formData, baseConfig)
+    // no Content-Type here (boundary)
+  })
   return res.data
 }
 
@@ -194,15 +221,12 @@ export const downloadBlob = async (
   config?: AxiosRequestConfig
 ): Promise<Blob> => {
   const opts: AxiosRequestConfig = { responseType: 'blob', ...config }
-  let response
-  if (typeof FormData !== 'undefined' && data instanceof FormData) {
-    response = await api.post<Blob>(url, data, {
-      ...opts,
-      headers: { ...(opts.headers || {}), 'Content-Type': 'multipart/form-data' },
-    })
-  } else {
-    response = await api.post<Blob>(url, data, opts)
+
+  if (isFormData(data)) {
+    opts.headers = stripContentType(opts.headers) as any
   }
+
+  const response = await api.post<Blob>(url, data, opts)
   return response.data
 }
 
@@ -213,30 +237,35 @@ export const downloadBlob2 = async (
   config?: AxiosRequestConfig
 ): Promise<Blob> => {
   const opts: AxiosRequestConfig = { responseType: 'blob', ...config }
-  let response
-  if (typeof FormData !== 'undefined' && data instanceof FormData) {
-    response = await api2.post<Blob>(url, data, {
-      ...opts,
-      headers: { ...(opts.headers || {}), 'Content-Type': 'multipart/form-data' },
-    })
-  } else {
-    response = await api2.post<Blob>(url, data, opts)
+
+  if (isFormData(data)) {
+    opts.headers = stripContentType(opts.headers) as any
   }
+
+  const response = await api2.post<Blob>(url, data, opts)
   return response.data
 }
 
 /** Optional token helpers */
 export const setToken = (token: string) => {
   if (typeof window === 'undefined') return
-  try { localStorage.setItem(TOKEN_KEY, token) } catch {}
+  try {
+    localStorage.setItem(TOKEN_KEY, token)
+  } catch {}
 }
 export const getToken = (): string | null => {
   if (typeof window === 'undefined') return null
-  try { return localStorage.getItem(TOKEN_KEY) } catch { return null }
+  try {
+    return localStorage.getItem(TOKEN_KEY)
+  } catch {
+    return null
+  }
 }
 export const clearToken = () => {
   if (typeof window === 'undefined') return
-  try { localStorage.removeItem(TOKEN_KEY) } catch {}
+  try {
+    localStorage.removeItem(TOKEN_KEY)
+  } catch {}
 }
 
 export default api
