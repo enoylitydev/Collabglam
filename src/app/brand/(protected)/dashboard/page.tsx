@@ -12,6 +12,10 @@ import { format } from "date-fns";
 import { post } from "@/lib/api";
 import BrandTourModal from "@/components/common/BrandTourModal";
 
+/* ✅ FULLY MANAGED plan gate (use plan name + plan id) */
+const FULLY_MANAGED_PLAN_ID = "1f46c6f6-63ae-4c4f-943d-798d644257f9";
+const FULLY_MANAGED_PLAN_NAME = "fully_managed";
+
 /* ---------------- types ---------------- */
 
 type CampaignRow = {
@@ -124,6 +128,9 @@ export default function BrandDashboardHome() {
   const [data, setData] = useState<BrandDashboardHomePayload | null>(null);
   const [fatalError, setFatalError] = useState<string | null>(null);
 
+  // ✅ plan gate
+  const [isFullyManaged, setIsFullyManaged] = useState(false);
+
   // campaigns search
   const [searchTerm, setSearchTerm] = useState("");
 
@@ -146,30 +153,48 @@ export default function BrandDashboardHome() {
       return;
     }
 
+    // ✅ read plan info from storage
+    const storedPlanId =
+      typeof window !== "undefined" ? localStorage.getItem("brandPlanId") : null;
+    const storedPlanName =
+      typeof window !== "undefined" ? localStorage.getItem("brandPlanName") : null;
+
+    const fullyManaged =
+      (storedPlanId || "").trim() === FULLY_MANAGED_PLAN_ID ||
+      (storedPlanName || "").trim().toLowerCase() === FULLY_MANAGED_PLAN_NAME;
+
+    setIsFullyManaged(fullyManaged);
+
     (async () => {
-      setInboxLoading(true);
       setInboxError(null);
+      setInboxLoading(!fullyManaged);
 
-      const [dashRes, inboxRes] = await Promise.allSettled([
-        post<BrandDashboardHomePayload>("/dash/brand", { brandId }),
-        post<any>("/emails/brand/inbox", { brandId, limit: 25 }),
-      ]);
-
-      // dashboard (fatal if fails)
-      if (dashRes.status === "fulfilled") {
-        setData(dashRes.value);
-      } else {
-        const err: any = dashRes.reason;
+      // 1) Dashboard fetch (always)
+      try {
+        const dashRes = await post<BrandDashboardHomePayload>("/dash/brand", { brandId });
+        setData(dashRes);
+      } catch (err: any) {
         setFatalError(
           err?.response?.data?.error ||
-          err?.response?.data?.message ||
-          err?.message ||
-          "Could not load dashboard"
+            err?.response?.data?.message ||
+            err?.message ||
+            "Could not load dashboard"
         );
+        setInboxLoading(false);
+        return;
       }
 
-      if (inboxRes.status === "fulfilled") {
-        const payload = unwrap<any>(inboxRes.value);
+      // ✅ FULLY MANAGED => hide + skip inbox API entirely
+      if (fullyManaged) {
+        setInbox([]);
+        setInboxLoading(false);
+        return;
+      }
+
+      // 2) Inbox fetch (only if NOT fully managed)
+      try {
+        const inboxRes = await post<any>("/emails/brand/inbox", { brandId, limit: 25 });
+        const payload = unwrap<any>(inboxRes);
 
         // support multiple shapes
         const conv =
@@ -179,18 +204,15 @@ export default function BrandDashboardHome() {
           [];
 
         const list = Array.isArray(conv) ? (conv as InboxRow[]) : [];
-
-        // ✅ remove duplicates (1 per influencer)
         const unique = dedupeInboxConversations(list);
 
         setInbox(unique);
-      } else {
-        const err: any = inboxRes.reason;
+      } catch (err: any) {
         setInboxError(
           err?.response?.data?.error ||
-          err?.response?.data?.message ||
-          err?.message ||
-          "Could not load inbox"
+            err?.response?.data?.message ||
+            err?.message ||
+            "Could not load inbox"
         );
         setInbox([]);
       }
@@ -215,8 +237,9 @@ export default function BrandDashboardHome() {
     if (!q) return inbox;
 
     return inbox.filter((t) => {
-      const hay = `${t.influencer?.name || ""} ${t.subject || ""} ${t.snippet || ""} ${t.status || ""
-        } ${t.lastMessageDirection || ""}`.toLowerCase();
+      const hay = `${t.influencer?.name || ""} ${t.subject || ""} ${t.snippet || ""} ${
+        t.status || ""
+      } ${t.lastMessageDirection || ""}`.toLowerCase();
       return hay.includes(q);
     });
   }, [inbox, inboxSearch]);
@@ -250,7 +273,6 @@ export default function BrandDashboardHome() {
     <div className="flex h-screen overflow-hidden">
       <div className="flex-1 flex flex-col overflow-y-auto overflow-x-hidden">
         <main className="flex-1 px-6 py-8">
-
           {/* Welcome */}
           <div className="rounded-lg bg-white p-6 mb-8 mt-4 md:mt-6">
             <h2
@@ -266,26 +288,37 @@ export default function BrandDashboardHome() {
             <p className="text-gray-700">Here's a quick overview of your account as of {today}.</p>
           </div>
 
-          {/* Summary */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+          {/* Summary (✅ hide Hired + Total Applied for FULLY MANAGED) */}
+          <div
+            className={`grid grid-cols-1 sm:grid-cols-2 ${
+              isFullyManaged ? "lg:grid-cols-2" : "lg:grid-cols-4"
+            } gap-6`}
+          >
             <StatCard
               icon={<HiOutlineChartBar className="text-[#ef2f5b]" size={32} />}
               label="Created Campaigns"
               value={totalCreatedCampaigns}
               accentFrom={accentFrom}
             />
-            <StatCard
-              icon={<HiOutlineUsers className="text-[#4f46e5]" size={32} />}
-              label="Hired Influencers"
-              value={totalHiredInfluencers.toLocaleString()}
-              accentFrom={accentFrom}
-            />
-            <StatCard
-              icon={<HiOutlineUsers className="text-[#f59e0b]" size={32} />}
-              label="Total Applied"
-              value={totalAppliedInfluencers.toLocaleString()}
-              accentFrom={accentFrom}
-            />
+
+            {!isFullyManaged && (
+              <StatCard
+                icon={<HiOutlineUsers className="text-[#4f46e5]" size={32} />}
+                label="Hired Influencers"
+                value={totalHiredInfluencers.toLocaleString()}
+                accentFrom={accentFrom}
+              />
+            )}
+
+            {!isFullyManaged && (
+              <StatCard
+                icon={<HiOutlineUsers className="text-[#f59e0b]" size={32} />}
+                label="Total Applied"
+                value={totalAppliedInfluencers.toLocaleString()}
+                accentFrom={accentFrom}
+              />
+            )}
+
             <StatCard
               icon={<HiOutlineCurrencyDollar className="text-[#10b981]" size={32} />}
               label="Budget Remaining"
@@ -295,10 +328,9 @@ export default function BrandDashboardHome() {
           </div>
 
           {/* Main grid */}
-          <div className="mt-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className={`mt-6 grid grid-cols-1 ${isFullyManaged ? "" : "lg:grid-cols-3"} gap-6`}>
             {/* Campaigns */}
-            {/* Campaigns */}
-            <div className="lg:col-span-2 bg-white rounded-lg shadow p-6">
+            <div className={`bg-white rounded-lg shadow p-6 ${isFullyManaged ? "" : "lg:col-span-2"}`}>
               <div className="flex items-start sm:items-center justify-between gap-4 mb-4 flex-col sm:flex-row">
                 <div>
                   <h2 className="text-lg font-semibold text-gray-800">Campaigns</h2>
@@ -339,7 +371,7 @@ export default function BrandDashboardHome() {
                 </div>
               ) : (
                 <>
-                  {/* ✅ Mobile cards (prevents overlap) */}
+                  {/* ✅ Mobile cards */}
                   <div className="md:hidden space-y-3">
                     {filteredCampaigns.map((c) => {
                       const id = c.campaignsId || c.id;
@@ -353,7 +385,10 @@ export default function BrandDashboardHome() {
                           {/* Top row */}
                           <div className="flex items-start justify-between gap-3">
                             <div className="min-w-0">
-                              <div className="font-semibold text-gray-900 truncate" title={c.productOrServiceName || ""}>
+                              <div
+                                className="font-semibold text-gray-900 truncate"
+                                title={c.productOrServiceName || ""}
+                              >
                                 {truncate(c.productOrServiceName || "—", 60)}
                               </div>
                               {!!c.createdAt && (
@@ -380,52 +415,60 @@ export default function BrandDashboardHome() {
                             <span className="font-medium">{c.goal || "—"}</span>
                           </div>
 
-                          {/* Budget + Applied */}
+                          {/* Budget (+ Applied only if NOT fully managed) */}
                           <div className="mt-3 flex items-center justify-between gap-3">
                             <div className="text-sm text-gray-700">
                               <span className="text-gray-500">Budget: </span>
                               <span className="font-semibold">${Number(c.budget || 0).toLocaleString()}</span>
                             </div>
 
-                            <button
-                              type="button"
-                              onClick={() => {
-                                if (c.hasAcceptedInfluencer) {
-                                  router.push(`/brand/active-campaign/active-inf?id=${id}`);
-                                } else {
-                                  router.push(`/brand/created-campaign/applied-inf?id=${id}`);
-                                }
-                              }}
-                              className="inline-flex items-center gap-2 rounded-full border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-800 hover:bg-gray-50 hover:border-gray-300 transition cursor-pointer"
-                              title={c.hasAcceptedInfluencer ? "Open active influencers" : "Open applied influencers"}
-                            >
-                              <span
-                                className={`inline-flex min-w-[28px] justify-center rounded-full px-2 py-0.5 text-xs font-bold ${applied > 0 ? "bg-gray-900 text-white" : "bg-gray-100 text-gray-500"
-                                  }`}
+                            {!isFullyManaged && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (c.hasAcceptedInfluencer) {
+                                    router.push(`/brand/active-campaign/active-inf?id=${id}`);
+                                  } else {
+                                    router.push(`/brand/created-campaign/applied-inf?id=${id}`);
+                                  }
+                                }}
+                                className="inline-flex items-center gap-2 rounded-full border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-800 hover:bg-gray-50 hover:border-gray-300 transition cursor-pointer"
+                                title={c.hasAcceptedInfluencer ? "Open active influencers" : "Open applied influencers"}
                               >
-                                {applied.toLocaleString()}
-                              </span>
-                              <span className="text-[11px] font-medium text-gray-500">
-                                {c.hasAcceptedInfluencer ? "Active" : "List"}
-                              </span>
-                            </button>
+                                <span
+                                  className={`inline-flex min-w-[28px] justify-center rounded-full px-2 py-0.5 text-xs font-bold ${
+                                    applied > 0 ? "bg-gray-900 text-white" : "bg-gray-100 text-gray-500"
+                                  }`}
+                                >
+                                  {applied.toLocaleString()}
+                                </span>
+                                <span className="text-[11px] font-medium text-gray-500">
+                                  {c.hasAcceptedInfluencer ? "Active" : "List"}
+                                </span>
+                              </button>
+                            )}
                           </div>
 
-                          {/* Status */}
-                          <div className="mt-3">
-                            <span
-                              className={`px-2 py-1 rounded-full text-xs font-semibold ${c.hasAcceptedInfluencer ? "bg-indigo-100 text-indigo-700" : "bg-yellow-100 text-yellow-700"
+                          {/* Status (Influencer) — hide for FULLY MANAGED */}
+                          {!isFullyManaged && (
+                            <div className="mt-3">
+                              <span
+                                className={`px-2 py-1 rounded-full text-xs font-semibold ${
+                                  c.hasAcceptedInfluencer
+                                    ? "bg-indigo-100 text-indigo-700"
+                                    : "bg-yellow-100 text-yellow-700"
                                 }`}
-                            >
-                              {c.hasAcceptedInfluencer ? "Accepted" : "Not accepted"}
-                            </span>
-                          </div>
+                              >
+                                {c.hasAcceptedInfluencer ? "Accepted" : "Not accepted"}
+                              </span>
+                            </div>
+                          )}
                         </div>
                       );
                     })}
                   </div>
 
-                  {/* ✅ Desktop table (progressive columns) */}
+                  {/* ✅ Desktop table */}
                   <div className="hidden md:block w-full overflow-x-auto">
                     <table className="w-full table-auto text-left text-sm min-w-[620px] lg:min-w-[780px] xl:min-w-[900px]">
                       <thead className="sticky top-0 bg-white z-10">
@@ -436,10 +479,14 @@ export default function BrandDashboardHome() {
                           <th className="py-3 pr-4 whitespace-nowrap hidden lg:table-cell">Goal</th>
 
                           <th className="py-3 pr-4 whitespace-nowrap">Budget</th>
-                          <th className="py-3 pr-4 whitespace-nowrap">Applied</th>
 
-                          {/* show from xl */}
-                          <th className="py-3 pr-4 whitespace-nowrap hidden xl:table-cell">Influencer</th>
+                          {/* ✅ hide Applied + Influencer columns for FULLY MANAGED */}
+                          {!isFullyManaged && (
+                            <th className="py-3 pr-4 whitespace-nowrap">Applied</th>
+                          )}
+                          {!isFullyManaged && (
+                            <th className="py-3 pr-4 whitespace-nowrap hidden xl:table-cell">Influencer</th>
+                          )}
 
                           <th className="py-3 text-right whitespace-nowrap">Action</th>
                         </tr>
@@ -476,44 +523,50 @@ export default function BrandDashboardHome() {
                                 ${Number(c.budget || 0).toLocaleString()}
                               </td>
 
-                              {/* Applied */}
-                              <td className="py-3 pr-4">
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    if (c.hasAcceptedInfluencer) {
-                                      router.push(`/brand/active-campaign/active-inf?id=${id}`);
-                                    } else {
-                                      router.push(`/brand/created-campaign/applied-inf?id=${id}`);
-                                    }
-                                  }}
-                                  className="group inline-flex items-center gap-2 rounded-full border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-800 hover:bg-gray-50 hover:border-gray-300 transition cursor-pointer"
-                                  title={c.hasAcceptedInfluencer ? "Open active influencers" : "Open applied influencers"}
-                                >
-                                  <span
-                                    className={`inline-flex min-w-[28px] justify-center rounded-full px-2 py-0.5 text-xs font-bold ${applied > 0 ? "bg-[#EAF6EC] text-[#28A745]" : "bg-gray-100 text-gray-500"
-                                      }`}
+                              {/* Applied (NOT fully managed) */}
+                              {!isFullyManaged && (
+                                <td className="py-3 pr-4">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      if (c.hasAcceptedInfluencer) {
+                                        router.push(`/brand/active-campaign/active-inf?id=${id}`);
+                                      } else {
+                                        router.push(`/brand/created-campaign/applied-inf?id=${id}`);
+                                      }
+                                    }}
+                                    className="group inline-flex items-center gap-2 rounded-full border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-800 hover:bg-gray-50 hover:border-gray-300 transition cursor-pointer"
+                                    title={c.hasAcceptedInfluencer ? "Open active influencers" : "Open applied influencers"}
                                   >
-                                    {applied.toLocaleString()}
-                                  </span>
+                                    <span
+                                      className={`inline-flex min-w-[28px] justify-center rounded-full px-2 py-0.5 text-xs font-bold ${
+                                        applied > 0 ? "bg-[#EAF6EC] text-[#28A745]" : "bg-gray-100 text-gray-500"
+                                      }`}
+                                    >
+                                      {applied.toLocaleString()}
+                                    </span>
 
-                                  <span className="text-[11px] font-medium text-gray-400 group-hover:text-gray-500">
-                                    {c.hasAcceptedInfluencer ? "→ Active" : "→ List"}
-                                  </span>
-                                </button>
-                              </td>
+                                    <span className="text-[11px] font-medium text-gray-400 group-hover:text-gray-500">
+                                      {c.hasAcceptedInfluencer ? "→ Active" : "→ List"}
+                                    </span>
+                                  </button>
+                                </td>
+                              )}
 
-                              {/* Influencer (xl+) */}
-                              <td className="py-3 pr-4 hidden xl:table-cell">
-                                <span
-                                  className={`px-2 py-1 rounded-full text-xs font-semibold ${c.hasAcceptedInfluencer
-                                    ? "bg-indigo-100 text-indigo-700"
-                                    : "bg-yellow-100 text-yellow-700"
+                              {/* Influencer (xl+) (NOT fully managed) */}
+                              {!isFullyManaged && (
+                                <td className="py-3 pr-4 hidden xl:table-cell">
+                                  <span
+                                    className={`px-2 py-1 rounded-full text-xs font-semibold ${
+                                      c.hasAcceptedInfluencer
+                                        ? "bg-indigo-100 text-indigo-700"
+                                        : "bg-yellow-100 text-yellow-700"
                                     }`}
-                                >
-                                  {c.hasAcceptedInfluencer ? "Accepted" : "Not accepted"}
-                                </span>
-                              </td>
+                                  >
+                                    {c.hasAcceptedInfluencer ? "Accepted" : "Not accepted"}
+                                  </span>
+                                </td>
+                              )}
 
                               {/* Action */}
                               <td className="py-3 text-right whitespace-nowrap">
@@ -539,117 +592,117 @@ export default function BrandDashboardHome() {
               )}
             </div>
 
-            {/* Right panel: Inbox (LIST only, no message count) */}
-            <div className="lg:col-span-1 bg-white rounded-lg shadow p-6 flex flex-col min-h-[520px]">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <h3 className="text-lg font-semibold text-gray-800">Inbox</h3>
-                  <p className="text-xs text-gray-500">Recent conversations</p>
+            {/* ✅ Inbox hidden for FULLY MANAGED */}
+            {!isFullyManaged && (
+              <div className="lg:col-span-1 bg-white rounded-lg shadow p-6 flex flex-col min-h-[520px]">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h3 className="text-lg font-semibold text-gray-800">Inbox</h3>
+                    <p className="text-xs text-gray-500">Recent conversations</p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => router.push("/brand/email")}
+                    className="text-xs font-semibold px-3 py-2 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 transition"
+                    title="Open full inbox"
+                  >
+                    Open
+                  </button>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => router.push("/brand/email")}
-                  className="text-xs font-semibold px-3 py-2 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 transition"
-                  title="Open full inbox"
-                >
-                  Open
-                </button>
-              </div>
+                {/* Inbox search */}
+                <div className="mt-4 relative">
+                  <HiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                  <input
+                    value={inboxSearch}
+                    onChange={(e) => setInboxSearch(e.target.value)}
+                    placeholder="Search name / subject / message…"
+                    className="w-full pl-10 pr-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-offset-2"
+                  />
+                </div>
 
-              {/* Inbox search */}
-              <div className="mt-4 relative">
-                <HiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                <input
-                  value={inboxSearch}
-                  onChange={(e) => setInboxSearch(e.target.value)}
-                  placeholder="Search name / subject / message…"
-                  className="w-full pl-10 pr-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-offset-2"
-                />
-              </div>
+                {/* Inbox list */}
+                <div className="mt-4 flex-1 overflow-auto rounded-lg border border-gray-100 divide-y divide-gray-100">
+                  {inboxLoading ? (
+                    <div className="p-4 text-sm text-gray-500">Loading inbox…</div>
+                  ) : inboxError ? (
+                    <div className="p-4 text-sm text-gray-500">{inboxError}</div>
+                  ) : !filteredInbox.length ? (
+                    <div className="p-4 text-sm text-gray-500">No conversations yet.</div>
+                  ) : (
+                    filteredInbox.map((t) => {
+                      const name = t.influencer?.name || "Influencer";
+                      const initial = name.trim().slice(0, 1).toUpperCase();
 
-              {/* Inbox list */}
-              <div className="mt-4 flex-1 overflow-auto rounded-lg border border-gray-100 divide-y divide-gray-100">
-                {inboxLoading ? (
-                  <div className="p-4 text-sm text-gray-500">Loading inbox…</div>
-                ) : inboxError ? (
-                  <div className="p-4 text-sm text-gray-500">{inboxError}</div>
-                ) : !filteredInbox.length ? (
-                  <div className="p-4 text-sm text-gray-500">No conversations yet.</div>
-                ) : (
-                  filteredInbox.map((t) => {
-                    const name = t.influencer?.name || "Influencer";
-                    const initial = name.trim().slice(0, 1).toUpperCase();
+                      const when = t.lastMessageAt ? fmtDate(t.lastMessageAt, "MMM d") : "";
+                      const whenFull = t.lastMessageAt ? fmtDate(t.lastMessageAt, "MMM d, yyyy") : "";
 
-                    const when = t.lastMessageAt ? fmtDate(t.lastMessageAt, "MMM d") : "";
-                    const whenFull = t.lastMessageAt ? fmtDate(t.lastMessageAt, "MMM d, yyyy") : "";
+                      const dLabel = dirLabel(t.lastMessageDirection);
 
-                    const dLabel = dirLabel(t.lastMessageDirection);
+                      const subject = (t.subject || "").trim() || "No subject";
+                      const snippet = (t.snippet || "").trim();
 
-                    const subject = (t.subject || "").trim() || "No subject";
-                    const snippet = (t.snippet || "").trim();
-
-                    return (
-                      <button
-                        key={t.threadId}
-                        type="button"
-                        onClick={() => router.push(`/brand/email?threadId=${t.threadId}`)}
-                        className="w-full text-left p-3 hover:bg-gray-50 transition flex items-start gap-3"
-                        title="Open conversation"
-                      >
-                        <div className="h-9 w-9 rounded-full bg-gray-100 flex items-center justify-center text-xs font-bold text-gray-700 shrink-0">
-                          {initial}
-                        </div>
-
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="min-w-0">
-                              <div className="font-semibold text-gray-800 truncate">{name}</div>
-
-                              {/* ✅ Subject */}
-                              <div className="text-sm font-semibold text-gray-700 truncate" title={subject}>
-                                {subject}
-                              </div>
-                            </div>
-
-                            <div className="shrink-0 text-right">
-                              <div className="text-[11px] text-gray-400" title={whenFull}>
-                                {when}
-                              </div>
-
-                              <div className="mt-1 flex items-center justify-end gap-2">
-                                {dLabel ? (
-                                  <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-gray-100 text-gray-700">
-                                    {dLabel}
-                                  </span>
-                                ) : null}
-
-                                <span
-                                  className={`px-2 py-0.5 rounded-full text-[11px] font-semibold border ${statusTone(
-                                    t.status || "active"
-                                  )}`}
-                                >
-                                  {t.status || "active"}
-                                </span>
-                              </div>
-                            </div>
+                      return (
+                        <button
+                          key={t.threadId}
+                          type="button"
+                          onClick={() => router.push(`/brand/email?threadId=${t.threadId}`)}
+                          className="w-full text-left p-3 hover:bg-gray-50 transition flex items-start gap-3"
+                          title="Open conversation"
+                        >
+                          <div className="h-9 w-9 rounded-full bg-gray-100 flex items-center justify-center text-xs font-bold text-gray-700 shrink-0">
+                            {initial}
                           </div>
 
-                          {/* ✅ Snippet */}
-                          {snippet ? (
-                            <div className="mt-1 text-xs text-gray-500 truncate" title={snippet}>
-                              {truncate(snippet, 140)}
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <div className="font-semibold text-gray-800 truncate">{name}</div>
+
+                                <div className="text-sm font-semibold text-gray-700 truncate" title={subject}>
+                                  {subject}
+                                </div>
+                              </div>
+
+                              <div className="shrink-0 text-right">
+                                <div className="text-[11px] text-gray-400" title={whenFull}>
+                                  {when}
+                                </div>
+
+                                <div className="mt-1 flex items-center justify-end gap-2">
+                                  {dLabel ? (
+                                    <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-gray-100 text-gray-700">
+                                      {dLabel}
+                                    </span>
+                                  ) : null}
+
+                                  <span
+                                    className={`px-2 py-0.5 rounded-full text-[11px] font-semibold border ${statusTone(
+                                      t.status || "active"
+                                    )}`}
+                                  >
+                                    {t.status || "active"}
+                                  </span>
+                                </div>
+                              </div>
                             </div>
-                          ) : (
-                            <div className="mt-1 text-xs text-gray-400 italic">No message preview</div>
-                          )}
-                        </div>
-                      </button>
-                    );
-                  })
-                )}
+
+                            {snippet ? (
+                              <div className="mt-1 text-xs text-gray-500 truncate" title={snippet}>
+                                {truncate(snippet, 140)}
+                              </div>
+                            ) : (
+                              <div className="mt-1 text-xs text-gray-400 italic">No message preview</div>
+                            )}
+                          </div>
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
               </div>
-            </div>
+            )}
           </div>
         </main>
       </div>
@@ -661,8 +714,9 @@ export default function BrandDashboardHome() {
 
 const StatCard = ({ icon, label, value, accentFrom, onClick }: any) => (
   <div
-    className={`bg-white rounded-lg shadow p-5 flex items-center space-x-4 transition-shadow ${onClick ? "cursor-pointer hover:shadow-lg" : ""
-      }`}
+    className={`bg-white rounded-lg shadow p-5 flex items-center space-x-4 transition-shadow ${
+      onClick ? "cursor-pointer hover:shadow-lg" : ""
+    }`}
     onClick={onClick}
   >
     <div className="p-3 rounded-full" style={{ backgroundColor: `${accentFrom}20` }}>

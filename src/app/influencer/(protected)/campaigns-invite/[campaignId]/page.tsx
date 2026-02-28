@@ -5,32 +5,43 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { get } from "@/lib/api";
 
-type ReviewStatus = "approved" | "pending" | "rejected" | "changes_needed";
+type ReviewStatus = "approved" | "pending" | "rejected" | "revision";
 type UrlItem = { label: string; url: string };
 
 type DeliverableApi = {
   _id?: string;
   id?: string;
+
   brandId?: string;
   influencerId?: string;
 
-  // backend may return either key depending on your schema/version
   campaignsId?: string;
   campaignId?: string;
 
   title?: string;
   description?: string;
   url?: UrlItem[];
-  status?: ReviewStatus | string;
+
+  status?: string;
+
+  comments?: string;
   reason?: string;
+
   createdAt?: string;
   updatedAt?: string;
+  updatedDate?: string;
+
+  // ✅ milestone title comes in response
+  milestoneTitle?: string;
 };
 
 type DeliverableRow = {
   rowId: string;
   deliverableId?: string;
   deliverablesType: string;
+
+  milestoneTitle: string;
+
   title: string;
   description: string;
   status: ReviewStatus;
@@ -55,17 +66,20 @@ const formatIST = (iso: string) => {
 };
 
 const normalizeUrl = (value: string) => {
-  const v = value.trim();
+  const v = (value || "").trim();
   if (!v) return "";
-  if (v.startsWith("http://") || v.startsWith("https://")) return v;
-  return `https://${v}`;
+  const withProto =
+    v.startsWith("http://") || v.startsWith("https://") ? v : `https://${v}`;
+  return encodeURI(withProto);
 };
 
 const toStatus = (s: any): ReviewStatus => {
   const v = String(s || "pending").toLowerCase();
   if (v === "approved") return "approved";
   if (v === "rejected") return "rejected";
-  if (v === "changes_needed" || v === "changes needed" || v === "changes") return "changes_needed";
+  if (v === "revision") return "revision";
+  if (v === "changes_needed" || v === "changes needed" || v === "changes")
+    return "revision";
   return "pending";
 };
 
@@ -77,7 +91,7 @@ const statusPill = (s: ReviewStatus) => {
       return "bg-amber-50 text-amber-700";
     case "rejected":
       return "bg-red-50 text-red-700";
-    case "changes_needed":
+    case "revision":
       return "bg-purple-50 text-purple-700";
     default:
       return "bg-gray-100 text-gray-700";
@@ -85,29 +99,39 @@ const statusPill = (s: ReviewStatus) => {
 };
 
 const statusLabel = (s: ReviewStatus) => {
-  if (s === "changes_needed") return "Changes needed";
+  if (s === "revision") return "Revision";
   return s.charAt(0).toUpperCase() + s.slice(1);
 };
 
 function mapApiToRows(items: DeliverableApi[]): DeliverableRow[] {
   const out: DeliverableRow[] = [];
 
-  for (const it of items || []) {
+  (items || []).forEach((it, itemIdx) => {
     const deliverableId = it._id || it.id;
+
     const title = it.title || "Untitled";
     const description = it.description || "";
     const status = toStatus(it.status);
-    const reason =
-      it.reason || (status === "pending" ? "Under review by brand." : "");
 
-    const createdAt = it.createdAt || it.updatedAt || new Date().toISOString();
+    const reason =
+      (it.comments?.trim() || it.reason?.trim()) ||
+      (status === "pending" ? "Under review by brand." : "");
+
+    const createdAt =
+      it.createdAt || it.updatedDate || it.updatedAt || new Date().toISOString();
+
+    const milestoneTitle = (it.milestoneTitle || "").trim() || "—";
     const urls = Array.isArray(it.url) ? it.url : [];
+
+    // ✅ Unique base key: prefer real ID, otherwise fall back to index (and createdAt for extra safety)
+    const baseKey = deliverableId ? String(deliverableId) : `noid_${itemIdx}_${createdAt}`;
 
     if (urls.length === 0) {
       out.push({
-        rowId: `${deliverableId || "noid"}_0`,
+        rowId: `${baseKey}_0`,
         deliverableId,
         deliverablesType: "Draft",
+        milestoneTitle,
         title,
         description,
         status,
@@ -115,14 +139,15 @@ function mapApiToRows(items: DeliverableApi[]): DeliverableRow[] {
         linkUrl: "",
         createdAt,
       });
-      continue;
+      return;
     }
 
-    urls.forEach((u, idx) => {
+    urls.forEach((u, urlIdx) => {
       out.push({
-        rowId: `${deliverableId || "noid"}_${idx}`,
+        rowId: `${baseKey}_${urlIdx}`,
         deliverableId,
-        deliverablesType: u.label || `Draft ${idx + 1}`,
+        deliverablesType: u.label || `Draft ${urlIdx + 1}`,
+        milestoneTitle,
         title,
         description,
         status,
@@ -131,15 +156,13 @@ function mapApiToRows(items: DeliverableApi[]): DeliverableRow[] {
         createdAt,
       });
     });
-  }
+  });
 
   return out;
 }
 
 export default function CampaignDeliverablesPage() {
   const params = useParams<{ campaignId: string }>();
-
-  // ✅ This is your UUID from the route
   const campaignId = params?.campaignId;
 
   const [rows, setRows] = useState<DeliverableRow[]>([]);
@@ -162,14 +185,15 @@ export default function CampaignDeliverablesPage() {
   const filteredRows = useMemo(() => {
     let list = [...rows];
 
-    if (statusFilter !== "all") list = list.filter((r) => r.status === statusFilter);
+    if (statusFilter !== "all")
+      list = list.filter((r) => r.status === statusFilter);
     if (titleFilter !== "all") list = list.filter((r) => r.title === titleFilter);
 
     const q = search.trim().toLowerCase();
     if (q) {
       list = list.filter((r) => {
         const hay =
-          `${r.deliverablesType} ${r.title} ${r.description} ${r.status} ${r.reason} ${r.linkUrl}`.toLowerCase();
+          `${r.deliverablesType} ${r.milestoneTitle} ${r.title} ${r.description} ${r.status} ${r.reason} ${r.linkUrl}`.toLowerCase();
         return hay.includes(q);
       });
     }
@@ -190,10 +214,8 @@ export default function CampaignDeliverablesPage() {
     setApiError(null);
 
     try {
-      // ✅ Listing endpoint only
       const res: any = await get<any>(`/deliverable/campaign/${campaignId}`);
 
-      // if your get() already returns res.data, this still works because we fallback
       const arr =
         (Array.isArray(res) && res) ||
         (Array.isArray(res?.data) && res.data) ||
@@ -249,7 +271,9 @@ export default function CampaignDeliverablesPage() {
       <div className="mt-6 bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
         {/* Header */}
         <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between gap-3">
-          <p className="text-sm font-medium text-gray-800">Deliverables submissions</p>
+          <p className="text-sm font-medium text-gray-800">
+            Deliverables submissions
+          </p>
         </div>
 
         {/* Filters */}
@@ -259,7 +283,7 @@ export default function CampaignDeliverablesPage() {
               <input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search draft, title, description, reason..."
+                placeholder="Search milestone, draft, title, description, reason..."
                 className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[#FFA135]"
               />
             </div>
@@ -274,7 +298,7 @@ export default function CampaignDeliverablesPage() {
                 <option value="pending">Pending</option>
                 <option value="approved">Approved</option>
                 <option value="rejected">Rejected</option>
-                <option value="changes_needed">Changes needed</option>
+                <option value="revision">Revision</option>
               </select>
 
               <select
@@ -308,6 +332,7 @@ export default function CampaignDeliverablesPage() {
             <thead className="bg-white">
               <tr className="text-xs font-semibold text-gray-600 border-b border-gray-200">
                 <th className="px-4 py-3">Deliverables Type</th>
+                <th className="px-4 py-3">Milestone</th>
                 <th className="px-4 py-3">Description</th>
                 <th className="px-4 py-3">Status</th>
                 <th className="px-4 py-3">Reason</th>
@@ -318,14 +343,24 @@ export default function CampaignDeliverablesPage() {
               {filteredRows.map((r) => (
                 <tr key={r.rowId} className="text-sm text-gray-800 align-top">
                   <td className="px-4 py-3">
-                    <div className="font-semibold text-gray-900">{r.deliverablesType}</div>
+                    <div className="font-semibold text-gray-900">
+                      {r.deliverablesType}
+                    </div>
                     <div className="text-xs text-gray-500">
                       Submitted: {formatIST(r.createdAt)}
                     </div>
                   </td>
 
                   <td className="px-4 py-3">
-                    <div className="text-sm font-semibold text-gray-900">{r.title}</div>
+                    <div className="text-sm font-semibold text-gray-900">
+                      {r.milestoneTitle}
+                    </div>
+                  </td>
+
+                  <td className="px-4 py-3">
+                    <div className="text-sm font-semibold text-gray-900">
+                      {r.title}
+                    </div>
                     <div className="mt-1 text-sm text-gray-700 whitespace-pre-wrap">
                       {r.description}
                     </div>
@@ -353,14 +388,19 @@ export default function CampaignDeliverablesPage() {
                   </td>
 
                   <td className="px-4 py-3">
-                    <div className="text-sm text-gray-800 whitespace-pre-wrap">{r.reason}</div>
+                    <div className="text-sm text-gray-800 whitespace-pre-wrap">
+                      {r.reason}
+                    </div>
                   </td>
                 </tr>
               ))}
 
               {filteredRows.length === 0 && (
                 <tr>
-                  <td className="px-4 py-8 text-center text-sm text-gray-500" colSpan={4}>
+                  <td
+                    className="px-4 py-8 text-center text-sm text-gray-500"
+                    colSpan={5}
+                  >
                     No deliverables found for this campaign.
                   </td>
                 </tr>

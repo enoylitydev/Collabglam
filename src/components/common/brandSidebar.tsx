@@ -132,7 +132,7 @@ export default function BrandSidebar({ isOpen, onClose }: BrandSidebarProps) {
     }
   }, []);
 
-  // ✅ Option 1: fetch latest plan from server once per mount (source of truth)
+  // ✅ fetch latest plan from server once per mount (source of truth)
   React.useEffect(() => {
     if (!token || !brandId) return;
     if (didFetchPlanRef.current) return;
@@ -142,7 +142,6 @@ export default function BrandSidebar({ isOpen, onClose }: BrandSidebarProps) {
 
     (async () => {
       try {
-        // GET /brand/subscription/current?brandId=xxxx
         const data = await get<BrandPlanRes>(
           `/subscription/brand/current?brandId=${encodeURIComponent(brandId)}`
         );
@@ -210,41 +209,47 @@ export default function BrandSidebar({ isOpen, onClose }: BrandSidebarProps) {
   }, [token, markLocalSeen]);
 
   // ✅ menu gating by plan
-  // ✅ menu gating by plan
-const menuItems = React.useMemo(() => {
-  if (!planName) return BASE_MENU_ITEMS;
+  const menuItems = React.useMemo(() => {
+    if (!planName) return BASE_MENU_ITEMS;
 
-  const normalized = planName.toLowerCase();
-  const isFree = normalized === 'free' || normalized === 'brand_free';
-  const isFullyManaged = normalized === 'fully_managed';
+    const normalized = planName.toLowerCase();
+    const isFree = normalized === 'free' || normalized === 'brand_free';
+    const isFullyManaged = normalized === 'fully_managed';
 
-  let items = [...BASE_MENU_ITEMS];
+    let items = [...BASE_MENU_ITEMS];
 
-  // ✅ Keep Created Campaign ALWAYS, and ADD Review Campaigns for Fully Managed
-  if (isFullyManaged) {
-    const reviewItem: MenuItem = {
-      name: 'Review Campaigns',
-      href: '/brand/review-campaigns',
-      icon: HiClipboardDocumentList,
-    };
+    // ✅ Keep Created Campaign ALWAYS, and ADD Review Campaigns for Fully Managed
+    if (isFullyManaged) {
+      const reviewItem: MenuItem = {
+        name: 'Review Campaigns',
+        href: '/brand/review-campaigns',
+        icon: HiClipboardDocumentList,
+      };
 
-    const alreadyAdded = items.some((i) => i.href === reviewItem.href);
-    if (!alreadyAdded) {
-      const createdIdx = items.findIndex((i) => i.href === '/brand/created-campaign');
-      if (createdIdx >= 0) items.splice(createdIdx + 1, 0, reviewItem);
-      else items.push(reviewItem);
+      const alreadyAdded = items.some((i) => i.href === reviewItem.href);
+      if (!alreadyAdded) {
+        const createdIdx = items.findIndex((i) => i.href === '/brand/created-campaign');
+        if (createdIdx >= 0) items.splice(createdIdx + 1, 0, reviewItem);
+        else items.push(reviewItem);
+      }
     }
-  }
 
-  // ✅ Apply filters
-  items = items.filter((item) => {
-    if (isFree && item.href === '/brand/disputes') return false;
-    if (isFullyManaged && item.href === '/brand/email') return false;
-    return true;
-  });
+    // ✅ Apply filters
+    items = items.filter((item) => {
+      // Free plan gating
+      if (isFree && item.href === '/brand/disputes') return false;
 
-  return items;
-}, [planName]);
+      // Fully Managed gating (✅ hide requested items)
+      if (isFullyManaged && item.href === '/brand/email') return false;
+      if (isFullyManaged && item.href === '/brand/browse-influencer') return false; // ✅ hide Browse Influencers
+      if (isFullyManaged && item.href === '/brand/disputes') return false; // ✅ hide Disputes
+      if (isFullyManaged && item.href === '/brand/invited') return false; // ✅ hide Invited Influencers
+
+      return true;
+    });
+
+    return items;
+  }, [planName]);
 
   const handleLogout = () => {
     localStorage.removeItem('token');

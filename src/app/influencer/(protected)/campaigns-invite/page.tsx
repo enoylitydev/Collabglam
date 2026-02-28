@@ -47,6 +47,7 @@ const formatIST = (iso: string) => {
   }
 };
 
+
 function normalizeApiResponse(maybeAxios: any): ApiResponse {
   if (
     maybeAxios?.data &&
@@ -159,18 +160,28 @@ export default function CampaignsInvitePage() {
     if (!campaignId) return;
     router.push(`/influencer/campaigns-invite/${campaignId}`);
   };
-
+  // ✅ NEW: Go to All Deliverables page (Influencer)
+  const goToAllDeliverables = () => {
+    if (!influencerId) return;
+    router.push(`/influencer/all-deliverables?influencerId=${encodeURIComponent(influencerId)}`);
+  };
   return (
     <div className="p-6 space-y-6">
       {/* ✅ Main Heading (no View Deliverables button here anymore) */}
-      <div className="flex items-start justify-between gap-4">
+            <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold text-gray-900">Campaigns Invite</h1>
-          <p className="mt-1 text-sm text-gray-600">
-            Showing campaigns derived from <b>/deliverable/influencer/:influencerId</b>.
-          </p>
-          <p className="mt-1 text-xs text-gray-500">Influencer ID: {influencerId || "—"}</p>
         </div>
+
+        {/* ✅ NEW: All Deliverable button (top-right) */}
+        <button
+          onClick={goToAllDeliverables}
+          disabled={!influencerId}
+          className="rounded-md px-3 py-2 text-sm font-medium text-gray-900 border border-gray-200 bg-white hover:bg-gradient-to-r hover:from-[#FFBF00] hover:to-[#FFDB58] transition-colors disabled:opacity-50"
+          title="View all deliverables"
+        >
+          All Deliverable
+        </button>
       </div>
 
       {/* Banner */}

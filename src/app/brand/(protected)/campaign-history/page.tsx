@@ -2,8 +2,19 @@
 
 import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import Link from "next/link";
-import { HiSearch, HiChevronDown, HiChevronUp, HiAdjustments, HiOutlineUsers, HiChevronRight } from "react-icons/hi";
+import {
+  HiSearch,
+  HiChevronDown,
+  HiChevronUp,
+  HiAdjustments,
+  HiOutlineUsers,
+  HiChevronRight,
+} from "react-icons/hi";
 import { get, post } from "@/lib/api";
+
+/* ✅ FULLY MANAGED plan gate (use plan name + plan id) */
+const FULLY_MANAGED_PLAN_ID = "1f46c6f6-63ae-4c4f-943d-798d644257f9";
+const FULLY_MANAGED_PLAN_NAME = "fully_managed";
 
 // ---- Types ----
 type SortBy =
@@ -89,11 +100,15 @@ function sliceText(text: string, max = 40) {
 }
 
 function formatCurrency(n: number) {
-  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(Number(n || 0));
+  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(
+    Number(n || 0)
+  );
 }
 
 function gradientStyle() {
-  return { backgroundImage: `linear-gradient(to right, ${TABLE_GRADIENT_FROM}, ${TABLE_GRADIENT_TO})` };
+  return {
+    backgroundImage: `linear-gradient(to right, ${TABLE_GRADIENT_FROM}, ${TABLE_GRADIENT_TO})`,
+  };
 }
 
 function SortIcon({ active, order }: { active: boolean; order: SortOrder }) {
@@ -148,7 +163,11 @@ function TimelineBadge({ state }: { state: TimelineState }) {
 
   const label = state === "running" ? "Running" : state === "expired" ? "Expired" : "No Timeline";
 
-  return <span className={`inline-flex items-center px-2.5 py-1 text-xs font-bold rounded-full ${cls}`}>{label}</span>;
+  return (
+    <span className={`inline-flex items-center px-2.5 py-1 text-xs font-bold rounded-full ${cls}`}>
+      {label}
+    </span>
+  );
 }
 
 function CampaignStatusBadge({ status }: { status: string }) {
@@ -160,7 +179,11 @@ function CampaignStatusBadge({ status }: { status: string }) {
         ? "bg-orange-100 text-orange-800"
         : "bg-gray-100 text-gray-800";
 
-  return <span className={`inline-flex items-center px-2.5 py-1 text-xs font-bold rounded-full ${cls}`}>{status || "—"}</span>;
+  return (
+    <span className={`inline-flex items-center px-2.5 py-1 text-xs font-bold rounded-full ${cls}`}>
+      {status || "—"}
+    </span>
+  );
 }
 
 function useDebouncedValue<T>(value: T, delay = 400) {
@@ -221,6 +244,24 @@ export default function BrandCampaignHistoryPage() {
   const [counts, setCounts] = useState<Record<string, number>>({});
 
   const lastFetchKeyRef = useRef<string>("");
+
+  // ✅ plan gate
+  const [isFullyManaged, setIsFullyManaged] = useState(false);
+
+  useEffect(() => {
+    try {
+      const storedPlanId = window.localStorage.getItem("brandPlanId");
+      const storedPlanName = window.localStorage.getItem("brandPlanName");
+
+      const fullyManaged =
+        (storedPlanId || "").trim() === FULLY_MANAGED_PLAN_ID ||
+        (storedPlanName || "").trim().toLowerCase() === FULLY_MANAGED_PLAN_NAME;
+
+      setIsFullyManaged(fullyManaged);
+    } catch {
+      setIsFullyManaged(false);
+    }
+  }, []);
 
   const formatDate = (dateStr?: string) => {
     if (!dateStr) return "—";
@@ -365,6 +406,9 @@ export default function BrandCampaignHistoryPage() {
       else next.add(id);
       return next;
     });
+
+    // ✅ FULLY MANAGED: don’t fetch influencer counts (and UI is hidden anyway)
+    if (isFullyManaged) return;
 
     if (!(id in counts)) {
       try {
@@ -522,9 +566,7 @@ export default function BrandCampaignHistoryPage() {
                 type="button"
                 disabled={updating}
                 onClick={applyFilters}
-                className={[
-                  "ml-auto px-5 py-2.5 rounded-xl text-sm font-semibold text-white hover:opacity-95 disabled:opacity-60 disabled:cursor-not-allowed",
-                ].join(" ")}
+                className="ml-auto px-5 py-2.5 rounded-xl text-sm font-semibold text-white hover:opacity-95 disabled:opacity-60 disabled:cursor-not-allowed"
                 style={gradientStyle()}
               >
                 Apply Filters
@@ -554,7 +596,7 @@ export default function BrandCampaignHistoryPage() {
               onClick={async () => {
                 setLoading(true);
                 setError(null);
-                lastFetchKeyRef.current = ""; // allow refetch even if payload same
+                lastFetchKeyRef.current = "";
                 try {
                   await fetchHistory({ force: true });
                 } catch (e: any) {
@@ -580,12 +622,10 @@ export default function BrandCampaignHistoryPage() {
             <table className="w-full text-sm text-gray-700">
               <thead className="text-left text-white" style={gradientStyle()}>
                 <tr>
-                  {/* Campaign stays LEFT */}
                   <Th onClick={() => onHeaderSort("productOrServiceName")} className="text-left">
                     Campaign <SortIcon active={sortBy === "productOrServiceName"} order={sortOrder} />
                   </Th>
 
-                  {/* Others centered */}
                   <Th onClick={() => onHeaderSort("budget")} className="text-center">
                     Budget <SortIcon active={sortBy === "budget"} order={sortOrder} />
                   </Th>
@@ -596,7 +636,8 @@ export default function BrandCampaignHistoryPage() {
 
                   <Th className="text-center">Timeline</Th>
 
-                  <Th className="text-center">Total Influencers</Th>
+                  {/* ✅ Hide Total Influencers column for FULLY MANAGED */}
+                  {!isFullyManaged && <Th className="text-center">Total Influencers</Th>}
 
                   <Th onClick={() => onHeaderSort("createdAt")} className="text-center">
                     Created <SortIcon active={sortBy === "createdAt"} order={sortOrder} />
@@ -607,6 +648,7 @@ export default function BrandCampaignHistoryPage() {
               <tbody>
                 {rows.map((c, idx) => {
                   const isExpanded = expandedIds.has(c.id);
+
                   const lazyCount = counts[c.id];
                   const appliedCount =
                     typeof c.applicantCount === "number"
@@ -639,23 +681,19 @@ export default function BrandCampaignHistoryPage() {
                         <td className="px-6 py-4 align-middle text-left">
                           <div className="flex items-start gap-3">
                             <div className="min-w-0 inline-flex items-center gap-2">
-
                               <Link
                                 href={`/brand/campaign-history/view-campaign?id=${c.id}`}
                                 onClick={(e) => e.stopPropagation()}
                                 title={c.productOrServiceName}
                               >
-                                {/* Text hover only */}
                                 <span className="font-bold text-gray-900 hover:text-[#FF7236] hover:underline underline-offset-4">
                                   {sliceText(c.productOrServiceName, 48)}
                                 </span>
                               </Link>
 
-                              {/* Chevron hover only */}
                               <span className="text-gray-400 hover:text-[#FF7236] cursor-pointer">
                                 {isExpanded ? <HiChevronUp size={18} /> : <HiChevronDown size={18} />}
                               </span>
-
                             </div>
                           </div>
                         </td>
@@ -675,43 +713,45 @@ export default function BrandCampaignHistoryPage() {
                           {formatDate(c.timeline.startDate)} – {formatDate(c.timeline.endDate)}
                         </td>
 
-                        {/* Applicants (CENTER) */}
-                        <td className="px-6 py-4 align-middle text-center">
-                          {appliedCount > 0 ? (
-                            <Link
-                              href={`/brand/campaign-history/view-inf?id=${c.id}&name=${encodeURIComponent(
-                                c.productOrServiceName
-                              )}`}
-                              onClick={(e) => e.stopPropagation()}
-                              className="group inline-flex items-center gap-2 rounded-full border border-gray-200 bg-gray-50 px-4 py-2 text-sm font-semibold text-gray-900
+                        {/* ✅ Influencers column + button hidden for FULLY MANAGED */}
+                        {!isFullyManaged && (
+                          <td className="px-6 py-4 align-middle text-center">
+                            {appliedCount > 0 ? (
+                              <Link
+                                href={`/brand/campaign-history/view-inf?id=${c.id}&name=${encodeURIComponent(
+                                  c.productOrServiceName
+                                )}`}
+                                onClick={(e) => e.stopPropagation()}
+                                className="group inline-flex items-center gap-2 rounded-full border border-gray-200 bg-gray-50 px-4 py-2 text-sm font-semibold text-gray-900
                  hover:border-[#FF7236] hover:bg-white hover:shadow-sm transition
                  focus:outline-none focus:ring-2 focus:ring-[#FF7236]/40 focus:ring-offset-2"
-                              title="View influencers"
-                              aria-label={`View influencers (${appliedCount})`}
-                            >
-                              <HiOutlineUsers size={18} className="opacity-70 group-hover:text-[#FF7236]" />
-                              <span className="group-hover:underline underline-offset-2">Influencers</span>
+                                title="View influencers"
+                                aria-label={`View influencers (${appliedCount})`}
+                              >
+                                <HiOutlineUsers size={18} className="opacity-70 group-hover:text-[#FF7236]" />
+                                <span className="group-hover:underline underline-offset-2">Influencers</span>
 
-                              <span className="ml-1 inline-flex min-w-[2rem] justify-center rounded-full bg-gray-900 px-2 py-0.5 text-xs font-bold text-white group-hover:bg-[#FF7236]">
-                                {appliedCount}
-                              </span>
+                                <span className="ml-1 inline-flex min-w-[2rem] justify-center rounded-full bg-gray-900 px-2 py-0.5 text-xs font-bold text-white group-hover:bg-[#FF7236]">
+                                  {appliedCount}
+                                </span>
 
-                              <HiChevronRight size={18} className="opacity-60 group-hover:opacity-100" />
-                            </Link>
-                          ) : (
-                            <span
-                              className="inline-flex items-center gap-2 rounded-full bg-gray-100 px-4 py-2 text-sm font-semibold text-gray-400"
-                              title="No influencers yet"
-                              aria-label="No influencers yet"
-                            >
-                              <HiOutlineUsers size={18} className="opacity-60" />
-                              <span>Influencers</span>
-                              <span className="ml-1 inline-flex min-w-[2rem] justify-center rounded-full bg-gray-300 px-2 py-0.5 text-xs font-bold text-white">
-                                0
+                                <HiChevronRight size={18} className="opacity-60 group-hover:opacity-100" />
+                              </Link>
+                            ) : (
+                              <span
+                                className="inline-flex items-center gap-2 rounded-full bg-gray-100 px-4 py-2 text-sm font-semibold text-gray-400"
+                                title="No influencers yet"
+                                aria-label="No influencers yet"
+                              >
+                                <HiOutlineUsers size={18} className="opacity-60" />
+                                <span>Influencers</span>
+                                <span className="ml-1 inline-flex min-w-[2rem] justify-center rounded-full bg-gray-300 px-2 py-0.5 text-xs font-bold text-white">
+                                  0
+                                </span>
                               </span>
-                            </span>
-                          )}
-                        </td>
+                            )}
+                          </td>
+                        )}
 
                         {/* Created (CENTER) */}
                         <td className="px-6 py-4 whitespace-nowrap align-middle text-center">
@@ -722,7 +762,7 @@ export default function BrandCampaignHistoryPage() {
                       {/* Expanded */}
                       {isExpanded && (
                         <tr className={idx % 2 === 0 ? "bg-white" : "bg-gray-50"}>
-                          <td className="px-6 pb-6 pt-2" colSpan={6}>
+                          <td className="px-6 pb-6 pt-2" colSpan={isFullyManaged ? 5 : 6}>
                             <div className="border-t border-gray-100 pt-5">
                               <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
                                 <div>
@@ -788,25 +828,26 @@ export default function BrandCampaignHistoryPage() {
                                       </Link>
                                     </div>
 
-                                    <div className="w-[200px]">
-                                      <Link
-                                        href={`/brand/campaign-history/view-inf?id=${c.id}&name=${encodeURIComponent(
-                                          c.productOrServiceName
-                                        )}`}
-                                        onClick={(e) => e.stopPropagation()}
-                                        className={[
-                                          "relative w-full inline-flex items-center justify-center px-4 py-2 rounded-xl text-sm font-semibold text-white",
-                                          "bg-gradient-to-r from-[#FFA135] to-[#FF7236] hover:opacity-90",
-                                        ].join(" ")}
-                                      >
-                                        View Influencers
-
-                                        {/* badge doesn't change button width */}
-                                        <span className="absolute right-3 top-1/2 -translate-y-1/2 inline-flex items-center justify-center min-w-[22px] h-[22px] px-2 text-[11px] font-extrabold bg-white/20 rounded-full">
-                                          {appliedCount}
-                                        </span>
-                                      </Link>
-                                    </div>
+                                    {/* ✅ Hide View Influencers button for FULLY MANAGED */}
+                                    {!isFullyManaged && (
+                                      <div className="w-[200px]">
+                                        <Link
+                                          href={`/brand/campaign-history/view-inf?id=${c.id}&name=${encodeURIComponent(
+                                            c.productOrServiceName
+                                          )}`}
+                                          onClick={(e) => e.stopPropagation()}
+                                          className={[
+                                            "relative w-full inline-flex items-center justify-center px-4 py-2 rounded-xl text-sm font-semibold text-white",
+                                            "bg-gradient-to-r from-[#FFA135] to-[#FF7236] hover:opacity-90",
+                                          ].join(" ")}
+                                        >
+                                          View Influencers
+                                          <span className="absolute right-3 top-1/2 -translate-y-1/2 inline-flex items-center justify-center min-w-[22px] h-[22px] px-2 text-[11px] font-extrabold bg-white/20 rounded-full">
+                                            {appliedCount}
+                                          </span>
+                                        </Link>
+                                      </div>
+                                    )}
                                   </div>
                                 </div>
                               </div>
