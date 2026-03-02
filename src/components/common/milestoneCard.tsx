@@ -1,32 +1,72 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "../ui/button";
-import { post } from "@/lib/api";
+import { post, get } from "@/lib/api";
 import { motion } from "framer-motion";
 import Swal from "sweetalert2";
 import { HiPlus, HiTrash, HiXMark } from "react-icons/hi2";
 
-// ─── Types ─────────────────────────────────────────────────────────────────────
+// =======================
+// CONFIG
+// =======================
+const DELIVERABLES_BY_CAMPAIGN_ENDPOINT = (campaignId: string) =>
+  `/deliverable/campaign/${campaignId}`;
+
+const DELIVERABLE_REVISION_UPDATE_ENDPOINT = `/deliverable/updateRevision`;
+
+// =======================
+// TYPES
+// =======================
 interface MilestoneEntry {
   milestoneHistoryId: string;
-  milestoneId: string; // ✅ comes from getMilestome response
+  milestoneId: string;
   influencerId: string;
   campaignId: string;
   milestoneTitle: string;
   amount: number;
   milestoneDescription?: string;
   createdAt: string;
-  status?: string; // 'initiated' | 'paid' (or undefined)
+
+  // payout related:
+  status?: string;
   released?: boolean;
+}
+
+interface DeliverableEntry {
+  brandId?: string;
+  influencerId?: string;
+  campaignId: string;
+
+  milestoneId: string;
+  milestoneHistoryId: string;
+
+  title: string;
+  description: string;
+
+  status: string; // pending | revision | approved
+  approvedRole?: string;
+  approvalId?: string;
+  comments?: string;
+
+  url: Array<{ label: string; url: string }>;
+
+  delieverableApprovalId?: string; // ✅ model key
+  deliverableApprovalId?: string;  // optional future
+
+  createdAt?: string;
+  updatedDate?: string;
+  milestoneTitle?: string;
+  influencerName?: string;
+  influencerHandle?: string;
 }
 
 interface MilestoneHistoryCardProps {
   role: "brand" | "influencer";
   brandId?: string | null;
   influencerId?: string | null;
-  campaignId?: string; // in your parent, you pass campaignsId UUID here
+  campaignId?: string;
   className?: string;
 }
 
@@ -59,6 +99,8 @@ const isValidUrlOrEmpty = (value: string) => {
     return false;
   }
 };
+
+const safeLower = (v?: string) => (v || "").trim().toLowerCase();
 
 const palette = {
   brand: {
@@ -118,22 +160,27 @@ const MilestoneHistoryCard: React.FC<MilestoneHistoryCardProps> = ({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // ✅ Deliverables map by milestoneHistoryId
+  const [deliverableMap, setDeliverableMap] = useState<Record<string, DeliverableEntry>>({});
+  const [deliverablesLoading, setDeliverablesLoading] = useState(false);
+
   // ✅ modal state
   const [addOpen, setAddOpen] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  // ✅ store the "particular milestone" for which we are adding deliverables
   const [targetMilestone, setTargetMilestone] = useState<MilestoneEntry | null>(null);
+  const [targetDeliverable, setTargetDeliverable] = useState<DeliverableEntry | null>(null);
+  const [modalMode, setModalMode] = useState<"create" | "revision">("create");
 
-  // ✅ helper: button should appear ONLY when payment NOT initiated AND NOT paid
+  // ✅ payout helper: Add Deliverables button should appear ONLY when payment NOT initiated AND NOT paid
   const canAddDeliverablesFor = (m: MilestoneEntry) => {
     const rawStatus: string | undefined = m.status || (m as any).payoutStatus || undefined;
     const initiatedLike = rawStatus === "initiated" || (m.released && !rawStatus);
     const paidLike = rawStatus === "paid";
-    return !initiatedLike && !paidLike; // => "Not received yet"
+    return !initiatedLike && !paidLike;
   };
 
-  /* fetcher */
+  /* fetch milestones */
   const fetchMilestones = async () => {
     setLoading(true);
     setError(null);
@@ -181,6 +228,40 @@ const MilestoneHistoryCard: React.FC<MilestoneHistoryCardProps> = ({
     }
   };
 
+  /* ✅ fetch deliverables by campaign */
+  const fetchDeliverablesByCampaign = async () => {
+    if (!campaignId) return;
+
+    setDeliverablesLoading(true);
+    try {
+      const data = await get<any>(DELIVERABLES_BY_CAMPAIGN_ENDPOINT(campaignId));
+
+      const list: DeliverableEntry[] = Array.isArray(data)
+        ? data
+        : Array.isArray(data?.deliverables)
+        ? data.deliverables
+        : Array.isArray(data?.data)
+        ? data.data
+        : Array.isArray(data?.result)
+        ? data.result
+        : [];
+
+      // ✅ IMPORTANT: keep ONLY latest per milestoneHistoryId
+      // API already sorts createdAt desc, so first one is latest.
+      const map: Record<string, DeliverableEntry> = {};
+      for (const d of list) {
+        const key = d?.milestoneHistoryId ? String(d.milestoneHistoryId) : "";
+        if (!key) continue;
+        if (!map[key]) map[key] = d;
+      }
+      setDeliverableMap(map);
+    } catch {
+      setDeliverableMap({});
+    } finally {
+      setDeliverablesLoading(false);
+    }
+  };
+
   /* release payment (brand → admin) */
   const releaseMilestone = async (m: MilestoneEntry) => {
     try {
@@ -216,16 +297,16 @@ const MilestoneHistoryCard: React.FC<MilestoneHistoryCardProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [brandId, influencerId, campaignId, role]);
 
-  // ✅ create deliverable from modal (campaignsId + milestoneId of THAT milestone)
-  // ✅ create deliverable from modal (campaignId + milestoneHistoryId of THAT milestone)
-  const handleCreateDeliverable = async (payload: {
-    title: string;
-    description: string;
-    url: UrlItem[];
-  }) => {
-    const campaignsId = campaignId || targetMilestone?.campaignId; // UUID
-    const milestoneId = targetMilestone?.milestoneId; // root milestoneId
-    const milestoneHistoryId = targetMilestone?.milestoneHistoryId; // ✅ IMPORTANT
+  useEffect(() => {
+    fetchDeliverablesByCampaign();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [campaignId]);
+
+  // ✅ create deliverable
+  const handleCreateDeliverable = async (payload: { title: string; description: string; url: UrlItem[] }) => {
+    const campaignsId = campaignId || targetMilestone?.campaignId;
+    const milestoneId = targetMilestone?.milestoneId;
+    const milestoneHistoryId = targetMilestone?.milestoneHistoryId;
 
     if (!campaignsId || !milestoneHistoryId) return;
 
@@ -246,15 +327,10 @@ const MilestoneHistoryCard: React.FC<MilestoneHistoryCardProps> = ({
       await post("/deliverable/create", {
         brandId: brandFromLS,
         influencerId: influencerFromLS,
-
-        // ✅ keep both keys if your backend still supports both
         campaignId: campaignsId,
-        campaignsId, // optional backward compat
-
-        // ✅ send BOTH (backend can derive milestoneId from historyId too)
-        milestoneHistoryId, // ✅ required for title fetch
-        milestoneId,        // optional but good to send
-
+        campaignsId,
+        milestoneHistoryId,
+        milestoneId,
         title: payload.title,
         description: payload.description,
         url: payload.url,
@@ -262,6 +338,7 @@ const MilestoneHistoryCard: React.FC<MilestoneHistoryCardProps> = ({
 
       setAddOpen(false);
       setTargetMilestone(null);
+      setTargetDeliverable(null);
 
       Swal.fire({
         icon: "success",
@@ -271,6 +348,8 @@ const MilestoneHistoryCard: React.FC<MilestoneHistoryCardProps> = ({
         timer: 1600,
         timerProgressBar: true,
       });
+
+      fetchDeliverablesByCampaign();
     } catch {
       Swal.fire({
         icon: "error",
@@ -285,14 +364,83 @@ const MilestoneHistoryCard: React.FC<MilestoneHistoryCardProps> = ({
     }
   };
 
-  // ─── Status Renderer (brand + influencer) ───────────────────────────
+  // ✅ update revision
+  const handleUpdateRevision = async (payload: { title: string; description: string; url: UrlItem[] }) => {
+    const d = targetDeliverable;
+    if (!d) return;
+
+    const approvalId = d.delieverableApprovalId || d.deliverableApprovalId;
+    if (!approvalId) return;
+
+    setSaving(true);
+    try {
+      await post(DELIVERABLE_REVISION_UPDATE_ENDPOINT, {
+        // ✅ BACKEND MODEL KEY
+        delieverableApprovalId: approvalId,
+
+        milestoneHistoryId: d.milestoneHistoryId,
+        milestoneId: d.milestoneId,
+        campaignId: d.campaignId,
+
+        title: payload.title, // locked title: "Revised - ..."
+        description: payload.description,
+        url: payload.url,
+      });
+
+      setAddOpen(false);
+      setTargetMilestone(null);
+      setTargetDeliverable(null);
+
+      Swal.fire({
+        icon: "success",
+        title: "Revision submitted",
+        text: "Your revised deliverables have been submitted successfully.",
+        showConfirmButton: false,
+        timer: 1600,
+        timerProgressBar: true,
+      });
+
+      fetchDeliverablesByCampaign();
+    } catch (err: any) {
+      Swal.fire({
+        icon: "error",
+        title: "Failed",
+        text: err?.message || "Failed to submit revision. Please try again.",
+        showConfirmButton: false,
+        timer: 1800,
+        timerProgressBar: true,
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // ✅ deliverable review badge (Under review / Revision requested / Approved)
+  const deliverableReviewBadge = (d?: DeliverableEntry) => {
+    if (!d) return null;
+
+    const st = safeLower(d.status);
+    const base = "inline-block px-3 py-0.5 text-xs font-semibold rounded-full";
+
+    if (st === "approved" || st === "aproved") {
+      return <span className={`${base} bg-green-50 text-green-700`}>Approved</span>;
+    }
+    if (st === "revision") {
+      return <span className={`${base} bg-purple-50 text-purple-700`}>Revision requested</span>;
+    }
+    // pending / default
+    return <span className={`${base} bg-amber-50 text-amber-700`}>Under review</span>;
+  };
+
+  // ✅ Status Renderer
   const renderStatus = (m: MilestoneEntry) => {
     const rawStatus: string | undefined = m.status || (m as any).payoutStatus || undefined;
     const badgeBase = "inline-block px-3 py-0.5 text-xs font-semibold rounded-full";
 
     // INFLUENCER VIEW
     if (role === "influencer") {
-      const statusBadge =
+      // payout badge (your existing)
+      const payoutBadge =
         rawStatus === "paid" ? (
           <span className={`${badgeBase} ${palette[role].full} text-white`}>Paid</span>
         ) : rawStatus === "initiated" || (m.released && !rawStatus) ? (
@@ -305,14 +453,27 @@ const MilestoneHistoryCard: React.FC<MilestoneHistoryCardProps> = ({
           </span>
         );
 
+      const d = deliverableMap[m.milestoneHistoryId];
+      const deliverableStatus = safeLower(d?.status);
+
+      // ✅ NEW RULES:
+      // 1) Show "Add Deliverables" ONLY if deliverable does NOT exist (once only)
+      // 2) After deliverable exists:
+      //    - if deliverable status is "pending" => show only "Under review" badge (no buttons)
+      //    - if deliverable status is "revision" => show "Add Revision" button
+      //    - if deliverable status is "approved" => no buttons
+      const showAddDeliverablesButton = !d && canAddDeliverablesFor(m);
+      const showRevisionButton = !!d && deliverableStatus === "revision";
+
       return (
         <div className="flex items-center gap-2 mt-2 flex-wrap">
-          {/* ✅ show button ONLY for this milestone when payment is NOT received yet */}
-          {canAddDeliverablesFor(m) && (
+          {showAddDeliverablesButton && (
             <Button
               className={`${palette[role].full} cursor-pointer`}
               onClick={() => {
-                setTargetMilestone(m); // ✅ store this milestone (has milestoneId)
+                setModalMode("create");
+                setTargetMilestone(m);
+                setTargetDeliverable(null);
                 setAddOpen(true);
               }}
             >
@@ -320,12 +481,36 @@ const MilestoneHistoryCard: React.FC<MilestoneHistoryCardProps> = ({
             </Button>
           )}
 
-          {statusBadge}
+          {showRevisionButton && (
+            <Button
+              variant="outline"
+              className="border-gray-300 text-gray-900 hover:bg-gray-50"
+              disabled={deliverablesLoading || saving}
+              onClick={() => {
+                setModalMode("revision");
+                setTargetMilestone(m);
+                setTargetDeliverable(d!);
+                setAddOpen(true);
+              }}
+            >
+              Add Revision
+            </Button>
+          )}
+
+          {/* ✅ deliverable review badge:
+              - pending => Under review
+              - revision => Revision requested
+              - approved => Approved
+          */}
+          {deliverableReviewBadge(d)}
+
+          {/* payout badge always */}
+          {payoutBadge}
         </div>
       );
     }
 
-    // BRAND VIEW
+    // BRAND VIEW (unchanged)
     if (!m.released) {
       return (
         <div className="flex items-center gap-2 mt-2 flex-wrap">
@@ -351,11 +536,30 @@ const MilestoneHistoryCard: React.FC<MilestoneHistoryCardProps> = ({
     return <span className={`${badgeBase} ${palette[role].soft} ${palette[role].text}`}>Released</span>;
   };
 
+  // ✅ modal initial values for revision
+  const initialModalValues = useMemo(() => {
+    if (modalMode !== "revision") return null;
+
+    const d = targetDeliverable;
+    const baseTitle = d?.title?.trim() || "Deliverable";
+
+    const revisedTitle = baseTitle.toLowerCase().startsWith("revised")
+      ? baseTitle
+      : `Revised - ${baseTitle}`;
+
+    return {
+      title: revisedTitle,
+      description: d?.description || "",
+      url: Array.isArray(d?.url) && d!.url.length ? d!.url : [{ label: "", url: "" }],
+      lockTitle: true,
+    };
+  }, [modalMode, targetDeliverable]);
+
   return (
     <div
       className={`relative p-6 bg-white/80 backdrop-blur-md border border-gray-100 rounded-2xl shadow-xl hover:shadow-2xl transition-all duration-300 ${className}`}
     >
-      {/* header (✅ removed top button) */}
+      {/* header */}
       <div className="flex items-center gap-3 mb-5">
         <div className={`w-12 h-12 flex items-center justify-center rounded-full ${palette[role].full} shadow-md`}>
           <svg className="w-6 h-6 text-white" fill="currentColor" viewBox="0 0 20 20">
@@ -430,15 +634,23 @@ const MilestoneHistoryCard: React.FC<MilestoneHistoryCardProps> = ({
         </div>
       )}
 
-      {/* ✅ Modal opens for the clicked milestone */}
+      {/* ✅ Modal */}
       {addOpen && targetMilestone && (
         <AddDeliverablesModal
           saving={saving}
           onClose={() => {
             setAddOpen(false);
             setTargetMilestone(null);
+            setTargetDeliverable(null);
           }}
-          onSave={handleCreateDeliverable}
+          initialTitle={initialModalValues?.title}
+          initialDescription={initialModalValues?.description}
+          initialUrls={initialModalValues?.url}
+          lockTitle={initialModalValues?.lockTitle}
+          onSave={(payload) => {
+            if (modalMode === "revision") return handleUpdateRevision(payload);
+            return handleCreateDeliverable(payload);
+          }}
         />
       )}
     </div>
@@ -447,21 +659,37 @@ const MilestoneHistoryCard: React.FC<MilestoneHistoryCardProps> = ({
 
 export default MilestoneHistoryCard;
 
-// ─── Modal (same as your deliverable page) ─────────────────────────────────────
+// ─── Modal ───────────────────────────────────────────────────────────
 function AddDeliverablesModal({
   saving,
   onClose,
   onSave,
+  initialTitle,
+  initialDescription,
+  initialUrls,
+  lockTitle,
 }: {
   saving: boolean;
   onClose: () => void;
   onSave: (payload: { title: string; description: string; url: UrlItem[] }) => void;
+  initialTitle?: string;
+  initialDescription?: string;
+  initialUrls?: UrlItem[];
+  lockTitle?: boolean;
 }) {
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
-
-  const [rows, setRows] = useState<Array<{ label: string; url: string }>>([{ label: "", url: "" }]);
+  const [title, setTitle] = useState(initialTitle || "");
+  const [description, setDescription] = useState(initialDescription || "");
+  const [rows, setRows] = useState<Array<{ label: string; url: string }>>(
+    initialUrls && initialUrls.length ? initialUrls : [{ label: "", url: "" }]
+  );
   const [touched, setTouched] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    setTitle(initialTitle || "");
+    setDescription(initialDescription || "");
+    setRows(initialUrls && initialUrls.length ? initialUrls : [{ label: "", url: "" }]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialTitle, initialDescription, JSON.stringify(initialUrls || [])]);
 
   const addRow = () => setRows((prev) => [...prev, { label: "", url: "" }]);
   const removeRow = (idx: number) => setRows((prev) => prev.filter((_, i) => i !== idx));
@@ -505,7 +733,7 @@ function AddDeliverablesModal({
       <div className="relative w-[92%] max-w-2xl bg-white rounded-2xl shadow-lg border border-gray-200 overflow-hidden">
         <div className="p-4 border-b border-gray-200 flex items-center justify-between gap-3">
           <div>
-            <h2 className="text-lg font-semibold text-gray-900">Add Deliverables</h2>
+            <h2 className="text-lg font-semibold text-gray-900">{lockTitle ? "Add Revision" : "Add Deliverables"}</h2>
             <p className="text-sm text-gray-600 mt-1">Title, description, and one or more draft links.</p>
           </div>
 
@@ -528,10 +756,18 @@ function AddDeliverablesModal({
                 onChange={(e) => setTitle(e.target.value)}
                 onBlur={() => markTouched("title")}
                 placeholder="Instagram Reel - Product Demo"
-                className={`w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[#FFA135] ${touched["title"] && titleErr ? "border-red-300" : "border-gray-300"
-                  }`}
+                readOnly={!!lockTitle}
+                disabled={saving || !!lockTitle}
+                className={`w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[#FFA135] disabled:opacity-60 ${
+                  touched["title"] && titleErr ? "border-red-300" : "border-gray-300"
+                }`}
               />
               {touched["title"] && titleErr && <p className="mt-1 text-xs font-medium text-red-600">{titleErr}</p>}
+              {lockTitle && (
+                <p className="mt-1 text-[11px] text-gray-500">
+                  Title is locked for revision (auto-prefixed with “Revised -”).
+                </p>
+              )}
             </div>
 
             <div>
@@ -541,8 +777,9 @@ function AddDeliverablesModal({
                 onChange={(e) => setDescription(e.target.value)}
                 onBlur={() => markTouched("desc")}
                 placeholder="30 sec reel with hook + CTA"
-                className={`w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[#FFA135] ${touched["desc"] && descErr ? "border-red-300" : "border-gray-300"
-                  }`}
+                className={`w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[#FFA135] ${
+                  touched["desc"] && descErr ? "border-red-300" : "border-gray-300"
+                }`}
               />
               {touched["desc"] && descErr && <p className="mt-1 text-xs font-medium text-red-600">{descErr}</p>}
             </div>
@@ -584,8 +821,9 @@ function AddDeliverablesModal({
                           onBlur={() => markTouched(`label_${idx}`)}
                           placeholder="Draft 1"
                           disabled={saving}
-                          className={`w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[#FFA135] disabled:opacity-60 ${showLabelErr ? "border-red-300" : "border-gray-300"
-                            }`}
+                          className={`w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[#FFA135] disabled:opacity-60 ${
+                            showLabelErr ? "border-red-300" : "border-gray-300"
+                          }`}
                         />
                         {showLabelErr && <p className="mt-1 text-xs font-medium text-red-600">{e.label}</p>}
                       </div>
@@ -598,8 +836,9 @@ function AddDeliverablesModal({
                           onBlur={() => markTouched(`url_${idx}`)}
                           placeholder="https://drive.google.com/..."
                           disabled={saving}
-                          className={`w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[#FFA135] disabled:opacity-60 ${showUrlErr ? "border-red-300" : "border-gray-300"
-                            }`}
+                          className={`w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[#FFA135] disabled:opacity-60 ${
+                            showUrlErr ? "border-red-300" : "border-gray-300"
+                          }`}
                         />
                         {showUrlErr && <p className="mt-1 text-xs font-medium text-red-600">{e.url}</p>}
                       </div>
@@ -634,10 +873,11 @@ function AddDeliverablesModal({
             <button
               onClick={handleSave}
               disabled={hasInvalid || saving}
-              className={`rounded-md px-4 py-2 text-sm font-medium text-gray-900 bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] hover:opacity-90 ${hasInvalid || saving ? "opacity-60 cursor-not-allowed" : ""
-                }`}
+              className={`rounded-md px-4 py-2 text-sm font-medium text-gray-900 bg-gradient-to-r from-[#FFBF00] to-[#FFDB58] hover:opacity-90 ${
+                hasInvalid || saving ? "opacity-60 cursor-not-allowed" : ""
+              }`}
             >
-              {saving ? "Saving..." : "Save"}
+              {saving ? "Saving..." : lockTitle ? "Submit Revision" : "Save"}
             </button>
           </div>
         </div>
