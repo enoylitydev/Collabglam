@@ -15,7 +15,7 @@ import {
   TableCell,
 } from "@/components/ui/table";
 import { FloatingLabelInput } from "@/components/common/FloatingLabelInput";
-import AdminMilestoneHistoryCard from "@/components/common/AdminMIlestoneHistoryCard";
+import AdminMilestoneHistoryCard from "@/components/common/AdminMilestoneHistoryCard";
 import {
   HiChevronLeft,
   HiChevronRight,
