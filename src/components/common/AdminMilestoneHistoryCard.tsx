@@ -62,7 +62,7 @@ const TimelineSkeleton: React.FC<{ rows?: number }> = ({ rows = 3 }) => (
 );
 
 /* ─── Admin Milestone Card (Black/White UI) ─────────────────────────────── */
-export default function AdminMilestoneHistoryCard({
+export default function AdminMilestone({
   brandId,
   campaignId,
   influencerId,

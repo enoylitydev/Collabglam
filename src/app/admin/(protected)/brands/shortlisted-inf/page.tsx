@@ -15,7 +15,7 @@ import {
   TableCell,
 } from "@/components/ui/table";
 import { FloatingLabelInput } from "@/components/common/FloatingLabelInput";
-import AdminMilestoneHistoryCard from "@/components/common/AdminMilestoneHistoryCard";
+import AdminMilestone from "@/components/common/AdminMilestoneHistoryCard";
 import {
   HiChevronLeft,
   HiChevronRight,
@@ -431,7 +431,7 @@ export default function AdminShortlistedInfluencersPage() {
         expandedRow === rowKey && inf.influencerId ? (
           <TableRow key={`${rowKey}-details`}>
             <TableCell colSpan={7} className="p-0">
-              <AdminMilestoneHistoryCard
+              <AdminMilestone
                 brandId={brandId as string}
                 campaignId={campaignId as string}
                 influencerId={inf.influencerId}
