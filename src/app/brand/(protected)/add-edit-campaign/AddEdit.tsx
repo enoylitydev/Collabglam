@@ -36,6 +36,33 @@ import type { FilterOptionOption } from "react-select";
 import Swal from "sweetalert2";
 import "sweetalert2/dist/sweetalert2.css";
 
+const INFLUENCER_TIER_OPTIONS: SimpleOption[] = [
+  { value: "Nano (1K–10K)", label: "Nano (1K–10K)" },
+  { value: "Micro (10K–100K)", label: "Micro (10K–100K)" },
+  { value: "Mid (100K–500K)", label: "Mid (100K–500K)" },
+  { value: "Macro (500K–1M)", label: "Macro (500K–1M)" },
+  { value: "Mega (1M+)", label: "Mega (1M+)" },
+];
+
+const tiersToCommaString = (tiers: SimpleOption[]) =>
+  (tiers || []).map((t) => t.value).filter(Boolean).join(",");
+
+const commaStringToTierOptions = (raw: any): SimpleOption[] => {
+  if (!raw) return [];
+  if (Array.isArray(raw)) {
+    return raw
+      .map((x) => String(x).trim())
+      .filter(Boolean)
+      .map((v) => INFLUENCER_TIER_OPTIONS.find((o) => o.value === v) || ({ value: v, label: v } as SimpleOption));
+  }
+  const vals = String(raw)
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  return vals.map((v) => INFLUENCER_TIER_OPTIONS.find((o) => o.value === v) || ({ value: v, label: v } as SimpleOption));
+};
+
 // ── types ───────────────────────────────────────────────────
 
 type GenderOption = "Male" | "Female" | "All";
@@ -181,6 +208,12 @@ export default function BrandCreateCampaignPage() {
   const [campaignType, setCampaignType] = useState<string>("");
   const [customCampaignType, setCustomCampaignType] = useState<string>("");
 
+  const [noInfluencers, setNoInfluencers] = useState<string>("1"); // must be string
+  const [selectedInfluencerTiers, setSelectedInfluencerTiers] = useState<SimpleOption[]>([
+    INFLUENCER_TIER_OPTIONS[0], // default Nano so draft/save doesn’t fail if backend requires it
+  ]);
+  const [productCategory, setProductCategory] = useState<string>("");
+
   const [budget, setBudget] = useState<number | "">("");
   const [timeline, setTimeline] = useState<{ start: string; end: string }>({
     start: "",
@@ -210,6 +243,14 @@ export default function BrandCreateCampaignPage() {
   const campaignTypeMissing = !finalCampaignTypeForUI;
 
   const imagesMissing = existingImages.length + productImages.length === 0;
+
+  const influencerTierMissing = selectedInfluencerTiers.length === 0;
+
+  const noInfluencersMissing = !String(noInfluencers || "").trim();
+
+  const noInfluencersInvalid =
+    !noInfluencersMissing &&
+    (!/^\d+$/.test(String(noInfluencers)) || Number(noInfluencers) <= 0);
 
   const [draftLoaded, setDraftLoaded] = useState(false);
   const [isSavingDraft, setIsSavingDraft] = useState(false);
@@ -329,6 +370,10 @@ export default function BrandCreateCampaignPage() {
     setAdditionalNotes(data.additionalNotes || "");
     setCreativeBriefText(data.creativeBriefText || "");
     setExistingImages(Array.isArray(data.images) ? data.images : []);
+
+    setNoInfluencers(String((data as any)?.noInfluencers ?? "1"));
+    setSelectedInfluencerTiers(commaStringToTierOptions((data as any)?.influencerTier) || []);
+    setProductCategory(String((data as any)?.productCategory ?? ""));
 
     const briefFiles = Array.isArray(data.creativeBrief) ? data.creativeBrief : [];
     setExistingBriefFiles(briefFiles);
@@ -520,6 +565,9 @@ export default function BrandCreateCampaignPage() {
     setCampaignType(""); setCustomCampaignType(""); setBudget(""); setTimeline({ start: "", end: "" });
     setCreativeBriefText(""); setCreativeBriefFiles([]); setExistingBriefFiles([]);
     setUseFileUploadForBrief(false); setAdditionalNotes(""); setDraftId(null); setDraftLoaded(false);
+    setNoInfluencers("1");
+    setSelectedInfluencerTiers([INFLUENCER_TIER_OPTIONS[0]]);
+    setProductCategory("");
   };
 
   const fmtMoney = (n: number | "") => n === "" ? "—" : `$${Number(n).toLocaleString()}`;
@@ -587,6 +635,11 @@ export default function BrandCreateCampaignPage() {
       if (timeline.start || timeline.end) formData.append("timeline", JSON.stringify({ startDate: timeline.start || undefined, endDate: timeline.end || undefined }));
       if (additionalNotes.trim()) formData.append("additionalNotes", additionalNotes.trim());
 
+      // ✅ NEW fields
+      formData.append("noInfluencers", String(noInfluencers || "1")); // string
+      formData.append("influencerTier", tiersToCommaString(selectedInfluencerTiers)); // comma-separated
+      formData.append("productCategory", productCategory.trim()); // string
+
       productImages.forEach((f) => formData.append("image", f));
       if (useFileUploadForBrief) {
         creativeBriefFiles.forEach((f) => formData.append("creativeBrief", f));
@@ -619,6 +672,7 @@ export default function BrandCreateCampaignPage() {
       !productName.trim() || !description.trim() || ageRange.min === "" || ageRange.max === "" ||
       !selectedGender || selectedCountries.length === 0 || !selectedCategoryId ||
       selectedSubcategories.length === 0 || !selectedGoal || !finalCampaignType ||
+      noInfluencersMissing || noInfluencersInvalid || influencerTierMissing ||
       budget === "" || !timeline.start || !timeline.end || imagesMissing ||
       (!useFileUploadForBrief && !creativeBriefText.trim()) ||
       (useFileUploadForBrief && creativeBriefFiles.length === 0 && existingBriefFiles.length === 0)
@@ -638,6 +692,24 @@ export default function BrandCreateCampaignPage() {
       return toast({ icon: "error", title: "Invalid dates", text: "Start Date must be on or before End Date." });
     }
 
+    if (noInfluencersInvalid) {
+      setIsPreviewOpen(false);
+      return toast({
+        icon: "error",
+        title: "Invalid influencer count",
+        text: "No. of Influencers must be a number greater than 0.",
+      });
+    }
+
+    if (selectedInfluencerTiers.length === 0) {
+      setIsPreviewOpen(false);
+      return toast({
+        icon: "error",
+        title: "Select influencer tier",
+        text: "Please select at least one influencer tier.",
+      });
+    }
+
     setIsSubmitting(true);
     try {
       const formData = new FormData();
@@ -653,6 +725,10 @@ export default function BrandCreateCampaignPage() {
       formData.append("campaignType", finalCampaignType || "");
       formData.append("budget", String(budget));
       formData.append("timeline", JSON.stringify({ startDate: timeline.start, endDate: timeline.end }));
+
+      formData.append("noInfluencers", String(noInfluencers)); // must be string
+      formData.append("influencerTier", tiersToCommaString(selectedInfluencerTiers)); // comma-separated
+      formData.append("productCategory", productCategory.trim()); // string
 
       productImages.forEach((f) => formData.append("image", f));
 
@@ -990,7 +1066,7 @@ export default function BrandCreateCampaignPage() {
                   {/* Category */}
                   <div className="space-y-1">
                     <Label className="text-sm font-medium text-gray-700 mb-2 block">
-                      Category <span className="text-red-500">*</span>
+                      Influencer Category <span className="text-red-500">*</span>
                     </Label>
                     <ReactSelect
                       options={categorySelectOptions}
@@ -1023,7 +1099,7 @@ export default function BrandCreateCampaignPage() {
                   {/* Subcategories */}
                   <div className="space-y-1">
                     <Label className="text-sm font-medium text-gray-700 mb-2 block">
-                      Subcategories <span className="text-red-500">*</span>
+                      Influencer Subcategories <span className="text-red-500">*</span>
                     </Label>
                     <ReactSelect
                       isMulti
@@ -1159,6 +1235,59 @@ export default function BrandCreateCampaignPage() {
 
                 <div className="grid sm:grid-cols-2 gap-6">
                   <div className="space-y-1">
+                    <FloatingLabelInput
+                      id="noInfluencers"
+                      label="No. of Influencers"
+                      type="number"
+                      value={noInfluencers}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        if (v === "") return setNoInfluencers("");
+                        if (!/^\d+$/.test(v)) return;
+                        setNoInfluencers(v);
+                      }}
+                      required
+                    />
+                    {showRequiredHints && (noInfluencersMissing || noInfluencersInvalid) && (
+                      <p className="text-xs text-red-600">
+                        Enter a valid number greater than 0
+                      </p>
+                    )}
+                  </div>
+
+                  {/* ✅ NEW: Product category (string) */}
+                  <div className="space-y-1">
+                    <FloatingLabelInput
+                      id="productCategory"
+                      label="Product Category"
+                      type="text"
+                      value={productCategory}
+                      onChange={(e) => setProductCategory(e.target.value)}
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <Label className="text-sm font-medium text-gray-700 mb-2 block">
+                    Influencer Tier <span className="text-red-500">*</span>
+                  </Label>
+                  <ReactSelect
+                    isMulti
+                    closeMenuOnSelect={false}
+                    blurInputOnSelect={false}
+                    options={INFLUENCER_TIER_OPTIONS}
+                    styles={makeSelectStyles(showRequiredHints && influencerTierMissing) as any}
+                    value={selectedInfluencerTiers}
+                    onChange={(v) => setSelectedInfluencerTiers((v as SimpleOption[]) || [])}
+                    placeholder="Select influencer tiers..."
+                  />
+                  {showRequiredHints && influencerTierMissing && (
+                    <p className="text-xs text-red-600">This field is required</p>
+                  )}
+                </div>
+
+                <div className="grid sm:grid-cols-2 gap-6">
+                  <div className="space-y-1">
                     <Label className="text-sm font-medium text-gray-700 mb-2 block">
                       Start Date <span className="text-red-500">*</span>
                     </Label>
@@ -1216,7 +1345,7 @@ export default function BrandCreateCampaignPage() {
               <CardHeader className="border-b border-gray-100 bg-gradient-to-r from-gray-50 to-white">
                 <CardTitle className="text-xl font-semibold text-gray-800 flex items-center gap-2">
                   <div className="h-8 w-1 bg-gradient-to-b from-[#FFA135] to-[#FF7236] rounded-full"></div>
-                  Creative Brief & Notes
+                  Deliverable & Creative Brief
                 </CardTitle>
               </CardHeader>
               <CardContent className="pt-6 space-y-6 bg-white">
@@ -1600,7 +1729,7 @@ export default function BrandCreateCampaignPage() {
             {/* Categories */}
             <section>
               <h3 className="text-sm font-semibold text-gray-700 mb-2">
-                Categories
+                Influencer Category
               </h3>
               {groupedSubcats.length ? (
                 <div className="space-y-2">
@@ -1649,6 +1778,22 @@ export default function BrandCreateCampaignPage() {
                 <div>
                   <div className="text-xs text-gray-500">Budget</div>
                   <div className="text-gray-900">{fmtMoney(budget)}</div>
+                </div>
+                <div>
+                  <div className="text-xs text-gray-500">No. of Influencers</div>
+                  <div className="text-gray-900">{noInfluencers || "—"}</div>
+                </div>
+                <div>
+                  <div className="text-xs text-gray-500">Influencer Tier</div>
+                  <div className="text-gray-900">
+                    {selectedInfluencerTiers.length
+                      ? selectedInfluencerTiers.map((t) => t.value).join(", ")
+                      : "—"}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs text-gray-500">Product Category</div>
+                  <div className="text-gray-900">{productCategory || "—"}</div>
                 </div>
                 <div>
                   <div className="text-xs text-gray-500">Start</div>
@@ -1746,6 +1891,10 @@ interface CampaignEditPayload {
   createdBy?: { role: string; userId: string };
   approvalMode?: string;
   publishStatus?: string;
+
+  noInfluencers?: string | number;
+  influencerTier?: string | string[];
+  productCategory?: string;
 
   productOrServiceName: string;
   description: string;

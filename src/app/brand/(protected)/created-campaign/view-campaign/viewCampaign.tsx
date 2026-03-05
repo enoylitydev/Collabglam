@@ -50,6 +50,10 @@ interface CampaignData {
     locations: { countryId: string; countryName: string; _id?: string }[];
   };
 
+  noInfluencers?: string | number;        // stored as string but allow old number
+  influencerTier?: string | string[];     // comma-separated string (or array)
+  productCategory?: string;               // string
+
   categories: {
     categoryId: number | string;
     categoryName: string;
@@ -76,6 +80,15 @@ interface CampaignData {
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") || "";
 
+function parseInfluencerTiers(raw: any): string[] {
+  if (!raw) return [];
+  if (Array.isArray(raw)) return raw.map((x) => String(x).trim()).filter(Boolean);
+  return String(raw)
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
 function fileUrl(v?: string) {
   if (!v) return "";
   if (/^https?:\/\//i.test(v)) return v;
@@ -100,6 +113,18 @@ function applyPendingPatch(base: CampaignData, patch: any): CampaignData {
   merged.budget = Number(merged.budget || 0);
   if (merged.influencerBudget !== undefined) {
     merged.influencerBudget = Number(merged.influencerBudget || 0);
+  }
+
+  // ✅ normalize new fields to expected types
+  if (merged.noInfluencers !== undefined) {
+    merged.noInfluencers = String(merged.noInfluencers || "1");
+  }
+  if (merged.influencerTier !== undefined) {
+    // keep as comma string (what backend stores), but normalize spacing
+    merged.influencerTier = parseInfluencerTiers(merged.influencerTier).join(",");
+  }
+  if (merged.productCategory !== undefined) {
+    merged.productCategory = String(merged.productCategory || "");
   }
 
   return merged;
@@ -475,6 +500,36 @@ export default function ViewCampaignPage() {
               <p className="text-sm font-medium text-gray-600">Budget</p>
               <p className="mt-1 text-gray-800">${Number(c.budget || 0).toLocaleString()}</p>
             </div>
+
+            <div>
+              <p className="text-sm font-medium text-gray-600">No. of Influencers</p>
+              <p className="mt-1 text-gray-800">{String(c.noInfluencers ?? "—")}</p>
+            </div>
+
+            {/* ✅ NEW: Influencer Tier */}
+            <div className="lg:col-span-2">
+              <p className="text-sm font-medium text-gray-600">Influencer Tier</p>
+              <div className="mt-1 flex flex-wrap gap-2">
+                {parseInfluencerTiers(c.influencerTier).length ? (
+                  parseInfluencerTiers(c.influencerTier).map((t) => (
+                    <Badge key={t} variant="outline" className="bg-orange-50 text-orange-700">
+                      {t}
+                    </Badge>
+                  ))
+                ) : (
+                  <span className="text-gray-500">—</span>
+                )}
+              </div>
+            </div>
+
+            {/* ✅ NEW: Product Category */}
+            <div className="lg:col-span-2">
+              <p className="text-sm font-medium text-gray-600">Product Category</p>
+              <p className="mt-1 text-gray-800">
+                {c.productCategory && String(c.productCategory).trim() ? c.productCategory : "—"}
+              </p>
+            </div>
+            
             <div className="flex items-center gap-3">
               <Tooltip>
                 <TooltipTrigger>
