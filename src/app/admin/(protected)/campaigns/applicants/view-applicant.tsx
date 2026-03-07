@@ -26,22 +26,42 @@ import {
   HiOutlineChevronDown,
   HiOutlineChevronUp,
 } from "react-icons/hi";
-import { Copy, Dot, ShieldCheck, Hourglass, Ban, FileText } from "lucide-react";
+import { Dot, ShieldCheck, Hourglass, Ban, FileText } from "lucide-react";
+
+type CategoryValue =
+  | string
+  | {
+      categoryId?: string;
+      categoryName?: string;
+    }
+  | null
+  | undefined;
 
 interface Influencer {
   influencerId: string;
   name: string;
-  handle: string; // @handle
-  category: string | null; // can be null from API
-  audienceSize: number; // present in API, hidden in UI
+  handle: string;
+  category: CategoryValue;
+  audienceSize: number;
   createdAt: string;
-  isAssigned: number; // 1/0
-  isContracted: number; // 1/0
+  isAssigned: number;
+  isContracted: number;
   contractId: string | null;
-  feeAmount: string | number; // string or number from API
-  isAccepted: number; // 1/0
-  isRejected: number; // 1/0
+  feeAmount: string | number;
+  isAccepted: number;
+  isRejected: number;
   rejectedReason: string;
+}
+
+interface ShortlistedInfluencer {
+  influencerId: string;
+  name: string;
+  handle: string;
+  category?: CategoryValue;
+  createdAt?: string;
+  feeAmount?: string | number;
+  contractId?: string | null;
+  isContracted?: number;
 }
 
 interface Meta {
@@ -63,6 +83,10 @@ export default function AppliedInfluencersPage() {
   const [influencers, setInfluencers] = useState<Influencer[]>([]);
   const [applicantCount, setApplicantCount] = useState(0);
 
+  const [shortlisted, setShortlisted] = useState<ShortlistedInfluencer[]>([]);
+  const [shortlistedLoading, setShortlistedLoading] = useState(true);
+  const [shortlistedError, setShortlistedError] = useState<string | null>(null);
+
   const [meta, setMeta] = useState<Meta>({
     total: 0,
     page: 1,
@@ -73,31 +97,34 @@ export default function AppliedInfluencersPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // UI state
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(PAGE_SIZE_OPTIONS[0]);
   const [searchTerm, setSearchTerm] = useState("");
   const [sortField, setSortField] = useState<keyof Influencer>("createdAt");
   const [sortOrder, setSortOrder] = useState<1 | 0>(1);
   const [filter, setFilter] = useState<FilterKey>("all");
-  const [contractLoadingId, setContractLoadingId] = useState<string | null>(null);
+  const [contractLoadingId, setContractLoadingId] = useState<string | null>(
+    null
+  );
 
-  // Navigate to influencer details
-  const handleViewDetails = (inf: Influencer) => {
+  const handleViewDetails = (inf: { influencerId: string }) => {
     router.push(`/admin/influencers/view?influencerId=${inf.influencerId}`);
   };
 
-  // Open contract PDF for influencers that have a contractId
-  const handleViewContract = async (inf: Influencer) => {
+  const handleViewContract = async (inf: {
+    influencerId: string;
+    contractId?: string | null;
+  }) => {
     if (!inf.contractId) return;
 
     try {
       setError(null);
       setContractLoadingId(inf.influencerId);
 
-      // Adjust base URL as per your setup
       const baseUrl =
-        process.env.NEXT_PUBLIC_API_URL?.replace(/\/+$/, "") || "";
+        process.env.NEXT_PUBLIC_API_URL?.replace(/\/+$/, "") ||
+        "http://localhost:5000";
+
       const res = await fetch(`${baseUrl}/contract/viewPdf`, {
         method: "POST",
         headers: {
@@ -121,7 +148,6 @@ export default function AppliedInfluencersPage() {
     }
   };
 
-  // Format currency (INR by default from example)
   const currency = (val?: string | number) => {
     const num =
       typeof val === "string"
@@ -129,7 +155,9 @@ export default function AppliedInfluencersPage() {
         : typeof val === "number"
         ? val
         : 0;
+
     if (Number.isNaN(num)) return "—";
+
     return new Intl.NumberFormat(undefined, {
       style: "currency",
       currency: "INR",
@@ -137,23 +165,20 @@ export default function AppliedInfluencersPage() {
     }).format(num);
   };
 
-  const copyText = async (text?: string | null) => {
-    if (!text) return;
-    try {
-      await navigator.clipboard.writeText(text);
-    } catch {
-      // ignore
-    }
+  const getCategoryLabel = (category: CategoryValue) => {
+    if (!category) return "—";
+    if (typeof category === "string") return category;
+    if (typeof category === "object") return category.categoryName || "—";
+    return "—";
   };
 
   const statusKey = (inf: Influencer): FilterKey => {
     if (inf.isRejected === 1) return "rejected";
     if (inf.isAccepted === 1) return "approved";
     if (inf.isAssigned === 1 && inf.isContracted === 1) return "pending";
-    return "pending"; // treat unassigned/uncontracted as pending-review
+    return "pending";
   };
 
-  // Fetch applicants
   useEffect(() => {
     if (!campaignId) {
       setError("No campaign selected.");
@@ -164,6 +189,7 @@ export default function AppliedInfluencersPage() {
     (async () => {
       setLoading(true);
       setError(null);
+
       try {
         const {
           meta: m,
@@ -194,7 +220,53 @@ export default function AppliedInfluencersPage() {
     })();
   }, [campaignId, page, limit, searchTerm, sortField, sortOrder]);
 
-  // Sorting helpers
+  useEffect(() => {
+    if (!campaignId) {
+      setShortlistedLoading(false);
+      return;
+    }
+
+    (async () => {
+      setShortlistedLoading(true);
+      setShortlistedError(null);
+
+      try {
+        const baseUrl =
+          process.env.NEXT_PUBLIC_API_URL?.replace(/\/+$/, "") ||
+          "http://localhost:5000";
+
+        const res = await fetch(
+          `${baseUrl}/deliverable/influencer/campaign/${campaignId}`,
+          {
+            method: "GET",
+            headers: {
+              "Content-Type": "application/json",
+            },
+          }
+        );
+
+        if (!res.ok) {
+          throw new Error("Failed to load shortlisted influencers");
+        }
+
+        const data = await res.json();
+
+        const shortlist =
+          data?.influencers ||
+          data?.shortlisted ||
+          data?.data ||
+          (Array.isArray(data) ? data : []);
+
+        setShortlisted(Array.isArray(shortlist) ? shortlist : []);
+      } catch (err) {
+        console.error(err);
+        setShortlistedError("Failed to load shortlisted influencers.");
+      } finally {
+        setShortlistedLoading(false);
+      }
+    })();
+  }, [campaignId]);
+
   const toggleSort = (field: keyof Influencer) => {
     setPage(1);
     if (sortField === field) {
@@ -214,7 +286,6 @@ export default function AppliedInfluencersPage() {
       )
     ) : null;
 
-  // Stats + filtered list (client-side visual filters)
   const { approvedCount, pendingCount, rejectedCount, shown } = useMemo(() => {
     const approved = influencers.filter((i) => statusKey(i) === "approved");
     const pending = influencers.filter((i) => statusKey(i) === "pending");
@@ -237,7 +308,6 @@ export default function AppliedInfluencersPage() {
     };
   }, [influencers, filter]);
 
-  // Render rows
   const rows = useMemo(
     () =>
       shown.map((inf) => {
@@ -251,6 +321,7 @@ export default function AppliedInfluencersPage() {
 
         const statusBadge = (() => {
           const key = statusKey(inf);
+
           if (key === "rejected") {
             return (
               <span className="inline-flex items-center gap-1 rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-xs text-red-700">
@@ -259,6 +330,7 @@ export default function AppliedInfluencersPage() {
               </span>
             );
           }
+
           if (key === "approved") {
             return (
               <span className="inline-flex items-center gap-1 rounded-full border border-green-200 bg-green-50 px-2 py-0.5 text-xs text-green-700">
@@ -267,6 +339,7 @@ export default function AppliedInfluencersPage() {
               </span>
             );
           }
+
           return (
             <span className="inline-flex items-center gap-1 rounded-full border border-yellow-200 bg-yellow-50 px-2 py-0.5 text-xs text-yellow-800">
               <Dot className="h-5 w-5 -mx-1 text-yellow-500" />
@@ -282,7 +355,6 @@ export default function AppliedInfluencersPage() {
             key={inf.influencerId}
             className="hover:bg-indigo-50/50 transition-colors"
           >
-            {/* Name */}
             <TableCell className="whitespace-nowrap">
               <span className="inline-flex items-center gap-2">
                 <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-indigo-100 text-indigo-700 text-xs font-semibold ring-1 ring-indigo-200">
@@ -292,35 +364,29 @@ export default function AppliedInfluencersPage() {
               </span>
             </TableCell>
 
-            {/* Handle */}
             <TableCell>
               <Badge variant="secondary" className="font-mono">
                 {inf.handle}
               </Badge>
             </TableCell>
 
-            {/* Category */}
             <TableCell>
               <Badge variant="secondary" className="capitalize">
-                {inf.category || "—"}
+                {getCategoryLabel(inf.category)}
               </Badge>
             </TableCell>
 
-            {/* Date */}
             <TableCell className="whitespace-nowrap">
               <HiOutlineCalendar className="inline mr-1" />
               {new Date(inf.createdAt).toLocaleDateString()}
             </TableCell>
 
-            {/* Fee */}
             <TableCell className="whitespace-nowrap">
               {currency(inf.feeAmount)}
             </TableCell>
 
-            {/* Status */}
             <TableCell className="whitespace-nowrap">{statusBadge}</TableCell>
 
-            {/* Actions */}
             <TableCell className="text-right">
               <div className="flex justify-end gap-2">
                 <Button
@@ -356,7 +422,6 @@ export default function AppliedInfluencersPage() {
 
   return (
     <div className="min-h-screen p-4 md:p-8 space-y-8 bg-gradient-to-b from-white to-indigo-50/40">
-      {/* Header */}
       <header className="flex flex-col md:flex-row md:items-center md:justify-between gap-6 rounded-xl border bg-gradient-to-r from-indigo-50 to-white p-4 shadow-sm">
         <div>
           <h1 className="text-2xl md:text-3xl font-semibold text-gray-900 tracking-tight">
@@ -367,8 +432,7 @@ export default function AppliedInfluencersPage() {
           </p>
         </div>
 
-        {/* Summary stat cards */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 w-full md:w-auto">
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 w-full md:w-auto">
           <StatCard
             icon={<ShieldCheck className="h-4 w-4" />}
             label="Approved"
@@ -393,10 +457,15 @@ export default function AppliedInfluencersPage() {
             value={applicantCount}
             tone="indigo"
           />
+          <StatCard
+            icon={<ShieldCheck className="h-4 w-4" />}
+            label="Shortlisted"
+            value={shortlisted.length}
+            tone="indigo"
+          />
         </div>
       </header>
 
-      {/* Toolbar */}
       <div className="flex flex-col gap-4 rounded-xl border bg-white p-4 shadow-sm">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div className="relative w-full sm:w-80">
@@ -411,6 +480,7 @@ export default function AppliedInfluencersPage() {
               className="pl-10 w-full"
             />
           </div>
+
           <select
             value={limit}
             onChange={(e) => {
@@ -428,7 +498,6 @@ export default function AppliedInfluencersPage() {
           </select>
         </div>
 
-        {/* Quick Filters */}
         <div className="flex flex-wrap items-center gap-2">
           {(["all", "approved", "pending", "rejected"] as FilterKey[]).map(
             (k) => (
@@ -447,59 +516,69 @@ export default function AppliedInfluencersPage() {
               </Button>
             )
           )}
+
           <span className="ml-auto text-xs text-muted-foreground">
             Showing <strong>{shown.length}</strong> of {meta.total} results
           </span>
         </div>
       </div>
 
-      {/* Table / States */}
-      {loading ? (
-        <LoadingSkeleton rows={limit} />
-      ) : error ? (
-        <ErrorMessage>{error}</ErrorMessage>
-      ) : shown.length === 0 ? (
-        <EmptyState />
-      ) : (
-        <div className="rounded-xl border bg-white shadow-sm overflow-x-auto">
-          <Table className="min-w-[1160px]">
-            <TableHeader className="sticky top-0 bg-white/80 backdrop-blur supports-[backdrop-filter]:bg-white/60 z-10">
-              <TableRow>
-                <TableHead
-                  onClick={() => toggleSort("name")}
-                  className="cursor-pointer select-none"
-                >
-                  Name <SortIndicator field="name" />
-                </TableHead>
-                <TableHead
-                  onClick={() => toggleSort("handle")}
-                  className="cursor-pointer select-none"
-                >
-                  Handle <SortIndicator field="handle" />
-                </TableHead>
-                <TableHead
-                  onClick={() => toggleSort("category")}
-                  className="cursor-pointer select-none"
-                >
-                  Category <SortIndicator field="category" />
-                </TableHead>
-                <TableHead
-                  onClick={() => toggleSort("createdAt")}
-                  className="cursor-pointer select-none"
-                >
-                  Date <SortIndicator field="createdAt" />
-                </TableHead>
-                <TableHead>Fee</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>{rows}</TableBody>
-          </Table>
+      <section className="space-y-4">
+        <div>
+          <h2 className="text-xl font-semibold text-gray-900">
+            Applied Influencers
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            All applicants for this campaign
+          </p>
         </div>
-      )}
 
-      {/* Pagination */}
+        {loading ? (
+          <LoadingSkeleton rows={limit} />
+        ) : error ? (
+          <ErrorMessage>{error}</ErrorMessage>
+        ) : shown.length === 0 ? (
+          <EmptyState />
+        ) : (
+          <div className="rounded-xl border bg-white shadow-sm overflow-x-auto">
+            <Table className="min-w-[1160px]">
+              <TableHeader className="sticky top-0 bg-white/80 backdrop-blur supports-[backdrop-filter]:bg-white/60 z-10">
+                <TableRow>
+                  <TableHead
+                    onClick={() => toggleSort("name")}
+                    className="cursor-pointer select-none"
+                  >
+                    Name <SortIndicator field="name" />
+                  </TableHead>
+                  <TableHead
+                    onClick={() => toggleSort("handle")}
+                    className="cursor-pointer select-none"
+                  >
+                    Handle <SortIndicator field="handle" />
+                  </TableHead>
+                  <TableHead
+                    onClick={() => toggleSort("category")}
+                    className="cursor-pointer select-none"
+                  >
+                    Category <SortIndicator field="category" />
+                  </TableHead>
+                  <TableHead
+                    onClick={() => toggleSort("createdAt")}
+                    className="cursor-pointer select-none"
+                  >
+                    Date <SortIndicator field="createdAt" />
+                  </TableHead>
+                  <TableHead>Fee</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>{rows}</TableBody>
+            </Table>
+          </div>
+        )}
+      </section>
+
       {meta.totalPages > 1 && (
         <div className="flex justify-center md:justify-end items-center gap-2">
           <Button
@@ -512,9 +591,11 @@ export default function AppliedInfluencersPage() {
           >
             <HiChevronLeft />
           </Button>
+
           <span className="text-sm">
             Page <strong>{page}</strong> of {meta.totalPages}
           </span>
+
           <Button
             variant="outline"
             size="icon"
@@ -527,11 +608,123 @@ export default function AppliedInfluencersPage() {
           </Button>
         </div>
       )}
+
+      <section className="space-y-4">
+        <div className="rounded-xl border bg-gradient-to-r from-emerald-50 to-white p-4 shadow-sm">
+          <h2 className="text-xl font-semibold text-gray-900">Shortlisted</h2>
+          <p className="text-sm text-muted-foreground mt-1">
+            Influencers shortlisted for this campaign
+          </p>
+        </div>
+
+        {shortlistedLoading ? (
+          <LoadingSkeleton rows={5} />
+        ) : shortlistedError ? (
+          <ErrorMessage>{shortlistedError}</ErrorMessage>
+        ) : shortlisted.length === 0 ? (
+          <div className="rounded-xl border bg-white shadow-sm p-10 text-center">
+            <h3 className="text-lg font-semibold">
+              No shortlisted influencers
+            </h3>
+            <p className="text-sm text-muted-foreground mt-1">
+              No shortlisted records were found for this campaign.
+            </p>
+          </div>
+        ) : (
+          <div className="rounded-xl border bg-white shadow-sm overflow-x-auto">
+            <Table className="min-w-[900px]">
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Name</TableHead>
+                  <TableHead>Handle</TableHead>
+                  <TableHead>Category</TableHead>
+                  <TableHead>Date</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+
+              <TableBody>
+                {shortlisted.map((inf) => {
+                  const initials =
+                    inf.name
+                      ?.split(" ")
+                      .map((n) => n[0])
+                      .join("")
+                      .slice(0, 2)
+                      .toUpperCase() || "?";
+
+                  const hasContract = inf.isContracted === 1 && !!inf.contractId;
+
+                  return (
+                    <TableRow
+                      key={inf.influencerId}
+                      className="hover:bg-emerald-50/50 transition-colors"
+                    >
+                      <TableCell className="whitespace-nowrap">
+                        <span className="inline-flex items-center gap-2">
+                          <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 text-xs font-semibold ring-1 ring-emerald-200">
+                            {initials}
+                          </span>
+                          <span className="font-medium">{inf.name}</span>
+                        </span>
+                      </TableCell>
+
+                      <TableCell>
+                        <Badge variant="secondary" className="font-mono">
+                          {inf.handle || "—"}
+                        </Badge>
+                      </TableCell>
+
+                      <TableCell>
+                        <Badge variant="secondary" className="capitalize">
+                          {getCategoryLabel(inf.category)}
+                        </Badge>
+                      </TableCell>
+
+                      <TableCell className="whitespace-nowrap">
+                        {inf.createdAt
+                          ? new Date(inf.createdAt).toLocaleDateString()
+                          : "—"}
+                      </TableCell>
+
+                      <TableCell className="text-right">
+                        <div className="flex justify-end gap-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="border-indigo-500 text-indigo-600 hover:bg-indigo-50"
+                            onClick={() => handleViewDetails(inf)}
+                          >
+                            View
+                          </Button>
+
+                          {hasContract && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="border-emerald-500 text-emerald-600 hover:bg-emerald-50 inline-flex items-center gap-1"
+                              onClick={() => handleViewContract(inf)}
+                              disabled={contractLoadingId === inf.influencerId}
+                            >
+                              <FileText className="h-4 w-4" />
+                              {contractLoadingId === inf.influencerId
+                                ? "Opening..."
+                                : "View Contract"}
+                            </Button>
+                          )}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+      </section>
     </div>
   );
 }
-
-/* ============== Small Components ============== */
 
 function StatCard({
   icon,
@@ -549,7 +742,7 @@ function StatCard({
     yellow: "bg-yellow-50 text-yellow-700 ring-yellow-200",
     red: "bg-red-50 text-red-700 ring-red-200",
     indigo: "bg-indigo-50 text-indigo-700 ring-indigo-200",
-  } as const;
+  };
 
   return (
     <Card className={`shadow-none ring-1 ${toneClasses[tone]} ring-inset`}>

@@ -290,7 +290,6 @@ export default function ViewCampaignPage() {
               <span className="text-gray-300">•</span>
               <span>Created: {formatDate(c.createdAt)}</span>
               <span className="text-gray-300">•</span>
-              <StatusPill isActive={c.isActive} />
             </div>
           </div>
 

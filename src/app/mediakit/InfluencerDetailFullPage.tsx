@@ -1,4 +1,3 @@
-// InfluencerDetailFullPage.tsx
 'use client';
 
 import React, { useMemo, useState, useEffect } from 'react';
@@ -35,12 +34,9 @@ type Props = {
   lastFetchedAt?: string | null;
   onRefreshReport?: () => Promise<void> | void;
   onChangeCalc: (calc: 'median' | 'average') => void;
-
-  // ✅ who is viewing the mediakit
   viewerRole?: 'brand' | 'admin' | '';
 };
 
-/** ✅ /admin-invitations/send response shape */
 type StoreInvitationResponse =
   | {
       status: 'success';
@@ -68,15 +64,19 @@ export default function InfluencerDetailFullPage({
   const searchParams = useSearchParams();
   const campaignId = searchParams?.get('campaignId') || '';
 
-  // ✅ Read auth from localStorage
+  // Read auth info from localStorage
   const [brandId, setBrandId] = useState('');
   const [adminId, setAdminId] = useState('');
+  const [userType, setUserType] = useState('');
 
   useEffect(() => {
     const b = (localStorage.getItem('brandId') || '').trim();
     const a = (localStorage.getItem('adminId') || '').trim();
+    const u = (localStorage.getItem('userType') || '').trim().toLowerCase();
+
     setBrandId(b);
     setAdminId(a);
+    setUserType(u);
   }, []);
 
   const [sendingInvite, setSendingInvite] = useState(false);
@@ -105,11 +105,13 @@ export default function InfluencerDetailFullPage({
     setSelectedCampaignIds((prev) => (checked ? Array.from(new Set([...prev, id])) : prev.filter((p) => p !== id)));
   };
 
-  // ✅ Fetch campaigns (admin preferred; fallback to brand)
+  const isBrandViewer = userType === 'brand' && !!brandId;
+  const isAdminViewer = ( !!adminId) || viewerRole === 'admin';
+
+  // Fetch campaigns only for admin because Add to Favourite is shown only to admin
   useEffect(() => {
-    const bId = (brandId || '').trim();
     const aId = (adminId || '').trim();
-    if (!aId && !bId) return;
+    if (!isAdminViewer || !aId) return;
 
     let cancelled = false;
 
@@ -117,8 +119,7 @@ export default function InfluencerDetailFullPage({
       try {
         setCampaignsLoading(true);
 
-        const payload: any = aId ? { adminId: aId } : { brandId: bId };
-        const resp: any = await post('/admin/campaign/lite', payload);
+        const resp: any = await post('/admin/campaign/lite', { adminId: aId });
 
         if (cancelled) return;
 
@@ -139,14 +140,13 @@ export default function InfluencerDetailFullPage({
     return () => {
       cancelled = true;
     };
-  }, [brandId, adminId]);
+  }, [adminId, isAdminViewer]);
 
   const handleSendFromDropdown = async () => {
     setDropdownOpen(false);
     await sendInvitationsForCampaigns(selectedCampaignIds);
   };
 
-  /** ✅ Send invite (stores invitations) */
   const sendInvitationsForCampaigns = async (campaignIds: string[]) => {
     if (!canAct || sendingInvite) return;
 
@@ -168,25 +168,21 @@ export default function InfluencerDetailFullPage({
       return;
     }
 
-    // ✅ require brandId OR adminId
-    const bId = (brandId || '').trim();
     const aId = (adminId || '').trim();
-    if (!bId && !aId) {
-      await Swal.fire('Login required', 'brandId or adminId missing. Please login again.', 'warning');
+    if (!aId) {
+      await Swal.fire('Login required', 'adminId missing. Please login again.', 'warning');
       return;
     }
 
     try {
       setSendingInvite(true);
 
-      const payload: any = {
+      const payload = {
         userId: modashUserId,
         platform: normalizedPlatform,
         campaignsIds: ids,
+        adminId: aId,
       };
-
-      if (aId) payload.adminId = aId;
-      else payload.brandId = bId;
 
       const resp = await post<StoreInvitationResponse>('/admin-invitations/send', payload);
 
@@ -299,21 +295,19 @@ export default function InfluencerDetailFullPage({
   const audienceLookalikes = profile?.audienceLookalikes ?? [];
   const brandAffinity = profile?.brandAffinity ?? [];
 
-  // ✅ ONLY admin can see About section
-  const isAdminViewer = viewerRole === 'admin';
-
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="w-full">
         <div className="bg-white overflow-hidden">
-          {/* Top Bar */}
           <div className="sticky top-0 z-10 bg-white/90 backdrop-blur border-b flex items-center gap-3 px-4 py-3">
-            <button
-              onClick={() => router.back()}
-              className="inline-flex items-center gap-1 rounded-xl border border-gray-200 bg-white px-3 py-1.5 text-sm hover:bg-gray-50 transition-colors flex-shrink-0"
-            >
-              <ArrowLeft className="h-4 w-4" /> Close
-            </button>
+            {isAdminViewer && (
+              <button
+                onClick={() => router.back()}
+                className="inline-flex items-center gap-1 rounded-xl border border-gray-200 bg-white px-3 py-1.5 text-sm hover:bg-gray-50 transition-colors flex-shrink-0"
+              >
+                <ArrowLeft className="h-4 w-4" /> Close
+              </button>
+            )}
 
             <div className="min-w-0 flex flex-col gap-0.5">
               <div className="flex items-center gap-2 min-w-0">
@@ -360,95 +354,93 @@ export default function InfluencerDetailFullPage({
                     <span>Share media kit</span>
                   </button>
 
-                  {/* ✅ Always show Campaign dropdown + Send Invite (no Send Invitation button anymore) */}
-                  <DropdownMenu open={dropdownOpen} onOpenChange={(v) => setDropdownOpen(v)}>
-                    <DropdownMenuTrigger asChild>
-                      <button
-                        disabled={!canAct}
-                        className={`inline-flex items-center gap-2 rounded-xl px-3 py-1.5 text-sm font-medium text-white transition-opacity shadow-sm
-                          ${
+                  {isAdminViewer && (
+                    <DropdownMenu open={dropdownOpen} onOpenChange={(v) => setDropdownOpen(v)}>
+                      <DropdownMenuTrigger asChild>
+                        <button
+                          disabled={!canAct}
+                          className={`inline-flex items-center gap-2 rounded-xl px-3 py-1.5 text-sm font-medium text-white transition-opacity shadow-sm ${
                             canAct
                               ? 'bg-gradient-to-r from-[#FFA135] to-[#FF7236] hover:opacity-90'
                               : 'bg-gray-300 cursor-not-allowed opacity-70'
                           }`}
-                      >
-                        <Send className="h-4 w-4" />
-                        Add to Favourite
-                      </button>
-                    </DropdownMenuTrigger>
-
-                    <DropdownMenuContent align="end" className="w-72 bg-white ring-1 ring-gray-200 shadow-lg">
-                      <DropdownMenuLabel>Campaigns</DropdownMenuLabel>
-
-                      <div className="space-y-1 max-h-56 overflow-auto py-1">
-                        {campaigns.length === 0 && !campaignsLoading && (
-                          <div className="px-2 text-xs text-gray-500">No campaigns</div>
-                        )}
-                        {campaignsLoading && <div className="px-2 text-xs text-gray-500">Loading campaigns…</div>}
-
-                        {campaigns.map((c) => {
-                          const checked = selectedCampaignIds.includes(c.campaignsId);
-                          return (
-                            <div
-                              key={c.campaignsId}
-                              role="menuitem"
-                              className="relative pl-10 text-sm cursor-pointer select-none flex items-center gap-2 py-1"
-                              onClick={() => toggleCampaign(c.campaignsId, !checked)}
-                            >
-                              <span
-                                className={`absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 flex items-center justify-center rounded ${
-                                  checked
-                                    ? 'border border-orange-400 bg-orange-50 text-orange-500'
-                                    : 'border border-gray-200 bg-white text-transparent'
-                                }`}
-                              >
-                                {checked ? <Check className="h-3 w-3" /> : null}
-                              </span>
-
-                              <input
-                                type="checkbox"
-                                checked={checked}
-                                onChange={(e) => toggleCampaign(c.campaignsId, e.target.checked)}
-                                className="sr-only"
-                              />
-
-                              <span>{c.productOrServiceName || c.campaignsId}</span>
-                            </div>
-                          );
-                        })}
-                      </div>
-
-                      <div className="mt-3 flex justify-end gap-2 px-1">
-                        <button
-                          type="button"
-                          onClick={() => setDropdownOpen(false)}
-                          className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
                         >
-                          Cancel
+                          <Send className="h-4 w-4" />
+                          Add to Favourite
                         </button>
+                      </DropdownMenuTrigger>
 
-                        <button
-                          type="button"
-                          onClick={handleSendFromDropdown}
-                          disabled={!canAct}
-                          className={`inline-flex items-center gap-2 rounded-xl px-3 py-1.5 text-sm font-medium text-white transition-opacity shadow-sm
-                            ${
+                      <DropdownMenuContent align="end" className="w-72 bg-white ring-1 ring-gray-200 shadow-lg">
+                        <DropdownMenuLabel>Campaigns</DropdownMenuLabel>
+
+                        <div className="space-y-1 max-h-56 overflow-auto py-1">
+                          {campaigns.length === 0 && !campaignsLoading && (
+                            <div className="px-2 text-xs text-gray-500">No campaigns</div>
+                          )}
+                          {campaignsLoading && <div className="px-2 text-xs text-gray-500">Loading campaigns…</div>}
+
+                          {campaigns.map((c) => {
+                            const checked = selectedCampaignIds.includes(c.campaignsId);
+                            return (
+                              <div
+                                key={c.campaignsId}
+                                role="menuitem"
+                                className="relative pl-10 text-sm cursor-pointer select-none flex items-center gap-2 py-1"
+                                onClick={() => toggleCampaign(c.campaignsId, !checked)}
+                              >
+                                <span
+                                  className={`absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 flex items-center justify-center rounded ${
+                                    checked
+                                      ? 'border border-orange-400 bg-orange-50 text-orange-500'
+                                      : 'border border-gray-200 bg-white text-transparent'
+                                  }`}
+                                >
+                                  {checked ? <Check className="h-3 w-3" /> : null}
+                                </span>
+
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  onChange={(e) => toggleCampaign(c.campaignsId, e.target.checked)}
+                                  className="sr-only"
+                                />
+
+                                <span>{c.productOrServiceName || c.campaignsId}</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+
+                        <div className="mt-3 flex justify-end gap-2 px-1">
+                          <button
+                            type="button"
+                            onClick={() => setDropdownOpen(false)}
+                            className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                          >
+                            Cancel
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={handleSendFromDropdown}
+                            disabled={!canAct}
+                            className={`inline-flex items-center gap-2 rounded-xl px-3 py-1.5 text-sm font-medium text-white transition-opacity shadow-sm ${
                               canAct
                                 ? 'bg-gradient-to-r from-[#FFA135] to-[#FF7236] hover:opacity-90'
                                 : 'bg-gray-300 cursor-not-allowed opacity-70'
                             }`}
-                        >
-                          {sendingInvite ? 'Sending…' : 'Send Invite'}
-                        </button>
-                      </div>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                          >
+                            {sendingInvite ? 'Sending…' : 'Send Invite'}
+                          </button>
+                        </div>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  )}
                 </div>
               </div>
             </div>
           </div>
 
-          {/* Body */}
           <div className="p-5">
             {loading && <LoadingState />}
             {error && <ErrorState error={error} />}
@@ -464,7 +456,6 @@ export default function InfluencerDetailFullPage({
                 <ProfileHeader profile={data.profile} platform={platform} />
 
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                  {/* Left */}
                   <div className="lg:col-span-2 space-y-6">
                     <StatsChart statHistory={statHistory} />
                     <ContentBreakdown data={data} platform={platform} />
@@ -480,11 +471,8 @@ export default function InfluencerDetailFullPage({
                     )}
                   </div>
 
-                  {/* Right */}
                   <div className="space-y-6">
-                    {/* ✅ Only admin can see AboutSection */}
                     {isAdminViewer && <AboutSection profile={data.profile} />}
-
                     <AudienceDistribution audience={data.profile.audience} />
                     {brandAffinity.length > 0 && <BrandAffinity items={brandAffinity} />}
                   </div>
