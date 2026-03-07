@@ -8,7 +8,11 @@ import React, {
   useRef,
 } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import {
+  useSearchParams,
+  useRouter,
+  usePathname,
+} from "next/navigation";
 import {
   HiSearch,
   HiChevronLeft,
@@ -86,27 +90,34 @@ const getFavoriteTotalFromInvitationsResp = (res: any) => {
 
 export default function AdminReviewCampaignsPage() {
   const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
+
   const brandIdFromQuery = searchParams.get("brandId");
 
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
-
   const [error, setError] = useState<string | null>(null);
 
-  const [currentPage, setCurrentPage] = useState(1);
   const [limit] = useState(10);
   const [totalPages, setTotalPages] = useState(1);
   const [debouncedSearch, setDebouncedSearch] = useState("");
 
   const countsReqRef = useRef(0);
   const campaignsReqRef = useRef(0);
+  const lastFetchKeyRef = useRef("");
 
   const brandId = useMemo(() => {
     if (brandIdFromQuery) return brandIdFromQuery;
     if (typeof window !== "undefined") return localStorage.getItem("brandId");
     return null;
   }, [brandIdFromQuery]);
+
+  const currentPage = useMemo(() => {
+    const raw = Number(searchParams.get("page") || "1");
+    return Number.isFinite(raw) && raw > 0 ? raw : 1;
+  }, [searchParams]);
 
   const withBrandId = useCallback(
     (url: string) => {
@@ -115,6 +126,28 @@ export default function AdminReviewCampaignsPage() {
       return `${url}${join}brandId=${encodeURIComponent(brandId)}`;
     },
     [brandId]
+  );
+
+  const updatePageInUrl = useCallback(
+    (nextPage: number) => {
+      const safeNextPage = Math.max(1, nextPage);
+
+      if (safeNextPage === currentPage) return;
+
+      const params = new URLSearchParams(searchParams.toString());
+
+      if (safeNextPage > 1) {
+        params.set("page", String(safeNextPage));
+      } else {
+        params.delete("page");
+      }
+
+      const query = params.toString();
+      router.replace(query ? `${pathname}?${query}` : pathname, {
+        scroll: false,
+      });
+    },
+    [currentPage, pathname, router, searchParams]
   );
 
   const applyPendingPatch = (c: any) => {
@@ -342,7 +375,7 @@ export default function AdminReviewCampaignsPage() {
         setTotalPages(computedTotalPages);
 
         if (page > computedTotalPages) {
-          setCurrentPage(computedTotalPages);
+          updatePageInUrl(computedTotalPages);
         }
       } catch (err: any) {
         if (campaignsReqRef.current !== reqId) return;
@@ -354,23 +387,34 @@ export default function AdminReviewCampaignsPage() {
         if (campaignsReqRef.current === reqId) setLoading(false);
       }
     },
-    [limit, brandId, hydrateCounts]
+    [limit, brandId, hydrateCounts, updatePageInUrl]
   );
 
   useEffect(() => {
     const t = setTimeout(() => {
-      setCurrentPage(1);
-      setDebouncedSearch(search.trim());
-      setTotalPages(1);
+      const nextSearch = search.trim();
+
+      if (nextSearch !== debouncedSearch) {
+        setDebouncedSearch(nextSearch);
+
+        if (currentPage !== 1) {
+          updatePageInUrl(1);
+        }
+      }
     }, 400);
 
     return () => clearTimeout(t);
-  }, [search]);
+  }, [search, debouncedSearch, currentPage, updatePageInUrl]);
 
   useEffect(() => {
     if (!brandId) return;
+
+    const fetchKey = `${brandId}|${currentPage}|${debouncedSearch}`;
+    if (lastFetchKeyRef.current === fetchKey) return;
+
+    lastFetchKeyRef.current = fetchKey;
     fetchCampaigns(currentPage, debouncedSearch);
-  }, [fetchCampaigns, currentPage, debouncedSearch, brandId]);
+  }, [brandId, currentPage, debouncedSearch, fetchCampaigns]);
 
   return (
     <div className="p-6 min-h-screen bg-white text-black">
@@ -417,9 +461,8 @@ export default function AdminReviewCampaignsPage() {
       <Pagination
         currentPage={currentPage}
         totalPages={totalPages}
-        onPrev={() => setCurrentPage((p) => Math.max(p - 1, 1))}
-        onNext={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
-        onPageChange={(page) => setCurrentPage(page)}
+        onPrev={() => updatePageInUrl(currentPage - 1)}
+        onNext={() => updatePageInUrl(currentPage + 1)}
       />
     </div>
   );
@@ -588,46 +631,38 @@ function Pagination({
   totalPages,
   onPrev,
   onNext,
-  onPageChange,
 }: {
   currentPage: number;
   totalPages: number;
   onPrev: () => void;
   onNext: () => void;
-  onPageChange: (page: number) => void;
 }) {
-  const pages = Array.from({ length: totalPages }, (_, i) => i + 1);
+  if (totalPages <= 1) return null;
 
   return (
-    <div className="flex justify-end items-center p-4 gap-2 flex-wrap">
-      <button
-        onClick={onPrev}
-        disabled={currentPage === 1}
-        className="p-2 border border-gray-300 rounded-full hover:bg-gray-100 disabled:opacity-50 disabled:hover:bg-white"
-      >
-        <HiChevronLeft size={20} />
-      </button>
-
-      {pages.map((page) => (
+    <div className="flex justify-end items-center p-4 gap-3">
+      {currentPage > 1 && (
         <button
-          key={page}
-          onClick={() => onPageChange(page)}
-          className={`min-w-[40px] h-10 px-3 rounded-full border text-sm font-medium transition ${currentPage === page
-              ? "bg-black text-white border-black"
-              : "bg-white text-black border-gray-300 hover:bg-gray-100"
-            }`}
+          onClick={onPrev}
+          className="p-2 border border-gray-300 rounded-full hover:bg-gray-100"
         >
-          {page}
+          <HiChevronLeft size={20} />
         </button>
-      ))}
+      )}
 
-      <button
-        onClick={onNext}
-        disabled={currentPage >= totalPages}
-        className="p-2 border border-gray-300 rounded-full hover:bg-gray-100 disabled:opacity-50 disabled:hover:bg-white"
-      >
-        <HiChevronRight size={20} />
-      </button>
+      <span className="text-sm text-gray-700">
+        Page <span className="font-semibold text-black">{currentPage}</span> of{" "}
+        <span className="font-semibold text-black">{totalPages}</span>
+      </span>
+
+      {currentPage < totalPages && (
+        <button
+          onClick={onNext}
+          className="p-2 border border-gray-300 rounded-full hover:bg-gray-100"
+        >
+          <HiChevronRight size={20} />
+        </button>
+      )}
     </div>
   );
 }
