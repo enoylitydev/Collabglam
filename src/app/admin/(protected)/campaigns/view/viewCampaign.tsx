@@ -47,6 +47,10 @@ interface CampaignData {
   budget?: number | string;
   influencerBudget?: number | string;
 
+  noInfluencers?: string | number;      // stored as string, allow old number
+  influencerTier?: string | string[];   // comma-separated string OR array
+  productCategory?: string;
+
   timeline?: { startDate?: string; endDate?: string };
 
   creativeBriefText?: string;
@@ -64,6 +68,15 @@ interface CampaignData {
     status: string;
     patch: Partial<CampaignData>;
   };
+}
+
+function parseInfluencerTiers(raw: any): string[] {
+  if (!raw) return [];
+  if (Array.isArray(raw)) return raw.map((x) => String(x).trim()).filter(Boolean);
+  return String(raw)
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
 }
 
 // Reusable component to handle before/after views cleanly
@@ -442,6 +455,62 @@ export default function ViewCampaignPage() {
             </div>
           )}
 
+          {/* ✅ NEW: No. of Influencers */}
+          <div>
+            <p className="text-sm font-medium text-gray-600">No. of Influencers</p>
+            <DiffView
+              hasUpdate={!!patch && "noInfluencers" in patch}
+              current={String(c.noInfluencers ?? "—")}
+              updated={String((patch as any)?.noInfluencers ?? "—")}
+            />
+          </div>
+
+          {/* ✅ NEW: Influencer Tier */}
+          <div className="lg:col-span-2">
+            <p className="text-sm font-medium text-gray-600">Influencer Tier</p>
+            <DiffView
+              hasUpdate={!!patch && "influencerTier" in patch}
+              current={
+                parseInfluencerTiers(c.influencerTier).length ? (
+                  <div className="mt-1 flex flex-wrap gap-2">
+                    {parseInfluencerTiers(c.influencerTier).map((t) => (
+                      <Badge key={t} variant="secondary">
+                        {t}
+                      </Badge>
+                    ))}
+                  </div>
+                ) : (
+                  "—"
+                )
+              }
+              updated={
+                parseInfluencerTiers((patch as any)?.influencerTier).length ? (
+                  <div className="mt-1 flex flex-wrap gap-2">
+                    {parseInfluencerTiers((patch as any)?.influencerTier).map((t) => (
+                      <Badge key={`p-${t}`} variant="secondary">
+                        {t}
+                      </Badge>
+                    ))}
+                  </div>
+                ) : (
+                  "—"
+                )
+              }
+            />
+          </div>
+
+          {/* ✅ NEW: Product Category */}
+          <div className="lg:col-span-2">
+            <p className="text-sm font-medium text-gray-600">Product Category</p>
+            <DiffView
+              hasUpdate={!!patch && "productCategory" in patch}
+              current={c.productCategory && String(c.productCategory).trim() ? c.productCategory : "—"}
+              updated={(patch as any)?.productCategory && String((patch as any).productCategory).trim()
+                ? String((patch as any).productCategory)
+                : "—"}
+            />
+          </div>
+          
           <div className="lg:col-span-2">
              <p className="text-sm font-medium text-gray-600">Timeline</p>
              <DiffView

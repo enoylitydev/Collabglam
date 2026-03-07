@@ -38,6 +38,41 @@ import "sweetalert2/dist/sweetalert2.css";
 
 const ReactSelect = dynamic(() => import("react-select"), { ssr: false });
 
+const INFLUENCER_TIER_OPTIONS: SimpleOption[] = [
+    { value: "Nano (1K–10K)", label: "Nano (1K–10K)" },
+    { value: "Micro (10K–100K)", label: "Micro (10K–100K)" },
+    { value: "Mid (100K–500K)", label: "Mid (100K–500K)" },
+    { value: "Macro (500K–1M)", label: "Macro (500K–1M)" },
+    { value: "Mega (1M+)", label: "Mega (1M+)" },
+];
+
+const tiersToCommaString = (tiers: SimpleOption[]) =>
+    (tiers || []).map((t) => t.value).filter(Boolean).join(",");
+
+const commaStringToTierOptions = (raw: any): SimpleOption[] => {
+    if (!raw) return [];
+    if (Array.isArray(raw)) {
+        return raw
+            .map((x) => String(x).trim())
+            .filter(Boolean)
+            .map(
+                (v) =>
+                    INFLUENCER_TIER_OPTIONS.find((o) => o.value === v) ||
+                    ({ value: v, label: v } as SimpleOption)
+            );
+    }
+    const vals = String(raw)
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+
+    return vals.map(
+        (v) =>
+            INFLUENCER_TIER_OPTIONS.find((o) => o.value === v) ||
+            ({ value: v, label: v } as SimpleOption)
+    );
+};
+
 // ── types ───────────────────────────────────────────────────
 
 type GenderOption = "Male" | "Female" | "All";
@@ -203,6 +238,12 @@ export default function AdminCreateCampaignPage() {
     const [brandBudget, setBrandBudget] = useState<number | "">("");
     const [influencerBudget, setInfluencerBudget] = useState<number | "">("");
 
+    const [noInfluencers, setNoInfluencers] = useState<string>("1"); // must be string
+    const [selectedInfluencerTiers, setSelectedInfluencerTiers] = useState<SimpleOption[]>([
+        INFLUENCER_TIER_OPTIONS[0],
+    ]);
+    const [productCategory, setProductCategory] = useState<string>("");
+
     const [timeline, setTimeline] = useState<{ start: string; end: string }>({
         start: "",
         end: "",
@@ -234,6 +275,14 @@ export default function AdminCreateCampaignPage() {
     const campaignTypeMissing = !finalCampaignTypeForUI;
 
     const imagesMissing = existingImages.length + productImages.length === 0;
+
+    const influencerTierMissing = selectedInfluencerTiers.length === 0;
+
+    const noInfluencersMissing = !String(noInfluencers || "").trim();
+
+    const noInfluencersInvalid =
+        !noInfluencersMissing &&
+        (!/^\d+$/.test(String(noInfluencers)) || Number(noInfluencers) <= 0);
 
     // ── memoised ──────────────────────────────────────────────
     const countryOptions = useMemo<CountryOption[]>(
@@ -398,6 +447,13 @@ export default function AdminCreateCampaignPage() {
 
         setProductName(data.productOrServiceName || "");
         setDescription(data.description || "");
+        // ✅ NEW fields hydrate
+        setNoInfluencers(String((data as any)?.noInfluencers ?? "1"));
+
+        const tiers = commaStringToTierOptions((data as any)?.influencerTier);
+        setSelectedInfluencerTiers(tiers.length ? tiers : [INFLUENCER_TIER_OPTIONS[0]]);
+
+        setProductCategory(String((data as any)?.productCategory ?? ""));
         setAdditionalNotes(data.additionalNotes || "");
         setCreativeBriefText(data.creativeBriefText || "");
         setExistingImages(Array.isArray(data.images) ? data.images : []);
@@ -572,6 +628,9 @@ export default function AdminCreateCampaignPage() {
         setCampaignType("");
         setCustomCampaignType("");
         setBrandBudget("");
+        setNoInfluencers("1");
+        setSelectedInfluencerTiers([INFLUENCER_TIER_OPTIONS[0]]);
+        setProductCategory("");
         setInfluencerBudget("");
         setTimeline({ start: "", end: "" });
         setCreativeBriefText("");
@@ -667,6 +726,8 @@ export default function AdminCreateCampaignPage() {
             selectedSubcategories.length === 0 ||
             !selectedGoal ||
             !finalCampaignType ||
+            noInfluencersMissing ||
+            influencerTierMissing ||
             brandBudget === "" ||
             influencerBudget === "" ||
             !timeline.start ||
@@ -693,6 +754,24 @@ export default function AdminCreateCampaignPage() {
                 icon: "error",
                 title: "Invalid age range",
                 text: "Min Age must be less than Max Age.",
+            });
+        }
+
+        if (noInfluencersInvalid) {
+            setIsPreviewOpen(false);
+            return toast({
+                icon: "error",
+                title: "Invalid influencer count",
+                text: "No. of Influencers must be a number greater than 0.",
+            });
+        }
+
+        if (influencerTierMissing) {
+            setIsPreviewOpen(false);
+            return toast({
+                icon: "error",
+                title: "Select influencer tier",
+                text: "Please select at least one influencer tier.",
             });
         }
 
@@ -726,6 +805,10 @@ export default function AdminCreateCampaignPage() {
 
             const adminId = localStorage.getItem("adminId") || "";
             if (adminId) formData.append("adminId", adminId);
+
+            formData.append("noInfluencers", String(noInfluencers || "1")); // string
+            formData.append("influencerTier", tiersToCommaString(selectedInfluencerTiers)); // comma-separated
+            formData.append("productCategory", productCategory.trim()); // string
 
             formData.append("productOrServiceName", productName.trim());
             formData.append("description", description.trim());
@@ -1348,6 +1431,58 @@ export default function AdminCreateCampaignPage() {
 
                                 <div className="grid sm:grid-cols-2 gap-6">
                                     <div className="space-y-1">
+                                        <FloatingLabelInput
+                                            id="noInfluencers"
+                                            label="No. of Influencers"
+                                            type="number"
+                                            value={noInfluencers}
+                                            onChange={(e) => {
+                                                const v = e.target.value;
+                                                if (v === "") return setNoInfluencers("");
+                                                if (!/^\d+$/.test(v)) return;
+                                                setNoInfluencers(v);
+                                            }}
+                                            required
+                                        />
+                                        {showRequiredHints && (noInfluencersMissing || noInfluencersInvalid) && (
+                                            <p className="text-xs text-red-600">Enter a valid number greater than 0</p>
+                                        )}
+                                    </div>
+
+
+                                    <div className="space-y-1">
+                                        <FloatingLabelInput
+                                            id="productCategory"
+                                            label="Product Category"
+                                            type="text"
+                                            value={productCategory}
+                                            onChange={(e) => setProductCategory(e.target.value)}
+                                        />
+                                    </div>
+
+
+                                </div>
+
+                                <div className="space-y-1">
+                                    <Label className="text-sm font-medium text-gray-700 mb-2 block">
+                                        Influencer Tier <span className="text-red-500">*</span>
+                                    </Label>
+                                    <ReactSelect
+                                        isMulti
+                                        closeMenuOnSelect={false}
+                                        blurInputOnSelect={false}
+                                        options={INFLUENCER_TIER_OPTIONS}
+                                        styles={makeSelectStyles(showRequiredHints && influencerTierMissing) as any}
+                                        value={selectedInfluencerTiers}
+                                        onChange={(v) => setSelectedInfluencerTiers((v as SimpleOption[]) || [])}
+                                        placeholder="Select influencer tiers..."
+                                    />
+                                    {showRequiredHints && influencerTierMissing && (
+                                        <p className="text-xs text-red-600">This field is required</p>
+                                    )}
+                                </div>
+                                <div className="grid sm:grid-cols-2 gap-6">
+                                    <div className="space-y-1">
                                         <Label className="text-sm font-medium text-gray-700 mb-2 block">
                                             Start Date <span className="text-red-500">*</span>
                                         </Label>
@@ -1767,6 +1902,24 @@ export default function AdminCreateCampaignPage() {
                                     <div className="text-gray-900">{fmtMoney(influencerBudget)}</div>
                                 </div>
                                 <div>
+                                    <div className="text-xs text-gray-500">No. of Influencers</div>
+                                    <div className="text-gray-900">{noInfluencers || "—"}</div>
+                                </div>
+
+                                <div className="sm:col-span-2">
+                                    <div className="text-xs text-gray-500">Influencer Tier</div>
+                                    <div className="text-gray-900">
+                                        {selectedInfluencerTiers.length
+                                            ? selectedInfluencerTiers.map((t) => t.value).join(", ")
+                                            : "—"}
+                                    </div>
+                                </div>
+
+                                <div className="sm:col-span-2">
+                                    <div className="text-xs text-gray-500">Product Category</div>
+                                    <div className="text-gray-900">{productCategory || "—"}</div>
+                                </div>
+                                <div>
                                     <div className="text-xs text-gray-500">Start</div>
                                     <div className="text-gray-900">{timeline.start || "—"}</div>
                                 </div>
@@ -1869,7 +2022,9 @@ interface CampaignEditPayload {
 
     budget: number;
     influencerBudget?: number;
-
+    noInfluencers?: string | number;
+    influencerTier?: string | string[];
+    productCategory?: string;
     timeline: { startDate?: string; endDate?: string };
     creativeBriefText: string;
     additionalNotes: string;

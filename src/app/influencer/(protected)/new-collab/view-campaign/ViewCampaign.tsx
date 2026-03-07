@@ -61,12 +61,25 @@ interface CampaignData {
   timeline: { startDate?: string; endDate?: string };
   creativeBriefText?: string;
   creativeBrief?: string[];
+    // ✅ NEW fields
+  noInfluencers?: string | number;      // stored as string, allow old number
+  influencerTier?: string | string[];   // comma-separated string or array
+  productCategory?: string;             // string
   additionalNotes?: string;
   isActive: number;
   createdAt: string;
   campaignsId: string;
   hasApplied?: number;
   isApplied?: number;
+}
+
+function parseInfluencerTiers(raw: any): string[] {
+  if (!raw) return [];
+  if (Array.isArray(raw)) return raw.map((x) => String(x).trim()).filter(Boolean);
+  return String(raw)
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
 }
 
 export default function ViewCampaignPage() {
@@ -509,6 +522,40 @@ export default function ViewCampaignPage() {
               <p className="mt-1 text-gray-800">${ Number(c.influencerBudget || c.budget || 0).toLocaleString()}</p>
             </div>
 
+            {/* ✅ NEW: No. of Influencers */}
+            <div>
+              <p className="text-sm font-medium text-gray-600">No. of Influencers</p>
+              <p className="mt-1 text-gray-800">{String(c.noInfluencers ?? "—")}</p>
+            </div>
+
+            {/* ✅ NEW: Influencer Tier */}
+            <div className="lg:col-span-2">
+              <p className="text-sm font-medium text-gray-600">Influencer Tier</p>
+              <div className="mt-1 flex flex-wrap gap-2">
+                {parseInfluencerTiers(c.influencerTier).length ? (
+                  parseInfluencerTiers(c.influencerTier).map((t) => (
+                    <Badge
+                      key={t}
+                      variant="outline"
+                      className={`text-gray-900 ${INFLUENCER_GRADIENT}`}
+                    >
+                      {t}
+                    </Badge>
+                  ))
+                ) : (
+                  <span className="text-gray-700">—</span>
+                )}
+              </div>
+            </div>
+
+            {/* ✅ NEW: Product Category */}
+            <div className="lg:col-span-2">
+              <p className="text-sm font-medium text-gray-600">Product Category</p>
+              <p className="mt-1 text-gray-800">
+                {c.productCategory && String(c.productCategory).trim() ? c.productCategory : "—"}
+              </p>
+            </div>
+            
             <div>
               <p className="text-sm font-medium text-gray-600">Start Date</p>
               <div className="mt-1 flex items-center gap-2">

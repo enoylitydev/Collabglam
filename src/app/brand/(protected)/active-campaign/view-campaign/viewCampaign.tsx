@@ -13,7 +13,6 @@ import {
   HiOutlineEye,
 } from "react-icons/hi";
 import { get } from "@/lib/api";
-import { resolveFileList } from "@/lib/files";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -62,11 +61,23 @@ interface CampaignData {
   creativeBriefText?: string;
   creativeBrief?: string[];
   additionalNotes?: string;
+  noInfluencers?: string | number;
+  influencerTier?: string | string[];
+  productCategory?: string;
   isActive: number;
   createdAt: string;
 }
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") || "";
+
+function parseInfluencerTiers(raw: any): string[] {
+  if (!raw) return [];
+  if (Array.isArray(raw)) return raw.map((x) => String(x).trim()).filter(Boolean);
+  return String(raw)
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
 
 /** Build full URL from GridFS filename or relative path */
 function fileUrl(v?: string) {
@@ -308,8 +319,8 @@ export default function ViewCampaignPage() {
                 {c.targetAudience?.gender === 0
                   ? "Female"
                   : c.targetAudience?.gender === 1
-                  ? "Male"
-                  : "All"}
+                    ? "Male"
+                    : "All"}
               </p>
             </div>
             <div className="md:col-span-3">
@@ -378,6 +389,37 @@ export default function ViewCampaignPage() {
               <p className="text-sm font-medium text-gray-600">Budget</p>
               <p className="mt-1 text-gray-800">${Number(c.budget || 0).toLocaleString()}</p>
             </div>
+
+            {/* ✅ NEW: No. of Influencers */}
+            <div>
+              <p className="text-sm font-medium text-gray-600">No. of Influencers</p>
+              <p className="mt-1 text-gray-800">{String(c.noInfluencers ?? "—")}</p>
+            </div>
+
+            {/* ✅ NEW: Influencer Tier */}
+            <div className="lg:col-span-2">
+              <p className="text-sm font-medium text-gray-600">Influencer Tier</p>
+              <div className="mt-1 flex flex-wrap gap-2">
+                {parseInfluencerTiers(c.influencerTier).length ? (
+                  parseInfluencerTiers(c.influencerTier).map((t) => (
+                    <Badge key={t} variant="outline" className="bg-orange-50 text-orange-700">
+                      {t}
+                    </Badge>
+                  ))
+                ) : (
+                  <span className="text-gray-700">—</span>
+                )}
+              </div>
+            </div>
+
+            {/* ✅ NEW: Product Category */}
+            <div className="lg:col-span-2">
+              <p className="text-sm font-medium text-gray-600">Product Category</p>
+              <p className="mt-1 text-gray-800">
+                {c.productCategory && String(c.productCategory).trim() ? c.productCategory : "—"}
+              </p>
+            </div>
+
             {c.timeline?.startDate && (
               <div className="flex items-center gap-3">
                 <Tooltip>
@@ -567,9 +609,8 @@ export default function ViewCampaignPage() {
                 <button
                   key={src + idx}
                   onClick={() => setPreviewIndex(idx)}
-                  className={`h-16 w-16 flex-shrink-0 overflow-hidden rounded-md border ${
-                    idx === previewIndex ? "ring-2 ring-orange-500 border-transparent" : "border-gray-200"
-                  }`}
+                  className={`h-16 w-16 flex-shrink-0 overflow-hidden rounded-md border ${idx === previewIndex ? "ring-2 ring-orange-500 border-transparent" : "border-gray-200"
+                    }`}
                   aria-label={`Open image ${idx + 1}`}
                 >
                   <img src={src} alt={`thumb-${idx + 1}`} className="h-full w-full object-cover" />
