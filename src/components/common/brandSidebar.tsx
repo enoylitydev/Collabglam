@@ -18,6 +18,7 @@ import {
   HiScale,
   HiChatBubbleBottomCenterText,
   HiClipboardDocumentList,
+  HiBolt,
 } from 'react-icons/hi2';
 import { HiClock } from 'react-icons/hi';
 import { useBrandSidebar } from './brand-sidebar-context';
@@ -37,6 +38,7 @@ const BASE_MENU_ITEMS: MenuItem[] = [
   { name: 'Create New Campaign', href: '/brand/add-edit-campaign', icon: HiPlusCircle },
   { name: 'Created Campaign', href: '/brand/created-campaign', icon: HiPlayCircle },
   { name: 'Active Campaign', href: '/brand/active-campaign', icon: HiCheckCircle },
+  { name: 'Live Campaign', href: '/brand/live-campaign', icon: HiCheckCircle },
   { name: 'Campaign History', href: '/brand/campaign-history', icon: HiClock },
   { name: 'Browse Influencers', href: '/brand/browse-influencer', icon: HiUserGroup },
   { name: 'Invited Influencers', href: '/brand/invited', icon: HiUserPlus },
@@ -73,12 +75,12 @@ const lsGet = (k: string) => {
 const lsSet = (k: string, v: string) => {
   try {
     window.localStorage.setItem(k, v);
-  } catch {}
+  } catch { }
 };
 const lsRemove = (k: string) => {
   try {
     window.localStorage.removeItem(k);
-  } catch {}
+  } catch { }
 };
 
 type BrandPlanRes = {
@@ -161,7 +163,7 @@ export default function BrandSidebar({ isOpen, onClose }: BrandSidebarProps) {
 
           if (latestName) window.localStorage.setItem('brandPlanName', latestName);
           else window.localStorage.removeItem('brandPlanName');
-        } catch {}
+        } catch { }
       } catch {
         // keep cached plan if server fails
       }
@@ -186,7 +188,7 @@ export default function BrandSidebar({ isOpen, onClose }: BrandSidebarProps) {
 
     (async () => {
       if (localSeen) {
-        post('/brand/onboarding/brand-tour/seen').catch(() => {});
+        post('/brand/onboarding/brand-tour/seen').catch(() => { });
         return;
       }
 
@@ -200,7 +202,7 @@ export default function BrandSidebar({ isOpen, onClose }: BrandSidebarProps) {
 
         setTourOpen(true);
         markLocalSeen();
-        post('/brand/onboarding/brand-tour/seen').catch(() => {});
+        post('/brand/onboarding/brand-tour/seen').catch(() => { });
       } catch {
         setTourOpen(true);
         markLocalSeen();
@@ -244,6 +246,8 @@ export default function BrandSidebar({ isOpen, onClose }: BrandSidebarProps) {
       if (isFullyManaged && item.href === '/brand/browse-influencer') return false; // ✅ hide Browse Influencers
       if (isFullyManaged && item.href === '/brand/disputes') return false; // ✅ hide Disputes
       if (isFullyManaged && item.href === '/brand/invited') return false; // ✅ hide Invited Influencers
+      if (isFullyManaged && item.href === '/brand/active-campaign') return false;
+      if (!isFullyManaged && item.href === '/brand/live-campaign') return false;
 
       return true;
     });
@@ -265,7 +269,7 @@ export default function BrandSidebar({ isOpen, onClose }: BrandSidebarProps) {
   const openGuide = () => {
     setTourOpen(true);
     markLocalSeen();
-    if (token) post('/brand/onboarding/brand-tour/seen').catch(() => {});
+    if (token) post('/brand/onboarding/brand-tour/seen').catch(() => { });
     onClose?.();
   };
 
@@ -291,9 +295,8 @@ export default function BrandSidebar({ isOpen, onClose }: BrandSidebarProps) {
           >
             <item.icon
               size={20}
-              className={`flex-shrink-0 ${
-                isActive ? 'text-white' : 'text-gray-400 group-hover:text-white'
-              }`}
+              className={`flex-shrink-0 ${isActive ? 'text-white' : 'text-gray-400 group-hover:text-white'
+                }`}
             />
             {!collapsed && <span className="ml-3 text-md font-medium">{item.name}</span>}
           </Link>
@@ -407,7 +410,7 @@ export default function BrandSidebar({ isOpen, onClose }: BrandSidebarProps) {
         onClose={() => {
           setTourOpen(false);
           markLocalSeen();
-          if (token) post('/brand/onboarding/brand-tour/seen').catch(() => {});
+          if (token) post('/brand/onboarding/brand-tour/seen').catch(() => { });
         }}
         startAt={0}
       />

@@ -9,9 +9,13 @@ import {
   HiOutlineUserAdd,
   HiOutlinePencil,
   HiOutlineUsers,
-  HiOutlineDocumentText, // ✅ added
+  HiChevronRight as HiChevronRightIcon,
 } from "react-icons/hi";
 import { get, post } from "@/lib/api";
+
+/* ✅ FULLY MANAGED plan gate (use plan name + plan id) */
+const FULLY_MANAGED_PLAN_ID = "1f46c6f6-63ae-4c4f-943d-798d644257f9";
+const FULLY_MANAGED_PLAN_NAME = "fully_managed";
 
 type CampaignStatus = "open" | "paused";
 
@@ -25,8 +29,8 @@ interface Campaign {
   applicantCount: number;
   campaignType?: string;
 
-  campaignStatus?: CampaignStatus; // open | paused
-  influencerWorking?: boolean; // ✅ from backend
+  campaignStatus?: CampaignStatus;
+  influencerWorking?: boolean;
   hasPendingUpdate?: boolean;
 }
 
@@ -58,28 +62,41 @@ export default function BrandCreatedCampaignsPage() {
   const [totalPages, setTotalPages] = useState(1);
   const [debouncedSearch, setDebouncedSearch] = useState("");
 
-  // ✅ per-row status update loading
-  const [statusUpdating, setStatusUpdating] = useState<Record<string, boolean>>(
-    {}
-  );
-const applyPendingPatch = (c: any) => {
-  const pending = c?.pendingUpdate?.status === "pending" && c?.pendingUpdate?.patch;
-  const patch = pending ? c.pendingUpdate.patch : null;
+  // ✅ plan gate
+  const [isFullyManaged, setIsFullyManaged] = useState(false);
+  useEffect(() => {
+    try {
+      const storedPlanId = window.localStorage.getItem("brandPlanId");
+      const storedPlanName = window.localStorage.getItem("brandPlanName");
+      const fullyManaged =
+        (storedPlanId || "").trim() === FULLY_MANAGED_PLAN_ID ||
+        (storedPlanName || "").trim().toLowerCase() === FULLY_MANAGED_PLAN_NAME;
+      setIsFullyManaged(fullyManaged);
+    } catch {
+      setIsFullyManaged(false);
+    }
+  }, []);
 
-  return {
-    ...c,
-    ...(patch || {}),
-    // ✅ deep merge nested objects you care about
-    timeline: {
-      ...(c.timeline || {}),
-      ...(patch?.timeline || {}),
-    },
-    targetAudience: {
-      ...(c.targetAudience || {}),
-      ...(patch?.targetAudience || {}),
-    },
+  // ✅ per-row status update loading
+  const [statusUpdating, setStatusUpdating] = useState<Record<string, boolean>>({});
+
+  const applyPendingPatch = (c: any) => {
+    const pending = c?.pendingUpdate?.status === "pending" && c?.pendingUpdate?.patch;
+    const patch = pending ? c.pendingUpdate.patch : null;
+
+    return {
+      ...c,
+      ...(patch || {}),
+      timeline: {
+        ...(c.timeline || {}),
+        ...(patch?.timeline || {}),
+      },
+      targetAudience: {
+        ...(c.targetAudience || {}),
+        ...(patch?.targetAudience || {}),
+      },
+    };
   };
-};
 
   const fetchCampaigns = useCallback(
     async (page: number, term: string) => {
@@ -101,33 +118,30 @@ const applyPendingPatch = (c: any) => {
         const raw = Array.isArray(res?.data) ? res.data : [];
         const active = raw.filter((c: any) => c.isActive === 1);
 
-const normalized: Campaign[] = active.map((c: any) => {
-  const merged = applyPendingPatch(c);
+        const normalized: Campaign[] = active.map((c: any) => {
+          const merged = applyPendingPatch(c);
 
-  const rawStatus = String(merged.campaignStatus || "open")
-    .toLowerCase()
-    .trim();
+          const rawStatus = String(merged.campaignStatus || "open").toLowerCase().trim();
+          const safeStatus: CampaignStatus =
+            rawStatus === "paused" || rawStatus === "closed" ? "paused" : "open";
 
-  const safeStatus: CampaignStatus =
-    rawStatus === "paused" || rawStatus === "closed" ? "paused" : "open";
+          const hasPendingUpdate =
+            c?.pendingUpdate?.status === "pending" && !!c?.pendingUpdate?.patch;
 
-  const hasPendingUpdate =
-    c?.pendingUpdate?.status === "pending" && !!c?.pendingUpdate?.patch;
-
-  return {
-    id: merged.campaignsId ?? merged.id ?? merged._id,
-    productOrServiceName: merged.productOrServiceName ?? "",
-    description: merged.description ?? "",
-    timeline: merged.timeline ?? { startDate: "", endDate: "" },
-    isActive: merged.isActive ?? 0,
-    budget: merged.budget ?? 0,
-    applicantCount: merged.applicantCount ?? 0,
-    campaignType: merged.campaignType ?? "",
-    campaignStatus: safeStatus,
-    influencerWorking: Boolean(merged.influencerWorking),
-    hasPendingUpdate, // ✅
-  };
-});
+          return {
+            id: merged.campaignsId ?? merged.id ?? merged._id,
+            productOrServiceName: merged.productOrServiceName ?? "",
+            description: merged.description ?? "",
+            timeline: merged.timeline ?? { startDate: "", endDate: "" },
+            isActive: merged.isActive ?? 0,
+            budget: merged.budget ?? 0,
+            applicantCount: merged.applicantCount ?? 0,
+            campaignType: merged.campaignType ?? "",
+            campaignStatus: safeStatus,
+            influencerWorking: Boolean(merged.influencerWorking),
+            hasPendingUpdate,
+          };
+        });
 
         setCampaigns(normalized);
         setTotalPages(res?.pagination?.totalPages ?? res?.pagination?.pages ?? 1);
@@ -182,7 +196,6 @@ const normalized: Campaign[] = active.map((c: any) => {
     const id = campaign.id;
     const prev = (campaign.campaignStatus || "open") as CampaignStatus;
 
-    // optimistic update
     setCampaigns((prevList) =>
       prevList.map((c) => (c.id === id ? { ...c, campaignStatus: next } : c))
     );
@@ -193,7 +206,6 @@ const normalized: Campaign[] = active.map((c: any) => {
     try {
       await updateStatus(id, next);
     } catch (e: any) {
-      // rollback
       setCampaigns((prevList) =>
         prevList.map((c) => (c.id === id ? { ...c, campaignStatus: prev } : c))
       );
@@ -225,10 +237,7 @@ const normalized: Campaign[] = active.map((c: any) => {
       {/* Search */}
       <div className="mb-6 max-w-md">
         <div className="relative">
-          <HiSearch
-            className="absolute inset-y-0 left-3 my-auto text-gray-400"
-            size={20}
-          />
+          <HiSearch className="absolute inset-y-0 left-3 my-auto text-gray-400" size={20} />
           <input
             type="text"
             placeholder="Search campaigns..."
@@ -252,6 +261,7 @@ const normalized: Campaign[] = active.map((c: any) => {
           statusUpdating={statusUpdating}
           formatDate={formatDate}
           formatCurrency={formatCurrency}
+          isFullyManaged={isFullyManaged} // ✅ pass gate
         />
       )}
 
@@ -282,12 +292,14 @@ function TableView({
   statusUpdating,
   formatDate,
   formatCurrency,
+  isFullyManaged,
 }: {
   data: Campaign[];
   onChangeStatus: (c: Campaign, next: "open" | "paused") => void;
   statusUpdating: Record<string, boolean>;
   formatDate: (d: string) => string;
   formatCurrency: (n: number) => string;
+  isFullyManaged: boolean;
 }) {
   return (
     <div
@@ -311,14 +323,11 @@ function TableView({
                   "Type",
                   "Budget",
                   "Campaign Timeline",
-                  "Influencers List",
+                  ...(!isFullyManaged ? ["Influencers List"] : []),
                   "Status",
                   "Actions",
                 ].map((h) => (
-                  <th
-                    key={h}
-                    className="px-6 py-3 text-center font-medium whitespace-nowrap"
-                  >
+                  <th key={h} className="px-6 py-3 text-center font-medium whitespace-nowrap">
                     {h}
                   </th>
                 ))}
@@ -369,61 +378,51 @@ function TableView({
 
                     {/* Timeline */}
                     <td className="px-6 py-4 whitespace-nowrap align-top text-center">
-                      {formatDate(c.timeline.startDate)} –{" "}
-                      {formatDate(c.timeline.endDate)}
+                      {formatDate(c.timeline.startDate)} – {formatDate(c.timeline.endDate)}
                     </td>
 
                     {/* Influencers List */}
-                    <td className="px-6 py-4 align-top text-center">
-                      {(c.applicantCount ?? 0) > 0 ? (
-                        <Link
-                          href={`/brand/created-campaign/applied-inf?id=${c.id}`}
-                          className="group inline-flex items-center gap-2 rounded-full border border-gray-200 bg-gray-50 px-4 py-2 text-sm font-semibold text-gray-900
-                 hover:border-[#FF7236] hover:bg-white hover:shadow-sm transition
-                 focus:outline-none focus:ring-2 focus:ring-[#FF7236]"
-                          title="View influencers"
-                          aria-label={`View influencers (${c.applicantCount ?? 0})`}
-                        >
-                          <HiOutlineUsers
-                            size={18}
-                            className="opacity-70 group-hover:text-[#FF7236]"
-                          />
-                          <span className="group-hover:underline underline-offset-2">
-                            Influencers
-                          </span>
+                    {!isFullyManaged && (
+                      <td className="px-6 py-4 align-top text-center">
+                        {(c.applicantCount ?? 0) > 0 ? (
+                          <Link
+                            href={`/brand/created-campaign/applied-inf?id=${c.id}`}
+                            className="group inline-flex items-center gap-2 rounded-full border border-gray-200 bg-gray-50 px-4 py-2 text-sm font-semibold text-gray-900
+                            hover:border-[#FF7236] hover:bg-white hover:shadow-sm transition
+                            focus:outline-none focus:ring-2 focus:ring-[#FF7236]"
+                            title="View influencers"
+                            aria-label={`View influencers (${c.applicantCount ?? 0})`}
+                          >
+                            <HiOutlineUsers size={18} className="opacity-70 group-hover:text-[#FF7236]" />
+                            <span className="group-hover:underline underline-offset-2">Influencers</span>
 
-                          <span className="ml-1 inline-flex min-w-[2rem] justify-center rounded-full bg-gray-900 px-2 py-0.5 text-xs font-bold text-white group-hover:bg-[#FF7236]">
-                            {c.applicantCount ?? 0}
-                          </span>
+                            <span className="ml-1 inline-flex min-w-[2rem] justify-center rounded-full bg-gray-900 px-2 py-0.5 text-xs font-bold text-white group-hover:bg-[#FF7236]">
+                              {c.applicantCount ?? 0}
+                            </span>
 
-                          <HiChevronRight
-                            size={18}
-                            className="opacity-60 group-hover:opacity-100"
-                          />
-                        </Link>
-                      ) : (
-                        <span
-                          className="inline-flex items-center gap-2 rounded-full bg-gray-100 px-4 py-2 text-sm font-semibold text-gray-400"
-                          title="No influencers yet"
-                          aria-label="No influencers yet"
-                        >
-                          <HiOutlineUsers size={18} className="opacity-60" />
-                          <span>Influencers</span>
-                          <span className="ml-1 inline-flex min-w-[2rem] justify-center rounded-full bg-gray-300 px-2 py-0.5 text-xs font-bold text-white">
-                            0
+                            <HiChevronRightIcon size={18} className="opacity-60 group-hover:opacity-100" />
+                          </Link>
+                        ) : (
+                          <span
+                            className="inline-flex items-center gap-2 rounded-full bg-gray-100 px-4 py-2 text-sm font-semibold text-gray-400"
+                            title="No influencers yet"
+                            aria-label="No influencers yet"
+                          >
+                            <HiOutlineUsers size={18} className="opacity-60" />
+                            <span>Influencers</span>
+                            <span className="ml-1 inline-flex min-w-[2rem] justify-center rounded-full bg-gray-300 px-2 py-0.5 text-xs font-bold text-white">
+                              0
+                            </span>
                           </span>
-                        </span>
-                      )}
-                    </td>
+                        )}
+                      </td>
+                    )}
 
-                    {/* Status (open/paused) */}
+                    {/* Status */}
                     <td className="px-6 py-4 whitespace-nowrap align-top text-center">
                       <select
                         value={status}
                         disabled={isBusy}
-                        onChange={(e) =>
-                          onChangeStatus(c, e.target.value as "open" | "paused")
-                        }
                         className={[
                           "px-3 py-2 rounded-lg text-sm font-semibold border",
                           "bg-white",
@@ -433,7 +432,6 @@ function TableView({
                         title="Update campaign status"
                       >
                         <option value="open">Open</option>
-                        <option value="paused">Paused</option>
                       </select>
                     </td>
 
@@ -448,14 +446,15 @@ function TableView({
                           Edit
                         </Link>
 
-                        <Link
-                          href={`/brand/browse-influencer?campaignId=${c.id}`}
-                          className="inline-flex items-center bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white hover:opacity-90 px-3 py-2 rounded-lg text-sm font-semibold"
-                        >
-                          <HiOutlineUserAdd className="mr-1" size={18} />
-                          Invite
-                        </Link>
-
+                        {!isFullyManaged && (
+                          <Link
+                            href={`/brand/browse-influencer?campaignId=${c.id}`}
+                            className="inline-flex items-center bg-gradient-to-r from-[#FFA135] to-[#FF7236] text-white hover:opacity-90 px-3 py-2 rounded-lg text-sm font-semibold"
+                          >
+                            <HiOutlineUserAdd className="mr-1" size={18} />
+                            Invite
+                          </Link>
+                        )}
                       </div>
                     </td>
                   </tr>

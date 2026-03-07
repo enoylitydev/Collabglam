@@ -16,7 +16,11 @@ import {
   HiPencil,
   HiOutlineDocumentText,
 } from "react-icons/hi";
-import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
+import {
+  Tooltip,
+  TooltipTrigger,
+  TooltipContent,
+} from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -47,8 +51,16 @@ interface Campaign {
   isActive: number;
   goal?: string;
   applicantCount?: number;
+  shortlistedCount?: number;
+  displayCount?: number;
   isDraft?: number;
   campaignStatus?: string;
+}
+
+interface CampaignInfluencer {
+  influencerId?: string;
+  _id?: string;
+  id?: string;
 }
 
 interface ListResponse {
@@ -58,6 +70,17 @@ interface ListResponse {
   totalPages: number;
   status: number;
   campaigns: Campaign[];
+}
+
+interface ApplyListResponse {
+  meta?: {
+    total?: number;
+    page?: number;
+    limit?: number;
+    totalPages?: number;
+  };
+  influencers?: CampaignInfluencer[];
+  applicantCount?: number;
 }
 
 type StatusFilter = 0 | 1 | 2;
@@ -72,12 +95,17 @@ type SortKey =
   | "isActive";
 
 const MAX_NAME_LENGTH = 60;
+const APPLIED_FETCH_LIMIT = 1000;
+
 const formatName = (name?: string) => {
   if (!name) return "—";
   const trimmed = name.trim();
   if (trimmed.length <= MAX_NAME_LENGTH) return trimmed;
   return trimmed.slice(0, MAX_NAME_LENGTH) + "…";
 };
+
+const getInfluencerId = (item: CampaignInfluencer) =>
+  item?.influencerId || item?._id || item?.id || "";
 
 export default function AdminCampaignsPage() {
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
@@ -99,8 +127,71 @@ export default function AdminCampaignsPage() {
   const [sortKey, setSortKey] = useState<SortKey>("productOrServiceName");
   const [sortAsc, setSortAsc] = useState<boolean>(true);
 
+  const getAppliedData = async (campaignId: string) => {
+    try {
+      const data = await post<ApplyListResponse>("apply/list", {
+        campaignId,
+        page: 1,
+        limit: APPLIED_FETCH_LIMIT,
+        search: "",
+        sortField: "createdAt",
+        sortOrder: 1,
+      });
+
+      const list = Array.isArray(data?.influencers) ? data.influencers : [];
+      const applicantCount = data?.applicantCount ?? list.length;
+
+      return {
+        list,
+        applicantCount,
+      };
+    } catch (error) {
+      console.error("Failed to fetch applied influencers:", error);
+      return {
+        list: [],
+        applicantCount: 0,
+      };
+    }
+  };
+
+  const getShortlistedData = async (campaignId: string) => {
+    try {
+      const baseUrl =
+        process.env.NEXT_PUBLIC_API_URL?.replace(/\/+$/, "") ||
+        "http://localhost:5000";
+
+      const res = await fetch(
+        `${baseUrl}/deliverable/influencer/campaign/${campaignId}`,
+        {
+          method: "GET",
+          headers: {
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      if (!res.ok) {
+        return [];
+      }
+
+      const data = await res.json();
+
+      const list =
+        data?.influencers ||
+        data?.shortlisted ||
+        data?.data ||
+        (Array.isArray(data) ? data : []);
+
+      return Array.isArray(list) ? list : [];
+    } catch (error) {
+      console.error("Failed to fetch shortlisted influencers:", error);
+      return [];
+    }
+  };
+
   const fetchCampaigns = async () => {
     setLoading(true);
+
     try {
       const payload = {
         page,
@@ -110,8 +201,42 @@ export default function AdminCampaignsPage() {
         sortOrder: sortAsc ? "asc" : "desc",
         type: statusFilter,
       };
+
       const data = await post<ListResponse>("/admin/campaign/getlist", payload);
-      setCampaigns(data.campaigns);
+
+      const enrichedCampaigns = await Promise.all(
+        (data.campaigns || []).map(async (campaign) => {
+          const [{ list: appliedList, applicantCount }, shortlistedList] =
+            await Promise.all([
+              getAppliedData(campaign.campaignsId),
+              getShortlistedData(campaign.campaignsId),
+            ]);
+
+          const appliedIds = new Set(
+            appliedList.map(getInfluencerId).filter(Boolean)
+          );
+
+          const shortlistedIds = new Set(
+            shortlistedList.map(getInfluencerId).filter(Boolean)
+          );
+
+          const extraShortlistedCount = [...shortlistedIds].filter(
+            (id) => !appliedIds.has(id)
+          ).length;
+
+          const shortlistedCount = shortlistedIds.size;
+          const displayCount = applicantCount + extraShortlistedCount;
+
+          return {
+            ...campaign,
+            applicantCount,
+            shortlistedCount,
+            displayCount,
+          };
+        })
+      );
+
+      setCampaigns(enrichedCampaigns);
       setTotal(data.total);
       setTotalPages(data.totalPages);
       setPage(data.page);
@@ -131,8 +256,9 @@ export default function AdminCampaignsPage() {
   const handleRefresh = () => fetchCampaigns();
 
   const toggleSort = (key: SortKey) => {
-    if (sortKey === key) setSortAsc(!sortAsc);
-    else {
+    if (sortKey === key) {
+      setSortAsc(!sortAsc);
+    } else {
       setSortKey(key);
       setSortAsc(true);
     }
@@ -159,6 +285,7 @@ export default function AdminCampaignsPage() {
     <div className="p-6 bg-white min-h-screen">
       <div className="flex flex-col lg:flex-row lg:justify-between lg:items-center gap-4 mb-6">
         <h1 className="text-3xl font-semibold">All Campaigns (Admin)</h1>
+
         <div className="flex flex-wrap gap-3 items-center">
           <Input
             placeholder="Search campaigns..."
@@ -169,6 +296,7 @@ export default function AdminCampaignsPage() {
             }}
             className="w-full sm:w-64"
           />
+
           <Select
             value={statusFilter.toString()}
             onValueChange={(val) => {
@@ -187,8 +315,16 @@ export default function AdminCampaignsPage() {
               ))}
             </SelectContent>
           </Select>
-          <Button variant="outline" size="sm" onClick={handleRefresh} disabled={loading}>
-            <HiOutlineRefresh className={`mr-2 h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleRefresh}
+            disabled={loading}
+          >
+            <HiOutlineRefresh
+              className={`mr-2 h-4 w-4 ${loading ? "animate-spin" : ""}`}
+            />
             Refresh
           </Button>
         </div>
@@ -197,13 +333,18 @@ export default function AdminCampaignsPage() {
       {loading ? (
         <Card className="space-y-3 p-4">
           {Array.from({ length: limit }).map((_, i) => (
-            <div key={i} className="h-6 w-full bg-gray-200 animate-pulse rounded" />
+            <div
+              key={i}
+              className="h-6 w-full bg-gray-200 animate-pulse rounded"
+            />
           ))}
         </Card>
       ) : error ? (
         <Card className="text-center py-20 text-red-600">{error}</Card>
       ) : campaigns.length === 0 ? (
-        <Card className="text-center py-20 text-gray-600">No campaigns found.</Card>
+        <Card className="text-center py-20 text-gray-600">
+          No campaigns found.
+        </Card>
       ) : (
         <Card>
           <Table>
@@ -216,7 +357,7 @@ export default function AdminCampaignsPage() {
                   { label: "End", key: "endDate" },
                   { label: "Budget", key: "budget" },
                   { label: "Applicants", key: "applicantCount" },
-                  { label: "Status", key: "isActive" }, // ✅ was "status" (not in SortKey)
+                  { label: "Status", key: "isActive" },
                   { label: "Actions", key: "" },
                 ].map((col) => (
                   <TableHead
@@ -236,14 +377,42 @@ export default function AdminCampaignsPage() {
             <TableBody>
               {campaigns.map((c) => (
                 <TableRow key={c.campaignsId}>
-                  <TableCell className="font-medium" title={c.productOrServiceName}>
+                  <TableCell
+                    className="font-medium"
+                    title={c.productOrServiceName}
+                  >
                     {formatName(c.productOrServiceName)}
                   </TableCell>
+
                   <TableCell>{c.goal || "—"}</TableCell>
-                  <TableCell>{c.timeline?.startDate ? formatDate(c.timeline.startDate) : "—"}</TableCell>
-                  <TableCell>{c.timeline?.endDate ? formatDate(c.timeline.endDate) : "—"}</TableCell>
+
+                  <TableCell>
+                    {c.timeline?.startDate
+                      ? formatDate(c.timeline.startDate)
+                      : "—"}
+                  </TableCell>
+
+                  <TableCell>
+                    {c.timeline?.endDate
+                      ? formatDate(c.timeline.endDate)
+                      : "—"}
+                  </TableCell>
+
                   <TableCell>${(c.budget ?? 0).toLocaleString()}</TableCell>
-                  <TableCell>{c.applicantCount || 0}</TableCell>
+
+                  <TableCell>
+                    <div className="flex flex-col">
+                      <span className="font-medium">
+                        {c.displayCount ?? 0}
+                      </span>
+                      <span className="text-xs text-gray-500">
+                        Applied: {c.applicantCount ?? 0}
+                        {" • "}
+                        Shortlisted: {c.shortlistedCount ?? 0}
+                      </span>
+                    </div>
+                  </TableCell>
+
                   <TableCell>
                     {c.isDraft === 1 ? (
                       <span className="inline-flex items-center space-x-1 text-yellow-600">
@@ -264,11 +433,14 @@ export default function AdminCampaignsPage() {
                   </TableCell>
 
                   <TableCell>
-                    {/* View */}
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <Link href={`/admin/campaigns/view?id=${c.campaignsId}`}>
-                          <Button variant="ghost" size="icon" title="View Campaign">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            title="View Campaign"
+                          >
                             <HiOutlineEye />
                           </Button>
                         </Link>
@@ -276,11 +448,16 @@ export default function AdminCampaignsPage() {
                       <TooltipContent>View Details</TooltipContent>
                     </Tooltip>
 
-                    {/* Edit */}
                     <Tooltip>
                       <TooltipTrigger asChild>
-                        <Link href={`/admin/brands/create-campaign?brandId=${c.brandId}&id=${c.campaignsId}`}>
-                          <Button variant="ghost" size="icon" title="Edit Campaign">
+                        <Link
+                          href={`/admin/brands/create-campaign?brandId=${c.brandId}&id=${c.campaignsId}`}
+                        >
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            title="Edit Campaign"
+                          >
                             <HiPencil />
                           </Button>
                         </Link>
@@ -288,11 +465,16 @@ export default function AdminCampaignsPage() {
                       <TooltipContent>Edit Campaign</TooltipContent>
                     </Tooltip>
 
-                    {/* Applicants */}
                     <Tooltip>
                       <TooltipTrigger asChild>
-                        <Link href={`/admin/campaigns/applicants?campaignId=${c.campaignsId}`}>
-                          <Button variant="ghost" size="icon" aria-label="View Applicants">
+                        <Link
+                          href={`/admin/campaigns/applicants?campaignId=${c.campaignsId}`}
+                        >
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            aria-label="View Applicants"
+                          >
                             <HiUserGroup className="h-5 w-5" />
                           </Button>
                         </Link>
@@ -300,11 +482,16 @@ export default function AdminCampaignsPage() {
                       <TooltipContent>View Applicants</TooltipContent>
                     </Tooltip>
 
-                    {/* ✅ NEW: Deliverables */}
                     <Tooltip>
                       <TooltipTrigger asChild>
-                        <Link href={`/admin/campaigns/deliverables/${c.campaignsId}`}>
-                          <Button variant="ghost" size="icon" aria-label="See Deliverables">
+                        <Link
+                          href={`/admin/campaigns/deliverables/${c.campaignsId}`}
+                        >
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            aria-label="See Deliverables"
+                          >
                             <HiOutlineDocumentText className="h-5 w-5" />
                           </Button>
                         </Link>
@@ -322,12 +509,20 @@ export default function AdminCampaignsPage() {
       {!loading && !error && campaigns.length > 0 && (
         <div className="flex justify-between items-center p-4">
           <div className="text-sm text-gray-700">
-            Showing {(page - 1) * limit + 1}–{Math.min(page * limit, total)} of {total}
+            Showing {(page - 1) * limit + 1}–{Math.min(page * limit, total)} of{" "}
+            {total}
           </div>
+
           <div className="space-x-2">
-            <Button variant="outline" size="icon" disabled={page === 1} onClick={() => setPage((p) => Math.max(p - 1, 1))}>
+            <Button
+              variant="outline"
+              size="icon"
+              disabled={page === 1}
+              onClick={() => setPage((p) => Math.max(p - 1, 1))}
+            >
               <HiChevronLeft />
             </Button>
+
             <Button
               variant="outline"
               size="icon"

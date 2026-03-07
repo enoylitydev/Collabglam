@@ -1,14 +1,22 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import React, {
+  useState,
+  useEffect,
+  useCallback,
+  useMemo,
+  useRef,
+} from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import {
+  useSearchParams,
+  useRouter,
+  usePathname,
+} from "next/navigation";
 import {
   HiSearch,
   HiChevronLeft,
   HiChevronRight,
-  HiOutlinePencil,
-  HiCheckCircle,
   HiOutlineDocumentText,
   HiChevronRight as HiChevronRightIcon,
   HiOutlineStar,
@@ -18,7 +26,7 @@ import { get, post } from "@/lib/api";
 type CampaignStatus = "open" | "paused";
 
 interface Campaign {
-  id: string; // campaignsId
+  id: string;
   productOrServiceName: string;
   description: string;
   timeline: { startDate: string; endDate: string };
@@ -40,8 +48,6 @@ interface Campaign {
   raw?: any;
 }
 
-const APPROVE_ENDPOINT = "/campaign/confirm-readiness";
-
 const sliceText = (text: string, max = 40) =>
   text?.length > max ? `${text.slice(0, max - 3)}...` : text;
 
@@ -62,7 +68,6 @@ const safeCurrency = (amt: number) =>
     currency: "USD",
   }).format(Number.isFinite(amt) ? amt : 0);
 
-// ✅ Deliverables response => { success:true, count:number, data:[...] }
 const getShortlistedCountFromDeliverablesResp = (res: any) => {
   const body = res?.data && typeof res.data === "object" ? res.data : res;
 
@@ -73,7 +78,6 @@ const getShortlistedCountFromDeliverablesResp = (res: any) => {
   return arr.length;
 };
 
-// ✅ Invitations response => { status:"success", total:number, invitations:[...] }
 const getFavoriteTotalFromInvitationsResp = (res: any) => {
   const body = res?.data && typeof res.data === "object" ? res.data : res;
 
@@ -86,35 +90,34 @@ const getFavoriteTotalFromInvitationsResp = (res: any) => {
 
 export default function AdminReviewCampaignsPage() {
   const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
+
   const brandIdFromQuery = searchParams.get("brandId");
 
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
-
   const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
 
-  const [currentPage, setCurrentPage] = useState(1);
   const [limit] = useState(10);
   const [totalPages, setTotalPages] = useState(1);
   const [debouncedSearch, setDebouncedSearch] = useState("");
 
-  const [approveUpdating, setApproveUpdating] = useState<Record<string, boolean>>(
-    {}
-  );
-
-  // ✅ guard to prevent stale overwrite when user searches/pages quickly
   const countsReqRef = useRef(0);
-
-  // ✅ guard to prevent stale page/search overwrite for campaigns list itself
   const campaignsReqRef = useRef(0);
+  const lastFetchKeyRef = useRef("");
 
   const brandId = useMemo(() => {
     if (brandIdFromQuery) return brandIdFromQuery;
     if (typeof window !== "undefined") return localStorage.getItem("brandId");
     return null;
   }, [brandIdFromQuery]);
+
+  const currentPage = useMemo(() => {
+    const raw = Number(searchParams.get("page") || "1");
+    return Number.isFinite(raw) && raw > 0 ? raw : 1;
+  }, [searchParams]);
 
   const withBrandId = useCallback(
     (url: string) => {
@@ -123,6 +126,28 @@ export default function AdminReviewCampaignsPage() {
       return `${url}${join}brandId=${encodeURIComponent(brandId)}`;
     },
     [brandId]
+  );
+
+  const updatePageInUrl = useCallback(
+    (nextPage: number) => {
+      const safeNextPage = Math.max(1, nextPage);
+
+      if (safeNextPage === currentPage) return;
+
+      const params = new URLSearchParams(searchParams.toString());
+
+      if (safeNextPage > 1) {
+        params.set("page", String(safeNextPage));
+      } else {
+        params.delete("page");
+      }
+
+      const query = params.toString();
+      router.replace(query ? `${pathname}?${query}` : pathname, {
+        scroll: false,
+      });
+    },
+    [currentPage, pathname, router, searchParams]
   );
 
   const applyPendingPatch = (c: any) => {
@@ -144,7 +169,6 @@ export default function AdminReviewCampaignsPage() {
     };
   };
 
-  // ✅ Hydrate shortlisted + favorite counts using real APIs (for the currently displayed page)
   const hydrateCounts = useCallback(async (list: Campaign[]) => {
     const reqId = ++countsReqRef.current;
 
@@ -155,29 +179,22 @@ export default function AdminReviewCampaignsPage() {
         let shortlistedCount = c.shortlistedCount ?? 0;
         let favoriteCount = c.favoriteCount ?? 0;
 
-        // ✅ Shortlisted count (deliverables) - try campaign2 first
+
         try {
-          const r2 = await get(
-            `/deliverable/influencer/campaign2/${encodeURIComponent(campaignsId)}`
+          const r1 = await get(
+            `/deliverable/influencer/campaign/${encodeURIComponent(campaignsId)}`
           );
-          shortlistedCount = getShortlistedCountFromDeliverablesResp(r2);
+          shortlistedCount = getShortlistedCountFromDeliverablesResp(r1);
         } catch {
-          try {
-            const r1 = await get(
-              `/deliverable/influencer/campaign/${encodeURIComponent(campaignsId)}`
-            );
-            shortlistedCount = getShortlistedCountFromDeliverablesResp(r1);
-          } catch {
-            // keep existing
-          }
+          // keep existing
         }
 
-        // ✅ Favorite count (admin invitations)
+
         try {
           const favResp = await post(`/admin-invitations/get-by-campaign`, {
             campaignsId,
             page: 1,
-            limit: 1, // only need total
+            limit: 1,
           });
           favoriteCount = getFavoriteTotalFromInvitationsResp(favResp);
         } catch {
@@ -194,6 +211,7 @@ export default function AdminReviewCampaignsPage() {
       string,
       { shortlistedCount: number; favoriteCount: number }
     >();
+
     results.forEach((r) => {
       if (r.status === "fulfilled") {
         map.set(r.value.id, {
@@ -217,7 +235,6 @@ export default function AdminReviewCampaignsPage() {
 
       setLoading(true);
       setError(null);
-      setSuccess(null);
 
       try {
         if (!brandId) throw new Error("brandId missing in URL.");
@@ -226,7 +243,6 @@ export default function AdminReviewCampaignsPage() {
           brandId
         )}`;
 
-        // ✅ IMPORTANT: build query string yourself
         const qs = new URLSearchParams();
         if (term.trim()) qs.set("search", term.trim());
         qs.set("page", String(page));
@@ -234,7 +250,6 @@ export default function AdminReviewCampaignsPage() {
 
         const res: any = await get(`${listEndpoint}?${qs.toString()}`);
 
-        // stale guard
         if (campaignsReqRef.current !== reqId) return;
 
         const body = res?.data && typeof res.data === "object" ? res.data : res;
@@ -242,32 +257,31 @@ export default function AdminReviewCampaignsPage() {
         const rawList: any[] = Array.isArray(body?.data)
           ? body.data
           : Array.isArray(body)
-          ? body
-          : [];
+            ? body
+            : [];
 
-        // ✅ Detect if server is NOT paginating (returns full list ignoring page/limit)
         const respLimit = Number(body?.limit ?? limit) || limit;
 
         const apiTotalPages = Number(
           body?.totalPages ??
-            body?.pagination?.totalPages ??
-            body?.meta?.totalPages
+          body?.pagination?.totalPages ??
+          body?.meta?.totalPages
         );
 
         const apiTotal = Number(
           body?.total ??
-            body?.totalCount ??
-            body?.count ??
-            body?.meta?.total ??
-            body?.pagination?.total
+          body?.totalCount ??
+          body?.count ??
+          body?.meta?.total ??
+          body?.pagination?.total
         );
 
         const hasPaginationMeta =
           (Number.isFinite(apiTotalPages) && apiTotalPages > 0) ||
           (Number.isFinite(apiTotal) && apiTotal > 0);
 
-        // If no meta AND server returned more than limit, treat it as "full list" and paginate client-side
-        const serverIgnoredPagination = !hasPaginationMeta && rawList.length > respLimit;
+        const serverIgnoredPagination =
+          !hasPaginationMeta && rawList.length > respLimit;
 
         const effectiveList = serverIgnoredPagination
           ? rawList.slice((page - 1) * respLimit, page * respLimit)
@@ -302,7 +316,9 @@ export default function AdminReviewCampaignsPage() {
             (Array.isArray(merged.shortlistedInfluencers)
               ? merged.shortlistedInfluencers.length
               : undefined) ??
-            (Array.isArray(merged.shortlisted) ? merged.shortlisted.length : 0);
+            (Array.isArray(merged.shortlisted)
+              ? merged.shortlisted.length
+              : 0);
 
           const favCount =
             merged.favoriteCount ??
@@ -328,38 +344,38 @@ export default function AdminReviewCampaignsPage() {
             publishStatus: merged.publishStatus ?? "",
             isApproved,
             createdByRole,
-            shortlistedCount: typeof shortlistCount === "number" ? shortlistCount : 0,
+            shortlistedCount:
+              typeof shortlistCount === "number" ? shortlistCount : 0,
             favoriteCount: typeof favCount === "number" ? favCount : 0,
             raw: merged,
           };
         });
 
         setCampaigns(normalized);
-
-        // ✅ update counts for current page
         hydrateCounts(normalized);
 
-        // ✅ TOTAL PAGES FIX (this is what makes Page 2 clickable)
         let computedTotalPages = 1;
 
         if (serverIgnoredPagination) {
-          // client-side pagination based on full list size
-          computedTotalPages = Math.max(1, Math.ceil(rawList.length / respLimit));
+          computedTotalPages = Math.max(
+            1,
+            Math.ceil(rawList.length / respLimit)
+          );
         } else if (Number.isFinite(apiTotalPages) && apiTotalPages > 0) {
           computedTotalPages = apiTotalPages;
         } else if (Number.isFinite(apiTotal) && apiTotal > 0) {
           computedTotalPages = Math.max(1, Math.ceil(apiTotal / respLimit));
         } else {
-          // optimistic pagination: if we got a full page, allow Next
-          computedTotalPages = Math.max(1, page + (rawList.length === respLimit ? 1 : 0));
+          computedTotalPages = Math.max(
+            1,
+            page + (rawList.length === respLimit ? 1 : 0)
+          );
         }
 
-        // keep it stable (don’t shrink too aggressively while user navigates)
-        setTotalPages((prev) => Math.max(prev, computedTotalPages));
+        setTotalPages(computedTotalPages);
 
-        // clamp if needed
         if (page > computedTotalPages) {
-          setCurrentPage(computedTotalPages);
+          updatePageInUrl(computedTotalPages);
         }
       } catch (err: any) {
         if (campaignsReqRef.current !== reqId) return;
@@ -371,62 +387,34 @@ export default function AdminReviewCampaignsPage() {
         if (campaignsReqRef.current === reqId) setLoading(false);
       }
     },
-    [limit, brandId, hydrateCounts]
+    [limit, brandId, hydrateCounts, updatePageInUrl]
   );
 
   useEffect(() => {
     const t = setTimeout(() => {
-      setCurrentPage(1);
-      setDebouncedSearch(search.trim());
-      // reset total pages on new search so optimistic calc works cleanly
-      setTotalPages(1);
+      const nextSearch = search.trim();
+
+      if (nextSearch !== debouncedSearch) {
+        setDebouncedSearch(nextSearch);
+
+        if (currentPage !== 1) {
+          updatePageInUrl(1);
+        }
+      }
     }, 400);
+
     return () => clearTimeout(t);
-  }, [search]);
+  }, [search, debouncedSearch, currentPage, updatePageInUrl]);
 
   useEffect(() => {
     if (!brandId) return;
+
+    const fetchKey = `${brandId}|${currentPage}|${debouncedSearch}`;
+    if (lastFetchKeyRef.current === fetchKey) return;
+
+    lastFetchKeyRef.current = fetchKey;
     fetchCampaigns(currentPage, debouncedSearch);
-  }, [fetchCampaigns, currentPage, debouncedSearch, brandId]);
-
-  const approveCampaign = async (campaignId: string) => {
-    if (!brandId) throw new Error("brandId missing in URL.");
-
-    const res = await post(APPROVE_ENDPOINT, {
-      brandId,
-      campaignsId: campaignId,
-    });
-
-    return (res as any)?.data ?? res;
-  };
-
-  const onApprove = async (c: Campaign) => {
-    if (c.isApproved) return;
-
-    const id = c.id;
-    setApproveUpdating((p) => ({ ...p, [id]: true }));
-    setError(null);
-    setSuccess(null);
-
-    try {
-      await approveCampaign(id);
-
-      setCampaigns((prev) =>
-        prev.map((x) =>
-          x.id === id
-            ? { ...x, isApproved: true, publishStatus: "brand_confirmed" }
-            : x
-        )
-      );
-
-      setSuccess("Campaign approved.");
-      fetchCampaigns(currentPage, debouncedSearch);
-    } catch (e: any) {
-      setError(e?.message || "Failed to approve campaign.");
-    } finally {
-      setApproveUpdating((p) => ({ ...p, [id]: false }));
-    }
-  };
+  }, [brandId, currentPage, debouncedSearch, fetchCampaigns]);
 
   return (
     <div className="p-6 min-h-screen bg-white text-black">
@@ -434,7 +422,6 @@ export default function AdminReviewCampaignsPage() {
         <h1 className="text-2xl font-semibold">Review Campaigns</h1>
       </div>
 
-      {/* Search */}
       <div className="mb-4 max-w-md">
         <div className="relative">
           <HiSearch
@@ -463,30 +450,19 @@ export default function AdminReviewCampaignsPage() {
         </div>
       ) : null}
 
-      {success ? (
-        <div className="mb-3 rounded-lg border border-gray-300 bg-white p-3 text-sm">
-          <span className="font-semibold">Success:</span> {success}
-        </div>
-      ) : null}
-
       {loading ? (
         <SkeletonTable />
       ) : campaigns.length === 0 ? (
         <p className="text-sm text-gray-700">No campaigns found.</p>
       ) : (
-        <TableView
-          data={campaigns}
-          approveUpdating={approveUpdating}
-          onApprove={onApprove}
-          withBrandId={withBrandId}
-        />
+        <TableView data={campaigns} withBrandId={withBrandId} />
       )}
 
       <Pagination
         currentPage={currentPage}
         totalPages={totalPages}
-        onPrev={() => setCurrentPage((p) => Math.max(p - 1, 1))}
-        onNext={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
+        onPrev={() => updatePageInUrl(currentPage - 1)}
+        onNext={() => updatePageInUrl(currentPage + 1)}
       />
     </div>
   );
@@ -506,13 +482,9 @@ function SkeletonTable() {
 
 function TableView({
   data,
-  approveUpdating,
-  onApprove,
   withBrandId,
 }: {
   data: Campaign[];
-  approveUpdating: Record<string, boolean>;
-  onApprove: (c: Campaign) => void;
   withBrandId: (url: string) => string;
 }) {
   return (
@@ -529,7 +501,6 @@ function TableView({
                 "Shortlisted Influencers",
                 "Favorite Influencers",
                 "Status",
-                "Actions",
               ].map((h) => (
                 <th
                   key={h}
@@ -543,9 +514,6 @@ function TableView({
 
           <tbody>
             {data.map((c, idx) => {
-              const isApproving = !!approveUpdating[c.id];
-              const isApproved = !!c.isApproved;
-
               const statusLabel =
                 (c.campaignStatus || "open").toLowerCase() === "paused"
                   ? "Paused"
@@ -596,7 +564,6 @@ function TableView({
                     {safeDateLabel(c.timeline?.endDate)}
                   </td>
 
-                  {/* Shortlisted */}
                   <td className="px-4 py-3 align-top text-center">
                     <Link
                       href={withBrandId(
@@ -612,14 +579,10 @@ function TableView({
                       <span className="underline-offset-2 hover:underline">
                         Shortlisted
                       </span>
-                      <span className="ml-1 inline-flex min-w-[2rem] justify-center rounded-full bg-black px-2 py-0.5 text-xs font-bold text-white">
-                        {shortlistCount}
-                      </span>
                       <HiChevronRightIcon size={18} className="opacity-60" />
                     </Link>
                   </td>
 
-                  {/* Favorites */}
                   <td className="px-4 py-3 align-top text-center">
                     <Link
                       href={withBrandId(
@@ -642,7 +605,6 @@ function TableView({
                     </Link>
                   </td>
 
-                  {/* Status */}
                   <td className="px-4 py-3 whitespace-nowrap align-top text-center">
                     <div className="inline-flex items-center justify-center rounded-full border border-gray-300 px-3 py-1 text-sm font-semibold text-black bg-white">
                       {statusLabel}
@@ -653,56 +615,6 @@ function TableView({
                         By Admin
                       </div>
                     ) : null}
-
-                    {isApproved ? (
-                      <div className="mt-1 text-xs font-semibold text-black">
-                        Approved
-                      </div>
-                    ) : null}
-                  </td>
-
-                  {/* Actions */}
-                  <td className="px-4 py-3 whitespace-nowrap align-top text-center">
-                    <div className="flex items-center justify-center gap-2 flex-wrap">
-                      {isApproved ? (
-                        <span className="inline-flex items-center border border-gray-300 bg-gray-50 text-gray-500 px-3 py-2 rounded-lg text-sm font-semibold cursor-not-allowed">
-                          <HiOutlinePencil className="mr-1" size={18} />
-                          Edit
-                        </span>
-                      ) : (
-                        <Link
-                          href={withBrandId(
-                            `/admin/brand/edit-review-campaign?id=${encodeURIComponent(
-                              c.id
-                            )}`
-                          )}
-                          className="inline-flex items-center bg-white border border-black text-black hover:bg-gray-100 px-3 py-2 rounded-lg text-sm font-semibold"
-                        >
-                          <HiOutlinePencil className="mr-1" size={18} />
-                          Edit
-                        </Link>
-                      )}
-
-                      <button
-                        onClick={() => onApprove(c)}
-                        disabled={isApproving || isApproved}
-                        className={[
-                          "inline-flex items-center px-3 py-2 rounded-lg text-sm font-semibold",
-                          isApproved
-                            ? "bg-gray-200 text-gray-600 cursor-not-allowed"
-                            : "bg-black text-white hover:bg-gray-800",
-                          isApproving ? "opacity-70 cursor-wait" : "",
-                        ].join(" ")}
-                        title="Approve campaign"
-                      >
-                        <HiCheckCircle className="mr-1" size={18} />
-                        {isApproved
-                          ? "Approved"
-                          : isApproving
-                          ? "Approving..."
-                          : "Approve"}
-                      </button>
-                    </div>
                   </td>
                 </tr>
               );
@@ -725,26 +637,32 @@ function Pagination({
   onPrev: () => void;
   onNext: () => void;
 }) {
+  if (totalPages <= 1) return null;
+
   return (
-    <div className="flex justify-end items-center p-4 space-x-3">
-      <button
-        onClick={onPrev}
-        disabled={currentPage === 1}
-        className="p-2 border border-gray-300 rounded-full hover:bg-gray-100 disabled:opacity-50 disabled:hover:bg-white"
-      >
-        <HiChevronLeft size={20} />
-      </button>
+    <div className="flex justify-end items-center p-4 gap-3">
+      {currentPage > 1 && (
+        <button
+          onClick={onPrev}
+          className="p-2 border border-gray-300 rounded-full hover:bg-gray-100"
+        >
+          <HiChevronLeft size={20} />
+        </button>
+      )}
+
       <span className="text-sm text-gray-700">
         Page <span className="font-semibold text-black">{currentPage}</span> of{" "}
         <span className="font-semibold text-black">{totalPages}</span>
       </span>
-      <button
-        onClick={onNext}
-        disabled={currentPage >= totalPages}
-        className="p-2 border border-gray-300 rounded-full hover:bg-gray-100 disabled:opacity-50 disabled:hover:bg-white"
-      >
-        <HiChevronRight size={20} />
-      </button>
+
+      {currentPage < totalPages && (
+        <button
+          onClick={onNext}
+          className="p-2 border border-gray-300 rounded-full hover:bg-gray-100"
+        >
+          <HiChevronRight size={20} />
+        </button>
+      )}
     </div>
   );
 }

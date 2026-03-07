@@ -172,12 +172,20 @@ const AdminBrandsPage: NextPage = () => {
                     (sortOrder === "asc" ? <HiChevronUp /> : <HiChevronDown />)}
                 </div>
               </TableHead>
-              <TableHead onClick={() => toggleSort("expiresAt")} className="cursor-pointer">
-                <div className="flex items-center  justify-center">
-                  Expires{sortBy === "expiresAt" && (sortOrder === "asc" ? <HiChevronUp /> : <HiChevronDown />)}
+
+              {/* ✅ CreatedAt instead of Expires */}
+              <TableHead onClick={() => toggleSort("createdAt")} className="cursor-pointer">
+                <div className="flex items-center justify-center">
+                  Created At
+                  {sortBy === "createdAt" &&
+                    (sortOrder === "asc" ? <HiChevronUp /> : <HiChevronDown />)}
                 </div>
               </TableHead>
-              <TableHead onClick={() => toggleSort("subscriptionExpired")} className="cursor-pointer">
+
+              <TableHead
+                onClick={() => toggleSort("subscriptionExpired")}
+                className="cursor-pointer"
+              >
                 <div className="flex items-center justify-center">
                   Status
                   {sortBy === "subscriptionExpired" &&
@@ -201,27 +209,35 @@ const AdminBrandsPage: NextPage = () => {
                       </TableCell>
                     ))}
                 </TableRow>
-              )))
-              : brands.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={7} className="text-center text-gray-500 py-8">
-                    No brands match the criteria.
+              ))
+            ) : brands.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={7} className="text-center text-gray-500 py-8">
+                  No brands match the criteria.
+                </TableCell>
+              </TableRow>
+            ) : (
+              brands.map((b) => (
+                <TableRow key={b.brandId}>
+                  <TableCell>{b.name}</TableCell>
+                  <TableCell>{b.email}</TableCell>
+                  <TableCell>{b.callingcode ? `${b.callingcode} ${b.phone}` : b.phone}</TableCell>
+                  <TableCell>{b.subscription?.planName}</TableCell>
+
+                  {/* ✅ show createdAt */}
+                  <TableCell>
+                    {b.createdAt ? new Date(b.createdAt).toLocaleDateString() : "-"}
                   </TableCell>
-                </TableRow>
-              ) : (
-                brands.map(b => (
-                  <TableRow key={b.brandId}>
-                    <TableCell>{b.name}</TableCell>
-                    <TableCell>{b.email}</TableCell>
-                    <TableCell>{b.callingcode ? `${b.callingcode} ${b.phone}` : b.phone}</TableCell>
-                    <TableCell>{b.subscription.planName}</TableCell>
-                    <TableCell>{new Date(b.subscription.expiresAt).toLocaleDateString()}</TableCell>
-                    <TableCell>
-                      <span className={b.subscriptionExpired ? "text-red-600" : "text-green-600"}>
-                        {b.subscriptionExpired ? "Expired" : "Active"}
-                      </span>
-                    </TableCell>
-                    <TableCell>
+
+                  <TableCell>
+                    <span className={b.subscriptionExpired ? "text-red-600" : "text-green-600"}>
+                      {b.subscriptionExpired ? "Expired" : "Active"}
+                    </span>
+                  </TableCell>
+
+                  {/* Actions */}
+                  <TableCell>
+                    <div className="flex items-center gap-1">
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <Link href={`/admin/brands/view?brandId=${b.brandId}`}>
@@ -254,6 +270,7 @@ const AdminBrandsPage: NextPage = () => {
                         </TooltipTrigger>
                         <TooltipContent>Review Campaigns</TooltipContent>
                       </Tooltip>
+                    </div>
                   </TableCell>
                 </TableRow>
               ))
