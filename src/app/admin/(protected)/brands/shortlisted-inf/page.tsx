@@ -431,7 +431,7 @@ export default function AdminShortlistedInfluencersPage() {
         expandedRow === rowKey && inf.influencerId ? (
           <TableRow key={`${rowKey}-details`}>
             <TableCell colSpan={7} className="p-0">
-              <AdminMilestoneHistoryCard
+              <AdminMilestone
                 brandId={brandId as string}
                 campaignId={campaignId as string}
                 influencerId={inf.influencerId}

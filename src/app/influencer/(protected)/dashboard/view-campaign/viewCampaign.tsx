@@ -43,6 +43,10 @@ interface CampaignData {
     subcategoryId: string;     // UUID
     subcategoryName: string;
   }[];
+    // ✅ NEW fields
+  noInfluencers?: string | number;      // stored as string, allow old number
+  influencerTier?: string | string[];   // comma-separated string or array
+  productCategory?: string;             // string
   goal: string;
   budget: number;
   influencerBudget?: number;
@@ -54,6 +58,15 @@ interface CampaignData {
   createdAt: string;
   campaignsId: string;
   hasApplied: number;
+}
+
+function parseInfluencerTiers(raw: any): string[] {
+  if (!raw) return [];
+  if (Array.isArray(raw)) return raw.map((x) => String(x).trim()).filter(Boolean);
+  return String(raw)
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
 }
 
 const INFL_GRAD = "bg-gradient-to-r from-[#FFBF00] to-[#FFDB58]";
@@ -473,6 +486,37 @@ export default function ViewCampaignPage() {
             <div>
               <p className="text-sm font-medium text-gray-600">Budget</p>
               <p className="mt-1 text-gray-800">${ c.influencerBudget?.toLocaleString() || c.budget?.toLocaleString()}</p>
+            </div>
+                        {/* ✅ NEW: No. of Influencers */}
+            <div>
+              <p className="text-sm font-medium text-gray-600">No. of Influencers</p>
+              <p className="mt-1 text-gray-800">{String(c.noInfluencers ?? "—")}</p>
+            </div>
+
+            {/* ✅ NEW: Influencer Tier */}
+            <div className="lg:col-span-2">
+              <p className="text-sm font-medium text-gray-600">Influencer Tier</p>
+              <div className="mt-1 flex flex-wrap gap-2">
+                {parseInfluencerTiers(c.influencerTier).length ? (
+                  parseInfluencerTiers(c.influencerTier).map((t) => (
+                    <Badge key={t} variant="outline" className={`text-gray-800 ${INFL_GRAD}`}>
+                      {t}
+                    </Badge>
+                  ))
+                ) : (
+                  <span className="text-gray-500">—</span>
+                )}
+              </div>
+            </div>
+
+            {/* ✅ NEW: Product Category */}
+            <div className="lg:col-span-2">
+              <p className="text-sm font-medium text-gray-600">Product Category</p>
+              <p className="mt-1 text-gray-800">
+                {c.productCategory && String(c.productCategory).trim()
+                  ? c.productCategory
+                  : "—"}
+              </p>
             </div>
             <div className="flex items-center gap-3">
               <Tooltip>

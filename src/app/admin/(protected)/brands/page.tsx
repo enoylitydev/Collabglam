@@ -270,7 +270,6 @@ const AdminBrandsPage: NextPage = () => {
                         </TooltipTrigger>
                         <TooltipContent>Review Campaigns</TooltipContent>
                       </Tooltip>
-                    </div>
                   </TableCell>
                 </TableRow>
               ))
