@@ -1,6 +1,12 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import React, {
+  useState,
+  useEffect,
+  useCallback,
+  useMemo,
+  useRef,
+} from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import {
@@ -8,7 +14,6 @@ import {
   HiChevronLeft,
   HiChevronRight,
   HiOutlinePencil,
-  HiCheckCircle,
   HiOutlineDocumentText,
   HiChevronRight as HiChevronRightIcon,
   HiOutlineStar,
@@ -18,7 +23,7 @@ import { get, post } from "@/lib/api";
 type CampaignStatus = "open" | "paused";
 
 interface Campaign {
-  id: string; // campaignsId
+  id: string;
   productOrServiceName: string;
   description: string;
   timeline: { startDate: string; endDate: string };
@@ -62,7 +67,6 @@ const safeCurrency = (amt: number) =>
     currency: "USD",
   }).format(Number.isFinite(amt) ? amt : 0);
 
-// ✅ Deliverables response => { success:true, count:number, data:[...] }
 const getShortlistedCountFromDeliverablesResp = (res: any) => {
   const body = res?.data && typeof res.data === "object" ? res.data : res;
 
@@ -73,7 +77,6 @@ const getShortlistedCountFromDeliverablesResp = (res: any) => {
   return arr.length;
 };
 
-// ✅ Invitations response => { status:"success", total:number, invitations:[...] }
 const getFavoriteTotalFromInvitationsResp = (res: any) => {
   const body = res?.data && typeof res.data === "object" ? res.data : res;
 
@@ -104,10 +107,7 @@ export default function AdminReviewCampaignsPage() {
     {}
   );
 
-  // ✅ guard to prevent stale overwrite when user searches/pages quickly
   const countsReqRef = useRef(0);
-
-  // ✅ guard to prevent stale page/search overwrite for campaigns list itself
   const campaignsReqRef = useRef(0);
 
   const brandId = useMemo(() => {
@@ -144,7 +144,6 @@ export default function AdminReviewCampaignsPage() {
     };
   };
 
-  // ✅ Hydrate shortlisted + favorite counts using real APIs (for the currently displayed page)
   const hydrateCounts = useCallback(async (list: Campaign[]) => {
     const reqId = ++countsReqRef.current;
 
@@ -155,7 +154,6 @@ export default function AdminReviewCampaignsPage() {
         let shortlistedCount = c.shortlistedCount ?? 0;
         let favoriteCount = c.favoriteCount ?? 0;
 
-        // ✅ Shortlisted count (deliverables) - try campaign2 first
         try {
           const r2 = await get(
             `/deliverable/influencer/campaign2/${encodeURIComponent(campaignsId)}`
@@ -172,12 +170,11 @@ export default function AdminReviewCampaignsPage() {
           }
         }
 
-        // ✅ Favorite count (admin invitations)
         try {
           const favResp = await post(`/admin-invitations/get-by-campaign`, {
             campaignsId,
             page: 1,
-            limit: 1, // only need total
+            limit: 1,
           });
           favoriteCount = getFavoriteTotalFromInvitationsResp(favResp);
         } catch {
@@ -194,6 +191,7 @@ export default function AdminReviewCampaignsPage() {
       string,
       { shortlistedCount: number; favoriteCount: number }
     >();
+
     results.forEach((r) => {
       if (r.status === "fulfilled") {
         map.set(r.value.id, {
@@ -226,7 +224,6 @@ export default function AdminReviewCampaignsPage() {
           brandId
         )}`;
 
-        // ✅ IMPORTANT: build query string yourself
         const qs = new URLSearchParams();
         if (term.trim()) qs.set("search", term.trim());
         qs.set("page", String(page));
@@ -234,7 +231,6 @@ export default function AdminReviewCampaignsPage() {
 
         const res: any = await get(`${listEndpoint}?${qs.toString()}`);
 
-        // stale guard
         if (campaignsReqRef.current !== reqId) return;
 
         const body = res?.data && typeof res.data === "object" ? res.data : res;
@@ -245,7 +241,6 @@ export default function AdminReviewCampaignsPage() {
           ? body
           : [];
 
-        // ✅ Detect if server is NOT paginating (returns full list ignoring page/limit)
         const respLimit = Number(body?.limit ?? limit) || limit;
 
         const apiTotalPages = Number(
@@ -266,8 +261,8 @@ export default function AdminReviewCampaignsPage() {
           (Number.isFinite(apiTotalPages) && apiTotalPages > 0) ||
           (Number.isFinite(apiTotal) && apiTotal > 0);
 
-        // If no meta AND server returned more than limit, treat it as "full list" and paginate client-side
-        const serverIgnoredPagination = !hasPaginationMeta && rawList.length > respLimit;
+        const serverIgnoredPagination =
+          !hasPaginationMeta && rawList.length > respLimit;
 
         const effectiveList = serverIgnoredPagination
           ? rawList.slice((page - 1) * respLimit, page * respLimit)
@@ -302,7 +297,9 @@ export default function AdminReviewCampaignsPage() {
             (Array.isArray(merged.shortlistedInfluencers)
               ? merged.shortlistedInfluencers.length
               : undefined) ??
-            (Array.isArray(merged.shortlisted) ? merged.shortlisted.length : 0);
+            (Array.isArray(merged.shortlisted)
+              ? merged.shortlisted.length
+              : 0);
 
           const favCount =
             merged.favoriteCount ??
@@ -328,36 +325,36 @@ export default function AdminReviewCampaignsPage() {
             publishStatus: merged.publishStatus ?? "",
             isApproved,
             createdByRole,
-            shortlistedCount: typeof shortlistCount === "number" ? shortlistCount : 0,
+            shortlistedCount:
+              typeof shortlistCount === "number" ? shortlistCount : 0,
             favoriteCount: typeof favCount === "number" ? favCount : 0,
             raw: merged,
           };
         });
 
         setCampaigns(normalized);
-
-        // ✅ update counts for current page
         hydrateCounts(normalized);
 
-        // ✅ TOTAL PAGES FIX (this is what makes Page 2 clickable)
         let computedTotalPages = 1;
 
         if (serverIgnoredPagination) {
-          // client-side pagination based on full list size
-          computedTotalPages = Math.max(1, Math.ceil(rawList.length / respLimit));
+          computedTotalPages = Math.max(
+            1,
+            Math.ceil(rawList.length / respLimit)
+          );
         } else if (Number.isFinite(apiTotalPages) && apiTotalPages > 0) {
           computedTotalPages = apiTotalPages;
         } else if (Number.isFinite(apiTotal) && apiTotal > 0) {
           computedTotalPages = Math.max(1, Math.ceil(apiTotal / respLimit));
         } else {
-          // optimistic pagination: if we got a full page, allow Next
-          computedTotalPages = Math.max(1, page + (rawList.length === respLimit ? 1 : 0));
+          computedTotalPages = Math.max(
+            1,
+            page + (rawList.length === respLimit ? 1 : 0)
+          );
         }
 
-        // keep it stable (don’t shrink too aggressively while user navigates)
         setTotalPages((prev) => Math.max(prev, computedTotalPages));
 
-        // clamp if needed
         if (page > computedTotalPages) {
           setCurrentPage(computedTotalPages);
         }
@@ -378,9 +375,9 @@ export default function AdminReviewCampaignsPage() {
     const t = setTimeout(() => {
       setCurrentPage(1);
       setDebouncedSearch(search.trim());
-      // reset total pages on new search so optimistic calc works cleanly
       setTotalPages(1);
     }, 400);
+
     return () => clearTimeout(t);
   }, [search]);
 
@@ -434,7 +431,6 @@ export default function AdminReviewCampaignsPage() {
         <h1 className="text-2xl font-semibold">Review Campaigns</h1>
       </div>
 
-      {/* Search */}
       <div className="mb-4 max-w-md">
         <div className="relative">
           <HiSearch
@@ -529,7 +525,6 @@ function TableView({
                 "Shortlisted Influencers",
                 "Favorite Influencers",
                 "Status",
-                "Actions",
               ].map((h) => (
                 <th
                   key={h}
@@ -596,7 +591,6 @@ function TableView({
                     {safeDateLabel(c.timeline?.endDate)}
                   </td>
 
-                  {/* Shortlisted */}
                   <td className="px-4 py-3 align-top text-center">
                     <Link
                       href={withBrandId(
@@ -612,14 +606,10 @@ function TableView({
                       <span className="underline-offset-2 hover:underline">
                         Shortlisted
                       </span>
-                      <span className="ml-1 inline-flex min-w-[2rem] justify-center rounded-full bg-black px-2 py-0.5 text-xs font-bold text-white">
-                        {shortlistCount}
-                      </span>
                       <HiChevronRightIcon size={18} className="opacity-60" />
                     </Link>
                   </td>
 
-                  {/* Favorites */}
                   <td className="px-4 py-3 align-top text-center">
                     <Link
                       href={withBrandId(
@@ -642,7 +632,6 @@ function TableView({
                     </Link>
                   </td>
 
-                  {/* Status */}
                   <td className="px-4 py-3 whitespace-nowrap align-top text-center">
                     <div className="inline-flex items-center justify-center rounded-full border border-gray-300 px-3 py-1 text-sm font-semibold text-black bg-white">
                       {statusLabel}
@@ -653,56 +642,6 @@ function TableView({
                         By Admin
                       </div>
                     ) : null}
-
-                    {isApproved ? (
-                      <div className="mt-1 text-xs font-semibold text-black">
-                        Approved
-                      </div>
-                    ) : null}
-                  </td>
-
-                  {/* Actions */}
-                  <td className="px-4 py-3 whitespace-nowrap align-top text-center">
-                    <div className="flex items-center justify-center gap-2 flex-wrap">
-                      {isApproved ? (
-                        <span className="inline-flex items-center border border-gray-300 bg-gray-50 text-gray-500 px-3 py-2 rounded-lg text-sm font-semibold cursor-not-allowed">
-                          <HiOutlinePencil className="mr-1" size={18} />
-                          Edit
-                        </span>
-                      ) : (
-                        <Link
-                          href={withBrandId(
-                            `/admin/brand/edit-review-campaign?id=${encodeURIComponent(
-                              c.id
-                            )}`
-                          )}
-                          className="inline-flex items-center bg-white border border-black text-black hover:bg-gray-100 px-3 py-2 rounded-lg text-sm font-semibold"
-                        >
-                          <HiOutlinePencil className="mr-1" size={18} />
-                          Edit
-                        </Link>
-                      )}
-
-                      <button
-                        onClick={() => onApprove(c)}
-                        disabled={isApproving || isApproved}
-                        className={[
-                          "inline-flex items-center px-3 py-2 rounded-lg text-sm font-semibold",
-                          isApproved
-                            ? "bg-gray-200 text-gray-600 cursor-not-allowed"
-                            : "bg-black text-white hover:bg-gray-800",
-                          isApproving ? "opacity-70 cursor-wait" : "",
-                        ].join(" ")}
-                        title="Approve campaign"
-                      >
-                        <HiCheckCircle className="mr-1" size={18} />
-                        {isApproved
-                          ? "Approved"
-                          : isApproving
-                          ? "Approving..."
-                          : "Approve"}
-                      </button>
-                    </div>
                   </td>
                 </tr>
               );
