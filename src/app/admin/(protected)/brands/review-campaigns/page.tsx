@@ -13,7 +13,6 @@ import {
   HiSearch,
   HiChevronLeft,
   HiChevronRight,
-  HiOutlinePencil,
   HiOutlineDocumentText,
   HiChevronRight as HiChevronRightIcon,
   HiOutlineStar,
@@ -44,8 +43,6 @@ interface Campaign {
 
   raw?: any;
 }
-
-const APPROVE_ENDPOINT = "/campaign/confirm-readiness";
 
 const sliceText = (text: string, max = 40) =>
   text?.length > max ? `${text.slice(0, max - 3)}...` : text;
@@ -96,16 +93,11 @@ export default function AdminReviewCampaignsPage() {
   const [loading, setLoading] = useState(true);
 
   const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
 
   const [currentPage, setCurrentPage] = useState(1);
   const [limit] = useState(10);
   const [totalPages, setTotalPages] = useState(1);
   const [debouncedSearch, setDebouncedSearch] = useState("");
-
-  const [approveUpdating, setApproveUpdating] = useState<Record<string, boolean>>(
-    {}
-  );
 
   const countsReqRef = useRef(0);
   const campaignsReqRef = useRef(0);
@@ -154,21 +146,16 @@ export default function AdminReviewCampaignsPage() {
         let shortlistedCount = c.shortlistedCount ?? 0;
         let favoriteCount = c.favoriteCount ?? 0;
 
+
         try {
-          const r2 = await get(
-            `/deliverable/influencer/campaign2/${encodeURIComponent(campaignsId)}`
+          const r1 = await get(
+            `/deliverable/influencer/campaign/${encodeURIComponent(campaignsId)}`
           );
-          shortlistedCount = getShortlistedCountFromDeliverablesResp(r2);
+          shortlistedCount = getShortlistedCountFromDeliverablesResp(r1);
         } catch {
-          try {
-            const r1 = await get(
-              `/deliverable/influencer/campaign/${encodeURIComponent(campaignsId)}`
-            );
-            shortlistedCount = getShortlistedCountFromDeliverablesResp(r1);
-          } catch {
-            // keep existing
-          }
+          // keep existing
         }
+
 
         try {
           const favResp = await post(`/admin-invitations/get-by-campaign`, {
@@ -215,7 +202,6 @@ export default function AdminReviewCampaignsPage() {
 
       setLoading(true);
       setError(null);
-      setSuccess(null);
 
       try {
         if (!brandId) throw new Error("brandId missing in URL.");
@@ -238,23 +224,23 @@ export default function AdminReviewCampaignsPage() {
         const rawList: any[] = Array.isArray(body?.data)
           ? body.data
           : Array.isArray(body)
-          ? body
-          : [];
+            ? body
+            : [];
 
         const respLimit = Number(body?.limit ?? limit) || limit;
 
         const apiTotalPages = Number(
           body?.totalPages ??
-            body?.pagination?.totalPages ??
-            body?.meta?.totalPages
+          body?.pagination?.totalPages ??
+          body?.meta?.totalPages
         );
 
         const apiTotal = Number(
           body?.total ??
-            body?.totalCount ??
-            body?.count ??
-            body?.meta?.total ??
-            body?.pagination?.total
+          body?.totalCount ??
+          body?.count ??
+          body?.meta?.total ??
+          body?.pagination?.total
         );
 
         const hasPaginationMeta =
@@ -353,7 +339,7 @@ export default function AdminReviewCampaignsPage() {
           );
         }
 
-        setTotalPages((prev) => Math.max(prev, computedTotalPages));
+        setTotalPages(computedTotalPages);
 
         if (page > computedTotalPages) {
           setCurrentPage(computedTotalPages);
@@ -385,45 +371,6 @@ export default function AdminReviewCampaignsPage() {
     if (!brandId) return;
     fetchCampaigns(currentPage, debouncedSearch);
   }, [fetchCampaigns, currentPage, debouncedSearch, brandId]);
-
-  const approveCampaign = async (campaignId: string) => {
-    if (!brandId) throw new Error("brandId missing in URL.");
-
-    const res = await post(APPROVE_ENDPOINT, {
-      brandId,
-      campaignsId: campaignId,
-    });
-
-    return (res as any)?.data ?? res;
-  };
-
-  const onApprove = async (c: Campaign) => {
-    if (c.isApproved) return;
-
-    const id = c.id;
-    setApproveUpdating((p) => ({ ...p, [id]: true }));
-    setError(null);
-    setSuccess(null);
-
-    try {
-      await approveCampaign(id);
-
-      setCampaigns((prev) =>
-        prev.map((x) =>
-          x.id === id
-            ? { ...x, isApproved: true, publishStatus: "brand_confirmed" }
-            : x
-        )
-      );
-
-      setSuccess("Campaign approved.");
-      fetchCampaigns(currentPage, debouncedSearch);
-    } catch (e: any) {
-      setError(e?.message || "Failed to approve campaign.");
-    } finally {
-      setApproveUpdating((p) => ({ ...p, [id]: false }));
-    }
-  };
 
   return (
     <div className="p-6 min-h-screen bg-white text-black">
@@ -459,23 +406,12 @@ export default function AdminReviewCampaignsPage() {
         </div>
       ) : null}
 
-      {success ? (
-        <div className="mb-3 rounded-lg border border-gray-300 bg-white p-3 text-sm">
-          <span className="font-semibold">Success:</span> {success}
-        </div>
-      ) : null}
-
       {loading ? (
         <SkeletonTable />
       ) : campaigns.length === 0 ? (
         <p className="text-sm text-gray-700">No campaigns found.</p>
       ) : (
-        <TableView
-          data={campaigns}
-          approveUpdating={approveUpdating}
-          onApprove={onApprove}
-          withBrandId={withBrandId}
-        />
+        <TableView data={campaigns} withBrandId={withBrandId} />
       )}
 
       <Pagination
@@ -483,6 +419,7 @@ export default function AdminReviewCampaignsPage() {
         totalPages={totalPages}
         onPrev={() => setCurrentPage((p) => Math.max(p - 1, 1))}
         onNext={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
+        onPageChange={(page) => setCurrentPage(page)}
       />
     </div>
   );
@@ -502,13 +439,9 @@ function SkeletonTable() {
 
 function TableView({
   data,
-  approveUpdating,
-  onApprove,
   withBrandId,
 }: {
   data: Campaign[];
-  approveUpdating: Record<string, boolean>;
-  onApprove: (c: Campaign) => void;
   withBrandId: (url: string) => string;
 }) {
   return (
@@ -538,9 +471,6 @@ function TableView({
 
           <tbody>
             {data.map((c, idx) => {
-              const isApproving = !!approveUpdating[c.id];
-              const isApproved = !!c.isApproved;
-
               const statusLabel =
                 (c.campaignStatus || "open").toLowerCase() === "paused"
                   ? "Paused"
@@ -658,14 +588,18 @@ function Pagination({
   totalPages,
   onPrev,
   onNext,
+  onPageChange,
 }: {
   currentPage: number;
   totalPages: number;
   onPrev: () => void;
   onNext: () => void;
+  onPageChange: (page: number) => void;
 }) {
+  const pages = Array.from({ length: totalPages }, (_, i) => i + 1);
+
   return (
-    <div className="flex justify-end items-center p-4 space-x-3">
+    <div className="flex justify-end items-center p-4 gap-2 flex-wrap">
       <button
         onClick={onPrev}
         disabled={currentPage === 1}
@@ -673,10 +607,20 @@ function Pagination({
       >
         <HiChevronLeft size={20} />
       </button>
-      <span className="text-sm text-gray-700">
-        Page <span className="font-semibold text-black">{currentPage}</span> of{" "}
-        <span className="font-semibold text-black">{totalPages}</span>
-      </span>
+
+      {pages.map((page) => (
+        <button
+          key={page}
+          onClick={() => onPageChange(page)}
+          className={`min-w-[40px] h-10 px-3 rounded-full border text-sm font-medium transition ${currentPage === page
+              ? "bg-black text-white border-black"
+              : "bg-white text-black border-gray-300 hover:bg-gray-100"
+            }`}
+        >
+          {page}
+        </button>
+      ))}
+
       <button
         onClick={onNext}
         disabled={currentPage >= totalPages}
