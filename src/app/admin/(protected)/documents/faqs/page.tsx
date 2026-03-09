@@ -4,13 +4,14 @@ import { useEffect, useMemo, useState } from 'react';
 import Swal from 'sweetalert2';
 import 'sweetalert2/dist/sweetalert2.min.css';
 import { post } from '@/lib/api';
+import RichTextEditor from '../RichTextEditor'
 
 interface FAQItem {
   faqId: string;
   sectionKey: string;
   sectionTitle: string;
   question: string;
-  answer: string;
+  answer: string; // HTML
   displayOrder: number;
   isPublished: boolean;
 }
@@ -19,10 +20,10 @@ interface FAQPage {
   faqPageId?: string;
   pageKey?: string;
   title: string;
-  shortDescription: string;
-  introText: string;
+  shortDescription: string; // HTML
+  introText: string; // HTML
   contactHeading: string;
-  contactText: string;
+  contactText: string; // HTML
   effectiveDate: string;
   isPublished: boolean;
   items: FAQItem[];
@@ -44,23 +45,23 @@ const SECTION_OPTIONS = [
 const getDefaultPage = (): FAQPage => ({
   title: 'CollabGlam Frequently Asked Questions (FAQ)',
   shortDescription:
-    'A plain-language FAQ for visitors, brands, creators, agencies, and team users. This FAQ is designed for website posting and support use. If there is ever a conflict between this FAQ and a signed agreement or platform legal terms, the signed agreement or legal terms control.',
+    '<p>A plain-language FAQ for visitors, brands, creators, agencies, and team users. This FAQ is designed for website posting and support use. If there is ever a conflict between this FAQ and a signed agreement or platform legal terms, the signed agreement or legal terms control.</p>',
   introText:
-    'The questions below are grouped by topic so visitors can quickly find answers about what CollabGlam is, how marketplace campaigns work, how the marketplace platform fee works, what the difference is between self-serve and managed services, how messaging and anti-bypass rules work, and how billing, privacy, and support are handled.',
+    '<p>The questions below are grouped by topic so visitors can quickly find answers about what CollabGlam is, how marketplace campaigns work, how the marketplace platform fee works, what the difference is between self-serve and managed services, how messaging and anti-bypass rules work, and how billing, privacy, and support are handled.</p>',
   contactHeading: 'Contact Information',
   contactText:
-    'Questions, notices, privacy requests, billing requests, or legal notices may be sent to any of the channels below. Email is the fastest method for routine requests.\n\nCollabGlam LLC (EIN: 41-2990205)\nWebsite: https://collabglam.com\nSupport: help@collabglam.com\nPhone: +1 (904) 219-7829\nRegistered / principal business address: 732 S 6th St STE N, Las Vegas, Nevada 89101, United States\nMailing address for legal notices: 1887 Whitney Mesa Dr #7245, Henderson, Nevada 89014, United States\nBusiness correspondence address: 2112 Chestnut St, Suite 160, Alhambra, California 91803, United States',
+    '<p>Questions, notices, privacy requests, billing requests, or legal notices may be sent to any of the channels below. Email is the fastest method for routine requests.</p><p><strong>CollabGlam LLC (EIN: 41-2990205)</strong><br>Website: https://collabglam.com<br>Support: help@collabglam.com<br>Phone: +1 (904) 219-7829<br>Registered / principal business address: 732 S 6th St STE N, Las Vegas, Nevada 89101, United States<br>Mailing address for legal notices: 1887 Whitney Mesa Dr #7245, Henderson, Nevada 89014, United States<br>Business correspondence address: 2112 Chestnut St, Suite 160, Alhambra, California 91803, United States</p>',
   effectiveDate: '2026-03-09',
   isPublished: true,
   items: []
 });
 
-const getEmptyItem = (): Omit<FAQItem, 'faqId'> => ({
+const getEmptyItem = (nextOrder = 1): Omit<FAQItem, 'faqId'> => ({
   sectionKey: 'general',
   sectionTitle: 'A. General',
   question: '',
-  answer: '',
-  displayOrder: 1,
+  answer: '<p></p>',
+  displayOrder: nextOrder,
   isPublished: true
 });
 
@@ -83,16 +84,24 @@ export default function AdminFAQPage() {
   const loadFAQPage = async () => {
     try {
       setLoading(true);
-      const data = await post<FAQPage>('/faqs/admin/get');
+      const data = await post<FAQPage>('/faqs/admin/get', {});
 
-      setFaqPage({
+      const normalized: FAQPage = {
+        ...getDefaultPage(),
         ...data,
-        effectiveDate: data.effectiveDate ? String(data.effectiveDate).slice(0, 10) : '2026-03-09',
-        items: Array.isArray(data.items) ? data.items : []
-      });
+        effectiveDate: data?.effectiveDate ? String(data.effectiveDate).slice(0, 10) : '2026-03-09',
+        items: Array.isArray(data?.items) ? data.items : []
+      };
+
+      setFaqPage(normalized);
+      setSelectedId('');
+      setItemForm(getEmptyItem((normalized.items?.length || 0) + 1));
     } catch (err) {
       console.error(err);
-      setFaqPage(getDefaultPage());
+      const fallback = getDefaultPage();
+      setFaqPage(fallback);
+      setSelectedId('');
+      setItemForm(getEmptyItem(1));
     } finally {
       setLoading(false);
     }
@@ -106,10 +115,7 @@ export default function AdminFAQPage() {
     setSelectedId(faqId);
 
     if (!faqId) {
-      setItemForm({
-        ...getEmptyItem(),
-        displayOrder: faqPage.items.length + 1
-      });
+      setItemForm(getEmptyItem(faqPage.items.length + 1));
       return;
     }
 
@@ -120,7 +126,7 @@ export default function AdminFAQPage() {
       sectionKey: found.sectionKey,
       sectionTitle: found.sectionTitle,
       question: found.question,
-      answer: found.answer,
+      answer: found.answer || '<p></p>',
       displayOrder: found.displayOrder,
       isPublished: found.isPublished
     });
@@ -128,10 +134,7 @@ export default function AdminFAQPage() {
 
   const handleNew = () => {
     setSelectedId('');
-    setItemForm({
-      ...getEmptyItem(),
-      displayOrder: faqPage.items.length + 1
-    });
+    setItemForm(getEmptyItem(faqPage.items.length + 1));
   };
 
   const handleSectionChange = (sectionKey: string) => {
@@ -143,14 +146,26 @@ export default function AdminFAQPage() {
     }));
   };
 
+  const isHtmlEmpty = (html: string) => {
+    const cleaned = html
+      .replace(/<p><\/p>/g, '')
+      .replace(/<p><br><\/p>/g, '')
+      .replace(/<br\s*\/?>/g, '')
+      .replace(/<[^>]+>/g, '')
+      .replace(/&nbsp;/g, ' ')
+      .trim();
+
+    return cleaned.length === 0;
+  };
+
   const handleSavePage = async () => {
     if (
       !faqPage.title.trim() ||
-      !faqPage.shortDescription.trim() ||
-      !faqPage.introText.trim() ||
       !faqPage.contactHeading.trim() ||
-      !faqPage.contactText.trim() ||
-      !faqPage.effectiveDate
+      !faqPage.effectiveDate ||
+      isHtmlEmpty(faqPage.shortDescription) ||
+      isHtmlEmpty(faqPage.introText) ||
+      isHtmlEmpty(faqPage.contactText)
     ) {
       await Swal.fire({
         icon: 'warning',
@@ -164,6 +179,7 @@ export default function AdminFAQPage() {
     }
 
     setPageSaving(true);
+
     try {
       const payload = {
         title: faqPage.title,
@@ -179,9 +195,12 @@ export default function AdminFAQPage() {
       const saved = await post<FAQPage>('/faqs/save', payload);
 
       setFaqPage({
+        ...getDefaultPage(),
         ...saved,
-        effectiveDate: saved.effectiveDate ? String(saved.effectiveDate).slice(0, 10) : faqPage.effectiveDate,
-        items: Array.isArray(saved.items) ? saved.items : []
+        effectiveDate: saved?.effectiveDate
+          ? String(saved.effectiveDate).slice(0, 10)
+          : faqPage.effectiveDate,
+        items: Array.isArray(saved?.items) ? saved.items : []
       });
 
       await Swal.fire({
@@ -207,7 +226,7 @@ export default function AdminFAQPage() {
   };
 
   const handleSaveItem = async () => {
-    if (!itemForm.question.trim() || !itemForm.answer.trim()) {
+    if (!itemForm.question.trim() || isHtmlEmpty(itemForm.answer)) {
       await Swal.fire({
         icon: 'warning',
         title: 'Validation',
@@ -220,6 +239,7 @@ export default function AdminFAQPage() {
     }
 
     setItemSaving(true);
+
     try {
       if (selectedId) {
         await post('/faqs/item/updateById', {
@@ -281,6 +301,7 @@ export default function AdminFAQPage() {
     if (!result.isConfirmed) return;
 
     setItemSaving(true);
+
     try {
       await post('/faqs/item/deleteById', { faqId: selectedId });
 
@@ -318,7 +339,7 @@ export default function AdminFAQPage() {
       <div className="bg-white shadow-md rounded-lg p-6">
         <h1 className="text-3xl font-semibold mb-6">Manage FAQs</h1>
 
-        <div className="grid grid-cols-1 gap-5">
+        <div className="grid grid-cols-1 gap-6">
           <div>
             <label className="block mb-2 font-medium">Page Title</label>
             <input
@@ -332,23 +353,21 @@ export default function AdminFAQPage() {
 
           <div>
             <label className="block mb-2 font-medium">Short Description</label>
-            <textarea
-              rows={3}
+            <RichTextEditor
               value={faqPage.shortDescription}
-              onChange={(e) => setFaqPage((prev) => ({ ...prev, shortDescription: e.target.value }))}
-              disabled={pageSaving}
-              className="w-full border rounded p-2 focus:outline-none focus:ring-2 focus:ring-pink-400"
+              onChange={(html) =>
+                setFaqPage((prev) => ({ ...prev, shortDescription: html }))
+              }
             />
           </div>
 
           <div>
             <label className="block mb-2 font-medium">Intro Text</label>
-            <textarea
-              rows={4}
+            <RichTextEditor
               value={faqPage.introText}
-              onChange={(e) => setFaqPage((prev) => ({ ...prev, introText: e.target.value }))}
-              disabled={pageSaving}
-              className="w-full border rounded p-2 focus:outline-none focus:ring-2 focus:ring-pink-400"
+              onChange={(html) =>
+                setFaqPage((prev) => ({ ...prev, introText: html }))
+              }
             />
           </div>
 
@@ -358,7 +377,9 @@ export default function AdminFAQPage() {
               <input
                 type="text"
                 value={faqPage.contactHeading}
-                onChange={(e) => setFaqPage((prev) => ({ ...prev, contactHeading: e.target.value }))}
+                onChange={(e) =>
+                  setFaqPage((prev) => ({ ...prev, contactHeading: e.target.value }))
+                }
                 disabled={pageSaving}
                 className="w-full border rounded p-2 focus:outline-none focus:ring-2 focus:ring-pink-400"
               />
@@ -369,7 +390,9 @@ export default function AdminFAQPage() {
               <input
                 type="date"
                 value={faqPage.effectiveDate}
-                onChange={(e) => setFaqPage((prev) => ({ ...prev, effectiveDate: e.target.value }))}
+                onChange={(e) =>
+                  setFaqPage((prev) => ({ ...prev, effectiveDate: e.target.value }))
+                }
                 disabled={pageSaving}
                 className="w-full border rounded p-2 focus:outline-none focus:ring-2 focus:ring-pink-400"
               />
@@ -378,12 +401,11 @@ export default function AdminFAQPage() {
 
           <div>
             <label className="block mb-2 font-medium">Contact Text</label>
-            <textarea
-              rows={8}
+            <RichTextEditor
               value={faqPage.contactText}
-              onChange={(e) => setFaqPage((prev) => ({ ...prev, contactText: e.target.value }))}
-              disabled={pageSaving}
-              className="w-full border rounded p-2 focus:outline-none focus:ring-2 focus:ring-pink-400"
+              onChange={(html) =>
+                setFaqPage((prev) => ({ ...prev, contactText: html }))
+              }
             />
           </div>
 
@@ -391,7 +413,9 @@ export default function AdminFAQPage() {
             <input
               type="checkbox"
               checked={faqPage.isPublished}
-              onChange={(e) => setFaqPage((prev) => ({ ...prev, isPublished: e.target.checked }))}
+              onChange={(e) =>
+                setFaqPage((prev) => ({ ...prev, isPublished: e.target.checked }))
+              }
               disabled={pageSaving}
             />
             <span className="font-medium">FAQ Page Published</span>
@@ -461,7 +485,9 @@ export default function AdminFAQPage() {
             <input
               type="text"
               value={itemForm.sectionTitle}
-              onChange={(e) => setItemForm((prev) => ({ ...prev, sectionTitle: e.target.value }))}
+              onChange={(e) =>
+                setItemForm((prev) => ({ ...prev, sectionTitle: e.target.value }))
+              }
               disabled={itemSaving}
               className="w-full border rounded p-2 focus:outline-none focus:ring-2 focus:ring-pink-400"
             />
@@ -490,7 +516,9 @@ export default function AdminFAQPage() {
           <input
             type="text"
             value={itemForm.question}
-            onChange={(e) => setItemForm((prev) => ({ ...prev, question: e.target.value }))}
+            onChange={(e) =>
+              setItemForm((prev) => ({ ...prev, question: e.target.value }))
+            }
             disabled={itemSaving}
             className="w-full border rounded p-2 focus:outline-none focus:ring-2 focus:ring-pink-400"
           />
@@ -498,12 +526,11 @@ export default function AdminFAQPage() {
 
         <div className="mb-4">
           <label className="block mb-2 font-medium">Answer</label>
-          <textarea
-            rows={7}
+          <RichTextEditor
             value={itemForm.answer}
-            onChange={(e) => setItemForm((prev) => ({ ...prev, answer: e.target.value }))}
-            disabled={itemSaving}
-            className="w-full border rounded p-2 focus:outline-none focus:ring-2 focus:ring-pink-400"
+            onChange={(html) =>
+              setItemForm((prev) => ({ ...prev, answer: html }))
+            }
           />
         </div>
 
@@ -512,7 +539,9 @@ export default function AdminFAQPage() {
             <input
               type="checkbox"
               checked={itemForm.isPublished}
-              onChange={(e) => setItemForm((prev) => ({ ...prev, isPublished: e.target.checked }))}
+              onChange={(e) =>
+                setItemForm((prev) => ({ ...prev, isPublished: e.target.checked }))
+              }
               disabled={itemSaving}
             />
             <span className="font-medium">Published</span>

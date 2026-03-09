@@ -26,42 +26,78 @@ interface PolicyAdminEditorProps {
   fileName: string;
 }
 
-const policyContentClasses = `
-  prose prose-gray max-w-none
-  prose-headings:font-semibold
-  prose-headings:text-gray-900
-  prose-h1:text-3xl prose-h1:mt-10 prose-h1:mb-5
-  prose-h2:text-2xl prose-h2:mt-8 prose-h2:mb-4
-  prose-h3:text-xl prose-h3:mt-6 prose-h3:mb-3
-  prose-h4:text-lg prose-h4:mt-5 prose-h4:mb-3
-  prose-p:my-4
-  prose-p:leading-8
-  prose-ul:my-5
-  prose-ol:my-5
-  prose-li:my-2
-  prose-li:leading-8
-  prose-strong:text-gray-900
-  prose-a:text-[#ef2f5b]
-  prose-a:no-underline
-  hover:prose-a:underline
-  prose-blockquote:my-6
-  prose-blockquote:border-l-4
-  prose-blockquote:border-[#ef2f5b]
-  prose-blockquote:pl-4
-  prose-blockquote:italic
-  prose-hr:my-8
-  prose-table:my-6
-  prose-table:w-full
-  prose-table:border-collapse
-  prose-th:border
-  prose-th:border-gray-300
-  prose-th:bg-gray-100
-  prose-th:p-3
-  prose-th:text-left
-  prose-td:border
-  prose-td:border-gray-300
-  prose-td:p-3
-`;
+const policyContentClasses = [
+  "max-w-none",
+  "text-gray-800",
+
+  "[&_h1]:text-3xl",
+  "[&_h1]:font-bold",
+  "[&_h1]:mt-8",
+  "[&_h1]:mb-4",
+
+  "[&_h2]:text-2xl",
+  "[&_h2]:font-semibold",
+  "[&_h2]:mt-7",
+  "[&_h2]:mb-3",
+
+  "[&_h3]:text-xl",
+  "[&_h3]:font-semibold",
+  "[&_h3]:mt-6",
+  "[&_h3]:mb-3",
+
+  "[&_h4]:text-lg",
+  "[&_h4]:font-semibold",
+  "[&_h4]:mt-5",
+  "[&_h4]:mb-2",
+
+  "[&_p]:my-3",
+  "[&_p]:leading-7",
+
+  "[&_br]:leading-7",
+
+  "[&_ul]:my-3",
+  "[&_ul]:list-disc",
+  "[&_ul]:pl-6",
+
+  "[&_ol]:my-3",
+  "[&_ol]:list-decimal",
+  "[&_ol]:pl-6",
+
+  "[&_li]:my-1",
+  "[&_li]:leading-7",
+
+  "[&_li>p]:my-0",
+  "[&_li>p]:leading-7",
+
+  "[&_strong]:font-semibold",
+  "[&_strong]:text-gray-900",
+
+  "[&_a]:text-[#ef2f5b]",
+  "[&_a]:no-underline",
+  "hover:[&_a]:underline",
+
+  "[&_blockquote]:my-4",
+  "[&_blockquote]:border-l-4",
+  "[&_blockquote]:border-[#ef2f5b]",
+  "[&_blockquote]:pl-4",
+  "[&_blockquote]:italic",
+
+  "[&_hr]:my-6",
+
+  "[&_table]:w-full",
+  "[&_table]:border-collapse",
+  "[&_table]:my-5",
+
+  "[&_th]:border",
+  "[&_th]:border-gray-300",
+  "[&_th]:bg-gray-100",
+  "[&_th]:p-3",
+  "[&_th]:text-left",
+
+  "[&_td]:border",
+  "[&_td]:border-gray-300",
+  "[&_td]:p-3",
+].join(" ");
 
 export default function PolicyAdminEditor({
   pageTitle,
