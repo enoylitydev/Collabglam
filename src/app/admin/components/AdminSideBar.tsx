@@ -34,8 +34,8 @@ const navItems = [
   { label: "Invoice Details", href: "/admin/invoiceDetails", icon: DollarSign },
   { label: "Payment Notification", href: "/admin/payment", icon: Bell },
   { label: "Youtube Handle", href: "/admin/youtube", icon: MailCheckIcon },
-  {label:"Modash Data", href:"/admin/modash", icon: MailCheckIcon},
-  {label:"Invited Influencer", href:"/admin/invitedInfluencer", icon: MailCheckIcon}
+  { label: "Modash Data", href: "/admin/modash", icon: MailCheckIcon },
+  { label: "Invited Influencer", href: "/admin/invitedInfluencer", icon: MailCheckIcon }
 
 ];
 
@@ -47,6 +47,9 @@ const documentLinks = [
   { label: "Cookie Policy", href: "/admin/documents/cookie-policy" },
   { label: "Shipping & Delivery Policy", href: "/admin/documents/shipping-delivery" },
   { label: "Returns Policy", href: "/admin/documents/return-policy" },
+  { label: "Acceptable Use & Communication Policy", href: "/admin/documents/acceptable-use" },
+  { label: "Data Processing Addendum", href: "/admin/documents/" },
+  { label: "Subprocessor List", href: "/admin/documents/acceptable-use" }
 ];
 
 export default function AdminSidebar() {
@@ -93,17 +96,15 @@ export default function AdminSidebar() {
         key={href}
         href={href}
         onClick={onClick}
-        className={`flex items-center px-3 py-2 rounded-lg text-sm font-medium transition-colors focus:outline-none ${
-          active
+        className={`flex items-center px-3 py-2 rounded-lg text-sm font-medium transition-colors focus:outline-none ${active
             ? "bg-[#ef2f5b]/20 text-[#ef2f5b]"
             : "text-gray-700 hover:bg-gray-100 hover:text-gray-900"
-        }`}
+          }`}
       >
         {Icon && (
           <Icon
-            className={`mr-3 h-5 w-5 transition-colors ${
-              active ? "text-[#ef2f5b]" : "text-gray-400 hover:text-gray-500"
-            }`}
+            className={`mr-3 h-5 w-5 transition-colors ${active ? "text-[#ef2f5b]" : "text-gray-400 hover:text-gray-500"
+              }`}
           />
         )}
         <span className="whitespace-nowrap flex-1">{label}</span>
@@ -142,11 +143,10 @@ export default function AdminSidebar() {
                   onClick={() => {
                     if (isMobile) setDrawerOpen(false);
                   }}
-                  className={`block px-3 py-1 text-sm rounded-lg transition-colors focus:outline-none ${
-                    active
+                  className={`block px-3 py-1 text-sm rounded-lg transition-colors focus:outline-none ${active
                       ? "bg-[#ef2f5b]/20 text-[#ef2f5b]"
                       : "text-gray-600 hover:bg-gray-100 hover:text-gray-800"
-                  }`}
+                    }`}
                 >
                   {label}
                 </Link>
