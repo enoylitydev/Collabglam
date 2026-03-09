@@ -42,7 +42,10 @@ export default function FooterWithNewsletter() {
         { label: "Terms of Service", href: "/terms" },
         { label: "Cookie Policy", href: "/cookie-policy" },
         { label: "Shipping & Delivery Policy", href: "/service-delivery" },
-        { label: "Returns Policy", href: "/returns" },
+        { label: "Returns, Cancellations & Refund Policy", href: "/returns" },
+        { label: "Acceptable Use & Communication Policy", href: "/acceptable-use-policy" },
+        { label: "Data Processing Addendum", href: "/data-processing-addendum" },
+        { label: "Subprocessor List", href: "/subprocessor-list" },
       ],
     },
   ];
