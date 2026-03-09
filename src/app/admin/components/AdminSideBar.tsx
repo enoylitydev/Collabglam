@@ -48,8 +48,8 @@ const documentLinks = [
   { label: "Shipping & Delivery Policy", href: "/admin/documents/shipping-delivery" },
   { label: "Returns Policy", href: "/admin/documents/return-policy" },
   { label: "Acceptable Use & Communication Policy", href: "/admin/documents/acceptable-use" },
-  { label: "Data Processing Addendum", href: "/admin/documents/" },
-  { label: "Subprocessor List", href: "/admin/documents/acceptable-use" }
+  { label: "Data Processing Addendum", href: "/admin/documents/data-processing-addendum" },
+  { label: "Subprocessor List", href: "/admin/documents/subprocessor-list" }
 ];
 
 export default function AdminSidebar() {
