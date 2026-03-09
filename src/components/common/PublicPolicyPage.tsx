@@ -2,7 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import NextLink from "next/link";
-import DOMPurify from "dompurify";
+import DOMPurify from "isomorphic-dompurify";
 import Footer from "@/components/common/Footer";
 import { post } from "@/lib/api";
 
