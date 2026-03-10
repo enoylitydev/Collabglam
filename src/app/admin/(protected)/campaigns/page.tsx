@@ -44,6 +44,7 @@ interface Campaign {
   campaignsId: string;
   _id?: string;
   brandId: string;
+  brandName?: string;
   productOrServiceName?: string;
   description?: string;
   timeline?: { startDate?: string; endDate?: string };
@@ -86,6 +87,7 @@ interface ApplyListResponse {
 type StatusFilter = 0 | 1 | 2;
 
 type SortKey =
+  | "brandName"
   | "productOrServiceName"
   | "goal"
   | "startDate"
@@ -352,12 +354,13 @@ export default function AdminCampaignsPage() {
               <TableRow>
                 {[
                   { label: "Name", key: "productOrServiceName" },
+                  { label: "Brand Name", key: "brandName" },
                   { label: "Goal", key: "goal" },
                   { label: "Start", key: "startDate" },
                   { label: "End", key: "endDate" },
                   { label: "Budget", key: "budget" },
                   { label: "Applicants", key: "applicantCount" },
-                  { label: "Status", key: "isActive" },
+                  // { label: "Status", key: "isActive" },
                   { label: "Actions", key: "" },
                 ].map((col) => (
                   <TableHead
@@ -382,6 +385,9 @@ export default function AdminCampaignsPage() {
                     title={c.productOrServiceName}
                   >
                     {formatName(c.productOrServiceName)}
+                  </TableCell>
+                  <TableCell className="font-medium" title={c.brandName}>
+                    {formatName(c.brandName)}
                   </TableCell>
 
                   <TableCell>{c.goal || "—"}</TableCell>
@@ -413,7 +419,7 @@ export default function AdminCampaignsPage() {
                     </div>
                   </TableCell>
 
-                  <TableCell>
+                  {/* <TableCell>
                     {c.isDraft === 1 ? (
                       <span className="inline-flex items-center space-x-1 text-yellow-600">
                         <HiOutlineRefresh className="h-4 w-4" />
@@ -430,7 +436,7 @@ export default function AdminCampaignsPage() {
                         <span>Inactive</span>
                       </span>
                     )}
-                  </TableCell>
+                  </TableCell> */}
 
                   <TableCell>
                     <Tooltip>

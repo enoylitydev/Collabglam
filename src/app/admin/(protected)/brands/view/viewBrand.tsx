@@ -203,7 +203,7 @@ export default function ViewBrandPage() {
     () => (sortBy === "status" ? "isActive" : sortBy),
     [sortBy]
   );
-
+  const [customDaysError, setCustomDaysError] = useState<string | null>(null);
   /* ----------- Plan Management State ----------- */
   const [plans, setPlans] = useState<PlanListItem[]>([]);
   const [loadingPlans, setLoadingPlans] = useState(false);
@@ -255,6 +255,13 @@ export default function ViewBrandPage() {
       setLoadingBrand(false);
     }
   };
+
+  const isCustomDaysInvalid =
+    validityMode === "custom_days" &&
+    (!customDays ||
+      !Number.isFinite(Number(customDays)) ||
+      Number(customDays) <= 0 ||
+      Number(customDays) > 15);
 
   const fetchPlans = async () => {
     setLoadingPlans(true);
@@ -337,8 +344,14 @@ export default function ViewBrandPage() {
     // validate custom inputs
     if (validityMode === "custom_days") {
       const n = Number(customDays);
+
       if (!Number.isFinite(n) || n <= 0) {
         setAssignMsg("❌ Duration days must be a positive number.");
+        return;
+      }
+
+      if (n > 15) {
+        setAssignMsg("❌ Only up to 15 days available.");
         return;
       }
     }
@@ -413,6 +426,12 @@ export default function ViewBrandPage() {
   useEffect(() => {
     if (brandId) fetchBrand(brandId);
   }, [brandId]);
+
+  useEffect(() => {
+    if (validityMode !== "custom_days") {
+      setCustomDaysError(null);
+    }
+  }, [validityMode]);
 
   useEffect(() => {
     fetchCampaigns();
@@ -662,8 +681,8 @@ export default function ViewBrandPage() {
             ) : checkInfo ? (
               <span
                 className={`text-xs px-2 py-1 rounded-full ${checkInfo.canProceed
-                    ? "bg-green-50 text-green-700"
-                    : "bg-red-50 text-red-700"
+                  ? "bg-green-50 text-green-700"
+                  : "bg-red-50 text-red-700"
                   }`}
               >
                 {checkInfo.message}
@@ -758,19 +777,63 @@ export default function ViewBrandPage() {
             </div>
 
             {/* Custom Days */}
+            {/* Custom Days */}
+            {/* Custom Days */}
             <div className="space-y-1">
               <label className="text-xs font-medium text-gray-600">
                 Days (if custom)
               </label>
               <Input
+                type="number"
+                min="1"
+                max="15"
                 placeholder="e.g. 14"
                 value={customDays}
-                onChange={(e) => setCustomDays(e.target.value)}
+                onChange={(e) => {
+                  const value = e.target.value;
+
+                  // allow empty
+                  if (value === "") {
+                    setCustomDays("");
+                    setCustomDaysError(null);
+                    return;
+                  }
+
+                  // only digits
+                  if (!/^\d+$/.test(value)) return;
+
+                  const num = Number(value);
+
+                  // do not allow more than 15
+                  if (num > 15) {
+                    setCustomDays("15");
+                    setCustomDaysError("Only up to 15 days available.");
+                    return;
+                  }
+
+                  if (num <= 0) {
+                    setCustomDays(value);
+                    setCustomDaysError("Duration days must be greater than 0.");
+                    return;
+                  }
+
+                  setCustomDays(value);
+                  setCustomDaysError(null);
+                }}
+                onKeyDown={(e) => {
+                  if (["e", "E", "+", "-", "."].includes(e.key)) {
+                    e.preventDefault();
+                  }
+                }}
                 disabled={validityMode !== "custom_days"}
               />
               <p className="text-[11px] text-gray-500">
                 Only used when validity is <b>Custom days</b>.
               </p>
+
+              {validityMode === "custom_days" && customDaysError && (
+                <p className="text-xs text-red-600">{customDaysError}</p>
+              )}
             </div>
 
             {/* Exact Expiry Date */}
@@ -806,8 +869,8 @@ export default function ViewBrandPage() {
             <div className="flex items-end">
               <Button
                 onClick={upgradeOrUpdatePlan}
-                disabled={!selectedPlanId || assigning}
-                className="w-full bg-[#ef2f5b] text-white hover:bg-[#ef2f5b]/85"
+                disabled={!selectedPlanId || assigning || isCustomDaysInvalid}
+                className="w-full bg-[#ef2f5b] text-white hover:bg-[#ef2f5b]/85 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {assigning ? "Updating..." : "Update Plan"}
               </Button>

@@ -26,7 +26,7 @@ import {
 
 import { HiOutlineRefresh } from "react-icons/hi";
 
-type ReviewStatus = "approved" | "pending" | "rejected" | "changes_needed";
+type ReviewStatus = "approved" | "pending" | "revision";
 type UrlItem = { label: string; url: string };
 
 type DeliverableApi = {
@@ -106,10 +106,12 @@ const formatIST = (iso: string) => {
 
 const toStatus = (s: any): ReviewStatus => {
   const v = String(s || "pending").toLowerCase();
+
   if (v === "approved") return "approved";
-  if (v === "rejected") return "rejected";
-  if (v === "changes_needed" || v === "changes needed" || v === "changes")
-    return "changes_needed";
+  if (v === "revision" || v === "revision" || v === "revision") {
+    return "revision";
+  }
+
   return "pending";
 };
 
@@ -119,9 +121,7 @@ const statusPill = (s: ReviewStatus) => {
       return "bg-green-50 text-green-700";
     case "pending":
       return "bg-amber-50 text-amber-700";
-    case "rejected":
-      return "bg-red-50 text-red-700";
-    case "changes_needed":
+    case "revision":
       return "bg-purple-50 text-purple-700";
     default:
       return "bg-gray-100 text-gray-700";
@@ -129,7 +129,7 @@ const statusPill = (s: ReviewStatus) => {
 };
 
 const statusLabel = (s: ReviewStatus) =>
-  s === "changes_needed" ? "Changes needed" : s[0].toUpperCase() + s.slice(1);
+  s === "revision" ? "Changes needed" : s[0].toUpperCase() + s.slice(1);
 
 const makeApprovalId = () => {
   const y = new Date().getFullYear();
@@ -143,21 +143,21 @@ function mapApiToRows(items: DeliverableApi[]): DeliverableRow[] {
   for (const it of items || []) {
     const deliverableId = String(
       it.delieverableApprovalId ||
-        it.deliverableApprovalId ||
-        it._id ||
-        it.id ||
-        ""
+      it.deliverableApprovalId ||
+      it._id ||
+      it.id ||
+      ""
     );
     if (!deliverableId) continue;
 
     // ✅ show influencerName (fallbacks)
     const influencerName = String(
       it.influencerName ||
-        it.influencer?.fullName ||
-        it.influencer?.name ||
-        it.username ||
-        it.influencerHandle ||
-        "—"
+      it.influencer?.fullName ||
+      it.influencer?.name ||
+      it.username ||
+      it.influencerHandle ||
+      "—"
     );
 
     const title = it.title || "Untitled";
@@ -339,7 +339,7 @@ export default function AdminCampaignDeliverablesPage() {
       const approvedRole = brandId ? "Brand" : "Admin";
 
       const apiStatus =
-        patch.status === "changes_needed" ? "changes" : patch.status;
+        patch.status === "revision" ? "revision" : patch.status;
 
       const payload = {
         status: apiStatus,
@@ -423,8 +423,7 @@ export default function AdminCampaignDeliverablesPage() {
                 <SelectItem value="all">All Status</SelectItem>
                 <SelectItem value="pending">Pending</SelectItem>
                 <SelectItem value="approved">Approved</SelectItem>
-                <SelectItem value="changes_needed">Changes needed</SelectItem>
-                <SelectItem value="rejected">Rejected</SelectItem>
+                <SelectItem value="revision">Revision</SelectItem>
               </SelectContent>
             </Select>
 
@@ -528,12 +527,12 @@ export default function AdminCampaignDeliverablesPage() {
                         onChange={(e) =>
                           setEditField(r.deliverableId, "status", e.target.value as ReviewStatus)
                         }
-                        className="rounded-md border border-gray-300 px-2 py-2 text-xs outline-none focus:ring-2 focus:ring-[#FFA135]"
+                        disabled={r.status === "approved"}
+                        className="rounded-md border border-gray-300 px-2 py-2 text-xs outline-none focus:ring-2 focus:ring-[#FFA135] disabled:bg-gray-100 disabled:text-gray-500 disabled:cursor-not-allowed"
                       >
                         <option value="pending">Pending</option>
                         <option value="approved">Approved</option>
-                        <option value="changes_needed">Changes needed</option>
-                        <option value="rejected">Rejected</option>
+                        <option value="revision">Changes needed</option>
                       </select>
                     </div>
                   </TableCell>
@@ -560,7 +559,7 @@ export default function AdminCampaignDeliverablesPage() {
                       variant="outline"
                       size="sm"
                       onClick={() => saveOne(r.deliverableId)}
-                      disabled={!dirty || savingId === r.deliverableId}
+                      disabled={!dirty || savingId === r.deliverableId || r.status === "approved"}
                     >
                       {savingId === r.deliverableId ? "Updating..." : "Update"}
                     </Button>

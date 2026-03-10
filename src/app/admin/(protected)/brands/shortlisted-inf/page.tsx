@@ -15,7 +15,7 @@ import {
   TableCell,
 } from "@/components/ui/table";
 import { FloatingLabelInput } from "@/components/common/FloatingLabelInput";
-import AdminMilestoneHistoryCard from "@/components/common/AdminMIlestoneHistoryCard";
+import AdminMilestoneHistoryCard from "@/components/common/AdminMilestoneHistoryCard";
 import {
   HiChevronLeft,
   HiChevronRight,
@@ -377,7 +377,6 @@ export default function AdminShortlistedInfluencersPage() {
           <TableCell className="font-medium text-black">{inf.name}</TableCell>
           <TableCell className="text-center">{inf.country}</TableCell>
           <TableCell className="text-center">{inf.platform}</TableCell>
-          <TableCell className="text-center">{inf.status}</TableCell>
           <TableCell className="text-center">{formatDate(inf.createdAt || null)}</TableCell>
 
           <TableCell className="text-center">
@@ -402,26 +401,10 @@ export default function AdminShortlistedInfluencersPage() {
             <Button
               size="sm"
               variant="outline"
-              className="border-black text-black hover:bg-gray-100 disabled:opacity-50"
+              className="border-black text-black hover:bg-gray-100"
               onClick={() => toggleExpand(rowKey)}
-              disabled={!hasMilestones}
             >
               View Milestone
-            </Button>
-
-            <Button
-              size="icon"
-              variant="ghost"
-              className="cursor-pointer"
-              onClick={() => toggleExpand(rowKey)}
-              disabled={!inf.influencerId}
-              title="Toggle history"
-            >
-              {expandedRow === rowKey ? (
-                <HiOutlineChevronUp className="w-4 h-4" />
-              ) : (
-                <HiOutlineChevronDown className="w-4 h-4" />
-              )}
             </Button>
           </TableCell>
         </TableRow>
@@ -522,7 +505,6 @@ export default function AdminShortlistedInfluencersPage() {
                 <TableHead className="font-semibold text-white">Influencer</TableHead>
                 <TableHead className="font-semibold text-center text-white">Country</TableHead>
                 <TableHead className="font-semibold text-center text-white">Platform</TableHead>
-                <TableHead className="font-semibold text-center text-white">Deliverable Status</TableHead>
                 <TableHead className="font-semibold text-center text-white">Created</TableHead>
                 <TableHead className="font-semibold text-center text-white">Milestones</TableHead>
                 <TableHead className="font-semibold text-center text-white">Actions</TableHead>

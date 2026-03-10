@@ -239,10 +239,6 @@ export default function Page() {
         <div className="mb-6 flex items-start justify-between gap-4 flex-wrap">
           <div>
             <h1 className="text-3xl font-bold text-slate-900 mb-1">Admin Invitations</h1>
-            <p className="text-slate-600 text-sm">
-              Showing <b className="text-slate-900">{total || 0}</b> invitations • Page{' '}
-              <b className="text-slate-900">{page}</b> / <b className="text-slate-900">{pages}</b>
-            </p>
           </div>
 
           <button
@@ -267,7 +263,7 @@ export default function Page() {
           <div className="p-6 grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
             {/* Search */}
             <div className="md:col-span-6">
-              <label className="text-xs font-medium text-slate-600 mb-2 block">Search (brand / influencer / handle / campaign / status)</label>
+              <label className="text-xs font-medium text-slate-600 mb-2 block">Search </label>
               <div className="relative">
                 <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
                 <input
@@ -312,11 +308,6 @@ export default function Page() {
 
             {/* Toggle */}
             <div className="md:col-span-12 flex items-center justify-between gap-3 flex-wrap mt-2">
-              <label className="flex items-center gap-2 select-none cursor-pointer">
-                <Checkbox checked={onlyWithCampaign} onCheckedChange={(v: any) => setOnlyWithCampaign(!!v)} />
-                <span className="text-sm text-slate-700">Only show rows with Campaign Name</span>
-              </label>
-
               <div className="text-xs text-slate-500">
                 Showing <b className="text-slate-900">{visibleItems.length}</b> of <b className="text-slate-900">{items.length}</b> loaded
               </div>
@@ -329,15 +320,7 @@ export default function Page() {
           {/* table header */}
           <div className="px-6 py-3 bg-slate-50 border-b border-slate-200">
             <div className="grid grid-cols-12 items-center gap-3">
-              <div className="col-span-1 flex items-center">
-                <Checkbox
-                  checked={headerCheckState as any}
-                  onCheckedChange={(v: any) => {
-                    const checked = !!v;
-                    checked ? selectAllOnPage() : clearSelectionOnPage();
-                  }}
-                />
-              </div>
+              
 
               <div className="col-span-9">
                 <div className="text-[11px] font-semibold text-slate-600 uppercase tracking-wide">Invitation</div>
@@ -371,9 +354,7 @@ export default function Page() {
                   <div className="px-6 py-4">
                     <div className="grid grid-cols-12 items-start gap-3">
                       {/* checkbox */}
-                      <div className="col-span-1 pt-2">
-                        <Checkbox checked={checked} onCheckedChange={(v: any) => toggleSelect(invId, !!v)} />
-                      </div>
+                      
 
                       {/* main column */}
                       <div className="col-span-9 min-w-0">
