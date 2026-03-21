@@ -892,7 +892,7 @@ export default function Page() {
 
     setDetailsSaving(true);
     try {
-      const resp = await post<UpdateManualResponse>('/youtube/profile/update-manual', payload);
+      const resp = await post<UpdateManualResponse>('/youtube/update-manual', payload);
       if (resp?.status !== 'ok') throw new Error('Failed to save details');
       upsertProfile(resp.data);
       setDetailsModalOpen(false);
